@@ -2,14 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Users, Check, X, Pencil } from 'lucide-react'
+import { Plus, Loader2, Users, Check, X, Pencil, ShieldCheck } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
-import type { Profile, Client, UserRole } from '@/lib/types/database'
+import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest } from '@/lib/types/database'
 
 export default function UsersPage() {
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
   const [users, setUsers] = useState<Profile[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [surveyorRequests, setSurveyorRequests] = useState<SurveyorNameRequest[]>([])
+  const [clientRequests, setClientRequests] = useState<ClientRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState<Profile | null>(null)
@@ -26,16 +29,25 @@ export default function UsersPage() {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: u }, { data: c }] = await Promise.all([
+    const { data: { session } } = await supabase.auth.getSession()
+    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', session?.user.id ?? '').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
+      supabase.from('surveyor_name_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('client_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ])
+    setCurrentProfile(me)
     setUsers(u ?? [])
     setClients(c ?? [])
+    setSurveyorRequests(sr ?? [])
+    setClientRequests(cr ?? [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
+
+  const isSuperAdmin = currentProfile?.is_super_admin === true
 
   function openCreate() {
     setEditUser(null)
@@ -53,17 +65,33 @@ export default function UsersPage() {
 
   async function handleSave() {
     if (!form.email || !form.full_name) { setError('Email and full name are required'); return }
+
+    // Role restrictions: regular admin can only create surveyor/client
+    if (!isSuperAdmin && (form.role === 'admin')) {
+      setError('You do not have permission to create Admin accounts. Contact the Super Admin.')
+      return
+    }
+
     setSaving(true)
     setError(null)
 
     const supabase = createClient()
 
     if (editUser) {
-      const { error: err } = await supabase
-        .from('profiles')
-        .update({ full_name: form.full_name, role: form.role, phone: form.phone || null })
-        .eq('id', editUser.id)
-
+      const patch: any = { full_name: form.full_name, role: form.role, phone: form.phone || null }
+      // Only super admin can change someone to admin
+      if (!isSuperAdmin && form.role === 'admin') {
+        setError('Only the Super Admin can assign the Admin role.')
+        setSaving(false)
+        return
+      }
+      // Prevent non-super-admin from editing a super admin
+      if (!isSuperAdmin && (editUser as any).is_super_admin) {
+        setError('You cannot edit the Super Admin account.')
+        setSaving(false)
+        return
+      }
+      const { error: err } = await supabase.from('profiles').update(patch).eq('id', editUser.id)
       if (err) { setError(err.message); setSaving(false); return }
     } else {
       if (!form.password || form.password.length < 8) { setError('Password must be at least 8 characters'); setSaving(false); return }
@@ -83,7 +111,6 @@ export default function UsersPage() {
       const result = await response.json()
       if (!response.ok) { setError(result.error ?? 'Failed to create user'); setSaving(false); return }
 
-      // Link to client if client role
       if (form.role === 'client' && form.client_id && result.user_id) {
         await supabase.from('client_users').upsert({
           profile_id: result.user_id,
@@ -111,8 +138,42 @@ export default function UsersPage() {
   }
 
   async function toggleActive(user: Profile) {
+    if ((user as any).is_super_admin && !isSuperAdmin) {
+      alert('Only the Super Admin can deactivate the Super Admin account.')
+      return
+    }
     const supabase = createClient()
     await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id)
+    load()
+  }
+
+  async function approveSurveyorRequest(req: SurveyorNameRequest) {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('surveyor_names').insert({ name: req.requested_name, is_active: true, approved_by: session?.user.id, approved_at: new Date().toISOString() })
+    await supabase.from('surveyor_name_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    load()
+  }
+
+  async function rejectSurveyorRequest(req: SurveyorNameRequest) {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('surveyor_name_requests').update({ status: 'rejected', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    load()
+  }
+
+  async function approveClientRequest(req: ClientRequest) {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('clients').insert({ name: req.requested_name, is_active: true })
+    await supabase.from('client_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    load()
+  }
+
+  async function rejectClientRequest(req: ClientRequest) {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('client_requests').update({ status: 'rejected', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
     load()
   }
 
@@ -124,7 +185,7 @@ export default function UsersPage() {
     )
   }
 
-  const roleColor: Record<UserRole, string> = {
+  const roleColor: Record<string, string> = {
     admin: 'bg-red-100 text-red-700',
     surveyor: 'bg-blue-100 text-blue-700',
     client: 'bg-green-100 text-green-700',
@@ -132,13 +193,18 @@ export default function UsersPage() {
 
   const pending = users.filter(u => !u.is_active)
   const active = users.filter(u => u.is_active)
+  const totalPendingRequests = surveyorRequests.length + clientRequests.length
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Users</h1>
-          <p className="text-gray-500 mt-1">{users.length} users{pending.length > 0 && ` · ${pending.length} pending approval`}</p>
+          <p className="text-gray-500 mt-1">
+            {users.length} users
+            {pending.length > 0 && ` · ${pending.length} pending approval`}
+            {totalPendingRequests > 0 && ` · ${totalPendingRequests} pending request${totalPendingRequests > 1 ? 's' : ''}`}
+          </p>
         </div>
         <button onClick={openCreate} className="btn-primary">
           <Plus className="h-4 w-4" />
@@ -146,6 +212,7 @@ export default function UsersPage() {
         </button>
       </div>
 
+      {/* Pending user approvals */}
       {pending.length > 0 && (
         <div className="card overflow-hidden border-yellow-200 border-2">
           <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-center gap-2">
@@ -185,7 +252,7 @@ export default function UsersPage() {
                       >
                         <option value="surveyor">Surveyor</option>
                         <option value="client">Client</option>
-                        <option value="admin">Admin</option>
+                        {isSuperAdmin && <option value="admin">Admin</option>}
                       </select>
                       <button onClick={() => approveUser(user)} className="btn-primary py-1 px-3 text-xs">
                         Approve
@@ -202,6 +269,59 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* Pending surveyor name requests */}
+      {surveyorRequests.length > 0 && (
+        <div className="card overflow-hidden border-blue-200 border-2">
+          <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-sm font-semibold text-blue-800">{surveyorRequests.length} surveyor name request{surveyorRequests.length > 1 ? 's' : ''}</span>
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {surveyorRequests.map(req => (
+                <tr key={req.id} className="hover:bg-blue-50">
+                  <td className="px-4 py-3 font-medium text-gray-900">{req.requested_name}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(req.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => approveSurveyorRequest(req)} className="btn-primary py-1 px-3 text-xs">Approve</button>
+                      <button onClick={() => rejectSurveyorRequest(req)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:bg-red-50">Reject</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pending client name requests */}
+      {clientRequests.length > 0 && (
+        <div className="card overflow-hidden border-pink-200 border-2">
+          <div className="px-4 py-3 bg-pink-50 border-b border-pink-200 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+            <span className="text-sm font-semibold text-pink-800">{clientRequests.length} new client request{clientRequests.length > 1 ? 's' : ''}</span>
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {clientRequests.map(req => (
+                <tr key={req.id} className="hover:bg-pink-50">
+                  <td className="px-4 py-3 font-medium text-gray-900">{req.requested_name}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(req.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => approveClientRequest(req)} className="btn-primary py-1 px-3 text-xs">Approve</button>
+                      <button onClick={() => rejectClientRequest(req)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:bg-red-50">Reject</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Active users table */}
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -222,7 +342,14 @@ export default function UsersPage() {
                     <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm flex-shrink-0">
                       {user.full_name.charAt(0)}
                     </div>
-                    <span className="font-medium text-gray-900">{user.full_name}</span>
+                    <div>
+                      <span className="font-medium text-gray-900">{user.full_name}</span>
+                      {(user as any).is_super_admin && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                          <ShieldCheck className="h-3 w-3" />Super Admin
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-gray-600">{user.email}</td>
@@ -245,16 +372,21 @@ export default function UsersPage() {
                 <td className="px-4 py-3 text-gray-500">{formatDate(user.created_at)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => toggleActive(user)}
-                      className="text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      {user.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
+                    {/* Only super admin can edit admin users; everyone can edit surveyor/client */}
+                    {(isSuperAdmin || user.role !== 'admin') && !(user as any).is_super_admin && (
+                      <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
+                        <Pencil className="h-3.5 w-3.5" />Edit
+                      </button>
+                    )}
+                    {/* Can't deactivate super admin unless you are super admin */}
+                    {(isSuperAdmin || !(user as any).is_super_admin) && (
+                      <button
+                        onClick={() => toggleActive(user)}
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        {user.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -306,10 +438,13 @@ export default function UsersPage() {
           <div>
             <label className="label-base">Role</label>
             <select value={form.role} onChange={(e) => setForm(p => ({ ...p, role: e.target.value as UserRole }))} className="input-base">
-              <option value="admin">Admin</option>
               <option value="surveyor">Surveyor</option>
               <option value="client">Client</option>
+              {isSuperAdmin && <option value="admin">Admin</option>}
             </select>
+            {!isSuperAdmin && (
+              <p className="text-xs text-gray-400 mt-1">Only the Super Admin can create Admin accounts.</p>
+            )}
           </div>
           {form.role === 'client' && !editUser && (
             <div>

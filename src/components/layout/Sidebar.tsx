@@ -26,14 +26,14 @@ interface NavItem {
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
-  { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Checklists', href: '/admin/jobs', icon: Briefcase },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
 ]
 
 const surveyorNav: NavItem[] = [
   { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
-  { label: 'My Jobs', href: '/surveyor/jobs', icon: Briefcase },
+  { label: 'My Checklists', href: '/surveyor/jobs', icon: Briefcase },
 ]
 
 const clientNav: NavItem[] = [
@@ -41,7 +41,7 @@ const clientNav: NavItem[] = [
 ]
 
 interface SidebarProps {
-  profile: Profile
+  profile: Profile & { is_super_admin?: boolean }
   open?: boolean
   onClose?: () => void
   pendingCount?: number
@@ -101,7 +101,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         {/* Role badge */}
         <div className="px-4 py-3 border-b border-brand-800">
           <p className="text-brand-400 text-xs uppercase tracking-wide font-medium">
-            {profile.role === 'admin' ? 'Administrator' : profile.role === 'surveyor' ? 'Surveyor' : 'Client'}
+            {profile.is_super_admin ? 'Super Admin' : profile.role === 'admin' ? 'Administrator' : profile.role === 'surveyor' ? 'Surveyor' : 'Client'}
           </p>
           <p className="text-white text-sm font-medium mt-0.5 truncate">{profile.full_name}</p>
         </div>

@@ -31,6 +31,7 @@ export interface Profile {
   role: UserRole
   phone: string | null
   is_active: boolean
+  is_super_admin: boolean
   created_at: string
   updated_at: string
 }
@@ -86,6 +87,10 @@ export interface ChecklistTemplate {
   allow_surveyor_start: boolean
   created_by: string
   duplicated_from: string | null
+  archived_by: string | null
+  archived_at: string | null
+  restored_by: string | null
+  restored_at: string | null
   created_at: string
   updated_at: string
 }
@@ -130,6 +135,8 @@ export interface Job {
   template_id: string
   client_id: string | null
   assigned_to: string | null
+  vessel_name: string | null
+  surveyor_name: string | null
   status: JobStatus
   created_by: string
   scheduled_date: string | null
@@ -182,6 +189,35 @@ export interface ClientJobPermission {
   can_view_checklist_details: boolean
   created_at: string
   updated_at: string
+}
+
+export interface SurveyorName {
+  id: string
+  name: string
+  is_active: boolean
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+}
+
+export interface SurveyorNameRequest {
+  id: string
+  requested_name: string
+  requested_by: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_at: string
+}
+
+export interface ClientRequest {
+  id: string
+  requested_name: string
+  requested_by: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_at: string
 }
 
 // Extended types with joins

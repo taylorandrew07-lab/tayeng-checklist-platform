@@ -3,28 +3,41 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Loader2, Save } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, Plus } from 'lucide-react'
 import Link from 'next/link'
-import type { ChecklistTemplate, Client, Profile, JobStatus } from '@/lib/types/database'
+import type { ChecklistTemplate, Client, SurveyorName } from '@/lib/types/database'
 
-export default function NewJobPage() {
+function formatDateDMY(date: Date): string {
+  const d = String(date.getDate()).padStart(2, '0')
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const y = date.getFullYear()
+  return `${d}-${m}-${y}`
+}
+
+export default function NewChecklistPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [surveyors, setSurveyors] = useState<Profile[]>([])
+  const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [form, setForm] = useState({
-    title: '',
-    template_id: '',
-    client_id: '',
-    assigned_to: '',
-    status: 'draft' as JobStatus,
-    scheduled_date: '',
-    internal_notes: '',
-  })
+  const [templateId, setTemplateId] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState<ChecklistTemplate | null>(null)
+  const [vesselName, setVesselName] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [newClientName, setNewClientName] = useState('')
+  const [showNewClient, setShowNewClient] = useState(false)
+  const [surveyorName, setSurveyorName] = useState('')
+  const [newSurveyorName, setNewSurveyorName] = useState('')
+  const [showNewSurveyor, setShowNewSurveyor] = useState(false)
+
+  const today = formatDateDMY(new Date())
+
+  const autoTitle = vesselName.trim() && selectedTemplate
+    ? `M.V. ${vesselName.trim()} - ${selectedTemplate.name} - ${today}`
+    : ''
 
   useEffect(() => {
     async function loadData() {
@@ -32,23 +45,50 @@ export default function NewJobPage() {
       const [{ data: tmpl }, { data: cls }, { data: srv }] = await Promise.all([
         supabase.from('checklist_templates').select('*').eq('status', 'active').order('name'),
         supabase.from('clients').select('*').eq('is_active', true).order('name'),
-        supabase.from('profiles').select('*').eq('role', 'surveyor').eq('is_active', true).order('full_name'),
+        supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
       ])
       setTemplates(tmpl ?? [])
       setClients(cls ?? [])
-      setSurveyors(srv ?? [])
+      setSurveyorNames(srv ?? [])
       setLoading(false)
     }
     loadData()
   }, [])
 
-  function update(patch: Partial<typeof form>) {
-    setForm(prev => ({ ...prev, ...patch }))
+  function handleTemplateChange(id: string) {
+    setTemplateId(id)
+    setSelectedTemplate(templates.find(t => t.id === id) ?? null)
+  }
+
+  function handleSurveyorChange(val: string) {
+    if (val === '__new__') {
+      setShowNewSurveyor(true)
+      setSurveyorName('')
+    } else {
+      setShowNewSurveyor(false)
+      setNewSurveyorName('')
+      setSurveyorName(val)
+    }
+  }
+
+  function handleClientChange(val: string) {
+    if (val === '__new__') {
+      setShowNewClient(true)
+      setClientId('')
+    } else {
+      setShowNewClient(false)
+      setNewClientName('')
+      setClientId(val)
+    }
   }
 
   async function handleSave() {
-    if (!form.title.trim()) { setError('Job title is required'); return }
-    if (!form.template_id) { setError('Please select a template'); return }
+    if (!templateId) { setError('Please select a checklist template'); return }
+    if (!vesselName.trim()) { setError('Vessel name is required'); return }
+
+    const finalSurveyor = showNewSurveyor ? newSurveyorName.trim() : surveyorName
+    if (!finalSurveyor) { setError('Surveyor name is required'); return }
+
     setSaving(true)
     setError(null)
 
@@ -56,33 +96,52 @@ export default function NewJobPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setError('Not authenticated'); setSaving(false); return }
 
-    const payload: any = {
-      title: form.title.trim(),
-      template_id: form.template_id,
-      created_by: user.id,
-      status: form.assigned_to ? 'assigned' : 'draft',
+    let finalClientId = clientId || null
+
+    // Handle new client request
+    if (showNewClient && newClientName.trim()) {
+      const { error: reqErr } = await supabase.from('client_requests').insert({
+        requested_name: newClientName.trim(),
+        requested_by: user.id,
+      })
+      if (reqErr) { setError('Failed to submit client request: ' + reqErr.message); setSaving(false); return }
+      finalClientId = null // No client ID yet — pending approval
     }
-    if (form.client_id) payload.client_id = form.client_id
-    if (form.assigned_to) payload.assigned_to = form.assigned_to
-    if (form.scheduled_date) payload.scheduled_date = form.scheduled_date
-    if (form.internal_notes.trim()) payload.internal_notes = form.internal_notes.trim()
+
+    // Handle new surveyor name request
+    if (showNewSurveyor && newSurveyorName.trim()) {
+      await supabase.from('surveyor_name_requests').insert({
+        requested_name: newSurveyorName.trim(),
+        requested_by: user.id,
+      })
+    }
+
+    const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`
 
     const { data: job, error: jobErr } = await supabase
       .from('jobs')
-      .insert(payload)
+      .insert({
+        title,
+        template_id: templateId,
+        vessel_name: vesselName.trim(),
+        surveyor_name: finalSurveyor,
+        client_id: finalClientId,
+        created_by: user.id,
+        status: 'in_progress',
+        started_at: new Date().toISOString(),
+      })
       .select()
       .single()
 
     if (jobErr || !job) {
-      setError(jobErr?.message ?? 'Failed to create job')
+      setError(jobErr?.message ?? 'Failed to create checklist')
       setSaving(false)
       return
     }
 
-    // If client assigned, create default permission
-    if (form.client_id && job.id) {
+    if (finalClientId && job.id) {
       await supabase.from('client_job_permissions').insert({
-        client_id: form.client_id,
+        client_id: finalClientId,
         job_id: job.id,
         can_view_status: true,
         can_view_pdf: false,
@@ -108,26 +167,16 @@ export default function NewJobPage() {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <h1 className="page-title">New Job</h1>
-          <p className="text-gray-500 mt-0.5">Create a new survey job</p>
+          <h1 className="page-title">New Checklist</h1>
+          <p className="text-gray-500 mt-0.5">Create a new survey checklist</p>
         </div>
       </div>
 
       <div className="card p-6 space-y-5">
-        <div>
-          <label className="label-base">Job Title *</label>
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => update({ title: e.target.value })}
-            className="input-base"
-            placeholder="e.g. Draft Survey – MV Endeavour"
-          />
-        </div>
-
+        {/* Template */}
         <div>
           <label className="label-base">Checklist Template *</label>
-          <select value={form.template_id} onChange={(e) => update({ template_id: e.target.value })} className="input-base">
+          <select value={templateId} onChange={(e) => handleTemplateChange(e.target.value)} className="input-base">
             <option value="">Select a template…</option>
             {templates.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
@@ -138,46 +187,83 @@ export default function NewJobPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label-base">Client</label>
-            <select value={form.client_id} onChange={(e) => update({ client_id: e.target.value })} className="input-base">
-              <option value="">No client</option>
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label-base">Assign to Surveyor</label>
-            <select value={form.assigned_to} onChange={(e) => update({ assigned_to: e.target.value })} className="input-base">
-              <option value="">Unassigned</option>
-              {surveyors.map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}</option>
-              ))}
-            </select>
+        {/* Vessel name */}
+        <div>
+          <label className="label-base">Vessel Name *</label>
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
+            <input
+              type="text"
+              value={vesselName}
+              onChange={(e) => setVesselName(e.target.value)}
+              className="input-base pl-12"
+              placeholder="Atlantic Spirit"
+            />
           </div>
         </div>
 
+        {/* Auto-generated title preview */}
+        {autoTitle && (
+          <div className="rounded-lg bg-brand-50 border border-brand-200 px-4 py-3">
+            <p className="text-xs font-medium text-brand-700 mb-0.5">Checklist name (auto-generated)</p>
+            <p className="text-sm text-brand-900 font-medium">{autoTitle}</p>
+          </div>
+        )}
+
+        {/* Client */}
         <div>
-          <label className="label-base">Scheduled Date</label>
-          <input
-            type="date"
-            value={form.scheduled_date}
-            onChange={(e) => update({ scheduled_date: e.target.value })}
+          <label className="label-base">Client</label>
+          <select
+            value={showNewClient ? '__new__' : clientId}
+            onChange={(e) => handleClientChange(e.target.value)}
             className="input-base"
-          />
+          >
+            <option value="">No client</option>
+            {clients.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+            <option value="__new__">+ Request new client…</option>
+          </select>
+          {showNewClient && (
+            <div className="mt-2">
+              <input
+                type="text"
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                className="input-base"
+                placeholder="Enter new client name…"
+              />
+              <p className="text-xs text-amber-600 mt-1">This name will be submitted for Admin approval before being added permanently.</p>
+            </div>
+          )}
         </div>
 
+        {/* Surveyor name */}
         <div>
-          <label className="label-base">Internal Notes</label>
-          <textarea
-            value={form.internal_notes}
-            onChange={(e) => update({ internal_notes: e.target.value })}
-            className="input-base resize-none"
-            rows={3}
-            placeholder="Internal notes (not visible to clients or surveyors)"
-          />
+          <label className="label-base">Surveyor Name *</label>
+          <select
+            value={showNewSurveyor ? '__new__' : surveyorName}
+            onChange={(e) => handleSurveyorChange(e.target.value)}
+            className="input-base"
+          >
+            <option value="">Select surveyor…</option>
+            {surveyorNames.map(s => (
+              <option key={s.id} value={s.name}>{s.name}</option>
+            ))}
+            <option value="__new__">Request New - Insert Name</option>
+          </select>
+          {showNewSurveyor && (
+            <div className="mt-2">
+              <input
+                type="text"
+                value={newSurveyorName}
+                onChange={(e) => setNewSurveyorName(e.target.value)}
+                className="input-base"
+                placeholder="Enter full name…"
+              />
+              <p className="text-xs text-amber-600 mt-1">This name will be submitted for Admin approval before being permanently added.</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -189,7 +275,7 @@ export default function NewJobPage() {
         <Link href="/admin/jobs" className="btn-secondary">Cancel</Link>
         <button onClick={handleSave} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Creating…' : 'Create Job'}
+          {saving ? 'Creating…' : 'Create Checklist'}
         </button>
       </div>
     </div>

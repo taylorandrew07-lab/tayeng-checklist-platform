@@ -1,77 +1,135 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, ClipboardCheck } from 'lucide-react'
-
-const DEMO_JOBS = [
-  { id: '1', title: 'Draft Survey – MV Endeavour', job_number: 'TE-01001', status: 'in_progress', template: { name: 'Marine Draft Survey' }, client: { name: 'Pacific Shipping Co.' }, scheduled_date: '2026-05-28' },
-  { id: '7', title: 'Bunker Survey – MV Neptune', job_number: 'TE-01007', status: 'in_progress', template: { name: 'Bunker Survey Checklist' }, client: { name: 'Acme Logistics' }, scheduled_date: '2026-05-27' },
-  { id: '3', title: 'Cargo Inspection – Bulk Carrier', job_number: 'TE-01003', status: 'assigned', template: { name: 'Cargo Inspection' }, client: { name: 'Acme Logistics' }, scheduled_date: '2026-05-30' },
-  { id: '4', title: 'Tank Calibration – Terminal A', job_number: 'TE-01004', status: 'completed', template: { name: 'Tank Calibration' }, client: { name: 'Pacific Shipping Co.' }, scheduled_date: '2026-05-18' },
-  { id: '2', title: 'Bunker Survey – MV Aurora', job_number: 'TE-01002', status: 'submitted', template: { name: 'Bunker Survey Checklist' }, client: { name: 'Global Marine Ltd.' }, scheduled_date: '2026-05-22' },
-]
-
-const statusColors: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700', assigned: 'bg-blue-100 text-blue-700', in_progress: 'bg-yellow-100 text-yellow-700',
-  submitted: 'bg-purple-100 text-purple-700', completed: 'bg-green-100 text-green-700',
-}
-const statusLabels: Record<string, string> = {
-  draft: 'Draft', assigned: 'Assigned', in_progress: 'In Progress', submitted: 'Submitted', completed: 'Completed',
-}
+import { Plus, Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 
 export default function SurveyorDashboard() {
-  const active = DEMO_JOBS.filter(j => ['assigned', 'in_progress'].includes(j.status))
-  const submitted = DEMO_JOBS.filter(j => ['submitted', 'completed'].includes(j.status))
+  const [profile, setProfile] = useState<any>(null)
+  const [jobs, setJobs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const [{ data: p }, { data: j }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+        supabase.from('jobs')
+          .select(`
+            id, title, job_number, status, created_at, vessel_name, surveyor_name,
+            template:checklist_templates(name),
+            client:clients(name)
+          `)
+          .eq('created_by', session.user.id)
+          .order('created_at', { ascending: false }),
+      ])
+
+      setProfile(p)
+      setJobs(j ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const active = jobs.filter(j => ['draft', 'in_progress', 'assigned'].includes(j.status))
+  const submitted = jobs.filter(j => ['submitted', 'completed', 'client_visible'].includes(j.status))
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">My Jobs</h1>
-          <p className="text-gray-500 mt-1">Welcome, James Wilson</p>
+          <h1 className="page-title">My Checklists</h1>
+          <p className="text-gray-500 mt-1">Welcome, {profile?.full_name ?? '…'}</p>
         </div>
-        <Link href="/surveyor/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />Start New Job</Link>
+        <Link href="/surveyor/jobs/new" className="btn-primary">
+          <Plus className="h-4 w-4" />New Checklist
+        </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card p-4 text-center"><p className="text-3xl font-bold text-yellow-600">{active.length}</p><p className="text-sm text-gray-500 mt-1">Active</p></div>
-        <div className="card p-4 text-center"><p className="text-3xl font-bold text-purple-600">{submitted.length}</p><p className="text-sm text-gray-500 mt-1">Submitted</p></div>
-        <div className="card p-4 text-center"><p className="text-3xl font-bold text-gray-600">0</p><p className="text-sm text-gray-500 mt-1">Draft</p></div>
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="card p-4 text-center">
+              <p className="text-3xl font-bold text-yellow-600">{active.length}</p>
+              <p className="text-sm text-gray-500 mt-1">Active</p>
+            </div>
+            <div className="card p-4 text-center">
+              <p className="text-3xl font-bold text-purple-600">{submitted.length}</p>
+              <p className="text-sm text-gray-500 mt-1">Submitted</p>
+            </div>
+            <div className="card p-4 text-center">
+              <p className="text-3xl font-bold text-gray-600">{jobs.length}</p>
+              <p className="text-sm text-gray-500 mt-1">Total</p>
+            </div>
+          </div>
 
-      <div>
-        <h2 className="section-title mb-3">Active Jobs</h2>
-        <div className="space-y-3">
-          {active.map(job => (
-            <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow block">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-gray-900 truncate">{job.title}</p>
-                  <span className="text-xs text-gray-400">{job.job_number}</span>
-                </div>
-                <p className="text-sm text-gray-500 mt-0.5">{job.template.name} · {job.client.name} · {job.scheduled_date}</p>
+          {active.length > 0 && (
+            <div>
+              <h2 className="section-title mb-3">Active Checklists</h2>
+              <div className="space-y-3">
+                {active.map(job => (
+                  <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">{job.title}</p>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
+                      {getJobStatusLabel(job.status)}
+                    </span>
+                  </Link>
+                ))}
               </div>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${statusColors[job.status]}`}>{statusLabels[job.status]}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+            </div>
+          )}
 
-      <div>
-        <h2 className="section-title mb-3">Submitted / Completed</h2>
-        <div className="space-y-3">
-          {submitted.map(job => (
-            <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow block">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-gray-900 truncate">{job.title}</p>
-                  <span className="text-xs text-gray-400">{job.job_number}</span>
-                </div>
-                <p className="text-sm text-gray-500 mt-0.5">{job.template.name} · {job.client.name} · {job.scheduled_date}</p>
+          {submitted.length > 0 && (
+            <div>
+              <h2 className="section-title mb-3">Submitted / Completed</h2>
+              <div className="space-y-3">
+                {submitted.map(job => (
+                  <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">{job.title}</p>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
+                      {getJobStatusLabel(job.status)}
+                    </span>
+                  </Link>
+                ))}
               </div>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${statusColors[job.status]}`}>{statusLabels[job.status]}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+            </div>
+          )}
+
+          {jobs.length === 0 && (
+            <div className="card p-10 text-center text-gray-400">
+              <p className="mb-3">You haven't created any checklists yet.</p>
+              <Link href="/surveyor/jobs/new" className="btn-primary inline-flex">
+                <Plus className="h-4 w-4" />Start your first checklist
+              </Link>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
