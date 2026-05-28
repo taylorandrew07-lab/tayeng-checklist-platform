@@ -7,6 +7,7 @@ export type FieldType =
   | 'time'
   | 'dropdown'
   | 'yes_no'
+  | 'yes_no_na'
   | 'multiple_choice'
   | 'textarea'
   | 'calculated'
@@ -116,6 +117,8 @@ export interface TemplateField {
   help_text: string | null
   unit: string | null
   default_value: string | null
+  item_number: string | null
+  with_remarks: boolean
   created_at: string
   updated_at: string
 }

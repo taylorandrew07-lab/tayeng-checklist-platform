@@ -44,9 +44,10 @@ interface SidebarProps {
   profile: Profile
   open?: boolean
   onClose?: () => void
+  pendingCount?: number
 }
 
-export default function Sidebar({ profile, open = true, onClose }: SidebarProps) {
+export default function Sidebar({ profile, open = true, onClose, pendingCount = 0 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -126,7 +127,12 @@ export default function Sidebar({ profile, open = true, onClose }: SidebarProps)
               >
                 <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
                 {item.label}
-                {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                {item.href === '/admin/users' && pendingCount > 0 && (
+                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {pendingCount}
+                  </span>
+                )}
+                {isActive && pendingCount === 0 && <ChevronRight className="h-4 w-4 ml-auto" />}
               </Link>
             )
           })}

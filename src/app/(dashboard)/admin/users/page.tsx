@@ -97,6 +97,19 @@ export default function UsersPage() {
     load()
   }
 
+  async function approveUser(user: Profile) {
+    const supabase = createClient()
+    await supabase.from('profiles').update({ is_active: true }).eq('id', user.id)
+    load()
+  }
+
+  async function rejectUser(user: Profile) {
+    if (!confirm(`Reject and delete account for ${user.full_name}?`)) return
+    const supabase = createClient()
+    await supabase.from('profiles').delete().eq('id', user.id)
+    load()
+  }
+
   async function toggleActive(user: Profile) {
     const supabase = createClient()
     await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id)
@@ -117,18 +130,77 @@ export default function UsersPage() {
     client: 'bg-green-100 text-green-700',
   }
 
+  const pending = users.filter(u => !u.is_active)
+  const active = users.filter(u => u.is_active)
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Users</h1>
-          <p className="text-gray-500 mt-1">{users.length} users</p>
+          <p className="text-gray-500 mt-1">{users.length} users{pending.length > 0 && ` · ${pending.length} pending approval`}</p>
         </div>
         <button onClick={openCreate} className="btn-primary">
           <Plus className="h-4 w-4" />
           Add User
         </button>
       </div>
+
+      {pending.length > 0 && (
+        <div className="card overflow-hidden border-yellow-200 border-2">
+          <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+            <span className="text-sm font-semibold text-yellow-800">{pending.length} account{pending.length > 1 ? 's' : ''} awaiting approval</span>
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {pending.map(user => (
+                <tr key={user.id} className="hover:bg-yellow-50">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-medium text-sm flex-shrink-0">
+                        {user.full_name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{user.full_name}</p>
+                        <p className="text-xs text-gray-500">{user.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColor[user.role]}`}>
+                      Requested: {user.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(user.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        defaultValue={user.role}
+                        onChange={async (e) => {
+                          const supabase = createClient()
+                          await supabase.from('profiles').update({ role: e.target.value as UserRole }).eq('id', user.id)
+                        }}
+                        className="text-xs border border-gray-300 rounded px-2 py-1"
+                      >
+                        <option value="surveyor">Surveyor</option>
+                        <option value="client">Client</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button onClick={() => approveUser(user)} className="btn-primary py-1 px-3 text-xs">
+                        Approve
+                      </button>
+                      <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
@@ -143,7 +215,7 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.map(user => (
+            {active.map(user => (
               <tr key={user.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">

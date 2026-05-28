@@ -52,6 +52,9 @@ export default function FieldRenderer({
     <div className="space-y-1.5">
       <div className="flex items-start justify-between gap-2">
         <label className="label-base mb-0">
+          {field.item_number && (
+            <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>
+          )}
           {field.label}
           {field.is_required && <span className="text-red-500 ml-1">*</span>}
         </label>
@@ -140,28 +143,46 @@ export default function FieldRenderer({
         </select>
       )}
 
-      {field.field_type === 'yes_no' && (
-        <div className="flex gap-3">
-          {['yes', 'no'].map(opt => (
-            <label key={opt} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-colors ${
-              value === opt
-                ? opt === 'yes' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700'
-                : 'border-gray-200 hover:border-gray-300'
-            } ${readOnly ? 'pointer-events-none' : ''}`}>
+      {(field.field_type === 'yes_no' || field.field_type === 'yes_no_na') && (() => {
+        const opts = field.field_type === 'yes_no_na'
+          ? [
+              { value: 'yes', label: 'Yes', active: 'border-green-500 bg-green-50 text-green-700' },
+              { value: 'no', label: 'No', active: 'border-red-500 bg-red-50 text-red-700' },
+              { value: 'na', label: 'N/A', active: 'border-gray-400 bg-gray-100 text-gray-600' },
+            ]
+          : [
+              { value: 'yes', label: 'Yes', active: 'border-green-500 bg-green-50 text-green-700' },
+              { value: 'no', label: 'No', active: 'border-red-500 bg-red-50 text-red-700' },
+            ]
+        // Parse combined value: "yes|||some remarks"
+        const [answer, remarks] = value.includes('|||') ? value.split('|||') : [value, '']
+        return (
+          <div className="space-y-2">
+            <div className="flex gap-3">
+              {opts.map(opt => (
+                <label key={opt.value} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-colors ${
+                  answer === opt.value ? opt.active : 'border-gray-200 hover:border-gray-300'
+                } ${readOnly ? 'pointer-events-none' : ''}`}>
+                  <input type="radio" name={`yn_${field.id}`} value={opt.value} checked={answer === opt.value}
+                    onChange={() => onChange(opt.value + (field.with_remarks && remarks ? '|||' + remarks : ''))}
+                    disabled={readOnly} className="sr-only" />
+                  <span className="text-sm font-medium">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            {field.with_remarks && (
               <input
-                type="radio"
-                name={`yn_${field.id}`}
-                value={opt}
-                checked={value === opt}
-                onChange={() => onChange(opt)}
+                type="text"
+                value={remarks}
+                onChange={(e) => onChange((answer || '') + '|||' + e.target.value)}
                 disabled={readOnly}
-                className="sr-only"
+                placeholder="Remarks…"
+                className={`input-base text-sm ${readOnly ? 'bg-gray-50' : ''}`}
               />
-              <span className="text-sm font-medium capitalize">{opt}</span>
-            </label>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
+        )
+      })()}
 
       {field.field_type === 'multiple_choice' && (
         <div className="space-y-2">

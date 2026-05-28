@@ -14,6 +14,8 @@ export interface BuilderField {
   help_text: string
   unit: string
   default_value: string
+  item_number: string
+  with_remarks: boolean
 }
 
 export interface BuilderSection {
@@ -35,6 +37,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'time', label: 'Time', group: 'Input' },
   { value: 'dropdown', label: 'Dropdown', group: 'Choice' },
   { value: 'yes_no', label: 'Yes / No', group: 'Choice' },
+  { value: 'yes_no_na', label: 'Yes / No / N/A', group: 'Choice' },
   { value: 'multiple_choice', label: 'Multiple Choice', group: 'Choice' },
   { value: 'calculated', label: 'Calculated Field', group: 'Special' },
   { value: 'photo', label: 'Photo Upload', group: 'Special' },
@@ -56,6 +59,8 @@ export function createBlankField(order_index: number): BuilderField {
     help_text: '',
     unit: '',
     default_value: '',
+    item_number: '',
+    with_remarks: false,
   }
 }
 

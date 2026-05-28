@@ -43,6 +43,7 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
 
   const needsOptions = field.field_type === 'dropdown' || field.field_type === 'multiple_choice'
   const isLayoutField = field.field_type === 'heading' || field.field_type === 'divider'
+  const isYesNo = field.field_type === 'yes_no' || field.field_type === 'yes_no_na'
 
   return (
     <div className="border border-gray-200 rounded-xl bg-white shadow-sm">
@@ -83,7 +84,7 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
 
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-4 space-y-4">
-          {/* Field type */}
+          {/* Item number + field type + label */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label-base">Field Type</label>
@@ -120,6 +121,20 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
               />
             </div>
           </div>
+
+          {/* Item number */}
+          {!isLayoutField && (
+            <div>
+              <label className="label-base">Item No. <span className="text-gray-400 font-normal">(e.g. A1, B3)</span></label>
+              <input
+                type="text"
+                value={field.item_number}
+                onChange={(e) => update({ item_number: e.target.value })}
+                className="input-base"
+                placeholder="Optional — shown as prefix"
+              />
+            </div>
+          )}
 
           {/* Non-layout fields have more options */}
           {!isLayoutField && (
@@ -160,23 +175,28 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 />
               </div>
 
-              {/* Required toggle */}
-              <div className="flex items-center gap-3">
+              {/* Required + With Remarks toggles */}
+              <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <div
                     onClick={() => update({ is_required: !field.is_required })}
-                    className={cn(
-                      'relative w-10 h-6 rounded-full transition-colors',
-                      field.is_required ? 'bg-brand-600' : 'bg-gray-300'
-                    )}
+                    className={cn('relative w-10 h-6 rounded-full transition-colors', field.is_required ? 'bg-brand-600' : 'bg-gray-300')}
                   >
-                    <div className={cn(
-                      'absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform',
-                      field.is_required ? 'translate-x-5' : 'translate-x-1'
-                    )} />
+                    <div className={cn('absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform', field.is_required ? 'translate-x-5' : 'translate-x-1')} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700">Required field</span>
+                  <span className="text-sm font-medium text-gray-700">Required</span>
                 </label>
+                {isYesNo && (
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <div
+                      onClick={() => update({ with_remarks: !field.with_remarks })}
+                      className={cn('relative w-10 h-6 rounded-full transition-colors', field.with_remarks ? 'bg-brand-600' : 'bg-gray-300')}
+                    >
+                      <div className={cn('absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform', field.with_remarks ? 'translate-x-5' : 'translate-x-1')} />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">With Remarks</span>
+                  </label>
+                )}
               </div>
 
               {/* Number validation */}
@@ -278,8 +298,25 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 </div>
               )}
 
-              {/* Default value (not for photo/signature/calculated) */}
-              {!['photo', 'signature', 'calculated', 'yes_no', 'multiple_choice'].includes(field.field_type) && (
+              {/* Default value for yes_no / yes_no_na */}
+              {isYesNo && (
+                <div>
+                  <label className="label-base">Default Value</label>
+                  <select
+                    value={field.default_value}
+                    onChange={(e) => update({ default_value: e.target.value })}
+                    className="input-base"
+                  >
+                    <option value="">No default</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                    {field.field_type === 'yes_no_na' && <option value="na">N/A</option>}
+                  </select>
+                </div>
+              )}
+
+              {/* Default value (not for photo/signature/calculated/yes_no/yes_no_na) */}
+              {!['photo', 'signature', 'calculated', 'yes_no', 'yes_no_na', 'multiple_choice'].includes(field.field_type) && (
                 <div>
                   <label className="label-base">Default Value</label>
                   {field.field_type === 'dropdown' ? (
@@ -408,7 +445,7 @@ function ConditionalLogicEditor({ logic, onChange, availableFields }: Conditiona
               <option value="is_not_empty">is not empty</option>
             </select>
             {!['is_empty', 'is_not_empty'].includes(condition.operator) && (
-              refField?.field_type === 'yes_no' ? (
+              (refField?.field_type === 'yes_no' || refField?.field_type === 'yes_no_na') ? (
                 <select
                   value={condition.value}
                   onChange={(e) => updateCondition(idx, { value: e.target.value })}
@@ -416,6 +453,7 @@ function ConditionalLogicEditor({ logic, onChange, availableFields }: Conditiona
                 >
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
+                  {refField?.field_type === 'yes_no_na' && <option value="na">N/A</option>}
                 </select>
               ) : refField?.field_type === 'dropdown' ? (
                 <select

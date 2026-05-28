@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
@@ -63,9 +64,10 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label htmlFor="password" className="label-base">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="password" className="label-base mb-0">Password</label>
+              <Link href="/forgot-password" className="text-xs text-brand-600 hover:text-brand-800">Forgot password?</Link>
+            </div>
             <div className="relative">
               <input
                 id="password"
@@ -109,7 +111,12 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-gray-500">
+        <p className="mt-5 text-center text-sm text-gray-500">
+          Don't have an account?{' '}
+          <Link href="/signup" className="text-brand-600 hover:text-brand-800 font-medium">Request access</Link>
+        </p>
+
+        <p className="mt-3 text-center text-xs text-gray-400">
           Having trouble? Contact your administrator.
         </p>
       </div>

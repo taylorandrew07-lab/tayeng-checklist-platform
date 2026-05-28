@@ -60,6 +60,8 @@ export default function NewTemplatePage() {
                 help_text: f.help_text ?? '',
                 unit: f.unit ?? '',
                 default_value: f.default_value ?? '',
+                item_number: f.item_number ?? '',
+                with_remarks: f.with_remarks ?? false,
               })),
           }))
         setSections(builtSections)
@@ -133,6 +135,8 @@ export default function NewTemplatePage() {
             help_text: field.help_text || null,
             unit: field.unit || null,
             default_value: field.default_value || null,
+            item_number: field.item_number || null,
+            with_remarks: field.with_remarks || false,
           })
           .select()
           .single()
