@@ -30,6 +30,14 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  const pathname = request.nextUrl.pathname
+  const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/auth')
+
+  // Always pass through public paths immediately — prevents any loop
+  if (isPublicPath) {
+    return supabaseResponse
+  }
+
   let user = null
   try {
     const { data } = await supabase.auth.getUser()
@@ -38,48 +46,37 @@ export async function middleware(request: NextRequest) {
     // Supabase unreachable — treat as unauthenticated
   }
 
-  const pathname = request.nextUrl.pathname
-  const publicPaths = ['/login', '/auth/callback']
-  const isPublicPath = publicPaths.some((p) => pathname.startsWith(p))
-
-  if (!user && !isPublicPath) {
+  if (!user) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     return NextResponse.redirect(loginUrl)
   }
 
-  if (user && pathname === '/login') {
-    const homeUrl = request.nextUrl.clone()
-    homeUrl.pathname = '/'
-    return NextResponse.redirect(homeUrl)
+  // Role-based routing
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  const role = profile?.role
+
+  if (pathname.startsWith('/admin') && role !== 'admin') {
+    const url = request.nextUrl.clone()
+    url.pathname = role === 'surveyor' ? '/surveyor' : '/client'
+    return NextResponse.redirect(url)
   }
 
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+  if (pathname.startsWith('/surveyor') && role !== 'surveyor' && role !== 'admin') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/client'
+    return NextResponse.redirect(url)
+  }
 
-    const role = profile?.role
-
-    if (pathname.startsWith('/admin') && role !== 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = role === 'surveyor' ? '/surveyor' : '/client'
-      return NextResponse.redirect(url)
-    }
-
-    if (pathname.startsWith('/surveyor') && role !== 'surveyor' && role !== 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/client'
-      return NextResponse.redirect(url)
-    }
-
-    if (pathname.startsWith('/client') && role !== 'client' && role !== 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = role === 'surveyor' ? '/surveyor' : '/admin'
-      return NextResponse.redirect(url)
-    }
+  if (pathname.startsWith('/client') && role !== 'client' && role !== 'admin') {
+    const url = request.nextUrl.clone()
+    url.pathname = role === 'surveyor' ? '/surveyor' : '/admin'
+    return NextResponse.redirect(url)
   }
 
   return supabaseResponse
