@@ -105,7 +105,7 @@ export async function GET(
       arrayValues: arrayVals,
       signatures: sigs,
       photoCount: photoCount ?? 0,
-    })
+    }) as any
   )
 
   const filename = `${job.job_number ?? 'job'}_${job.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`
