@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import Image from 'next/image'
+import logoFull from '../../../../public/logo-full.jpeg'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -38,7 +40,7 @@ export default function LoginPage() {
     <div className="w-full max-w-md">
       {/* Logo / Brand */}
       <div className="text-center mb-8">
-        <img src="/logo-full.jpeg" alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4 rounded-xl" />
+        <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4 rounded-xl" unoptimized />
         <p className="text-brand-200 text-sm">Checklist & Survey Platform</p>
       </div>
 
