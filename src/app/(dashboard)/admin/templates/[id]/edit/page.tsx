@@ -1,0 +1,227 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
+import type { BuilderSection } from '@/components/template-builder/types'
+import { Save, ArrowLeft, Loader2, Archive, AlertTriangle } from 'lucide-react'
+import Link from 'next/link'
+import type { TemplateStatus } from '@/lib/types/database'
+
+export default function EditTemplatePage() {
+  const router = useRouter()
+  const params = useParams()
+  const templateId = params.id as string
+
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [status, setStatus] = useState<TemplateStatus>('draft')
+  const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
+  const [sections, setSections] = useState<BuilderSection[]>([])
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [jobCount, setJobCount] = useState(0)
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const [{ data: tmpl }, { count }] = await Promise.all([
+        supabase
+          .from('checklist_templates')
+          .select('*, sections:template_sections(*, fields:template_fields(*))')
+          .eq('id', templateId)
+          .single(),
+        supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('template_id', templateId),
+      ])
+
+      if (!tmpl) { router.push('/admin/templates'); return }
+
+      setName(tmpl.name)
+      setDescription(tmpl.description ?? '')
+      setStatus(tmpl.status)
+      setAllowSurveyorStart(tmpl.allow_surveyor_start)
+      setJobCount(count ?? 0)
+
+      const builtSections: BuilderSection[] = (tmpl.sections ?? [])
+        .sort((a: any, b: any) => a.order_index - b.order_index)
+        .map((s: any) => ({
+          id: s.id,
+          title: s.title,
+          description: s.description ?? '',
+          order_index: s.order_index,
+          conditional_logic: s.conditional_logic,
+          fields: (s.fields ?? [])
+            .sort((a: any, b: any) => a.order_index - b.order_index)
+            .map((f: any) => ({
+              id: f.id,
+              label: f.label,
+              field_type: f.field_type,
+              order_index: f.order_index,
+              is_required: f.is_required,
+              options: f.options ?? [],
+              validation: f.validation ?? {},
+              calculation_formula: f.calculation_formula ?? '',
+              conditional_logic: f.conditional_logic,
+              placeholder: f.placeholder ?? '',
+              help_text: f.help_text ?? '',
+              unit: f.unit ?? '',
+              default_value: f.default_value ?? '',
+            })),
+        }))
+      setSections(builtSections)
+      setLoading(false)
+    }
+    load()
+  }, [templateId, router])
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Template name is required'); return }
+    setSaving(true)
+    setError(null)
+
+    const supabase = createClient()
+
+    // Update template meta
+    const { error: tmplErr } = await supabase
+      .from('checklist_templates')
+      .update({
+        name: name.trim(),
+        description: description.trim() || null,
+        status,
+        allow_surveyor_start: allowSurveyorStart,
+        version: status === 'active' ? undefined : undefined,
+      })
+      .eq('id', templateId)
+
+    if (tmplErr) {
+      setError(tmplErr.message)
+      setSaving(false)
+      return
+    }
+
+    // Rebuild sections: delete existing and re-insert
+    await supabase.from('template_sections').delete().eq('template_id', templateId)
+
+    for (const section of sections) {
+      const isExistingId = section.id.length === 36 && !section.id.includes('new')
+
+      const { data: sec } = await supabase
+        .from('template_sections')
+        .insert({
+          template_id: templateId,
+          title: section.title,
+          description: section.description || null,
+          order_index: section.order_index,
+          conditional_logic: section.conditional_logic,
+        })
+        .select()
+        .single()
+
+      if (!sec) continue
+
+      for (const field of section.fields) {
+        await supabase.from('template_fields').insert({
+          template_id: templateId,
+          section_id: sec.id,
+          label: field.label,
+          field_type: field.field_type,
+          order_index: field.order_index,
+          is_required: field.is_required,
+          options: field.options.length ? field.options : null,
+          validation: Object.keys(field.validation).length ? field.validation : null,
+          calculation_formula: field.calculation_formula || null,
+          conditional_logic: field.conditional_logic,
+          placeholder: field.placeholder || null,
+          help_text: field.help_text || null,
+          unit: field.unit || null,
+          default_value: field.default_value || null,
+        })
+      }
+    }
+
+    router.push('/admin/templates')
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-4">
+        <Link href="/admin/templates" className="btn-ghost py-2 px-3">
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div>
+          <h1 className="page-title">Edit Template</h1>
+          <p className="text-gray-500 mt-0.5">{jobCount > 0 ? `${jobCount} job${jobCount !== 1 ? 's' : ''} using this template` : 'No jobs yet'}</p>
+        </div>
+      </div>
+
+      {jobCount > 0 && (
+        <div className="flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 p-4">
+          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-700">
+            This template is used by {jobCount} job{jobCount !== 1 ? 's' : ''}. Changes to fields may affect in-progress jobs. Consider duplicating instead of editing if jobs are active.
+          </p>
+        </div>
+      )}
+
+      <div className="card p-6 space-y-4">
+        <h2 className="section-title">Template Details</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <label className="label-base">Template Name *</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-base" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label-base">Description</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="input-base resize-none" rows={2} />
+          </div>
+          <div>
+            <label className="label-base">Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value as TemplateStatus)} className="input-base">
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-3 pt-6">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setAllowSurveyorStart(!allowSurveyorStart)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${allowSurveyorStart ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${allowSurveyorStart ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Allow surveyor start</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="section-title px-1">Template Fields</h2>
+        <TemplateBuilder sections={sections} onChange={setSections} />
+      </div>
+
+      {error && (
+        <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="flex items-center justify-end gap-3 pb-6">
+        <Link href="/admin/templates" className="btn-secondary">Cancel</Link>
+        <button onClick={handleSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+    </div>
+  )
+}

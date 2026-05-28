@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /mnt/c/Users/Andrew/OneDrive/Documents/ 2>&1 | head -20)",
+      "PowerShell(Get-ChildItem \"$env:LOCALAPPDATA\\\\claude-cli-nodejs\" | Select-Object Name, Length)",
+      "Bash(npm --version)",
+      "Bash(find /c/Users/Andrew -name \"node.exe\" 2>/dev/null | head -5 *)",
+      "Bash(winget install *)",
+      "Bash(taskkill //F //PID 14760)",
+      "Bash(taskkill //F //PID 8112)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(Copy-Item \"C:\\\\Users\\\\Andrew\\\\OneDrive\\\\Documents\\\\Work\\\\Taylor Engineering\\\\Taylor_Engineering_Logo-removebg-preview.png\" \"C:\\\\Users\\\\Andrew\\\\OneDrive\\\\Documents\\\\Tayeng Checklist App\\\\public\\\\logo.png\")",
+      "Bash(Copy-Item \"C:\\\\Users\\\\Andrew\\\\OneDrive\\\\Documents\\\\Work\\\\Taylor Engineering\\\\Tayeng Logo New 2 jpeg.jpeg\" \"C:\\\\Users\\\\Andrew\\\\OneDrive\\\\Documents\\\\Tayeng Checklist App\\\\public\\\\logo-full.jpeg\")",
+      "Bash(mkdir \"C:\\\\Users\\\\Andrew\\\\OneDrive\\\\Documents\\\\Tayeng Checklist App\\\\.vscode\" 2>/dev/null; echo \"done\")"
+    ]
+  }
+}

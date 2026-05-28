@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tayeng-checklist",
+      "runtimeExecutable": "C:\\Users\\Andrew\\OneDrive\\Documents\\Tayeng Checklist App\\start-dev.cmd",
+      "runtimeArgs": [],
+      "port": 3000,
+      "autoPort": false
+    }
+  ]
+}

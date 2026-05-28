@@ -1,0 +1,389 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
+import {
+  ArrowLeft, Loader2, Save, Download, Eye, EyeOff, User, Building2,
+  Calendar, CheckCircle2, AlertCircle, Clock, Archive
+} from 'lucide-react'
+import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
+import type { JobStatus, Profile, Client, ChecklistTemplate } from '@/lib/types/database'
+import { Modal } from '@/components/ui/Modal'
+
+export default function AdminJobDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const jobId = params.id as string
+
+  const [job, setJob] = useState<any>(null)
+  const [surveyors, setSurveyors] = useState<Profile[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [permissions, setPermissions] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [showPermModal, setShowPermModal] = useState(false)
+  const [editForm, setEditForm] = useState({
+    title: '',
+    assigned_to: '',
+    client_id: '',
+    status: '' as JobStatus,
+    scheduled_date: '',
+    internal_notes: '',
+  })
+
+  useEffect(() => {
+    load()
+  }, [jobId])
+
+  async function load() {
+    const supabase = createClient()
+    const [
+      { data: jobData },
+      { data: srvData },
+      { data: cliData },
+      { data: permData },
+    ] = await Promise.all([
+      supabase.from('jobs').select(`
+        *,
+        template:checklist_templates(name, id),
+        assignee:profiles!jobs_assigned_to_fkey(full_name, email),
+        client:clients(name),
+        creator:profiles!jobs_created_by_fkey(full_name)
+      `).eq('id', jobId).single(),
+      supabase.from('profiles').select('*').eq('role', 'surveyor').eq('is_active', true).order('full_name'),
+      supabase.from('clients').select('*').eq('is_active', true).order('name'),
+      supabase.from('client_job_permissions').select('*').eq('job_id', jobId).single(),
+    ])
+
+    if (!jobData) { router.push('/admin/jobs'); return }
+
+    setJob(jobData)
+    setSurveyors(srvData ?? [])
+    setClients(cliData ?? [])
+    setPermissions(permData)
+    setEditForm({
+      title: jobData.title,
+      assigned_to: jobData.assigned_to ?? '',
+      client_id: jobData.client_id ?? '',
+      status: jobData.status,
+      scheduled_date: jobData.scheduled_date ?? '',
+      internal_notes: jobData.internal_notes ?? '',
+    })
+    setLoading(false)
+  }
+
+  async function handleSaveEdit() {
+    setSaving(true)
+    const supabase = createClient()
+    const { error: err } = await supabase
+      .from('jobs')
+      .update({
+        title: editForm.title,
+        assigned_to: editForm.assigned_to || null,
+        client_id: editForm.client_id || null,
+        status: editForm.status,
+        scheduled_date: editForm.scheduled_date || null,
+        internal_notes: editForm.internal_notes || null,
+      })
+      .eq('id', jobId)
+
+    if (err) { setError(err.message); setSaving(false); return }
+
+    // Sync client permission record
+    if (editForm.client_id) {
+      await supabase.from('client_job_permissions').upsert({
+        client_id: editForm.client_id,
+        job_id: jobId,
+        can_view_status: permissions?.can_view_status ?? true,
+        can_view_pdf: permissions?.can_view_pdf ?? false,
+        can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
+      }, { onConflict: 'client_id,job_id' })
+    }
+
+    setEditMode(false)
+    setSaving(false)
+    load()
+  }
+
+  async function handlePermissionSave(perms: any) {
+    const supabase = createClient()
+    if (permissions?.id) {
+      await supabase.from('client_job_permissions').update(perms).eq('id', permissions.id)
+    } else if (job.client_id) {
+      await supabase.from('client_job_permissions').insert({ ...perms, job_id: jobId, client_id: job.client_id })
+    }
+    setShowPermModal(false)
+    load()
+  }
+
+  async function handleDownloadPDF() {
+    window.open(`/api/pdf/${jobId}`, '_blank')
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+      </div>
+    )
+  }
+
+  if (!job) return null
+
+  const statusFlow: JobStatus[] = ['draft', 'assigned', 'in_progress', 'submitted', 'completed', 'client_visible', 'archived']
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-4">
+        <Link href="/admin/jobs" className="btn-ghost py-2 px-3">
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <h1 className="page-title truncate">{job.title}</h1>
+          <p className="text-gray-500 mt-0.5 text-sm">{job.job_number} · {job.template?.name}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {['submitted', 'completed', 'client_visible'].includes(job.status) && (
+            <button onClick={handleDownloadPDF} className="btn-secondary">
+              <Download className="h-4 w-4" />
+              Download PDF
+            </button>
+          )}
+          <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-primary' : 'btn-secondary'}>
+            {editMode ? 'Cancel' : 'Edit'}
+          </button>
+          {editMode && (
+            <button onClick={handleSaveEdit} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main details */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="card p-5 space-y-4">
+            <h2 className="section-title">Job Details</h2>
+
+            {editMode ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="label-base">Title</label>
+                  <input type="text" value={editForm.title} onChange={(e) => setEditForm(p => ({ ...p, title: e.target.value }))} className="input-base" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label-base">Assigned Surveyor</label>
+                    <select value={editForm.assigned_to} onChange={(e) => setEditForm(p => ({ ...p, assigned_to: e.target.value }))} className="input-base">
+                      <option value="">Unassigned</option>
+                      {surveyors.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-base">Client</label>
+                    <select value={editForm.client_id} onChange={(e) => setEditForm(p => ({ ...p, client_id: e.target.value }))} className="input-base">
+                      <option value="">No client</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label-base">Status</label>
+                    <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">
+                      {statusFlow.map(s => <option key={s} value={s}>{getJobStatusLabel(s)}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-base">Scheduled Date</label>
+                    <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
+                  </div>
+                </div>
+                <div>
+                  <label className="label-base">Internal Notes</label>
+                  <textarea value={editForm.internal_notes} onChange={(e) => setEditForm(p => ({ ...p, internal_notes: e.target.value }))} className="input-base resize-none" rows={3} />
+                </div>
+              </div>
+            ) : (
+              <dl className="grid grid-cols-2 gap-4">
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Status</dt>
+                  <dd className="mt-1">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
+                      {getJobStatusLabel(job.status)}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Scheduled</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{formatDate(job.scheduled_date)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Assigned Surveyor</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.assignee?.full_name ?? 'Unassigned'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Client</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.client?.name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Template</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.template?.name}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Created by</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.creator?.full_name}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Started</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{formatDateTime(job.started_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Submitted</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{formatDateTime(job.submitted_at)}</dd>
+                </div>
+                {job.internal_notes && (
+                  <div className="col-span-2">
+                    <dt className="text-xs font-medium text-gray-500">Internal Notes</dt>
+                    <dd className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{job.internal_notes}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          {/* Client permissions */}
+          {job.client_id && (
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-900">Client Visibility</h3>
+                <button onClick={() => setShowPermModal(true)} className="text-xs text-brand-600 hover:text-brand-800 font-medium">Edit</button>
+              </div>
+              <div className="space-y-2">
+                <PermRow label="View status" value={permissions?.can_view_status} />
+                <PermRow label="Download PDF" value={permissions?.can_view_pdf} />
+                <PermRow label="View checklist details" value={permissions?.can_view_checklist_details} />
+              </div>
+            </div>
+          )}
+
+          {/* Quick actions */}
+          <div className="card p-5">
+            <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
+            <div className="space-y-2">
+              <Link
+                href={`/admin/templates/${job.template?.id}/edit`}
+                className="btn-ghost w-full justify-start text-sm"
+              >
+                <Eye className="h-4 w-4" />
+                View Template
+              </Link>
+              {['submitted', 'completed', 'client_visible'].includes(job.status) && (
+                <button onClick={handleDownloadPDF} className="btn-ghost w-full justify-start text-sm">
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Permissions modal */}
+      <PermissionsModal
+        open={showPermModal}
+        onClose={() => setShowPermModal(false)}
+        permissions={permissions}
+        onSave={handlePermissionSave}
+        clientName={job.client?.name}
+      />
+    </div>
+  )
+}
+
+function PermRow({ label, value }: { label: string; value: boolean }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-gray-600">{label}</span>
+      {value ? (
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+      ) : (
+        <EyeOff className="h-4 w-4 text-gray-300" />
+      )}
+    </div>
+  )
+}
+
+function PermissionsModal({
+  open, onClose, permissions, onSave, clientName
+}: {
+  open: boolean
+  onClose: () => void
+  permissions: any
+  onSave: (perms: any) => void
+  clientName?: string
+}) {
+  const [perms, setPerms] = useState({
+    can_view_status: permissions?.can_view_status ?? true,
+    can_view_pdf: permissions?.can_view_pdf ?? false,
+    can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
+  })
+
+  useEffect(() => {
+    setPerms({
+      can_view_status: permissions?.can_view_status ?? true,
+      can_view_pdf: permissions?.can_view_pdf ?? false,
+      can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
+    })
+  }, [permissions])
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Client Permissions — ${clientName ?? 'Client'}`}
+      size="sm"
+      footer={
+        <>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+          <button onClick={() => onSave(perms)} className="btn-primary">Save Permissions</button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">Control what {clientName} can see for this job.</p>
+        {[
+          { key: 'can_view_status', label: 'View job status', desc: 'Client can see job progress (scheduled, in progress, submitted, etc.)' },
+          { key: 'can_view_pdf', label: 'Download completed PDF', desc: 'Client can download the completed checklist PDF' },
+          { key: 'can_view_checklist_details', label: 'View checklist details', desc: 'Client can view individual field answers (read-only)' },
+        ].map(item => (
+          <label key={item.key} className="flex items-start gap-3 cursor-pointer">
+            <div
+              onClick={() => setPerms(p => ({ ...p, [item.key]: !p[item.key as keyof typeof p] }))}
+              className={`mt-0.5 relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${perms[item.key as keyof typeof perms] ? 'bg-brand-600' : 'bg-gray-300'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${perms[item.key as keyof typeof perms] ? 'translate-x-5' : 'translate-x-1'}`} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">{item.label}</p>
+              <p className="text-xs text-gray-500">{item.desc}</p>
+            </div>
+          </label>
+        ))}
+      </div>
+    </Modal>
+  )
+}
