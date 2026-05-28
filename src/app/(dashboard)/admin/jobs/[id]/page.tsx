@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import {
   ArrowLeft, Loader2, Save, Download, Eye, EyeOff, User, Building2,
-  Calendar, CheckCircle2, AlertCircle, Clock, Archive
+  Calendar, CheckCircle2, AlertCircle, Clock, Archive, Trash2
 } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Profile, Client, ChecklistTemplate } from '@/lib/types/database'
@@ -26,6 +26,7 @@ export default function AdminJobDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [showPermModal, setShowPermModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     assigned_to: '',
@@ -120,6 +121,15 @@ export default function AdminJobDetailPage() {
     load()
   }
 
+  async function handleDelete() {
+    if (!confirm(`Delete "${job.title}"? This cannot be undone.`)) return
+    setDeleting(true)
+    const supabase = createClient()
+    const { error: err } = await supabase.from('jobs').delete().eq('id', jobId)
+    if (err) { setError(err.message); setDeleting(false); return }
+    router.push('/admin/jobs')
+  }
+
   async function handleDownloadPDF() {
     window.open(`/api/pdf/${jobId}`, '_blank')
   }
@@ -156,6 +166,12 @@ export default function AdminJobDetailPage() {
           <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-primary' : 'btn-secondary'}>
             {editMode ? 'Cancel' : 'Edit'}
           </button>
+          {!editMode && (
+            <button onClick={handleDelete} disabled={deleting} className="btn-ghost text-red-600 hover:text-red-700 hover:bg-red-50">
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete
+            </button>
+          )}
           {editMode && (
             <button onClick={handleSaveEdit} disabled={saving} className="btn-primary">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
