@@ -156,8 +156,7 @@ export default function TemplatesPage() {
   }
 
   async function handleDelete(template: any) {
-    if (!confirm(`Permanently delete "${template.name}"?\n\nThis cannot be undone. All template data will be lost.`)) return
-    if (!confirm(`Are you absolutely sure? Type OK to confirm permanent deletion of "${template.name}".`)) return
+    if (!confirm(`Permanently delete "${template.name}"?\n\nThis cannot be undone.`)) return
 
     setDeleting(template.id)
     const supabase = createClient()
@@ -309,15 +308,27 @@ function TemplateRow({
           {copying === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
           Copy
         </button>
-        <button
-          onClick={() => onArchive(template)}
-          disabled={archiving === template.id}
-          className="btn-ghost py-1.5 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-          title="Archive template (removes from surveyor dropdown)"
-        >
-          {archiving === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
-          Archive
-        </button>
+        {isSuperAdmin ? (
+          <button
+            onClick={() => onDelete(template)}
+            disabled={deleting === template.id}
+            className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            title="Permanently delete template"
+          >
+            {deleting === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Delete
+          </button>
+        ) : (
+          <button
+            onClick={() => onArchive(template)}
+            disabled={archiving === template.id}
+            className="btn-ghost py-1.5 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+            title="Archive template (removes from surveyor dropdown)"
+          >
+            {archiving === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+            Archive
+          </button>
+        )}
       </div>
     </div>
   )
