@@ -110,7 +110,7 @@ export async function GET(
 
   const filename = `${job.job_number ?? 'job'}_${job.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`
 
-  return new NextResponse(pdfBuffer, {
+  return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
