@@ -19,19 +19,13 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
     if (authError) {
-      setError(`Auth error: ${authError.message}`)
-      setLoading(false)
-      return
-    }
-
-    if (!data.session) {
-      setError('Login succeeded but no session was created. Check Supabase auth settings.')
+      setError('Invalid email or password. Please try again.')
       setLoading(false)
       return
     }

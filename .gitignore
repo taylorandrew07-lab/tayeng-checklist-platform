@@ -26,7 +26,13 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 
+# Local scripts (contain API keys)
+scripts/
+.env.vercel.local
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+.vercel
