@@ -171,8 +171,8 @@ export default function JobNumberingSettingsPage() {
               value={prefix}
               onChange={(e) => { setPrefix(e.target.value); setError(null); setSuccess(null) }}
               className="input-base font-mono"
-              placeholder="TE-"
-              maxLength={10}
+              placeholder="TEAL C/L #"
+              maxLength={20}
             />
             <p className="text-xs text-gray-400 mt-1">e.g. &ldquo;TE-&rdquo;, &ldquo;TEAL-&rdquo;, &ldquo;JOB-&rdquo;</p>
           </div>
