@@ -139,12 +139,12 @@ export default function NewTemplatePage() {
     loadTemplate()
   }, [duplicateFrom])
 
-  // handleSave: returns true on success, false on failure.
-  // redirectTo: where to navigate after success. undefined = /admin/templates, null = stay here.
-  async function handleSave(opts?: { redirectTo?: string | null }): Promise<boolean> {
-    const msg = (m: string) => { setError(m); return false }
+  // handleSave: returns { ok, errorMsg } so callers never read stale React state.
+  // redirectTo: where to navigate on success. undefined = /admin/templates, null = stay here.
+  async function handleSave(opts?: { redirectTo?: string | null }): Promise<{ ok: boolean; errorMsg?: string }> {
+    const fail = (m: string) => { setError(m); return { ok: false, errorMsg: m } }
 
-    if (!name.trim()) return msg('Template name is required')
+    if (!name.trim()) return fail('Template name is required')
 
     // Validate: no broken conditional/formula references
     const allFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
@@ -169,14 +169,14 @@ export default function NewTemplatePage() {
         }
       }
     }
-    if (broken.length > 0) return msg(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
+    if (broken.length > 0) return fail(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
 
     setSaving(true)
     setError(null)
 
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setError('Not authenticated'); setSaving(false); return false }
+    if (!user) { setError('Not authenticated'); setSaving(false); return { ok: false, errorMsg: 'Not authenticated' } }
 
     const { data: template, error: tmplErr } = await supabase
       .from('checklist_templates')
@@ -194,7 +194,7 @@ export default function NewTemplatePage() {
     if (tmplErr || !template) {
       setError(tmplErr?.message ?? 'Failed to create template')
       setSaving(false)
-      return false
+      return { ok: false }
     }
 
     // Pass 1: Insert all sections and fields WITHOUT conditional_logic
@@ -283,7 +283,7 @@ export default function NewTemplatePage() {
     dirtyState.setHandler(null)
     const dest = opts?.redirectTo !== undefined ? opts.redirectTo : '/admin/templates'
     if (dest) router.push(dest)
-    return true
+    return { ok: true }
   }
 
   function requestNavigate(dest: string) {
@@ -298,9 +298,9 @@ export default function NewTemplatePage() {
   async function confirmLeaveWithSave() {
     setLeaveError(null)
     const dest = leaveDestination ?? '/admin/templates'
-    const ok = await handleSave({ redirectTo: dest })
-    if (!ok) {
-      setLeaveError(error)
+    const result = await handleSave({ redirectTo: dest })
+    if (!result.ok) {
+      setLeaveError(result.errorMsg ?? error ?? 'Save failed')
     } else {
       setShowLeaveDialog(false)
     }

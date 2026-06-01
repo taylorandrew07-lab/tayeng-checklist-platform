@@ -142,12 +142,12 @@ export default function EditTemplatePage() {
     load()
   }, [templateId, router])
 
-  // handleSave: returns true on success, false on failure.
-  // redirectTo: where to navigate after success. undefined = /admin/templates, null = stay here.
-  async function handleSave(opts?: { redirectTo?: string | null }): Promise<boolean> {
-    const msg = (m: string) => { setError(m); return false }
+  // handleSave: returns { ok, errorMsg } so callers never read stale React state.
+  // redirectTo: where to navigate on success. undefined = /admin/templates, null = stay here.
+  async function handleSave(opts?: { redirectTo?: string | null }): Promise<{ ok: boolean; errorMsg?: string }> {
+    const fail = (m: string) => { setError(m); return { ok: false, errorMsg: m } }
 
-    if (!name.trim()) return msg('Template name is required')
+    if (!name.trim()) return fail('Template name is required')
 
     // Validate: no broken conditional/formula references
     const allFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
@@ -172,7 +172,7 @@ export default function EditTemplatePage() {
         }
       }
     }
-    if (broken.length > 0) return msg(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
+    if (broken.length > 0) return fail(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
 
     setSaving(true)
     setError(null)
@@ -193,7 +193,7 @@ export default function EditTemplatePage() {
     if (tmplErr) {
       setError(tmplErr.message)
       setSaving(false)
-      return false
+      return { ok: false }
     }
 
     const currentSectionIds = new Set(sections.map(s => s.id))
@@ -216,7 +216,7 @@ export default function EditTemplatePage() {
       if ((answerCount ?? 0) > 0) {
         setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
         setSaving(false)
-        return false
+        return { ok: false }
       }
     }
     for (const id of removedFieldIds) {
@@ -351,7 +351,7 @@ export default function EditTemplatePage() {
     dirtyState.setHandler(null)
     const dest = opts?.redirectTo !== undefined ? opts.redirectTo : '/admin/templates'
     if (dest) router.push(dest)
-    return true
+    return { ok: true }
   }
 
   function requestNavigate(dest: string) {
@@ -366,10 +366,10 @@ export default function EditTemplatePage() {
   async function confirmLeaveWithSave() {
     setLeaveError(null)
     const dest = leaveDestination ?? '/admin/templates'
-    const ok = await handleSave({ redirectTo: dest })
-    if (!ok) {
-      // Keep the dialog open; mirror the error into the dialog
-      setLeaveError(error)
+    const result = await handleSave({ redirectTo: dest })
+    if (!result.ok) {
+      // Use the error string returned directly — avoids reading stale React state
+      setLeaveError(result.errorMsg ?? error ?? 'Save failed')
     } else {
       setShowLeaveDialog(false)
     }

@@ -54,6 +54,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
     const [uploadingField, setUploadingField] = useState<string | null>(null)
     const [showPreview, setShowPreview] = useState(false)
+    const [leaveError, setLeaveError] = useState<string | null>(null)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -288,9 +289,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     async function confirmLeaveWithSave() {
+      setLeaveError(null)
       const ok = await handleSave()
-      if (ok && leaveDestination) router.push(leaveDestination)
-      setShowLeaveDialog(false)
+      if (ok) {
+        setShowLeaveDialog(false)
+        if (leaveDestination) router.push(leaveDestination)
+      } else {
+        // Keep dialog open; show the error that handleSave set in saveError
+        setLeaveError(saveError ?? 'Save failed — please try again')
+      }
     }
 
     function confirmLeaveWithout() {
@@ -729,6 +736,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   <p className="text-sm text-gray-500 mt-1">You have unsaved changes. What would you like to do?</p>
                 </div>
               </div>
+              {leaveError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-700">{leaveError}</div>
+              )}
               <div className="flex flex-col gap-2">
                 <button
                   onClick={confirmLeaveWithSave}
@@ -736,12 +746,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   className="btn-primary justify-center"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save and leave
+                  {saving ? 'Saving…' : 'Save and leave'}
                 </button>
                 <button onClick={confirmLeaveWithout} className="btn-secondary justify-center text-red-600 hover:bg-red-50 border-red-200">
                   Leave without saving
                 </button>
-                <button onClick={() => setShowLeaveDialog(false)} className="btn-ghost justify-center">
+                <button onClick={() => { setShowLeaveDialog(false); setLeaveError(null) }} className="btn-ghost justify-center">
                   Cancel
                 </button>
               </div>
