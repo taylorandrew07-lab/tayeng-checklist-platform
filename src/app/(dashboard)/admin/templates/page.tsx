@@ -267,39 +267,43 @@ export default function TemplatesPage() {
             Archived Templates
           </h2>
           {archived.map((template) => (
-            <div key={template.id} className="card p-5 flex items-center gap-4 opacity-75 border-dashed">
-              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                <FileText className="h-5 w-5 text-gray-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-gray-700 truncate">{template.name}</h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">Archived</span>
+            <div key={template.id} className="card p-4 sm:p-5 opacity-75 border-dashed">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-start gap-3 sm:contents">
+                  <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+                    <FileText className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-medium text-gray-700 truncate">{template.name}</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 flex-shrink-0">Archived</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-0.5 truncate">
+                      {template.description && `${template.description} · `}
+                      Archived by {template.archiver?.full_name ?? 'unknown'} on {formatDate(template.archived_at)}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm text-gray-500 mt-0.5 truncate">
-                  {template.description && `${template.description} · `}
-                  Archived by {template.archiver?.full_name ?? 'unknown'} on {formatDate(template.archived_at)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => handleRestore(template)}
-                  disabled={restoring === template.id}
-                  className="btn-secondary py-1.5 px-3 text-xs text-green-700 border-green-200 hover:bg-green-50"
-                  title="Restore to draft"
-                >
-                  {restoring === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                  Restore
-                </button>
-                <button
-                  onClick={() => handleDelete(template)}
-                  disabled={deleting === template.id}
-                  className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                  title="Permanently delete"
-                >
-                  {deleting === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  Delete
-                </button>
+                <div className="flex flex-wrap gap-1.5 border-t border-gray-100 pt-2.5 sm:border-t-0 sm:pt-0 sm:flex-shrink-0 sm:flex-nowrap sm:gap-2">
+                  <button
+                    onClick={() => handleRestore(template)}
+                    disabled={restoring === template.id}
+                    className="btn-secondary py-1.5 px-3 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                    title="Restore to draft"
+                  >
+                    {restoring === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    Restore
+                  </button>
+                  <button
+                    onClick={() => handleDelete(template)}
+                    disabled={deleting === template.id}
+                    className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                    title="Permanently delete"
+                  >
+                    {deleting === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -322,55 +326,61 @@ function TemplateRow({
   onDelete: (t: any) => void
 }) {
   return (
-    <div className="card p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
-      <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
-        <FileText className="h-5 w-5 text-brand-700" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <h3 className="font-medium text-gray-900 truncate">{template.name}</h3>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[template.status]}`}>{template.status}</span>
+    <div className="card p-4 sm:p-5 hover:shadow-md transition-shadow">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        {/* On mobile: icon + info side-by-side. On sm+: transparent wrapper so they become direct flex children */}
+        <div className="flex items-start gap-3 sm:contents">
+          <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+            <FileText className="h-5 w-5 text-brand-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-medium text-gray-900 truncate">{template.name}</h3>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColor[template.status]}`}>{template.status}</span>
+            </div>
+            <p className="text-sm text-gray-500 mt-0.5 truncate">
+              {template.description && `${template.description} · `}v{template.version} · {template.creator?.full_name} · {template.created_at?.slice(0, 10)}
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-gray-500 mt-0.5 truncate">
-          {template.description && `${template.description} · `}v{template.version} · {template.creator?.full_name} · {template.created_at?.slice(0, 10)}
-        </p>
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <Link href={`/admin/templates/${template.id}`} className="btn-ghost py-1.5 px-3 text-xs" title="Preview template">
-          <Eye className="h-3.5 w-3.5" />Preview
-        </Link>
-        <Link href={`/admin/templates/${template.id}/edit`} className="btn-secondary py-1.5 px-3 text-xs">
-          <Edit className="h-3.5 w-3.5" />Edit
-        </Link>
-        <button
-          onClick={() => onCopy(template)}
-          disabled={copying === template.id}
-          className="btn-ghost py-1.5 px-3 text-xs"
-        >
-          {copying === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-          Copy
-        </button>
-        {isSuperAdmin ? (
+        {/* Action buttons — wrap on mobile, inline on sm+ */}
+        <div className="flex flex-wrap gap-1.5 border-t border-gray-100 pt-2.5 sm:border-t-0 sm:pt-0 sm:flex-nowrap sm:gap-2 sm:flex-shrink-0">
+          <Link href={`/admin/templates/${template.id}`} className="btn-ghost py-1.5 px-3 text-xs" title="Preview template">
+            <Eye className="h-3.5 w-3.5" />Preview
+          </Link>
+          <Link href={`/admin/templates/${template.id}/edit`} className="btn-secondary py-1.5 px-3 text-xs">
+            <Edit className="h-3.5 w-3.5" />Edit
+          </Link>
           <button
-            onClick={() => onDelete(template)}
-            disabled={deleting === template.id}
-            className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-            title="Permanently delete template"
+            onClick={() => onCopy(template)}
+            disabled={copying === template.id}
+            className="btn-ghost py-1.5 px-3 text-xs"
           >
-            {deleting === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            Delete
+            {copying === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+            Copy
           </button>
-        ) : (
-          <button
-            onClick={() => onArchive(template)}
-            disabled={archiving === template.id}
-            className="btn-ghost py-1.5 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-            title="Archive template (removes from surveyor dropdown)"
-          >
-            {archiving === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
-            Archive
-          </button>
-        )}
+          {isSuperAdmin ? (
+            <button
+              onClick={() => onDelete(template)}
+              disabled={deleting === template.id}
+              className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+              title="Permanently delete template"
+            >
+              {deleting === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete
+            </button>
+          ) : (
+            <button
+              onClick={() => onArchive(template)}
+              disabled={archiving === template.id}
+              className="btn-ghost py-1.5 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+              title="Archive template (removes from surveyor dropdown)"
+            >
+              {archiving === template.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+              Archive
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -108,6 +108,7 @@ export default function ClientPortal() {
         </div>
       ) : (
         <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
@@ -163,6 +164,7 @@ export default function ClientPortal() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

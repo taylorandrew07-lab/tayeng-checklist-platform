@@ -95,7 +95,7 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-4 space-y-4">
           {/* Item number + field type + label */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label-base">Field Type</label>
               <select
@@ -195,7 +195,7 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
           {/* Non-layout fields have more options */}
           {!isLayoutField && (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label-base">Placeholder</label>
                   <input
@@ -257,7 +257,7 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
 
               {/* Number validation */}
               {field.field_type === 'number' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="label-base">Min Value</label>
                     <input

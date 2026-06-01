@@ -204,7 +204,7 @@ function SortableSection({
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-400">{section.fields.length} field{section.fields.length !== 1 ? 's' : ''}</span>
+          <span className="hidden sm:inline text-xs text-gray-400">{section.fields.length} field{section.fields.length !== 1 ? 's' : ''}</span>
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}

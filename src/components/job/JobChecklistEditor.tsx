@@ -427,15 +427,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
           <div className="flex items-center gap-2 flex-shrink-0">
             {!readOnly && isDirty && (
-              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+              <span className="hidden sm:inline text-xs text-amber-600 font-medium">Unsaved changes</span>
             )}
             <button onClick={() => setShowPreview(true)} className="btn-secondary">
-              <Eye className="h-4 w-4" />Preview
+              <Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span>
             </button>
             {!readOnly && (
               <button onClick={handleSave} disabled={saving} className="btn-secondary">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving…' : 'Save Draft'}
+                <span className="hidden sm:inline">{saving ? 'Saving…' : 'Save Draft'}</span>
               </button>
             )}
           </div>

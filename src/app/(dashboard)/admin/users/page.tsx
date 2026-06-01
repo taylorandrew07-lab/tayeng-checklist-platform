@@ -267,6 +267,7 @@ export default function UsersPage() {
             <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
             <span className="text-sm font-semibold text-yellow-800">{pending.length} account{pending.length > 1 ? 's' : ''} awaiting approval</span>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
               {pending.map(user => (
@@ -305,6 +306,7 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -315,6 +317,7 @@ export default function UsersPage() {
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-sm font-semibold text-blue-800">{surveyorRequests.length} surveyor name request{surveyorRequests.length > 1 ? 's' : ''}</span>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
               {surveyorRequests.map(req => (
@@ -331,6 +334,7 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -341,6 +345,7 @@ export default function UsersPage() {
             <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
             <span className="text-sm font-semibold text-pink-800">{clientRequests.length} new client request{clientRequests.length > 1 ? 's' : ''}</span>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
               {clientRequests.map(req => (
@@ -357,11 +362,13 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {/* Active users table */}
       <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
@@ -430,6 +437,7 @@ export default function UsersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Create / Edit user modal */}
