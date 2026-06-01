@@ -144,16 +144,32 @@ export default function FieldRenderer({
       )}
 
       {(field.field_type === 'yes_no' || field.field_type === 'yes_no_na') && (() => {
-        const opts = field.field_type === 'yes_no_na'
+        const COLOR_ACTIVE_CLASSES: Record<string, string> = {
+          green: 'border-green-500 bg-green-50 text-green-700',
+          red: 'border-red-500 bg-red-50 text-red-700',
+          gray: 'border-gray-400 bg-gray-100 text-gray-600',
+          amber: 'border-amber-500 bg-amber-50 text-amber-700',
+        }
+        const DEFAULT_COLORS: Record<string, string> = {
+          yes: 'green',
+          no: 'red',
+          na: 'gray',
+        }
+        const allOpts = field.field_type === 'yes_no_na'
           ? [
-              { value: 'yes', label: 'Yes', active: 'border-green-500 bg-green-50 text-green-700' },
-              { value: 'no', label: 'No', active: 'border-red-500 bg-red-50 text-red-700' },
-              { value: 'na', label: 'N/A', active: 'border-gray-400 bg-gray-100 text-gray-600' },
+              { value: 'yes', label: 'Yes' },
+              { value: 'no', label: 'No' },
+              { value: 'na', label: 'N/A' },
             ]
           : [
-              { value: 'yes', label: 'Yes', active: 'border-green-500 bg-green-50 text-green-700' },
-              { value: 'no', label: 'No', active: 'border-red-500 bg-red-50 text-red-700' },
+              { value: 'yes', label: 'Yes' },
+              { value: 'no', label: 'No' },
             ]
+        const opts = allOpts.map(o => {
+          const configuredColor = field.options?.find(opt => opt.value === o.value)?.color
+          const colorKey = configuredColor ?? DEFAULT_COLORS[o.value] ?? 'gray'
+          return { ...o, active: COLOR_ACTIVE_CLASSES[colorKey] ?? COLOR_ACTIVE_CLASSES.gray }
+        })
         // Parse combined value: "yes|||some remarks"
         const [answer, remarks] = value.includes('|||') ? value.split('|||') : [value, '']
         return (

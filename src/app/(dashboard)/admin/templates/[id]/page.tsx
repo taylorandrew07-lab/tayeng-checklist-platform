@@ -161,19 +161,30 @@ export default function TemplatePreviewPage() {
                         {field.help_text && <p className="text-xs text-gray-500 mb-2">{field.help_text}</p>}
 
                         {/* Field preview */}
-                        {field.field_type === 'yes_no' && (
-                          <div className="flex gap-2 mt-1">
-                            <div className="border-2 border-gray-200 rounded-lg px-4 py-1.5 text-sm text-gray-600">Yes</div>
-                            <div className="border-2 border-gray-200 rounded-lg px-4 py-1.5 text-sm text-gray-600">No</div>
-                          </div>
-                        )}
-                        {field.field_type === 'yes_no_na' && (
-                          <div className="flex gap-2 mt-1">
-                            <div className="border-2 border-gray-200 rounded-lg px-4 py-1.5 text-sm text-gray-600">Yes</div>
-                            <div className="border-2 border-gray-200 rounded-lg px-4 py-1.5 text-sm text-gray-600">No</div>
-                            <div className="border-2 border-gray-200 rounded-lg px-4 py-1.5 text-sm text-gray-600">N/A</div>
-                          </div>
-                        )}
+                        {(field.field_type === 'yes_no' || field.field_type === 'yes_no_na') && (() => {
+                          const COLOR_PREVIEW: Record<string, string> = {
+                            green: 'border-green-300 bg-green-50 text-green-700',
+                            red: 'border-red-300 bg-red-50 text-red-700',
+                            gray: 'border-gray-300 bg-gray-50 text-gray-600',
+                            amber: 'border-amber-300 bg-amber-50 text-amber-700',
+                          }
+                          const DEFAULT_COLORS: Record<string, string> = { yes: 'green', no: 'red', na: 'gray' }
+                          const previewOpts = field.field_type === 'yes_no_na'
+                            ? [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }, { value: 'na', label: 'N/A' }]
+                            : [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]
+                          return (
+                            <div className="flex gap-2 mt-1">
+                              {previewOpts.map(opt => {
+                                const color = (field.options?.find((o: any) => o.value === opt.value)?.color) ?? DEFAULT_COLORS[opt.value] ?? 'gray'
+                                return (
+                                  <div key={opt.value} className={`border-2 rounded-lg px-4 py-1.5 text-sm ${COLOR_PREVIEW[color] ?? COLOR_PREVIEW.gray}`}>
+                                    {opt.label}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
                         {(field.field_type === 'text' || field.field_type === 'number' || field.field_type === 'date' || field.field_type === 'time') && (
                           <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-xs text-gray-400 mt-1">
                             {field.placeholder || FIELD_TYPE_LABELS[field.field_type]}

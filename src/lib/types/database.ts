@@ -68,6 +68,7 @@ export interface ConditionalLogic {
 export interface FieldOption {
   value: string
   label: string
+  color?: 'green' | 'red' | 'gray' | 'amber'
 }
 
 export interface FieldValidation {

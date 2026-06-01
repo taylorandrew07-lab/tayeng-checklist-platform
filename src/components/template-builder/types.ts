@@ -44,14 +44,30 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'signature', label: 'Signature', group: 'Special' },
 ]
 
-export function createBlankField(order_index: number): BuilderField {
+export function getDefaultYesNoOptions(type: 'yes_no' | 'yes_no_na'): FieldOption[] {
+  const base: FieldOption[] = [
+    { value: 'yes', label: 'Yes', color: 'green' },
+    { value: 'no', label: 'No', color: 'red' },
+  ]
+  if (type === 'yes_no_na') {
+    return [...base, { value: 'na', label: 'N/A', color: 'gray' }]
+  }
+  return base
+}
+
+export function createBlankField(order_index: number, field_type: BuilderField['field_type'] = 'text'): BuilderField {
+  const options: FieldOption[] =
+    field_type === 'yes_no' || field_type === 'yes_no_na'
+      ? getDefaultYesNoOptions(field_type)
+      : []
+
   return {
     id: crypto.randomUUID(),
     label: 'New Field',
-    field_type: 'text',
+    field_type,
     order_index,
     is_required: false,
-    options: [],
+    options,
     validation: {},
     calculation_formula: '',
     conditional_logic: null,

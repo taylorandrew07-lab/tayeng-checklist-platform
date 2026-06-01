@@ -111,6 +111,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           if (field.default_value && !vals[field.id] && !arrVals[field.id]) {
             vals[field.id] = field.default_value
           }
+          // Auto-fill vessel/surveyor from job metadata (only if field is text and currently empty)
+          if (field.field_type === 'text' && !vals[field.id]) {
+            const lbl = field.label.toLowerCase()
+            if (lbl.includes('vessel') && jobData.vessel_name) {
+              vals[field.id] = jobData.vessel_name
+            } else if (lbl.includes('surveyor') && jobData.surveyor_name) {
+              vals[field.id] = jobData.surveyor_name
+            }
+          }
         }
       }
 

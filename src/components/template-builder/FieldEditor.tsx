@@ -4,8 +4,18 @@ import { useState } from 'react'
 import { Trash2, Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BuilderField, BuilderSection } from './types'
-import { FIELD_TYPE_OPTIONS } from './types'
+import { FIELD_TYPE_OPTIONS, getDefaultYesNoOptions } from './types'
 import type { FieldOption, ConditionalLogic } from '@/lib/types/database'
+
+const COLOR_SWATCH: Record<NonNullable<FieldOption['color']>, { bg: string; ring: string; label: string }> = {
+  green: { bg: 'bg-green-500', ring: 'ring-green-500', label: 'Green' },
+  red: { bg: 'bg-red-500', ring: 'ring-red-500', label: 'Red' },
+  gray: { bg: 'bg-gray-400', ring: 'ring-gray-400', label: 'Gray' },
+  amber: { bg: 'bg-amber-400', ring: 'ring-amber-400', label: 'Amber' },
+}
+const COLOR_OPTIONS = ['green', 'red', 'gray', 'amber'] as const
+
+const METADATA_PATTERNS = ['vessel', 'date', 'port', 'berth', 'surveyor']
 
 interface FieldEditorProps {
   field: BuilderField
@@ -90,7 +100,14 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
               <label className="label-base">Field Type</label>
               <select
                 value={field.field_type}
-                onChange={(e) => update({ field_type: e.target.value as BuilderField['field_type'] })}
+                onChange={(e) => {
+                  const newType = e.target.value as BuilderField['field_type']
+                  const newOptions =
+                    newType === 'yes_no' || newType === 'yes_no_na'
+                      ? getDefaultYesNoOptions(newType)
+                      : (newType === 'dropdown' || newType === 'multiple_choice') ? field.options : []
+                  update({ field_type: newType, options: newOptions })
+                }}
                 className="input-base"
               >
                 {Object.entries(
@@ -119,6 +136,12 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 className="input-base"
                 placeholder="Field label"
               />
+              {METADATA_PATTERNS.some(p => field.label.toLowerCase().includes(p)) && (
+                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                  <span>ℹ</span>
+                  Already captured as job metadata — consider removing
+                </p>
+              )}
             </div>
           </div>
 
@@ -298,6 +321,38 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 </div>
               )}
 
+              {/* Color picker for yes_no / yes_no_na */}
+              {isYesNo && (
+                <div>
+                  <label className="label-base mb-2">Answer Colors</label>
+                  <div className="space-y-2">
+                    {field.options.map((opt, idx) => (
+                      <div key={opt.value} className="flex items-center gap-3">
+                        <span className="text-sm text-gray-700 w-10 font-medium">{opt.label}</span>
+                        <div className="flex gap-2">
+                          {COLOR_OPTIONS.map(color => {
+                            const swatch = COLOR_SWATCH[color]
+                            const selected = opt.color === color
+                            return (
+                              <button
+                                key={color}
+                                type="button"
+                                title={swatch.label}
+                                onClick={() => updateOption(idx, { color })}
+                                className={cn(
+                                  `w-6 h-6 rounded-full ${swatch.bg} transition-all`,
+                                  selected ? `ring-2 ring-offset-1 ${swatch.ring}` : 'opacity-60 hover:opacity-100'
+                                )}
+                              />
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Default value for yes_no / yes_no_na */}
               {isYesNo && (
                 <div>
@@ -420,13 +475,23 @@ function ConditionalLogicEditor({ logic, onChange, availableFields }: Conditiona
 
       {logic.conditions.map((condition, idx) => {
         const refField = availableFields.find(f => f.id === condition.field_id)
+        const isOrphaned = !availableFields.find(f => f.id === condition.field_id)
         return (
-          <div key={idx} className="flex items-center gap-2 flex-wrap">
+          <div key={idx} className="space-y-1">
+            {isOrphaned && (
+              <p className="text-xs text-red-600 flex items-center gap-1">
+                <span>⚠</span> Referenced field not found — update this condition
+              </p>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
             <select
               value={condition.field_id}
               onChange={(e) => updateCondition(idx, { field_id: e.target.value })}
-              className="text-xs border border-amber-300 rounded px-2 py-1 bg-white flex-1 min-w-0"
+              className={cn('text-xs border rounded px-2 py-1 bg-white flex-1 min-w-0', isOrphaned ? 'border-red-400' : 'border-amber-300')}
             >
+              {isOrphaned && (
+                <option value={condition.field_id}>[Missing field: {condition.field_id.slice(0, 8)}…]</option>
+              )}
               {availableFields.map(f => (
                 <option key={f.id} value={f.id}>{f.label}</option>
               ))}
@@ -483,6 +548,7 @@ function ConditionalLogicEditor({ logic, onChange, availableFields }: Conditiona
             >
               <X className="h-3.5 w-3.5" />
             </button>
+            </div>
           </div>
         )
       })}

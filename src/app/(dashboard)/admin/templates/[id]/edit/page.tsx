@@ -1,13 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import type { BuilderSection } from '@/components/template-builder/types'
-import { Save, ArrowLeft, Loader2, Archive, AlertTriangle } from 'lucide-react'
-import Link from 'next/link'
-import type { TemplateStatus } from '@/lib/types/database'
+import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
+import type { TemplateStatus, ConditionalLogic } from '@/lib/types/database'
+
+// --- Remap helpers ---
+function remapConditional(
+  logic: ConditionalLogic | null,
+  map: Record<string, string>
+): ConditionalLogic | null {
+  if (!logic || !Object.keys(map).length) return logic
+  return {
+    ...logic,
+    conditions: logic.conditions.map(c => ({
+      ...c,
+      field_id: map[c.field_id] ?? c.field_id,
+    })),
+  }
+}
+
+function remapFormula(f: string, map: Record<string, string>): string {
+  return f.replace(/\{([^}]+)\}/g, (_, id) => `{${map[id] ?? id}}`)
+}
 
 export default function EditTemplatePage() {
   const router = useRouter()
@@ -23,6 +41,29 @@ export default function EditTemplatePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [jobCount, setJobCount] = useState(0)
+  const [isDirty, setIsDirty] = useState(false)
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false)
+  const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
+
+  // Track original DB IDs so we can update in place
+  const originalSectionIds = useRef<Set<string>>(new Set())
+  const originalFieldIds = useRef<Set<string>>(new Set())
+  const loadedRef = useRef(false)
+
+  // Mark dirty only after initial load
+  useEffect(() => {
+    if (!loadedRef.current) return
+    setIsDirty(true)
+  }, [name, description, status, allowSurveyorStart, sections])
+
+  // Warn on browser close when dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   useEffect(() => {
     async function load() {
@@ -44,36 +85,49 @@ export default function EditTemplatePage() {
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
       setJobCount(count ?? 0)
 
+      const secIds = new Set<string>()
+      const fieldIds = new Set<string>()
+
       const builtSections: BuilderSection[] = (tmpl.sections ?? [])
         .sort((a: any, b: any) => a.order_index - b.order_index)
-        .map((s: any) => ({
-          id: s.id,
-          title: s.title,
-          description: s.description ?? '',
-          order_index: s.order_index,
-          conditional_logic: s.conditional_logic,
-          fields: (s.fields ?? [])
-            .sort((a: any, b: any) => a.order_index - b.order_index)
-            .map((f: any) => ({
-              id: f.id,
-              label: f.label,
-              field_type: f.field_type,
-              order_index: f.order_index,
-              is_required: f.is_required,
-              options: f.options ?? [],
-              validation: f.validation ?? {},
-              calculation_formula: f.calculation_formula ?? '',
-              conditional_logic: f.conditional_logic,
-              placeholder: f.placeholder ?? '',
-              help_text: f.help_text ?? '',
-              unit: f.unit ?? '',
-              default_value: f.default_value ?? '',
-              item_number: f.item_number ?? '',
-              with_remarks: f.with_remarks ?? false,
-            })),
-        }))
+        .map((s: any) => {
+          secIds.add(s.id)
+          return {
+            id: s.id,
+            title: s.title,
+            description: s.description ?? '',
+            order_index: s.order_index,
+            conditional_logic: s.conditional_logic,
+            fields: (s.fields ?? [])
+              .sort((a: any, b: any) => a.order_index - b.order_index)
+              .map((f: any) => {
+                fieldIds.add(f.id)
+                return {
+                  id: f.id,
+                  label: f.label,
+                  field_type: f.field_type,
+                  order_index: f.order_index,
+                  is_required: f.is_required,
+                  options: f.options ?? [],
+                  validation: f.validation ?? {},
+                  calculation_formula: f.calculation_formula ?? '',
+                  conditional_logic: f.conditional_logic,
+                  placeholder: f.placeholder ?? '',
+                  help_text: f.help_text ?? '',
+                  unit: f.unit ?? '',
+                  default_value: f.default_value ?? '',
+                  item_number: f.item_number ?? '',
+                  with_remarks: f.with_remarks ?? false,
+                }
+              }),
+          }
+        })
+
+      originalSectionIds.current = secIds
+      originalFieldIds.current = fieldIds
       setSections(builtSections)
       setLoading(false)
+      loadedRef.current = true
     }
     load()
   }, [templateId, router])
@@ -85,7 +139,7 @@ export default function EditTemplatePage() {
 
     const supabase = createClient()
 
-    // Update template meta
+    // a. Update template meta
     const { error: tmplErr } = await supabase
       .from('checklist_templates')
       .update({
@@ -93,7 +147,6 @@ export default function EditTemplatePage() {
         description: description.trim() || null,
         status,
         allow_surveyor_start: allowSurveyorStart,
-        version: status === 'active' ? undefined : undefined,
       })
       .eq('id', templateId)
 
@@ -103,49 +156,167 @@ export default function EditTemplatePage() {
       return
     }
 
-    // Rebuild sections: delete existing and re-insert
-    await supabase.from('template_sections').delete().eq('template_id', templateId)
+    const currentSectionIds = new Set(sections.map(s => s.id))
+    const currentFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
+
+    // b. Delete removed sections (CASCADE deletes fields)
+    for (const id of originalSectionIds.current) {
+      if (!currentSectionIds.has(id)) {
+        await supabase.from('template_sections').delete().eq('id', id)
+      }
+    }
+
+    // d. Delete removed fields
+    for (const id of originalFieldIds.current) {
+      if (!currentFieldIds.has(id)) {
+        await supabase.from('template_fields').delete().eq('id', id)
+      }
+    }
+
+    // Maps from local builder IDs to new DB IDs (only for newly inserted items)
+    const sectionIdMap: Record<string, string> = {}
+    const newFieldIdMap: Record<string, string> = {}
 
     for (const section of sections) {
-      const isExistingId = section.id.length === 36 && !section.id.includes('new')
+      let dbSectionId: string
 
-      const { data: sec } = await supabase
-        .from('template_sections')
-        .insert({
-          template_id: templateId,
+      if (originalSectionIds.current.has(section.id)) {
+        // c. Update existing section
+        await supabase.from('template_sections').update({
           title: section.title,
           description: section.description || null,
           order_index: section.order_index,
           conditional_logic: section.conditional_logic,
-        })
-        .select()
-        .single()
+        }).eq('id', section.id)
+        dbSectionId = section.id
+      } else {
+        // c. Insert new section
+        const { data: sec } = await supabase
+          .from('template_sections')
+          .insert({
+            template_id: templateId,
+            title: section.title,
+            description: section.description || null,
+            order_index: section.order_index,
+            conditional_logic: null, // remapped in pass f
+          })
+          .select()
+          .single()
 
-      if (!sec) continue
+        if (!sec) continue
+        sectionIdMap[section.id] = sec.id
+        dbSectionId = sec.id
+      }
 
+      // e. Upsert fields
       for (const field of section.fields) {
-        await supabase.from('template_fields').insert({
-          template_id: templateId,
-          section_id: sec.id,
-          label: field.label,
-          field_type: field.field_type,
-          order_index: field.order_index,
-          is_required: field.is_required,
-          options: field.options.length ? field.options : null,
-          validation: Object.keys(field.validation).length ? field.validation : null,
-          calculation_formula: field.calculation_formula || null,
-          conditional_logic: field.conditional_logic,
-          placeholder: field.placeholder || null,
-          help_text: field.help_text || null,
-          unit: field.unit || null,
-          default_value: field.default_value || null,
-          item_number: field.item_number || null,
-          with_remarks: field.with_remarks || false,
-        })
+        if (originalFieldIds.current.has(field.id)) {
+          // Update existing field
+          await supabase.from('template_fields').update({
+            section_id: dbSectionId,
+            label: field.label,
+            field_type: field.field_type,
+            order_index: field.order_index,
+            is_required: field.is_required,
+            options: field.options.length ? field.options : null,
+            validation: Object.keys(field.validation).length ? field.validation : null,
+            calculation_formula: field.calculation_formula || null,
+            conditional_logic: field.conditional_logic,
+            placeholder: field.placeholder || null,
+            help_text: field.help_text || null,
+            unit: field.unit || null,
+            default_value: field.default_value || null,
+            item_number: field.item_number || null,
+            with_remarks: field.with_remarks || false,
+          }).eq('id', field.id)
+        } else {
+          // Insert new field
+          const { data: f } = await supabase
+            .from('template_fields')
+            .insert({
+              template_id: templateId,
+              section_id: dbSectionId,
+              label: field.label,
+              field_type: field.field_type,
+              order_index: field.order_index,
+              is_required: field.is_required,
+              options: field.options.length ? field.options : null,
+              validation: Object.keys(field.validation).length ? field.validation : null,
+              calculation_formula: field.calculation_formula
+                ? remapFormula(field.calculation_formula, newFieldIdMap)
+                : null,
+              conditional_logic: null, // remapped in pass f
+              placeholder: field.placeholder || null,
+              help_text: field.help_text || null,
+              unit: field.unit || null,
+              default_value: field.default_value || null,
+              item_number: field.item_number || null,
+              with_remarks: field.with_remarks || false,
+            })
+            .select()
+            .single()
+
+          if (f) newFieldIdMap[field.id] = f.id
+        }
       }
     }
 
+    // f. Remap pass — fix conditional_logic for newly inserted items
+    const hasNewIds = Object.keys(newFieldIdMap).length > 0 || Object.keys(sectionIdMap).length > 0
+    if (hasNewIds) {
+      for (const section of sections) {
+        // Remap section conditional_logic if it's a new section
+        if (!originalSectionIds.current.has(section.id) && section.conditional_logic) {
+          const remapped = remapConditional(section.conditional_logic, newFieldIdMap)
+          const dbId = sectionIdMap[section.id]
+          if (dbId) {
+            await supabase.from('template_sections').update({ conditional_logic: remapped }).eq('id', dbId)
+          }
+        }
+
+        for (const field of section.fields) {
+          if (!originalFieldIds.current.has(field.id) && field.conditional_logic) {
+            const remapped = remapConditional(field.conditional_logic, newFieldIdMap)
+            const dbId = newFieldIdMap[field.id]
+            if (dbId) {
+              await supabase.from('template_fields').update({ conditional_logic: remapped }).eq('id', dbId)
+            }
+          }
+          // Also remap calculation_formula for new fields (already done during insert above,
+          // but if newFieldIdMap grew after the insert we re-apply)
+          if (!originalFieldIds.current.has(field.id) && field.calculation_formula) {
+            const remapped = remapFormula(field.calculation_formula, newFieldIdMap)
+            const dbId = newFieldIdMap[field.id]
+            if (dbId && remapped !== field.calculation_formula) {
+              await supabase.from('template_fields').update({ calculation_formula: remapped }).eq('id', dbId)
+            }
+          }
+        }
+      }
+    }
+
+    setIsDirty(false)
     router.push('/admin/templates')
+  }
+
+  function requestNavigate(dest: string) {
+    if (isDirty) {
+      setLeaveDestination(dest)
+      setShowLeaveDialog(true)
+    } else {
+      router.push(dest)
+    }
+  }
+
+  async function confirmLeaveWithSave() {
+    setShowLeaveDialog(false)
+    await handleSave()
+  }
+
+  function confirmLeaveWithout() {
+    setIsDirty(false)
+    setShowLeaveDialog(false)
+    if (leaveDestination) router.push(leaveDestination)
   }
 
   if (loading) {
@@ -159,13 +330,23 @@ export default function EditTemplatePage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/admin/templates" className="btn-ghost py-2 px-3">
+        <button
+          type="button"
+          onClick={() => requestNavigate('/admin/templates')}
+          className="btn-ghost py-2 px-3"
+        >
           <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <div>
+        </button>
+        <div className="flex-1">
           <h1 className="page-title">Edit Template</h1>
           <p className="text-gray-500 mt-0.5">{jobCount > 0 ? `${jobCount} job${jobCount !== 1 ? 's' : ''} using this template` : 'No jobs yet'}</p>
         </div>
+        {isDirty && (
+          <button onClick={handleSave} disabled={saving} className="btn-primary">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
       </div>
 
       {jobCount > 0 && (
@@ -220,12 +401,56 @@ export default function EditTemplatePage() {
       )}
 
       <div className="flex items-center justify-end gap-3 pb-6">
-        <Link href="/admin/templates" className="btn-secondary">Cancel</Link>
+        <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
+          Cancel
+        </button>
         <button onClick={handleSave} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
+
+      {/* Sticky bottom save bar */}
+      {isDirty && (
+        <div className="sticky bottom-4 z-10">
+          <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
+            <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
+            <button onClick={handleSave} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leave dialog */}
+      {showLeaveDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Unsaved changes</h3>
+                <p className="text-sm text-gray-500 mt-1">You have unsaved changes. What would you like to do?</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button onClick={confirmLeaveWithSave} disabled={saving} className="btn-primary justify-center">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save and leave
+              </button>
+              <button onClick={confirmLeaveWithout} className="btn-secondary justify-center text-red-600 hover:bg-red-50 border-red-200">
+                Leave without saving
+              </button>
+              <button onClick={() => setShowLeaveDialog(false)} className="btn-ghost justify-center">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
