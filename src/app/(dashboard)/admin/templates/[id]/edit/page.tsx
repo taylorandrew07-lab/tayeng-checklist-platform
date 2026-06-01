@@ -160,14 +160,14 @@ export default function EditTemplatePage() {
     const currentFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
 
     // b. Delete removed sections (CASCADE deletes fields)
-    for (const id of originalSectionIds.current) {
+    for (const id of Array.from(originalSectionIds.current)) {
       if (!currentSectionIds.has(id)) {
         await supabase.from('template_sections').delete().eq('id', id)
       }
     }
 
     // d. Delete removed fields
-    for (const id of originalFieldIds.current) {
+    for (const id of Array.from(originalFieldIds.current)) {
       if (!currentFieldIds.has(id)) {
         await supabase.from('template_fields').delete().eq('id', id)
       }
