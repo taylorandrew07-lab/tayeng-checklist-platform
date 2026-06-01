@@ -63,7 +63,7 @@ export async function GET(
       .order('order_index'),
     supabase.from('job_field_values').select('*').eq('job_id', jobId),
     supabase.from('job_signatures').select('*').eq('job_id', jobId),
-    supabase.from('job_photos').select('*', { count: 'exact', head: true }).eq('job_id', jobId),
+    supabase.from('job_photos').select('id', { count: 'exact', head: true }).eq('job_id', jobId),
   ])
 
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })

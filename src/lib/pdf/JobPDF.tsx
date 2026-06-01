@@ -5,241 +5,185 @@ import {
   Text,
   View,
   StyleSheet,
-  Font,
   Image,
-  Line,
-  Svg,
 } from '@react-pdf/renderer'
 import { format, parseISO } from 'date-fns'
+import { formatDiffPercentage } from '@/lib/utils'
+import { COMPANY } from '@/lib/company'
 
-// Register fonts (using built-in Helvetica)
+const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
+const YES_NO_FG: Record<string, string> = { green: '#166534', red: '#991b1b', gray: '#94a3b8', amber: '#92400e' }
+
 const styles = StyleSheet.create({
   page: {
     fontFamily: 'Helvetica',
-    fontSize: 9,
+    fontSize: 8.5,
     color: '#1e293b',
-    paddingTop: 50,
-    paddingBottom: 60,
-    paddingLeft: 40,
-    paddingRight: 40,
+    paddingTop: 28,
+    paddingBottom: 44,
+    paddingLeft: 30,
+    paddingRight: 30,
   },
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-    paddingBottom: 14,
+  // Report title
+  reportTitleBlock: {
+    marginBottom: 8,
+    paddingBottom: 5,
     borderBottomWidth: 2,
     borderBottomColor: '#1d4ed8',
   },
-  headerLeft: {
-    flex: 1,
-  },
-  companyName: {
-    fontSize: 18,
+  reportTitle: {
+    fontSize: 15,
     fontFamily: 'Helvetica-Bold',
     color: '#1d4ed8',
-    letterSpacing: 0.5,
   },
-  companyTagline: {
-    fontSize: 8,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  headerRight: {
-    alignItems: 'flex-end',
-  },
-  headerRightText: {
-    fontSize: 8,
-    color: '#64748b',
-    textAlign: 'right',
-    lineHeight: 1.5,
-  },
-  // Job title
-  jobTitleSection: {
-    marginBottom: 16,
-    backgroundColor: '#eff6ff',
-    padding: 12,
-    borderRadius: 4,
-    borderLeftWidth: 3,
-    borderLeftColor: '#1d4ed8',
-  },
-  jobTitle: {
-    fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1e293b',
-  },
-  jobMeta: {
+  // Job details compact row block
+  jobDetailsBlock: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 3,
+    padding: '5 8',
+    marginBottom: 8,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    marginTop: 6,
   },
-  jobMetaItem: {
+  jobDetailRow: {
     flexDirection: 'row',
-    gap: 3,
+    marginRight: 20,
+    marginBottom: 3,
+    alignItems: 'center',
   },
-  jobMetaLabel: {
-    fontSize: 8,
-    color: '#64748b',
+  jobDetailLabel: {
+    fontSize: 7.5,
     fontFamily: 'Helvetica-Bold',
+    color: '#64748b',
+    marginRight: 3,
   },
-  jobMetaValue: {
-    fontSize: 8,
+  jobDetailValue: {
+    fontSize: 7.5,
     color: '#1e293b',
   },
   // Section
   sectionContainer: {
-    marginBottom: 14,
+    marginBottom: 6,
   },
   sectionHeader: {
     backgroundColor: '#1e3a8a',
-    padding: '6 10',
-    borderRadius: 3,
-    marginBottom: 6,
+    padding: '4 8',
+    borderRadius: 2,
+    marginBottom: 2,
   },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 8.5,
     fontFamily: 'Helvetica-Bold',
     color: '#ffffff',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   sectionDescription: {
-    fontSize: 8,
+    fontSize: 7,
     color: '#bfdbfe',
-    marginTop: 2,
+    marginTop: 1,
   },
   // Fields
   fieldRow: {
     flexDirection: 'row',
     borderBottomWidth: 0.5,
     borderBottomColor: '#e2e8f0',
-    paddingVertical: 5,
-    minHeight: 20,
+    paddingVertical: 3,
+    minHeight: 14,
   },
   fieldLabel: {
-    width: '35%',
-    paddingRight: 8,
+    width: '38%',
+    paddingRight: 6,
   },
   fieldLabelText: {
-    fontSize: 8.5,
+    fontSize: 8,
     fontFamily: 'Helvetica-Bold',
     color: '#374151',
   },
   fieldRequired: {
     color: '#ef4444',
-    fontSize: 8,
+    fontSize: 7.5,
   },
   fieldValue: {
     flex: 1,
   },
   fieldValueText: {
-    fontSize: 8.5,
+    fontSize: 8,
     color: '#1e293b',
-    lineHeight: 1.4,
+    lineHeight: 1.3,
   },
   fieldValueEmpty: {
-    fontSize: 8.5,
+    fontSize: 8,
     color: '#94a3b8',
     fontStyle: 'italic',
   },
   fieldUnit: {
-    fontSize: 7.5,
+    fontSize: 7,
     color: '#64748b',
-    marginLeft: 3,
+    marginLeft: 2,
   },
-  // Heading field
   inlineHeading: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: 'Helvetica-Bold',
     color: '#1d4ed8',
-    marginTop: 10,
-    marginBottom: 4,
+    marginTop: 6,
+    marginBottom: 2,
     borderBottomWidth: 0.5,
     borderBottomColor: '#bfdbfe',
-    paddingBottom: 3,
-  },
-  // Signature
-  signatureContainer: {
-    marginTop: 3,
+    paddingBottom: 2,
   },
   signatureImage: {
-    height: 40,
-    maxWidth: 150,
+    height: 32,
+    maxWidth: 120,
     objectFit: 'contain',
   },
-  // Yes/No
   yesNoValue: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
-    fontSize: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 2,
+    fontSize: 7.5,
     fontFamily: 'Helvetica-Bold',
   },
-  // Remarks / textarea
   textareaValue: {
-    fontSize: 8.5,
+    fontSize: 8,
     color: '#1e293b',
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap',
+    lineHeight: 1.4,
   },
-  // Footer
   footer: {
     position: 'absolute',
-    bottom: 20,
-    left: 40,
-    right: 40,
+    bottom: 14,
+    left: 30,
+    right: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 0.5,
     borderTopColor: '#e2e8f0',
-    paddingTop: 6,
+    paddingTop: 4,
   },
   footerText: {
-    fontSize: 7,
+    fontSize: 6.5,
     color: '#94a3b8',
   },
-  // Photo note
   photoNote: {
-    marginTop: 16,
-    padding: 8,
+    marginTop: 8,
+    padding: 5,
     backgroundColor: '#fef9c3',
-    borderRadius: 3,
+    borderRadius: 2,
     borderWidth: 0.5,
     borderColor: '#fde68a',
   },
   photoNoteText: {
-    fontSize: 7.5,
+    fontSize: 7,
     color: '#854d0e',
   },
-  // Divider
   dividerLine: {
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: '#e2e8f0',
-    marginVertical: 8,
+    marginVertical: 4,
   },
 })
 
-function formatVal(v: string | null | undefined): string {
-  if (!v) return ''
-  try { return format(parseISO(v), 'dd MMM yyyy') } catch { return v }
-}
-
-interface PDFProps {
-  job: any
-  sections: any[]
-  fieldValues: Record<string, string>
-  arrayValues: Record<string, string[]>
-  signatures: Record<string, string>
-  photoCount: number
-}
-
-const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
-const YES_NO_FG: Record<string, string> = { green: '#166534', red: '#991b1b', gray: '#94a3b8', amber: '#92400e' }
-
-// Resolve {uuid} tokens in field labels using current answered values
+// Resolve {uuid} tokens in labels to the selected option label (human-readable)
 function resolvePdfLabel(label: string, fieldValues: Record<string, string>, allFields: any[]): string {
   return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
     const raw = fieldValues[fieldId] ?? ''
@@ -254,20 +198,11 @@ function resolvePdfLabel(label: string, fieldValues: Record<string, string>, all
   })
 }
 
-// Percentage calculated field with color coding
-function CalcPercentCell({ rawValue, validation }: { rawValue: string; validation: any }) {
-  const num = parseFloat(rawValue)
-  if (isNaN(num)) return <Text style={{ fontSize: 9, color: '#94a3b8' }}>—</Text>
-  const display = `${num.toFixed(2)}%`
-  const abs = Math.abs(num)
-  const thresholds = validation?.thresholds ?? [{ max: 1.0, color: 'green' }, { max: 2.0, color: 'amber' }, { color: 'red' }]
-  const match = thresholds.find((t: any) => t.max === undefined || abs < t.max)
-  const c = match?.color ?? 'red'
-  return (
-    <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
-      {display}
-    </Text>
-  )
+// Resolve a dropdown raw database value to its human-readable option label
+function resolveDropdownValue(field: any, rawValue: string): string {
+  if (!rawValue) return '—'
+  const opt = (field?.options ?? []).find((o: any) => o.value === rawValue)
+  return opt?.label ?? rawValue
 }
 
 function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | null | undefined }) {
@@ -281,174 +216,245 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
       <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
         {answerKey ? answerKey.toUpperCase() : '—'}
       </Text>
-      {remarks ? <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>{remarks}</Text> : null}
+      {remarks ? <Text style={{ fontSize: 7.5, color: '#64748b', marginTop: 2 }}>{remarks}</Text> : null}
     </View>
   )
 }
 
+// Handles both percentage-display calculated fields (shows "<diff> USG: <pct>%") and plain numbers
+function CalcDiffCell({ rawValue, validation, formula, fieldValues }: {
+  rawValue: string
+  validation: any
+  formula?: string
+  fieldValues: Record<string, string>
+}) {
+  const num = parseFloat(rawValue)
+  if (isNaN(num)) return <Text style={{ fontSize: 8, color: '#94a3b8' }}>—</Text>
+
+  if (validation?.display_as === 'percentage') {
+    const tokens = Array.from((formula ?? '').matchAll(/\{([^}]+)\}/g), m => m[1])
+    const denominatorId = tokens[tokens.length - 1]
+    const { display, pct } = formatDiffPercentage(num, denominatorId ? fieldValues[denominatorId] : undefined)
+
+    if (pct === null) {
+      return <Text style={styles.fieldValueText}>{display}</Text>
+    }
+    const absVal = Math.abs(pct)
+    const thresholds: any[] = validation?.thresholds ?? [
+      { max: 1.0, color: 'green' },
+      { max: 2.0, color: 'amber' },
+      { color: 'red' },
+    ]
+    const c = (thresholds.find((t: any) => t.max === undefined || absVal < t.max)?.color ?? 'red') as string
+    return (
+      <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
+        {display}
+      </Text>
+    )
+  }
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={styles.fieldValueText}>{rawValue}</Text>
+    </View>
+  )
+}
+
+interface PDFProps {
+  job: any
+  sections: any[]
+  fieldValues: Record<string, string>
+  arrayValues: Record<string, string[]>
+  signatures: Record<string, string>
+  photoCount: number
+}
+
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount }: PDFProps) {
-  const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME ?? 'Taylor Engineering'
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
-  const companyEmail = process.env.NEXT_PUBLIC_COMPANY_EMAIL ?? ''
-  const companyPhone = process.env.NEXT_PUBLIC_COMPANY_PHONE ?? ''
-  const companyAddress = process.env.NEXT_PUBLIC_COMPANY_ADDRESS ?? ''
-  const generatedAt = format(new Date(), 'dd MMM yyyy HH:mm')
+
+  // Locate key Job Detail fields by label pattern
+  const bunkerVesselField = allFieldsFlat.find((f: any) =>
+    /bunker/i.test(f.label) && /vessel/i.test(f.label)
+  ) ?? null
+  const vesselField = allFieldsFlat.find((f: any) =>
+    /vessel/i.test(f.label) && f.id !== bunkerVesselField?.id
+  ) ?? null
+  const dateField = allFieldsFlat.find((f: any) => /\bdate\b/i.test(f.label)) ?? null
+  const portField = allFieldsFlat.find((f: any) => /\bport\b/i.test(f.label)) ?? null
+  const methodField = allFieldsFlat.find((f: any) => /method.*delivery|delivery.*method/i.test(f.label)) ?? null
+
+  // These are shown in the Job Details block — suppress them from the section body
+  const suppressedIds = new Set<string>(
+    [vesselField?.id, dateField?.id, portField?.id, methodField?.id, bunkerVesselField?.id]
+      .filter((id): id is string => !!id)
+  )
+
+  const methodRaw = methodField ? (fieldValues[methodField.id] ?? '') : ''
+  const methodDisplay = methodField ? resolveDropdownValue(methodField, methodRaw) : ''
+  const showBunkerVessel = methodRaw === 'bunker_vessel' && !!bunkerVesselField
+
+  const reportTitle = job.template?.name ?? job.title
 
   return (
     <Document
       title={`${job.title} — ${job.job_number ?? 'Draft'}`}
-      author={companyName}
+      author={COMPANY.name}
       subject="Survey Checklist Report"
     >
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.companyName}>{companyName}</Text>
-            <Text style={styles.companyTagline}>Survey & Inspection Services</Text>
-          </View>
-          <View style={styles.headerRight}>
-            {companyAddress && <Text style={styles.headerRightText}>{companyAddress}</Text>}
-            {companyPhone && <Text style={styles.headerRightText}>{companyPhone}</Text>}
-            {companyEmail && <Text style={styles.headerRightText}>{companyEmail}</Text>}
-          </View>
+
+        {/* Report title only — no company block */}
+        <View style={styles.reportTitleBlock}>
+          <Text style={styles.reportTitle}>{reportTitle}</Text>
         </View>
 
-        {/* Job Title & Meta */}
-        <View style={styles.jobTitleSection}>
-          <Text style={styles.jobTitle}>{job.title}</Text>
-          <View style={styles.jobMeta}>
-            {job.job_number && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Job No:</Text>
-                <Text style={styles.jobMetaValue}>{job.job_number}</Text>
-              </View>
-            )}
-            {job.template?.name && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Template:</Text>
-                <Text style={styles.jobMetaValue}>{job.template.name}</Text>
-              </View>
-            )}
-            {job.client?.name && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Client:</Text>
-                <Text style={styles.jobMetaValue}>{job.client.name}</Text>
-              </View>
-            )}
-            {job.scheduled_date && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Date:</Text>
-                <Text style={styles.jobMetaValue}>{formatVal(job.scheduled_date)}</Text>
-              </View>
-            )}
-            {job.assignee?.full_name && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Surveyor:</Text>
-                <Text style={styles.jobMetaValue}>{job.assignee.full_name}</Text>
-              </View>
-            )}
-            {job.submitted_at && (
-              <View style={styles.jobMetaItem}>
-                <Text style={styles.jobMetaLabel}>Submitted:</Text>
-                <Text style={styles.jobMetaValue}>{format(parseISO(job.submitted_at), 'dd MMM yyyy HH:mm')}</Text>
-              </View>
-            )}
-          </View>
+        {/* Compact Job Details */}
+        <View style={styles.jobDetailsBlock}>
+          {job.vessel_name && (
+            <View style={styles.jobDetailRow}>
+              <Text style={styles.jobDetailLabel}>Vessel:</Text>
+              <Text style={styles.jobDetailValue}>{job.vessel_name}</Text>
+            </View>
+          )}
+          {dateField && fieldValues[dateField.id] && (
+            <View style={styles.jobDetailRow}>
+              <Text style={styles.jobDetailLabel}>Date:</Text>
+              <Text style={styles.jobDetailValue}>{fieldValues[dateField.id]}</Text>
+            </View>
+          )}
+          {portField && fieldValues[portField.id] && (
+            <View style={styles.jobDetailRow}>
+              <Text style={styles.jobDetailLabel}>Port:</Text>
+              <Text style={styles.jobDetailValue}>{fieldValues[portField.id]}</Text>
+            </View>
+          )}
+          {methodDisplay && (
+            <View style={styles.jobDetailRow}>
+              <Text style={styles.jobDetailLabel}>Method of Delivery:</Text>
+              <Text style={styles.jobDetailValue}>{methodDisplay}</Text>
+            </View>
+          )}
+          {showBunkerVessel && fieldValues[bunkerVesselField!.id] && (
+            <View style={styles.jobDetailRow}>
+              <Text style={styles.jobDetailLabel}>Bunker Vessel Name:</Text>
+              <Text style={styles.jobDetailValue}>{fieldValues[bunkerVesselField!.id]}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Sections */}
-        {sections.map(section => (
-          <View key={section.id} style={styles.sectionContainer} wrap={false}>
-            {/* Section header */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              {section.description && (
-                <Text style={styles.sectionDescription}>{section.description}</Text>
+        {/* Checklist sections */}
+        {sections.map(section => {
+          const visibleFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
+          if (visibleFields.length === 0) return null
+
+          return (
+            <View key={section.id} style={styles.sectionContainer}>
+              {/* Section header + first field locked together to prevent orphan headers */}
+              <View wrap={false}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                  {section.description && (
+                    <Text style={styles.sectionDescription}>{section.description}</Text>
+                  )}
+                </View>
+                {renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
+              </View>
+
+              {/* Remaining fields wrap freely */}
+              {visibleFields.slice(1).map((field: any) =>
+                renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)
               )}
             </View>
-
-            {/* Fields */}
-            {section.fields.map((field: any) => {
-              if (field.field_type === 'photo') return null // exclude photos
-
-              if (field.field_type === 'divider') {
-                return <View key={field.id} style={styles.dividerLine} />
-              }
-
-              if (field.field_type === 'heading') {
-                return (
-                  <Text key={field.id} style={styles.inlineHeading}>{field.label}</Text>
-                )
-              }
-
-              const rawValue = field.field_type === 'multiple_choice'
-                ? (arrayValues[field.id] ?? []).join(', ')
-                : fieldValues[field.id] ?? ''
-
-              const hasValue = !!rawValue
-
-              return (
-                <View key={field.id} style={styles.fieldRow}>
-                  <View style={styles.fieldLabel}>
-                    <Text style={styles.fieldLabelText}>
-                      {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
-                      {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
-                    </Text>
-                    {field.help_text && (
-                      <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>{field.help_text}</Text>
-                    )}
-                  </View>
-
-                  <View style={styles.fieldValue}>
-                    {field.field_type === 'signature' ? (
-                      signatures[field.id] ? (
-                        <View style={styles.signatureContainer}>
-                          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                        <Image src={signatures[field.id]} style={styles.signatureImage} />
-                        </View>
-                      ) : (
-                        <Text style={styles.fieldValueEmpty}>No signature</Text>
-                      )
-                    ) : (field.field_type === 'yes_no' || field.field_type === 'yes_no_na') ? (
-                      <YesNoCell rawValue={rawValue} options={field.options} />
-                    ) : field.field_type === 'textarea' ? (
-                      <Text style={styles.textareaValue}>{rawValue || '—'}</Text>
-                    ) : field.field_type === 'calculated' && field.validation?.display_as === 'percentage' ? (
-                      <CalcPercentCell rawValue={rawValue} validation={field.validation} />
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
-                          {hasValue ? rawValue : '—'}
-                        </Text>
-                        {field.unit && <Text style={styles.fieldUnit}>{field.unit}</Text>}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              )
-            })}
-          </View>
-        ))}
+          )
+        })}
 
         {/* Photo note */}
         {photoCount > 0 && (
           <View style={styles.photoNote}>
             <Text style={styles.photoNoteText}>
-              Note: {photoCount} photo{photoCount !== 1 ? 's' : ''} uploaded to this job record are stored internally and not included in this PDF by default.
+              Note: {photoCount} photo{photoCount !== 1 ? 's' : ''} attached to this job are stored internally and not included in this PDF.
             </Text>
           </View>
         )}
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>
-            {companyName} — Confidential Survey Report — {job.job_number ?? 'Draft'}
-          </Text>
+          <Text style={styles.footerText}>{COMPANY.name} — Confidential</Text>
           <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-          <Text style={styles.footerText}>Generated: {generatedAt}</Text>
+          <Text style={styles.footerText}>{job.job_number ?? 'Draft'}</Text>
         </View>
       </Page>
     </Document>
+  )
+}
+
+function renderField(
+  field: any,
+  fieldValues: Record<string, string>,
+  arrayValues: Record<string, string[]>,
+  signatures: Record<string, string>,
+  allFieldsFlat: any[]
+): React.ReactElement | null {
+  if (!field) return null
+
+  if (field.field_type === 'divider') {
+    return <View key={field.id} style={styles.dividerLine} />
+  }
+
+  if (field.field_type === 'heading') {
+    return <Text key={field.id} style={styles.inlineHeading}>{field.label}</Text>
+  }
+
+  const rawValue = field.field_type === 'multiple_choice'
+    ? (arrayValues[field.id] ?? []).join(', ')
+    : fieldValues[field.id] ?? ''
+
+  const hasValue = !!rawValue
+
+  return (
+    <View key={field.id} style={styles.fieldRow}>
+      <View style={styles.fieldLabel}>
+        <Text style={styles.fieldLabelText}>
+          {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
+          {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
+        </Text>
+        {field.help_text && (
+          <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>{field.help_text}</Text>
+        )}
+      </View>
+
+      <View style={styles.fieldValue}>
+        {field.field_type === 'signature' ? (
+          signatures[field.id] ? (
+            // eslint-disable-next-line jsx-a11y/alt-text
+            <Image src={signatures[field.id]} style={styles.signatureImage} />
+          ) : (
+            <Text style={styles.fieldValueEmpty}>No signature</Text>
+          )
+        ) : field.field_type === 'yes_no' || field.field_type === 'yes_no_na' ? (
+          <YesNoCell rawValue={rawValue} options={field.options} />
+        ) : field.field_type === 'textarea' ? (
+          <Text style={styles.textareaValue}>{rawValue || '—'}</Text>
+        ) : field.field_type === 'calculated' ? (
+          <CalcDiffCell
+            rawValue={rawValue}
+            validation={field.validation}
+            formula={field.calculation_formula}
+            fieldValues={fieldValues}
+          />
+        ) : field.field_type === 'dropdown' ? (
+          <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
+            {hasValue ? resolveDropdownValue(field, rawValue) : '—'}
+          </Text>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
+              {hasValue ? rawValue : '—'}
+            </Text>
+            {field.unit && hasValue && <Text style={styles.fieldUnit}>{field.unit}</Text>}
+          </View>
+        )}
+      </View>
+    </View>
   )
 }
