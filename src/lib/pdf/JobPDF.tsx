@@ -183,6 +183,17 @@ const styles = StyleSheet.create({
   },
 })
 
+/**
+ * Ensures a vessel name is displayed with exactly one "M.V. " prefix.
+ * Strips any existing M.V./MV prefix (any casing, optional dots/spaces) before
+ * adding a canonical one — prevents "M.V. M.V. ..." double-prefix.
+ */
+function withMvPrefix(name: string | null | undefined): string {
+  if (!name) return ''
+  const stripped = name.replace(/^(m\.?\s*v\.?\s*)+/i, '').trim()
+  return stripped ? `M.V. ${stripped}` : ''
+}
+
 // Resolve {uuid} tokens in labels to the selected option label (human-readable)
 function resolvePdfLabel(label: string, fieldValues: Record<string, string>, allFields: any[]): string {
   return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
@@ -313,7 +324,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           {job.vessel_name && (
             <View style={styles.jobDetailRow}>
               <Text style={styles.jobDetailLabel}>Vessel:</Text>
-              <Text style={styles.jobDetailValue}>{job.vessel_name}</Text>
+              <Text style={styles.jobDetailValue}>{withMvPrefix(job.vessel_name)}</Text>
             </View>
           )}
           {dateField && fieldValues[dateField.id] && (
@@ -415,6 +426,7 @@ function renderField(
     <View key={field.id} style={styles.fieldRow}>
       <View style={styles.fieldLabel}>
         <Text style={styles.fieldLabelText}>
+          {field.item_number ? <Text style={{ color: '#1d4ed8' }}>{field.item_number}{'  '}</Text> : null}
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
           {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
         </Text>
