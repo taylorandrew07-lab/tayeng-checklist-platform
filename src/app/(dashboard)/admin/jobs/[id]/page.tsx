@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import Link from 'next/link'
 import {
   ArrowLeft, Loader2, Save, Download, Eye, EyeOff,
   CheckCircle2, Trash2
@@ -37,7 +36,7 @@ export default function AdminChecklistDetailPage() {
     status: '' as JobStatus,
   })
 
-  useEffect(() => { load() }, [jobId])
+  useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     const supabase = createClient()
@@ -140,9 +139,13 @@ export default function AdminChecklistDetailPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/admin/jobs" className="btn-ghost py-2 px-3">
+        <button
+          onClick={() => editorRef.current?.navigate('/admin/jobs')}
+          className="btn-ghost py-2 px-3"
+          aria-label="Back to checklists"
+        >
           <ArrowLeft className="h-4 w-4" />
-        </Link>
+        </button>
         <div className="flex-1 min-w-0">
           <h1 className="page-title truncate">{job.title}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{job.job_number} · {job.template?.name}</p>
@@ -278,13 +281,13 @@ export default function AdminChecklistDetailPage() {
           <div className="card p-5">
             <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
             <div className="space-y-2">
-              <Link
-                href={`/admin/templates/${job.template?.id}`}
+              <button
+                onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)}
                 className="btn-ghost w-full justify-start text-sm"
               >
                 <Eye className="h-4 w-4" />
                 View Template
-              </Link>
+              </button>
               {['submitted', 'completed', 'client_visible'].includes(job.status) && (
                 <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-ghost w-full justify-start text-sm">
                   <Download className="h-4 w-4" />

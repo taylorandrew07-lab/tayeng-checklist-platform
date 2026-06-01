@@ -71,7 +71,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       return () => window.removeEventListener('beforeunload', handler)
     }, [isDirty])
 
-    useEffect(() => { load() }, [jobId])
+    useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     async function load() {
       const supabase = createClient()
@@ -309,10 +309,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const { error: upErr } = await supabase.storage.from('job-photos').upload(path, file)
       if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
 
-      await supabase.from('job_photos').insert({
+      const { error: dbErr } = await supabase.from('job_photos').insert({
         job_id: jobId, field_id: null, storage_path: path,
         filename: file.name, uploaded_by: user.id,
       })
+      if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
 
       const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
       setGeneralPhotos(fresh ?? [])
@@ -323,7 +324,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const supabase = createClient()
       const { error: storErr } = await supabase.storage.from('job-photos').remove([storagePath])
       if (storErr) { setSaveError('Delete failed: ' + storErr.message); return }
-      await supabase.from('job_photos').delete().eq('id', photoId)
+      const { error: dbErr } = await supabase.from('job_photos').delete().eq('id', photoId)
+      if (dbErr) { setSaveError('Delete record failed: ' + dbErr.message); return }
 
       if (fieldId) {
         setFieldPhotos(prev => ({ ...prev, [fieldId]: (prev[fieldId] ?? []).filter(p => p.id !== photoId) }))
@@ -450,8 +452,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           if (!checkConditionalLogic(section.conditional_logic, values)) return null
           const collapsed = collapsedSections.has(section.id)
           const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type))
-          const completedCount = section.fields.filter(f => {
-            if (['heading', 'divider'].includes(f.field_type)) return true
+          const completedCount = dataFields.filter(f => {
             if (f.field_type === 'signature') return !!signatures[f.id]
             if (f.field_type === 'multiple_choice') return (arrayValues[f.id] ?? []).length > 0
             if (f.field_type === 'photo') return (fieldPhotos[f.id] ?? []).length > 0

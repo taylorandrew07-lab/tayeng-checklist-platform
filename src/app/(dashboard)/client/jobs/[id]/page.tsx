@@ -170,7 +170,7 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
       {!perm.can_view_checklist_details && !perm.can_view_pdf && (
         <div className="card py-12 text-center">
           <Lock className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500 text-sm">You have access to view this job's status only. Contact your account manager for additional access.</p>
+          <p className="text-gray-500 text-sm">You have access to view this job&apos;s status only. Contact your account manager for additional access.</p>
         </div>
       )}
     </div>

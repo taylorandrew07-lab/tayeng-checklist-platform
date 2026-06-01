@@ -24,7 +24,7 @@ export default function SignaturePad({ value, onChange, disabled = false }: Sign
       img.src = value
       setHasSignature(true)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function getPos(e: React.MouseEvent | React.TouchEvent) {
     const canvas = canvasRef.current!

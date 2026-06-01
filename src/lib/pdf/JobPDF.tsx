@@ -353,7 +353,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                     {field.field_type === 'signature' ? (
                       signatures[field.id] ? (
                         <View style={styles.signatureContainer}>
-                          <Image src={signatures[field.id]} style={styles.signatureImage} />
+                          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                        <Image src={signatures[field.id]} style={styles.signatureImage} />
                         </View>
                       ) : (
                         <Text style={styles.fieldValueEmpty}>No signature</Text>

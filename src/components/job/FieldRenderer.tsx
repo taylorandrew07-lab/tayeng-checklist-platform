@@ -247,9 +247,8 @@ function CalculatedField({ field, allValues, onChange }: {
     ? evaluateCalculation(field.calculation_formula, allValues)
     : ''
 
-  useEffect(() => {
-    onChange(result)
-  }, [result])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onChange(result) }, [result])
 
   return (
     <div className="flex items-center gap-2">

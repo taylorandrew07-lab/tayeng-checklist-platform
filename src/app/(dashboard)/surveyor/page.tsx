@@ -122,7 +122,7 @@ export default function SurveyorDashboard() {
 
           {jobs.length === 0 && (
             <div className="card p-10 text-center text-gray-400">
-              <p className="mb-3">You haven't created any checklists yet.</p>
+              <p className="mb-3">You haven&apos;t created any checklists yet.</p>
               <Link href="/surveyor/jobs/new" className="btn-primary inline-flex">
                 <Plus className="h-4 w-4" />Start your first checklist
               </Link>
