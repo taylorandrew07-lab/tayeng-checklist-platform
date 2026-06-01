@@ -12,6 +12,7 @@ export default function JobNumberingSettingsPage() {
   const [resetting, setResetting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [notInstalled, setNotInstalled] = useState(false)
 
   const [prefix, setPrefix] = useState('TE-')
   const [padding, setPadding] = useState(5)
@@ -37,7 +38,13 @@ export default function JobNumberingSettingsPage() {
 
       const { data, error: rpcErr } = await supabase.rpc('admin_get_job_numbering_info')
       if (rpcErr || !data) {
-        setError(rpcErr?.message ?? 'Failed to load numbering config')
+        // Detect the "function missing from schema cache" case (migration not applied)
+        const msg = rpcErr?.message ?? ''
+        if (/could not find the function|schema cache|does not exist/i.test(msg)) {
+          setNotInstalled(true)
+        } else {
+          setError(msg || 'Failed to load numbering config')
+        }
         setLoading(false)
         return
       }
@@ -98,6 +105,24 @@ export default function JobNumberingSettingsPage() {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+      </div>
+    )
+  }
+
+  if (notInstalled) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div>
+          <h1 className="page-title">Job Numbering Settings</h1>
+        </div>
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-5 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800 space-y-2">
+            <p className="font-semibold">Numbering settings are not installed in Supabase</p>
+            <p>The database functions that power this page are missing. Run migration <strong>014_job_numbering_config.sql</strong> (and migration 015) in the Supabase SQL Editor, then reload this page.</p>
+            <p className="text-xs">If you just ran the migration, run <code className="bg-amber-100 px-1 rounded">NOTIFY pgrst, &apos;reload schema&apos;;</code> to refresh the API schema cache.</p>
+          </div>
+        </div>
       </div>
     )
   }

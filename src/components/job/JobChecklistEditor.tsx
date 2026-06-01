@@ -58,6 +58,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [uploadingField, setUploadingField] = useState<string | null>(null)
     const [showPreview, setShowPreview] = useState(false)
     const [leaveError, setLeaveError] = useState<string | null>(null)
+    // Identity & role for profile-based edit rights
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    const [isPrivileged, setIsPrivileged] = useState(false) // admin or super_admin
+    const [adminOverride, setAdminOverride] = useState(false) // "Edit as admin" engaged
+    const [showOverrideDialog, setShowOverrideDialog] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -94,6 +99,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      setCurrentUserId(user.id)
+
+      // Determine privilege (admin / super admin) for the "Edit as admin" override
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('role, is_super_admin')
+        .eq('id', user.id)
+        .single()
+      setIsPrivileged(profileRow?.role === 'admin' || profileRow?.is_super_admin === true)
 
       const [{ data: jobData }, { data: valData }, { data: sigData }, { data: photoData }] = await Promise.all([
         supabase.from('jobs').select(`
@@ -412,7 +426,21 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     if (!job) return null
 
     const isSubmitted = ['submitted', 'completed', 'client_visible'].includes(job.status)
-    const readOnly = isSubmitted || forceReadOnly
+
+    // --- Profile-based edit rights ---
+    // Rights are based on the real assigned/creator profile id, not the route or role.
+    const isAssignedUser = !!currentUserId && job.assigned_to === currentUserId
+    // Creator may edit only when the job is not assigned to a *different* real user
+    const isCreatorUnassigned = !!currentUserId && job.created_by === currentUserId &&
+      (job.assigned_to === null || job.assigned_to === currentUserId)
+    const canEditByIdentity = isAssignedUser || isCreatorUnassigned
+
+    // A privileged user (admin/super admin) who is NOT the assigned/creator can take
+    // over editing via an explicit confirmed override. Submitted jobs stay locked for all.
+    const canOverride = isPrivileged && !canEditByIdentity && !isSubmitted
+    const editingDenied = !canEditByIdentity && !adminOverride
+
+    const readOnly = isSubmitted || forceReadOnly || editingDenied
 
     // Flat list of all fields for token substitution
     const allFieldsFlat = sections.flatMap(s => s.fields)
@@ -457,6 +485,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             <button onClick={() => setShowPreview(true)} className="btn-secondary">
               <Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span>
             </button>
+            {readOnly && canOverride && (
+              <button onClick={() => setShowOverrideDialog(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
+                <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit as admin</span>
+              </button>
+            )}
             {!readOnly && (
               <button onClick={handleSave} disabled={saving} className="btn-secondary">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -465,6 +498,23 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             )}
           </div>
         </div>
+
+        {/* Read-only notice for users who are not the assigned surveyor/creator */}
+        {readOnly && !isSubmitted && editingDenied && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              This checklist is assigned to its surveyor and is read-only for you to avoid overwriting their work.
+              {canOverride && ' Use “Edit as admin” to take over editing.'}
+            </span>
+          </div>
+        )}
+        {adminOverride && (
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>Admin override active — you are editing a checklist assigned to another surveyor. Changes will overwrite their working copy.</span>
+          </div>
+        )}
 
         {/* Job info banner */}
         <div className="card p-4 bg-brand-50 border-brand-200">
@@ -759,6 +809,17 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           confirmLabel={isDirty ? 'Save and Submit' : 'Submit Checklist'}
           loading={submitting}
           error={submitError}
+        />
+
+        {/* Admin override confirmation */}
+        <ConfirmDialog
+          open={showOverrideDialog}
+          onClose={() => setShowOverrideDialog(false)}
+          onConfirm={() => { setAdminOverride(true); setShowOverrideDialog(false) }}
+          title="Take over editing?"
+          message="This checklist is assigned to another surveyor. Editing it as an admin may overwrite their working copy. Only continue if you intend to take over this checklist."
+          confirmLabel="Edit as admin"
+          danger
         />
 
         {/* Leave-with-unsaved-changes dialog */}

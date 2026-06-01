@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Check, X, Pencil, ShieldCheck } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
-import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest } from '@/lib/types/database'
+import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName } from '@/lib/types/database'
 
 export default function UsersPage() {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
@@ -13,6 +13,8 @@ export default function UsersPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [surveyorRequests, setSurveyorRequests] = useState<SurveyorNameRequest[]>([])
   const [clientRequests, setClientRequests] = useState<ClientRequest[]>([])
+  const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
+  const [linkingId, setLinkingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState<Profile | null>(null)
@@ -37,24 +39,41 @@ export default function UsersPage() {
   async function load() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }] = await Promise.all([
+    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: sn }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session?.user.id ?? '').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
       supabase.from('surveyor_name_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('client_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
     ])
     setCurrentProfile(me)
     setUsers(u ?? [])
     setClients(c ?? [])
     setSurveyorRequests(sr ?? [])
     setClientRequests(cr ?? [])
+    setSurveyorNames(sn ?? [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
   const isSuperAdmin = currentProfile?.is_super_admin === true
+
+  // Link (or unlink) a surveyor display name to a real login profile.
+  // Generic: works for any admin/surveyor profile, no person hardcoded.
+  async function linkSurveyorName(surveyorNameId: string, profileId: string | null) {
+    setLinkingId(surveyorNameId)
+    setError(null)
+    const supabase = createClient()
+    const { error: err } = await supabase
+      .from('surveyor_names')
+      .update({ profile_id: profileId })
+      .eq('id', surveyorNameId)
+    setLinkingId(null)
+    if (err) { setError('Failed to update link: ' + err.message); return }
+    load()
+  }
 
   function openCreate() {
     setEditUser(null)
@@ -365,6 +384,53 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {/* Surveyor name links — connect a display name to a real login profile */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <h2 className="font-semibold text-gray-900 text-sm">Surveyor Name Links</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Link a surveyor display name to a real login account. Checklists created with a linked name are assigned to that user, so they can edit/submit even when logged in as admin.
+          </p>
+        </div>
+        {surveyorNames.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-400 text-center">No active surveyor names yet.</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {surveyorNames.map(sn => {
+              const linked = users.find(u => u.id === sn.profile_id)
+              return (
+                <div key={sn.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{sn.name}</p>
+                    {linked ? (
+                      <p className="text-xs text-green-600">✓ Linked to {linked.full_name} ({linked.email})</p>
+                    ) : (
+                      <p className="text-xs text-gray-400">Not linked to a login account</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <select
+                      value={sn.profile_id ?? ''}
+                      disabled={linkingId === sn.id}
+                      onChange={(e) => linkSurveyorName(sn.id, e.target.value || null)}
+                      className="input-base text-sm py-1.5 max-w-[16rem]"
+                    >
+                      <option value="">— Not linked —</option>
+                      {users
+                        .filter(u => u.is_active && (u.role === 'surveyor' || u.role === 'admin'))
+                        .map(u => (
+                          <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                        ))}
+                    </select>
+                    {linkingId === sn.id && <Loader2 className="h-4 w-4 animate-spin text-brand-600" />}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Active users table */}
       <div className="card overflow-hidden">

@@ -202,6 +202,8 @@ export interface SurveyorName {
   approved_by: string | null
   approved_at: string | null
   created_at: string
+  /** Optional link to a real login profile. When set, jobs using this name are assigned to this profile. */
+  profile_id: string | null
 }
 
 export interface SurveyorNameRequest {

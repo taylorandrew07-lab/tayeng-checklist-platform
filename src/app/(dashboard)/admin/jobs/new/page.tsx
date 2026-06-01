@@ -39,6 +39,12 @@ export default function NewChecklistPage() {
     ? `M.V. ${vesselName.trim()} - ${selectedTemplate.name} - ${today}`
     : ''
 
+  // The surveyor_names row matching the chosen display name (carries the optional profile link)
+  const selectedSurveyorObj = surveyorNames.find(s => s.name === surveyorName) ?? null
+  const linkedProfileId = selectedSurveyorObj?.profile_id ?? null
+  // Warn when an existing (non-new) surveyor name has no linked login profile
+  const surveyorUnlinked = !!surveyorName && !showNewSurveyor && !linkedProfileId
+
   useEffect(() => {
     async function loadData() {
       const supabase = createClient()
@@ -118,6 +124,10 @@ export default function NewChecklistPage() {
 
     const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`
 
+    // Assign to the surveyor's linked login profile if the name is linked;
+    // otherwise leave unassigned (creator retains edit rights via the creator rule).
+    const assignedTo = linkedProfileId ?? null
+
     const { data: job, error: jobErr } = await supabase
       .from('jobs')
       .insert({
@@ -127,7 +137,7 @@ export default function NewChecklistPage() {
         surveyor_name: finalSurveyor,
         client_id: finalClientId,
         created_by: user.id,
-        assigned_to: user.id,
+        assigned_to: assignedTo,
         status: 'in_progress',
         started_at: new Date().toISOString(),
       })
@@ -264,6 +274,16 @@ export default function NewChecklistPage() {
               />
               <p className="text-xs text-amber-600 mt-1">This name will be submitted for Admin approval before being permanently added.</p>
             </div>
+          )}
+          {surveyorUnlinked && (
+            <p className="text-xs text-amber-600 mt-1">
+              ⚠ &ldquo;{surveyorName}&rdquo; is a display name with no linked login user. The checklist will show this surveyor name but will not be assigned to a real surveyor account. You (the creator) will retain edit access.
+            </p>
+          )}
+          {linkedProfileId && (
+            <p className="text-xs text-green-600 mt-1">
+              ✓ Linked to a login account — this checklist will be assigned to that user.
+            </p>
           )}
         </div>
       </div>

@@ -307,20 +307,13 @@ export default function AdminChecklistDetailPage() {
         clientName={job.client?.name}
       />
 
-      {/* Checklist fields editor */}
+      {/* Checklist fields editor.
+          Edit rights are decided inside JobChecklistEditor based on the real
+          assigned/creator profile id — an admin who is the assigned surveyor can
+          edit; others get a read-only view with an explicit "Edit as admin" override. */}
       <div className="border-t border-gray-200 pt-6 mt-2">
         <h2 className="section-title mb-5">Checklist Fields</h2>
-        {['in_progress', 'assigned'].includes(job.status) && (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4 text-sm text-amber-800">
-            This checklist is currently being worked on by the assigned surveyor. Admin view is read-only to prevent overwriting their edits.
-          </div>
-        )}
-        <JobChecklistEditor
-          ref={editorRef}
-          jobId={jobId}
-          backHref="/admin/jobs"
-          forceReadOnly={['in_progress', 'assigned'].includes(job.status)}
-        />
+        <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
       </div>
     </div>
   )
