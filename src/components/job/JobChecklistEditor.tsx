@@ -50,6 +50,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [lastSaved, setLastSaved] = useState<Date | null>(null)
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
     const [showSubmitDialog, setShowSubmitDialog] = useState(false)
+    const [submitError, setSubmitError] = useState<string | null>(null)
     const [showLeaveDialog, setShowLeaveDialog] = useState(false)
     const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
     const [uploadingField, setUploadingField] = useState<string | null>(null)
@@ -232,55 +233,68 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     // --- Submit ---
     async function handleSubmit() {
-      setSubmitting(true)
+      if (submitting) return
 
-      // Validate required fields
-      const missing: string[] = []
-      for (const section of sections) {
-        if (!checkConditionalLogic(section.conditional_logic, values)) continue
-        for (const field of section.fields) {
-          if (!field.is_required) continue
-          if (!checkConditionalLogic(field.conditional_logic, values)) continue
-          if (field.field_type === 'signature' && !signatures[field.id]) {
-            missing.push(field.label)
-          } else if (field.field_type === 'multiple_choice' && !(arrayValues[field.id]?.length)) {
-            missing.push(field.label)
-          } else if (field.field_type === 'photo' && !(fieldPhotos[field.id]?.length)) {
-            missing.push(field.label)
-          } else if (!['signature', 'multiple_choice', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type) && !values[field.id]) {
-            missing.push(field.label)
+      setSubmitting(true)
+      setSubmitError(null)
+      setSaveError(null)
+
+      try {
+        // Validate required fields
+        const missing: string[] = []
+        for (const section of sections) {
+          if (!checkConditionalLogic(section.conditional_logic, values)) continue
+          for (const field of section.fields) {
+            if (!field.is_required) continue
+            if (!checkConditionalLogic(field.conditional_logic, values)) continue
+            if (field.field_type === 'signature' && !signatures[field.id]) {
+              missing.push(field.label)
+            } else if (field.field_type === 'multiple_choice' && !(arrayValues[field.id]?.length)) {
+              missing.push(field.label)
+            } else if (field.field_type === 'photo' && !(fieldPhotos[field.id]?.length)) {
+              missing.push(field.label)
+            } else if (!['signature', 'multiple_choice', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type) && !values[field.id]) {
+              missing.push(field.label)
+            }
           }
         }
-      }
 
-      if (missing.length > 0) {
-        setSaveError(`Required fields not completed: ${missing.join(', ')}`)
-        setSubmitting(false)
+        if (missing.length > 0) {
+          const message = `Required fields not completed: ${missing.join(', ')}`
+          setSaveError(message)
+          setSubmitError(message)
+          return
+        }
+
+        const saved = await handleSave()
+        if (!saved) {
+          const message = 'The latest edits could not be saved, so the checklist was not submitted. Please try Save Draft first, then submit again.'
+          setSubmitError(message)
+          return
+        }
+
+        const supabase = createClient()
+        const { error } = await supabase.from('jobs').update({
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+        }).eq('id', jobId)
+
+        if (error) {
+          const message = 'Submit failed: ' + error.message
+          setSaveError(message)
+          setSubmitError(message)
+          return
+        }
+
         setShowSubmitDialog(false)
-        return
-      }
-
-      const saved = await handleSave()
-      if (!saved) {
+        router.push(backHref)
+      } catch (err: any) {
+        const message = 'Submit failed: ' + (err.message ?? 'Unexpected error')
+        setSaveError(message)
+        setSubmitError(message)
+      } finally {
         setSubmitting(false)
-        setShowSubmitDialog(false)
-        return
       }
-
-      const supabase = createClient()
-      const { error } = await supabase.from('jobs').update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-      }).eq('id', jobId)
-
-      if (error) {
-        setSaveError('Submit failed: ' + error.message)
-        setSubmitting(false)
-        setShowSubmitDialog(false)
-        return
-      }
-
-      router.push(backHref)
     }
 
     // --- Navigation guard ---
@@ -701,7 +715,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {saving ? 'Saving…' : 'Save Draft'}
                 </button>
-                <button onClick={() => setShowSubmitDialog(true)} disabled={saving} className="btn-primary">
+                <button
+                  onClick={() => { setSubmitError(null); setShowSubmitDialog(true) }}
+                  disabled={saving || submitting}
+                  className="btn-primary"
+                >
                   <Send className="h-4 w-4" />Submit
                 </button>
               </div>
@@ -720,12 +738,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         {/* Submit confirmation */}
         <ConfirmDialog
           open={showSubmitDialog}
-          onClose={() => setShowSubmitDialog(false)}
+          onClose={() => { if (!submitting) setShowSubmitDialog(false) }}
           onConfirm={handleSubmit}
           title="Submit Checklist"
-          message="Once submitted you will not be able to edit the checklist. Make sure all required fields are completed."
-          confirmLabel="Submit Checklist"
+          message={isDirty
+            ? 'You have unsaved changes. The app will save your latest answers first, then submit the checklist. Once submitted you will not be able to edit it.'
+            : 'Once submitted you will not be able to edit the checklist. Make sure all required fields are completed.'
+          }
+          confirmLabel={isDirty ? 'Save and Submit' : 'Submit Checklist'}
           loading={submitting}
+          error={submitError}
         />
 
         {/* Leave-with-unsaved-changes dialog */}
