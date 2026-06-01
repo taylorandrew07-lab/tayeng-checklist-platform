@@ -103,6 +103,11 @@ export default function SurveyorNewChecklistPage() {
         requested_name: newClientName.trim(),
         requested_by: user.id,
       })
+      fetch('/api/notify/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'client_request', requestedName: newClientName.trim() }),
+      }).catch(() => {})
       finalClientId = null
     }
 
@@ -111,6 +116,11 @@ export default function SurveyorNewChecklistPage() {
         requested_name: newSurveyorName.trim(),
         requested_by: user.id,
       })
+      fetch('/api/notify/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'surveyor_request', requestedName: newSurveyorName.trim() }),
+      }).catch(() => {})
     }
 
     const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`

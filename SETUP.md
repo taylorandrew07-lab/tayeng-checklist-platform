@@ -1,202 +1,175 @@
-# Taylor Engineering Checklist Platform — Setup Instructions
+# Taylor Engineering Checklist Platform — Setup Guide
 
-## Prerequisites
-
-- Node.js 18+ (LTS recommended)
-- npm or yarn
-- A Supabase account (free tier works)
-- A Vercel account (for deployment)
+> **Live app:** https://tayeng-checklist-platform.vercel.app  
+> **Stack:** Next.js 14 · Supabase (Postgres + Auth + Storage) · Vercel
 
 ---
 
-## 1. Install Dependencies
+## ⚠️ Security — Rotate Exposed Keys First
+
+All credentials that appear in `scripts/*.mjs` (now removed from those files), git history,
+or any shared document **must be rotated** before this app is treated as secure:
+
+| What | Where to rotate |
+|------|----------------|
+| Supabase anon key | Supabase dashboard → Settings → API → Regenerate |
+| Supabase service role key | Supabase dashboard → Settings → API → Regenerate |
+| Supabase access token | supabase.com → Account → Access tokens → Revoke & create new |
+| Admin password | Supabase Auth → Users → Reset password |
+| Vercel env vars | Vercel → Project → Settings → Environment Variables (update after rotating) |
+
+---
+
+## Prerequisites
+
+- Node.js 18 LTS
+- A Supabase project
+- A Vercel account (or any Node.js host)
+
+---
+
+## 1. Clone and install
 
 ```bash
+git clone https://github.com/your-org/tayeng-checklist-platform.git
+cd tayeng-checklist-platform
 npm install
 ```
 
 ---
 
-## 2. Supabase Setup
-
-### 2.1 Create a Project
-
-1. Go to [supabase.com](https://supabase.com) and create a new project.
-2. Choose a strong database password and save it.
-3. Wait for the project to be provisioned.
-
-### 2.2 Run Database Migrations
-
-In your Supabase project, go to **SQL Editor** and run these files **in order**:
-
-1. Copy and paste the contents of `supabase/migrations/001_initial_schema.sql` → Execute
-2. Copy and paste the contents of `supabase/migrations/002_rls_policies.sql` → Execute
-
-### 2.3 Create Storage Buckets
-
-In **SQL Editor**, run:
-
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('job-photos', 'job-photos', false);
-INSERT INTO storage.buckets (id, name, public) VALUES ('job-pdfs', 'job-pdfs', false);
-
--- Storage policies
-CREATE POLICY "Authenticated users can upload photos"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can view photos"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can delete own photos"
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
-```
-
-### 2.4 Create the First Admin User
-
-1. Go to **Authentication → Users** in Supabase dashboard.
-2. Click **Invite user** or **Add user** and create the first admin account with your email.
-3. After the user is created, go to **SQL Editor** and run:
-
-```sql
-UPDATE profiles
-SET role = 'admin', full_name = 'Your Name Here'
-WHERE email = 'your-admin-email@tayeng.com';
-```
-
----
-
-## 3. Environment Variables
-
-Copy `.env.local.example` to `.env.local`:
+## 2. Environment variables
 
 ```bash
 cp .env.local.example .env.local
 ```
 
-Fill in the values from your Supabase project settings:
+Fill in `.env.local` with your Supabase project credentials (Settings → API):
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_COMPANY_NAME=Taylor Engineering
-NEXT_PUBLIC_COMPANY_EMAIL=info@tayeng.com
-NEXT_PUBLIC_COMPANY_PHONE=+61 X XXXX XXXX
-NEXT_PUBLIC_COMPANY_ADDRESS=Your Address, City, State
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 ```
 
-> **Security:** Never commit `.env.local` to version control. The service role key bypasses RLS — keep it server-side only.
+Optionally add Resend for admin email notifications:
+
+```env
+RESEND_API_KEY=re_your_key
+```
+
+> `.env.local` is gitignored. Never commit it.
 
 ---
 
-## 4. Run Locally
+## 3. Run database migrations
+
+In your Supabase project → **SQL Editor**, run the migration files **in order**:
+
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/migrations/002_rls_policies.sql`
+3. `supabase/migrations/003_enhancements.sql`
+4. `supabase/migrations/004_auth_hardening.sql`
+5. `supabase/migrations/005_production_hardening.sql`
+
+Each file is idempotent — safe to re-run.
+
+---
+
+## 4. Create storage buckets
+
+In Supabase SQL Editor:
+
+```sql
+INSERT INTO storage.buckets (id, name, public) VALUES ('job-photos', 'job-photos', false) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('job-pdfs',   'job-pdfs',   false) ON CONFLICT DO NOTHING;
+
+-- Allow authenticated users to upload/read/delete photos
+CREATE POLICY "Auth upload photos"  ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
+CREATE POLICY "Auth read photos"    ON storage.objects FOR SELECT USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
+CREATE POLICY "Auth delete photos"  ON storage.objects FOR DELETE USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
+```
+
+---
+
+## 5. Create the Super Admin account
+
+The first admin account must be created directly in Supabase — there is no public signup for admins.
+
+**Option A — Supabase dashboard (recommended):**
+
+1. Supabase → Authentication → Users → **Add user**
+2. Enter `andrew.taylor@tayeng.com` and a strong password, tick "Auto-confirm"
+3. In SQL Editor:
+   ```sql
+   -- Migration 005 already does this if run after the user exists:
+   UPDATE profiles SET role = 'admin', is_active = true, is_super_admin = true
+   WHERE email = 'andrew.taylor@tayeng.com';
+   ```
+
+**Option B — Script:**
+
+```bash
+# Fill in ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FULL_NAME in .env.local first
+node --env-file=.env.local scripts/setup-admin.mjs
+```
+
+---
+
+## 6. Configure Supabase Auth redirect URLs
+
+Supabase → Authentication → URL Configuration:
+
+- **Site URL:** `https://your-app.vercel.app`
+- **Redirect URLs:** `https://your-app.vercel.app/**`
+
+This is required for password reset emails to work.
+
+---
+
+## 7. Run locally
 
 ```bash
 npm run dev
+# → http://localhost:3000
 ```
 
-Navigate to `http://localhost:3000` and sign in with your admin credentials.
+---
+
+## 8. Deploy to Vercel
+
+1. Push to GitHub
+2. Import repo in Vercel → New Project
+3. Add environment variables (copy from `.env.local`, excluding script-only vars)
+4. Deploy
 
 ---
 
-## 5. Vercel Deployment
-
-### 5.1 Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/your-org/tayeng-checklist-app.git
-git push -u origin main
-```
-
-### 5.2 Deploy on Vercel
-
-1. Go to [vercel.com](https://vercel.com) → **New Project**
-2. Import your GitHub repository
-3. Framework preset: **Next.js** (auto-detected)
-4. Add all environment variables from `.env.local` in the Vercel dashboard under **Settings → Environment Variables**
-5. Click **Deploy**
-
-### 5.3 Configure Supabase for Production
-
-In your Supabase project settings:
-
-1. Go to **Authentication → URL Configuration**
-2. Set **Site URL** to your Vercel deployment URL (e.g., `https://tayeng-app.vercel.app`)
-3. Add your Vercel URL to **Redirect URLs**:
-   - `https://tayeng-app.vercel.app/**`
-
----
-
-## 6. PWA Installation
-
-The app is configured as a Progressive Web App. Users can install it on:
-
-- **iPhone/iPad:** Open in Safari → Share → Add to Home Screen
-- **Android:** Open in Chrome → Menu → Add to Home Screen  
-- **Desktop (Chrome/Edge):** Click the install icon in the address bar
-
----
-
-## 7. User Roles
+## User Roles & Workflow
 
 | Role | Access |
 |------|--------|
-| **Admin** | Full access — create templates, jobs, users, clients |
-| **Surveyor** | Complete assigned jobs, export PDFs |
-| **Client** | View permitted jobs and PDFs only |
+| **Super Admin** | Everything — can create/manage admin accounts, set super admin flag |
+| **Admin** | Templates, checklists, approve surveyor/client accounts (non-admin only) |
+| **Surveyor** | Create and complete their own checklists |
+| **Client** | View permitted checklists for their client company only |
 
-### Creating Users
+### Approval workflow
 
-Admins create users through the **Users** page in the admin panel. The system uses Supabase Auth — users receive an invite email and set their own password.
+1. User signs up at `/signup` → account is **inactive** by default
+2. Admin receives an email notification (if Resend is configured)
+3. Admin goes to **Users** page → Reviews pending accounts
+4. For client-role accounts: admin must select the linked client company before activating
+5. User is notified (optional) — they can now log in
 
-**Or** create users directly in Supabase Authentication → Users, then update their role in the `profiles` table.
-
----
-
-## 8. Template Builder Guide
-
-1. Go to **Admin → Templates → New Template**
-2. Set the template name, description, and status
-3. Add **sections** to organize the checklist
-4. Within each section, add **fields** of any type:
-   - **Text, Number, Date, Time** — basic data entry
-   - **Dropdown, Yes/No, Multiple Choice** — selection fields
-   - **Long Text / Remarks** — multi-line text
-   - **Calculated** — auto-calculated from other number fields
-   - **Photo Upload** — marks a photo capture point
-   - **Signature** — captured on-screen via touch/mouse
-   - **Section Heading, Divider** — layout elements
-5. Set **conditional logic** on any field or section to show/hide based on other answers
-6. Mark fields as **Required** to enforce completion before submission
-7. Set status to **Active** to make the template available for jobs
-
----
-
-## 9. Job Workflow
+### Surveyor checklist flow
 
 ```
-Admin creates job → Assigns to surveyor → Surveyor opens job
-→ Surveyor fills all fields → Surveyor submits
-→ Admin can download PDF and control client visibility
-→ Client views job status / PDF (if permitted)
+Surveyor creates checklist → fills fields → Save Draft (any time)
+→ Submit → Admin reviews → can download PDF → set client-visible
+→ Client sees checklist (permissions controlled per-job)
 ```
-
----
-
-## 10. PDF Export
-
-- Generated server-side using `@react-pdf/renderer`
-- Includes: Taylor Engineering header/footer, job number, all completed fields, signatures
-- **Photos are excluded by default**
-- Available to: Admin (always), Surveyor (their submitted jobs), Client (if PDF permission enabled)
 
 ---
 
@@ -205,36 +178,47 @@ Admin creates job → Assigns to surveyor → Surveyor opens job
 ```
 src/
   app/
-    (auth)/login/          ← Login page
+    (auth)/               ← Login, signup, forgot/reset password
     (dashboard)/
-      admin/               ← Admin panel (templates, jobs, users, clients)
-      surveyor/            ← Surveyor job completion interface
-      client/              ← Client viewing portal
+      admin/              ← Templates, checklists, users, clients
+      surveyor/           ← Create and complete checklists
+      client/             ← Read-only job portal (per-client RLS)
     api/
-      pdf/[jobId]/         ← Server-side PDF generation
-      admin/create-user/   ← Admin user creation endpoint
+      pdf/[jobId]/        ← Server-side PDF (auth + client permission check)
+      admin/create-user/  ← Service-role user creation
+      notify/admin/       ← Email notifications via Resend
   components/
-    template-builder/      ← Drag-and-drop template editor
-    job/                   ← Field renderer, signature pad
-    layout/                ← Sidebar, header
-    ui/                    ← Shared UI components
+    job/                  ← Checklist editor, field renderer, signature pad
+    template-builder/     ← Drag-and-drop template editor
+    layout/               ← Sidebar, header
+    ui/                   ← Shared UI components
   lib/
-    supabase/              ← Client and server Supabase clients
-    pdf/                   ← PDF template (React PDF)
-    types/                 ← TypeScript interfaces
-    utils/                 ← Utilities, formatting, calculations
+    supabase/             ← Client and server Supabase clients
+    pdf/                  ← React PDF template
+    types/                ← TypeScript interfaces
+    utils/                ← Utilities, formatting
 supabase/
-  migrations/              ← Database schema SQL
+  migrations/             ← All database SQL (run in order 001–005)
+scripts/                  ← One-time ops (gitignored, use env vars via --env-file)
 ```
 
 ---
 
 ## Troubleshooting
 
-**"profile is undefined" after login** — Run the migration SQL again. The `handle_new_user` trigger may not have fired. Manually insert: `INSERT INTO profiles (id, email, full_name, role) VALUES ('your-auth-uid', 'email', 'Name', 'admin');`
+**Login redirects to wrong role dashboard**  
+The dashboard layout reads `profiles.role` and redirects to `/admin`, `/surveyor`, or `/client` accordingly. If the role in the DB is wrong, run:  
+`UPDATE profiles SET role = 'admin' WHERE email = 'your@email.com';`
 
-**PDF generation fails** — Make sure `@react-pdf/renderer` is in `serverComponentsExternalPackages` in `next.config.js`. Also ensure the job has a valid `template_id`.
+**PDF download fails**  
+Ensure `@react-pdf/renderer` is in `serverComponentsExternalPackages` in `next.config.js`. Verify the job status is `submitted`, `completed`, or `client_visible`.
 
-**Storage uploads fail** — Verify the storage buckets exist and the policies are applied. Check the Supabase storage dashboard.
+**Client cannot see jobs**  
+Check: (a) `client_users` row exists linking profile_id → client_id, (b) `client_job_permissions` row exists for that client_id + job_id.
 
-**Client cannot see jobs** — Ensure `client_job_permissions` record exists for the job/client combination AND the client user is linked via `client_users`.
+**Profile stuck as inactive**  
+Admin must approve in Users → Pending Accounts. Or run:  
+`UPDATE profiles SET is_active = true WHERE email = 'user@example.com';`
+
+**Email notifications not sending**  
+Set `RESEND_API_KEY` in Vercel env vars and verify your sending domain at resend.com. Notifications silently skip if the key is missing.

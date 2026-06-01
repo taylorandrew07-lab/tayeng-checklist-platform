@@ -23,22 +23,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     async function loadProfile() {
-      if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
-        setProfile({
-          id: 'demo-user',
-          email: 'admin@tayeng.com',
-          full_name: 'Andrew Taylor',
-          role: 'admin',
-          phone: null,
-          is_active: true,
-          is_super_admin: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        setLoading(false)
-        return
-      }
-
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }

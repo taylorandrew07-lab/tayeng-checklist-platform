@@ -41,6 +41,13 @@ export default function SignUpPage() {
       return
     }
 
+    // Notify admin of the new request (fire-and-forget; errors don't block the user)
+    fetch('/api/notify/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'signup', name: form.fullName, email: form.email, role: form.role }),
+    }).catch(() => {})
+
     // Sign out immediately — account requires admin approval before access is granted
     await supabase.auth.signOut()
     setDone(true)

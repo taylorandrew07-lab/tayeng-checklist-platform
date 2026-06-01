@@ -1,71 +1,170 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ClipboardList } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { Loader2, ClipboardList } from 'lucide-react'
+import { getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
 
-const DEMO_JOBS = [
-  { id: '4', title: 'Tank Calibration – Terminal A', job_number: 'TE-01004', status: 'completed', template: { name: 'Tank Calibration' }, scheduled_date: '2026-05-18', can_view_status: true, can_view_pdf: true, can_view_checklist_details: false },
-  { id: '6', title: 'Draft Survey – MV Pacific Star', job_number: 'TE-01006', status: 'client_visible', template: { name: 'Marine Draft Survey' }, scheduled_date: '2026-05-15', can_view_status: true, can_view_pdf: true, can_view_checklist_details: true },
-  { id: '2', title: 'Bunker Survey – MV Aurora', job_number: 'TE-01002', status: 'submitted', template: { name: 'Bunker Survey Checklist' }, scheduled_date: '2026-05-22', can_view_status: true, can_view_pdf: false, can_view_checklist_details: false },
-]
-
-const statusColors: Record<string, string> = {
-  submitted: 'bg-purple-100 text-purple-700', completed: 'bg-green-100 text-green-700', client_visible: 'bg-teal-100 text-teal-700',
-}
-const statusLabels: Record<string, string> = {
-  submitted: 'Submitted', completed: 'Completed', client_visible: 'Available',
+type PermittedJob = {
+  can_view_status: boolean
+  can_view_pdf: boolean
+  can_view_checklist_details: boolean
+  job: {
+    id: string
+    job_number: string
+    title: string
+    status: string
+    scheduled_date: string | null
+    template: { name: string } | null
+  } | null
 }
 
 export default function ClientPortal() {
+  const router = useRouter()
+  const [clientName, setClientName] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<PermittedJob[]>([])
+  const [loading, setLoading] = useState(true)
+  const [noClient, setNoClient] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      // Find the client company this user belongs to
+      const { data: link } = await supabase
+        .from('client_users')
+        .select('client_id, client:clients(name)')
+        .eq('profile_id', user.id)
+        .single()
+
+      if (!link) { setNoClient(true); setLoading(false); return }
+
+      const clientObj = (link as any).client
+      setClientName(clientObj?.name ?? null)
+
+      // Load all jobs this client has permission to see
+      const { data: perms } = await supabase
+        .from('client_job_permissions')
+        .select(`
+          can_view_status, can_view_pdf, can_view_checklist_details,
+          job:jobs(
+            id, job_number, title, status, scheduled_date,
+            template:checklist_templates(name)
+          )
+        `)
+        .eq('client_id', link.client_id)
+        .order('created_at', { ascending: false })
+
+      // Supabase returns nested relations as arrays; normalize to single objects
+      const normalized: PermittedJob[] = ((perms ?? []) as any[]).map((p: any) => ({
+        can_view_status: p.can_view_status,
+        can_view_pdf: p.can_view_pdf,
+        can_view_checklist_details: p.can_view_checklist_details,
+        job: Array.isArray(p.job) ? (p.job[0] ?? null) : (p.job ?? null),
+      }))
+      setJobs(normalized)
+      setLoading(false)
+    }
+    load()
+  }, [router])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+      </div>
+    )
+  }
+
+  if (noClient) {
+    return (
+      <div className="max-w-lg mx-auto text-center py-20">
+        <ClipboardList className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+        <h2 className="text-lg font-semibold text-gray-700 mb-2">No client account linked</h2>
+        <p className="text-gray-500 text-sm">
+          Your account has not been linked to a client company yet. Please contact your administrator.
+        </p>
+      </div>
+    )
+  }
+
+  const visibleJobs = jobs.filter(p => p.job !== null)
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
-        <h1 className="page-title">Jobs — Global Marine Ltd.</h1>
-        <p className="text-gray-500 mt-1">{DEMO_JOBS.length} jobs visible to you</p>
+        <h1 className="page-title">Checklists{clientName ? ` — ${clientName}` : ''}</h1>
+        <p className="text-gray-500 mt-1">{visibleJobs.length} checklist{visibleJobs.length !== 1 ? 's' : ''} visible to you</p>
       </div>
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Job</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Template</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Scheduled</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Access</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {DEMO_JOBS.map((job) => (
-              <tr key={job.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div>
-                    <p className="font-medium text-gray-900">{job.title}</p>
-                    <p className="text-xs text-gray-400">{job.job_number}</p>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-gray-600">{job.template.name}</td>
-                <td className="px-4 py-3">
-                  {job.can_view_status ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[job.status] ?? 'bg-gray-100 text-gray-700'}`}>{statusLabels[job.status] ?? job.status}</span>
-                  ) : <span className="text-xs text-gray-400">—</span>}
-                </td>
-                <td className="px-4 py-3 text-gray-500">{job.scheduled_date}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1 flex-wrap">
-                    {job.can_view_pdf && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">PDF</span>}
-                    {job.can_view_checklist_details && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Details</span>}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {(job.can_view_pdf || job.can_view_checklist_details) && (
-                    <Link href={`/client/jobs/${job.id}`} className="text-xs text-brand-600 hover:text-brand-800 font-medium">View →</Link>
-                  )}
-                </td>
+      {visibleJobs.length === 0 ? (
+        <div className="card p-12 text-center">
+          <ClipboardList className="h-10 w-10 mx-auto text-gray-300 mb-3" />
+          <p className="text-gray-500">No checklists available yet.</p>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Checklist</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Template</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Scheduled</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Access</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {visibleJobs.map((perm) => {
+                const job = perm.job!
+                return (
+                  <tr key={job.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-medium text-gray-900">{job.title}</p>
+                        <p className="text-xs text-gray-400">{job.job_number}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{job.template?.name ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {perm.can_view_status ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status as any)}`}>
+                          {getJobStatusLabel(job.status as any)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{job.scheduled_date ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 flex-wrap">
+                        {perm.can_view_pdf && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">PDF</span>
+                        )}
+                        {perm.can_view_checklist_details && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Details</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(perm.can_view_pdf || perm.can_view_checklist_details) && (
+                        <Link href={`/client/jobs/${job.id}`} className="text-xs text-brand-600 hover:text-brand-800 font-medium">
+                          View →
+                        </Link>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
