@@ -44,6 +44,7 @@ export default function NewTemplatePage() {
   const [isDirty, setIsDirty] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
 
   const loadedRef = useRef(false)
 
@@ -138,8 +139,12 @@ export default function NewTemplatePage() {
     loadTemplate()
   }, [duplicateFrom])
 
-  async function handleSave() {
-    if (!name.trim()) { setError('Template name is required'); return }
+  // handleSave: returns true on success, false on failure.
+  // redirectTo: where to navigate after success. undefined = /admin/templates, null = stay here.
+  async function handleSave(opts?: { redirectTo?: string | null }): Promise<boolean> {
+    const msg = (m: string) => { setError(m); return false }
+
+    if (!name.trim()) return msg('Template name is required')
 
     // Validate: no broken conditional/formula references
     const allFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
@@ -164,17 +169,14 @@ export default function NewTemplatePage() {
         }
       }
     }
-    if (broken.length > 0) {
-      setError(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
-      return
-    }
+    if (broken.length > 0) return msg(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
 
     setSaving(true)
     setError(null)
 
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setError('Not authenticated'); setSaving(false); return }
+    if (!user) { setError('Not authenticated'); setSaving(false); return false }
 
     const { data: template, error: tmplErr } = await supabase
       .from('checklist_templates')
@@ -192,7 +194,7 @@ export default function NewTemplatePage() {
     if (tmplErr || !template) {
       setError(tmplErr?.message ?? 'Failed to create template')
       setSaving(false)
-      return
+      return false
     }
 
     // Pass 1: Insert all sections and fields WITHOUT conditional_logic
@@ -275,8 +277,13 @@ export default function NewTemplatePage() {
       }
     }
 
+    setSaving(false)
     setIsDirty(false)
-    router.push('/admin/templates')
+    dirtyState.set(false)
+    dirtyState.setHandler(null)
+    const dest = opts?.redirectTo !== undefined ? opts.redirectTo : '/admin/templates'
+    if (dest) router.push(dest)
+    return true
   }
 
   function requestNavigate(dest: string) {
@@ -289,8 +296,14 @@ export default function NewTemplatePage() {
   }
 
   async function confirmLeaveWithSave() {
-    setShowLeaveDialog(false)
-    await handleSave()
+    setLeaveError(null)
+    const dest = leaveDestination ?? '/admin/templates'
+    const ok = await handleSave({ redirectTo: dest })
+    if (!ok) {
+      setLeaveError(error)
+    } else {
+      setShowLeaveDialog(false)
+    }
   }
 
   function confirmLeaveWithout() {
@@ -322,7 +335,7 @@ export default function NewTemplatePage() {
           <p className="text-gray-500 mt-0.5">Design the checklist structure</p>
         </div>
         {isDirty && (
-          <button onClick={handleSave} disabled={saving} className="btn-primary">
+          <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -392,7 +405,7 @@ export default function NewTemplatePage() {
         <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
           Cancel
         </button>
-        <button onClick={handleSave} disabled={saving} className="btn-primary">
+        <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Saving…' : 'Save Template'}
         </button>
@@ -403,7 +416,7 @@ export default function NewTemplatePage() {
         <div className="sticky bottom-4 z-10">
           <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
             <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
-            <button onClick={handleSave} disabled={saving} className="btn-primary">
+            <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? 'Saving…' : 'Save Template'}
             </button>
@@ -424,15 +437,18 @@ export default function NewTemplatePage() {
                 <p className="text-sm text-gray-500 mt-1">You have unsaved changes. What would you like to do?</p>
               </div>
             </div>
+            {leaveError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-700 whitespace-pre-wrap">{leaveError}</div>
+            )}
             <div className="flex flex-col gap-2">
               <button onClick={confirmLeaveWithSave} disabled={saving} className="btn-primary justify-center">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save and leave
+                {saving ? 'Saving…' : 'Save and leave'}
               </button>
               <button onClick={confirmLeaveWithout} className="btn-secondary justify-center text-red-600 hover:bg-red-50 border-red-200">
                 Leave without saving
               </button>
-              <button onClick={() => setShowLeaveDialog(false)} className="btn-ghost justify-center">
+              <button onClick={() => { setShowLeaveDialog(false); setLeaveError(null) }} className="btn-ghost justify-center">
                 Cancel
               </button>
             </div>

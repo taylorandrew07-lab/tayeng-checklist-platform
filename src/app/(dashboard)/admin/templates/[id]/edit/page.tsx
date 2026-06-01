@@ -45,6 +45,7 @@ export default function EditTemplatePage() {
   const [isDirty, setIsDirty] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
 
   // Track original DB IDs so we can update in place
   const originalSectionIds = useRef<Set<string>>(new Set())
@@ -141,8 +142,12 @@ export default function EditTemplatePage() {
     load()
   }, [templateId, router])
 
-  async function handleSave() {
-    if (!name.trim()) { setError('Template name is required'); return }
+  // handleSave: returns true on success, false on failure.
+  // redirectTo: where to navigate after success. undefined = /admin/templates, null = stay here.
+  async function handleSave(opts?: { redirectTo?: string | null }): Promise<boolean> {
+    const msg = (m: string) => { setError(m); return false }
+
+    if (!name.trim()) return msg('Template name is required')
 
     // Validate: no broken conditional/formula references
     const allFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
@@ -167,10 +172,7 @@ export default function EditTemplatePage() {
         }
       }
     }
-    if (broken.length > 0) {
-      setError(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
-      return
-    }
+    if (broken.length > 0) return msg(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
 
     setSaving(true)
     setError(null)
@@ -191,7 +193,7 @@ export default function EditTemplatePage() {
     if (tmplErr) {
       setError(tmplErr.message)
       setSaving(false)
-      return
+      return false
     }
 
     const currentSectionIds = new Set(sections.map(s => s.id))
@@ -204,11 +206,21 @@ export default function EditTemplatePage() {
       }
     }
 
-    // d. Delete removed fields
-    for (const id of Array.from(originalFieldIds.current)) {
-      if (!currentFieldIds.has(id)) {
-        await supabase.from('template_fields').delete().eq('id', id)
+    // d. Delete removed fields — but first check for existing answers (guard against cascade data loss)
+    const removedFieldIds = Array.from(originalFieldIds.current).filter(id => !currentFieldIds.has(id))
+    if (removedFieldIds.length > 0 && jobCount > 0) {
+      const { count: answerCount } = await supabase
+        .from('job_field_values')
+        .select('*', { count: 'exact', head: true })
+        .in('field_id', removedFieldIds)
+      if ((answerCount ?? 0) > 0) {
+        setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
+        setSaving(false)
+        return false
       }
+    }
+    for (const id of removedFieldIds) {
+      await supabase.from('template_fields').delete().eq('id', id)
     }
 
     // Maps from local builder IDs to new DB IDs (only for newly inserted items)
@@ -333,8 +345,13 @@ export default function EditTemplatePage() {
       }
     }
 
+    setSaving(false)
     setIsDirty(false)
-    router.push('/admin/templates')
+    dirtyState.set(false)
+    dirtyState.setHandler(null)
+    const dest = opts?.redirectTo !== undefined ? opts.redirectTo : '/admin/templates'
+    if (dest) router.push(dest)
+    return true
   }
 
   function requestNavigate(dest: string) {
@@ -347,8 +364,15 @@ export default function EditTemplatePage() {
   }
 
   async function confirmLeaveWithSave() {
-    setShowLeaveDialog(false)
-    await handleSave()
+    setLeaveError(null)
+    const dest = leaveDestination ?? '/admin/templates'
+    const ok = await handleSave({ redirectTo: dest })
+    if (!ok) {
+      // Keep the dialog open; mirror the error into the dialog
+      setLeaveError(error)
+    } else {
+      setShowLeaveDialog(false)
+    }
   }
 
   function confirmLeaveWithout() {
@@ -380,7 +404,7 @@ export default function EditTemplatePage() {
           <p className="text-gray-500 mt-0.5">{jobCount > 0 ? `${jobCount} job${jobCount !== 1 ? 's' : ''} using this template` : 'No jobs yet'}</p>
         </div>
         {isDirty && (
-          <button onClick={handleSave} disabled={saving} className="btn-primary">
+          <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -442,7 +466,7 @@ export default function EditTemplatePage() {
         <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
           Cancel
         </button>
-        <button onClick={handleSave} disabled={saving} className="btn-primary">
+        <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
@@ -453,7 +477,7 @@ export default function EditTemplatePage() {
         <div className="sticky bottom-4 z-10">
           <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
             <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
-            <button onClick={handleSave} disabled={saving} className="btn-primary">
+            <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
@@ -474,15 +498,18 @@ export default function EditTemplatePage() {
                 <p className="text-sm text-gray-500 mt-1">You have unsaved changes. What would you like to do?</p>
               </div>
             </div>
+            {leaveError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-700 whitespace-pre-wrap">{leaveError}</div>
+            )}
             <div className="flex flex-col gap-2">
               <button onClick={confirmLeaveWithSave} disabled={saving} className="btn-primary justify-center">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save and leave
+                {saving ? 'Saving…' : 'Save and leave'}
               </button>
               <button onClick={confirmLeaveWithout} className="btn-secondary justify-center text-red-600 hover:bg-red-50 border-red-200">
                 Leave without saving
               </button>
-              <button onClick={() => setShowLeaveDialog(false)} className="btn-ghost justify-center">
+              <button onClick={() => { setShowLeaveDialog(false); setLeaveError(null) }} className="btn-ghost justify-center">
                 Cancel
               </button>
             </div>
