@@ -310,7 +310,17 @@ export default function AdminChecklistDetailPage() {
       {/* Checklist fields editor */}
       <div className="border-t border-gray-200 pt-6 mt-2">
         <h2 className="section-title mb-5">Checklist Fields</h2>
-        <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
+        {['in_progress', 'assigned'].includes(job.status) && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4 text-sm text-amber-800">
+            This checklist is currently being worked on by the assigned surveyor. Admin view is read-only to prevent overwriting their edits.
+          </div>
+        )}
+        <JobChecklistEditor
+          ref={editorRef}
+          jobId={jobId}
+          backHref="/admin/jobs"
+          forceReadOnly={['in_progress', 'assigned'].includes(job.status)}
+        />
       </div>
     </div>
   )

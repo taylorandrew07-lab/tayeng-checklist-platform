@@ -151,3 +151,21 @@ export function checkConditionalLogic(
 export function generateId(): string {
   return crypto.randomUUID()
 }
+
+/**
+ * Races a promise against a timeout. Rejects with a user-visible message if
+ * the timeout fires first. The underlying request is still in-flight but the
+ * UI is unblocked.
+ */
+export function withTimeout<T>(thenable: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  let timerId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timerId = setTimeout(
+      () => reject(new Error(`${label} timed out — check your connection and try again.`)),
+      ms
+    )
+  })
+  return Promise.race([Promise.resolve(thenable), timeout]).finally(() => {
+    if (timerId !== undefined) clearTimeout(timerId)
+  })
+}

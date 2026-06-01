@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import Link from 'next/link'
 import type { ChecklistTemplate, Client, SurveyorName } from '@/lib/types/database'
+import { withTimeout } from '@/lib/utils'
 
 function formatDateDMY(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0')
@@ -92,64 +93,106 @@ export default function SurveyorNewChecklistPage() {
     setSaving(true)
     setError(null)
 
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    try {
+      const supabase = createClient()
 
-    let finalClientId = clientId || null
+      // [create:getUser]
+      const { data: { user }, error: userErr } = await withTimeout(
+        supabase.auth.getUser(), 10_000, 'Session check'
+      )
+      if (userErr || !user) throw new Error('Session expired — please log in again.')
 
-    if (showNewClient && newClientName.trim()) {
-      await supabase.from('client_requests').insert({
-        requested_name: newClientName.trim(),
-        requested_by: user.id,
-      })
-      fetch('/api/notify/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'client_request', requestedName: newClientName.trim() }),
-      }).catch(() => {})
-      finalClientId = null
+      let finalClientId = clientId || null
+
+      // [create:clientRequest]
+      if (showNewClient && newClientName.trim()) {
+        const { error: crErr } = await withTimeout(
+          supabase.from('client_requests').insert({
+            requested_name: newClientName.trim(),
+            requested_by: user.id,
+          }),
+          8_000, 'Client request'
+        )
+        if (crErr) {
+          console.error('[create:clientRequest]', crErr)
+          throw new Error('Could not submit new client request: ' + crErr.message)
+        }
+        fetch('/api/notify/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'client_request', requestedName: newClientName.trim() }),
+        }).catch(() => {})
+        finalClientId = null
+      }
+
+      // [create:surveyorRequest]
+      if (showNewSurveyor && newSurveyorName.trim()) {
+        const { error: srErr } = await withTimeout(
+          supabase.from('surveyor_name_requests').insert({
+            requested_name: newSurveyorName.trim(),
+            requested_by: user.id,
+          }),
+          8_000, 'Surveyor name request'
+        )
+        if (srErr) {
+          console.error('[create:surveyorRequest]', srErr)
+          throw new Error('Could not submit surveyor name request: ' + srErr.message)
+        }
+        fetch('/api/notify/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'surveyor_request', requestedName: newSurveyorName.trim() }),
+        }).catch(() => {})
+      }
+
+      const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`
+
+      // [create:jobInsert]
+      const { data: job, error: jobErr } = await withTimeout(
+        supabase.from('jobs').insert({
+          title,
+          template_id: templateId,
+          vessel_name: vesselName.trim(),
+          surveyor_name: finalSurveyor,
+          client_id: finalClientId,
+          created_by: user.id,
+          assigned_to: user.id,
+          status: 'in_progress',
+          started_at: new Date().toISOString(),
+        }).select().single(),
+        12_000, 'Checklist creation'
+      )
+      if (jobErr || !job) {
+        console.error('[create:jobInsert]', jobErr)
+        throw new Error(jobErr?.message ?? 'Failed to create checklist — please try again.')
+      }
+
+      // [create:clientPermission] — non-fatal: job already created
+      if (finalClientId && job.id) {
+        try {
+          const { error: permErr } = await withTimeout(
+            supabase.from('client_job_permissions').insert({
+              client_id: finalClientId,
+              job_id: job.id,
+              can_view_status: true,
+              can_view_pdf: false,
+              can_view_checklist_details: false,
+            }),
+            8_000, 'Client permissions'
+          )
+          if (permErr) console.error('[create:clientPermission]', permErr)
+        } catch (permErr) {
+          console.error('[create:clientPermission]', permErr)
+        }
+      }
+
+      router.push(`/surveyor/jobs/${job.id}`)
+    } catch (err: any) {
+      console.error('[create:error]', err)
+      setError(err.message ?? 'Checklist creation failed — please try again.')
+    } finally {
+      setSaving(false)
     }
-
-    if (showNewSurveyor && newSurveyorName.trim()) {
-      await supabase.from('surveyor_name_requests').insert({
-        requested_name: newSurveyorName.trim(),
-        requested_by: user.id,
-      })
-      fetch('/api/notify/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'surveyor_request', requestedName: newSurveyorName.trim() }),
-      }).catch(() => {})
-    }
-
-    const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`
-
-    const { data: job, error: err } = await supabase.from('jobs').insert({
-      title,
-      template_id: templateId,
-      vessel_name: vesselName.trim(),
-      surveyor_name: finalSurveyor,
-      client_id: finalClientId,
-      created_by: user.id,
-      assigned_to: user.id,
-      status: 'in_progress',
-      started_at: new Date().toISOString(),
-    }).select().single()
-
-    if (err || !job) { setError(err?.message ?? 'Failed to create checklist'); setSaving(false); return }
-
-    if (finalClientId && job.id) {
-      await supabase.from('client_job_permissions').insert({
-        client_id: finalClientId,
-        job_id: job.id,
-        can_view_status: true,
-        can_view_pdf: false,
-        can_view_checklist_details: false,
-      })
-    }
-
-    router.push(`/surveyor/jobs/${job.id}`)
   }
 
   if (loading) {

@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   danger?: boolean
   loading?: boolean
+  error?: string | null
 }
 
 export function ConfirmDialog({
@@ -23,6 +24,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   danger = false,
   loading = false,
+  error = null,
 }: ConfirmDialogProps) {
   return (
     <Modal
@@ -45,13 +47,20 @@ export function ConfirmDialog({
         </>
       }
     >
-      <div className="flex gap-4">
-        {danger && (
-          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
+      <div className="space-y-4">
+        <div className="flex gap-4">
+          {danger && (
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+          )}
+          <p className="text-sm text-gray-600 leading-relaxed">{message}</p>
+        </div>
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
           </div>
         )}
-        <p className="text-sm text-gray-600 leading-relaxed">{message}</p>
       </div>
     </Modal>
   )

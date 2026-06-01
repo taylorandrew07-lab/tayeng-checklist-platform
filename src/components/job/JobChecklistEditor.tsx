@@ -9,7 +9,7 @@ import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
 } from 'lucide-react'
-import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
+import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -28,10 +28,12 @@ export interface JobChecklistEditorHandle {
 interface Props {
   jobId: string
   backHref: string
+  /** Force the checklist into read-only mode regardless of job status. */
+  forceReadOnly?: boolean
 }
 
 const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
-  function JobChecklistEditor({ jobId, backHref }, ref) {
+  function JobChecklistEditor({ jobId, backHref, forceReadOnly = false }, ref) {
     const router = useRouter()
 
     const [job, setJob] = useState<any>(null)
@@ -200,24 +202,29 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }))
 
         if (upserts.length > 0) {
-          const { error } = await supabase
-            .from('job_field_values')
-            .upsert(upserts, { onConflict: 'job_id,field_id' })
-          if (error) throw error
+          const { error } = await withTimeout(
+            supabase.from('job_field_values').upsert(upserts, { onConflict: 'job_id,field_id' }),
+            15_000, 'Saving answers'
+          )
+          if (error) { console.error('[save:fieldValues]', error); throw error }
         }
         if (arrayUpserts.length > 0) {
-          const { error } = await supabase
-            .from('job_field_values')
-            .upsert(arrayUpserts, { onConflict: 'job_id,field_id' })
-          if (error) throw error
+          const { error } = await withTimeout(
+            supabase.from('job_field_values').upsert(arrayUpserts, { onConflict: 'job_id,field_id' }),
+            15_000, 'Saving multi-select answers'
+          )
+          if (error) { console.error('[save:arrayValues]', error); throw error }
         }
         for (const [field_id, signature_data] of Object.entries(signatures)) {
           if (!signature_data) continue
-          const { error } = await supabase
-            .from('job_signatures')
-            .upsert({ job_id: jobId, field_id, signature_data, signed_at: new Date().toISOString() },
-              { onConflict: 'job_id,field_id' })
-          if (error) throw error
+          const { error } = await withTimeout(
+            supabase.from('job_signatures').upsert(
+              { job_id: jobId, field_id, signature_data, signed_at: new Date().toISOString() },
+              { onConflict: 'job_id,field_id' }
+            ),
+            10_000, 'Saving signature'
+          )
+          if (error) { console.error('[save:signatures]', error); throw error }
         }
 
         setLastSaved(new Date())
@@ -274,12 +281,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }
 
         const supabase = createClient()
-        const { error } = await supabase.from('jobs').update({
-          status: 'submitted',
-          submitted_at: new Date().toISOString(),
-        }).eq('id', jobId)
+        const { error } = await withTimeout(
+          supabase.from('jobs').update({
+            status: 'submitted',
+            submitted_at: new Date().toISOString(),
+          }).eq('id', jobId),
+          10_000, 'Submitting checklist'
+        )
 
         if (error) {
+          console.error('[submit:jobUpdate]', error)
           const message = 'Submit failed: ' + error.message
           setSaveError(message)
           setSubmitError(message)
@@ -401,7 +412,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     if (!job) return null
 
     const isSubmitted = ['submitted', 'completed', 'client_visible'].includes(job.status)
-    const readOnly = isSubmitted
+    const readOnly = isSubmitted || forceReadOnly
 
     // Flat list of all fields for token substitution
     const allFieldsFlat = sections.flatMap(s => s.fields)
