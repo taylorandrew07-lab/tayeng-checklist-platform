@@ -136,14 +136,25 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 className="input-base"
                 placeholder="Field label"
               />
-              {/* Insert field-value reference tokens into the label */}
-              {allFields.filter(f => f.id !== field.id && ['dropdown', 'yes_no', 'yes_no_na'].includes(f.field_type)).length > 0 && (
-                <div className="mt-1.5">
-                  <p className="text-xs text-gray-500 mb-1">Insert dynamic value into label:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {allFields
-                      .filter(f => f.id !== field.id && ['dropdown', 'yes_no', 'yes_no_na'].includes(f.field_type))
-                      .map(f => (
+              {/* Friendly preview of any {uuid} tokens already in the label */}
+              {(() => {
+                const tokenIds = Array.from(field.label.matchAll(/\{([^}]+)\}/g), m => m[1])
+                const resolved = tokenIds.map(id => allFields.find(f => f.id === id)?.label ?? `[Unknown: ${id.slice(0, 8)}…]`)
+                return resolved.length > 0 ? (
+                  <p className="text-xs text-purple-600 mt-1">Dynamic value: {resolved.join(', ')}</p>
+                ) : null
+              })()}
+              {/* Insert dynamic value — only dropdown fields that appear before this one */}
+              {(() => {
+                const idx = allFields.findIndex(f => f.id === field.id)
+                const sources = allFields
+                  .slice(0, idx >= 0 ? idx : allFields.length)
+                  .filter(f => f.field_type === 'dropdown')
+                return sources.length > 0 ? (
+                  <div className="mt-1.5">
+                    <p className="text-xs text-gray-500 mb-1">Insert dynamic value into label:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {sources.map(f => (
                         <button
                           key={f.id}
                           type="button"
@@ -154,9 +165,10 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                           + {f.label}
                         </button>
                       ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null
+              })()}
               {METADATA_PATTERNS.some(p => field.label.toLowerCase().includes(p)) && (
                 <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
                   <span>ℹ</span>
