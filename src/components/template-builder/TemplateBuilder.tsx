@@ -35,6 +35,27 @@ interface TemplateBuilderProps {
   onChange: (sections: BuilderSection[]) => void
 }
 
+// Re-stamp order_index and the auto sequential item_number for a section's fields.
+// Layout fields (heading/divider) are skipped in the visible numbering.
+function renumberFields(fields: BuilderField[]): BuilderField[] {
+  let n = 0
+  return fields.map((f, i) => {
+    const isLayout = f.field_type === 'heading' || f.field_type === 'divider'
+    return { ...f, order_index: i, item_number: isLayout ? '' : String(++n) }
+  })
+}
+
+// Visible number for a field at render time (skips layout fields). Returns '' for layout.
+function computeDisplayNumber(fields: BuilderField[], index: number): string {
+  let n = 0
+  for (let i = 0; i <= index; i++) {
+    const isLayout = fields[i].field_type === 'heading' || fields[i].field_type === 'divider'
+    if (!isLayout) n++
+    if (i === index) return isLayout ? '' : String(n)
+  }
+  return ''
+}
+
 export default function TemplateBuilder({ sections, onChange }: TemplateBuilderProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -61,11 +82,11 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
     onChange(sections.map(s => {
       if (s.id !== sectionId) return s
       const newField = createBlankField(atIndex)
-      const updated = [
+      const updated = renumberFields([
         ...s.fields.slice(0, atIndex),
         newField,
         ...s.fields.slice(atIndex),
-      ].map((f, i) => ({ ...f, order_index: i }))
+      ])
       return { ...s, fields: updated }
     }))
   }
@@ -73,14 +94,15 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
   function updateField(sectionId: string, fieldId: string, field: BuilderField) {
     onChange(sections.map(s => {
       if (s.id !== sectionId) return s
-      return { ...s, fields: s.fields.map(f => f.id === fieldId ? field : f) }
+      // renumber so a field-type change to/from a layout type re-flows the sequence
+      return { ...s, fields: renumberFields(s.fields.map(f => f.id === fieldId ? field : f)) }
     }))
   }
 
   function deleteField(sectionId: string, fieldId: string) {
     onChange(sections.map(s => {
       if (s.id !== sectionId) return s
-      return { ...s, fields: s.fields.filter(f => f.id !== fieldId) }
+      return { ...s, fields: renumberFields(s.fields.filter(f => f.id !== fieldId)) }
     }))
   }
 
@@ -100,7 +122,7 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
       if (s.id !== sectionId) return s
       const oldIndex = s.fields.findIndex(f => f.id === active.id)
       const newIndex = s.fields.findIndex(f => f.id === over.id)
-      const reordered = arrayMove(s.fields, oldIndex, newIndex).map((f, i) => ({ ...f, order_index: i }))
+      const reordered = renumberFields(arrayMove(s.fields, oldIndex, newIndex))
       return { ...s, fields: reordered }
     }))
   }
@@ -278,6 +300,7 @@ function SortableSection({
                         field={field}
                         sections={[]}
                         allFields={allFields}
+                        displayNumber={computeDisplayNumber(section.fields, i)}
                         onUpdate={(updated) => onUpdateField(field.id, updated)}
                         onDelete={() => onDeleteField(field.id)}
                       />
@@ -298,11 +321,12 @@ interface SortableFieldProps {
   field: BuilderField
   sections: BuilderSection[]
   allFields: BuilderField[]
+  displayNumber: string
   onUpdate: (field: BuilderField) => void
   onDelete: () => void
 }
 
-function SortableField({ field, sections, allFields, onUpdate, onDelete }: SortableFieldProps) {
+function SortableField({ field, sections, allFields, displayNumber, onUpdate, onDelete }: SortableFieldProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
 
   const style = {
@@ -328,6 +352,7 @@ function SortableField({ field, sections, allFields, onUpdate, onDelete }: Sorta
           field={field}
           sections={sections}
           allFields={allFields}
+          displayNumber={displayNumber}
           onChange={onUpdate}
           onDelete={onDelete}
         />

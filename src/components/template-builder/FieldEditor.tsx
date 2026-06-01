@@ -21,13 +21,36 @@ interface FieldEditorProps {
   field: BuilderField
   sections: BuilderSection[]
   allFields: BuilderField[]
+  /** Auto sequential number for this field within its section (read-only). '' for layout fields. */
+  displayNumber: string
   onChange: (field: BuilderField) => void
   onDelete: () => void
 }
 
-export default function FieldEditor({ field, sections, allFields, onChange, onDelete }: FieldEditorProps) {
-  const [expanded, setExpanded] = useState(true)
+// Accessible on/off switch used for inline toggles
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className="flex items-center gap-2 cursor-pointer select-none"
+    >
+      <span className={cn('relative w-10 h-6 rounded-full transition-colors', checked ? 'bg-brand-600' : 'bg-gray-300')}>
+        <span className={cn('absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform', checked ? 'translate-x-5' : 'translate-x-1')} />
+      </span>
+      <span className="text-sm font-medium text-gray-700">{label}</span>
+    </button>
+  )
+}
+
+export default function FieldEditor({ field, sections, allFields, displayNumber, onChange, onDelete }: FieldEditorProps) {
+  // Item 6: fields start collapsed; expand on click to edit
+  const [expanded, setExpanded] = useState(false)
   const [showConditional, setShowConditional] = useState(!!field.conditional_logic)
+  // Item 3: help text hidden by default, shown only when the box is checked (or a value already exists)
+  const [showHelp, setShowHelp] = useState(!!field.help_text)
 
   function update(patch: Partial<BuilderField>) {
     onChange({ ...field, ...patch })
@@ -62,6 +85,11 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
         className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
+        {displayNumber && (
+          <span className="flex-shrink-0 w-6 h-6 rounded-md bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center">
+            {displayNumber}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-900 truncate">
@@ -178,80 +206,96 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
             </div>
           </div>
 
-          {/* Item number */}
+          {/* Item 5: inline toggles directly beneath the label */}
           {!isLayoutField && (
-            <div>
-              <label className="label-base">Item No. <span className="text-gray-400 font-normal">(e.g. A1, B3)</span></label>
-              <input
-                type="text"
-                value={field.item_number}
-                onChange={(e) => update({ item_number: e.target.value })}
-                className="input-base"
-                placeholder="Optional — shown as prefix"
-              />
+            <div className="space-y-3">
+              <div className="flex items-center gap-6 flex-wrap">
+                <Toggle
+                  checked={field.is_required}
+                  onChange={() => update({ is_required: !field.is_required })}
+                  label="Required"
+                />
+                <Toggle
+                  checked={showConditional}
+                  onChange={() => {
+                    const next = !showConditional
+                    setShowConditional(next)
+                    updateConditional(next ? { operator: 'and', conditions: [] } : null)
+                  }}
+                  label="Conditional display"
+                />
+                {isYesNo && (
+                  <Toggle
+                    checked={field.with_remarks}
+                    onChange={() => update({ with_remarks: !field.with_remarks })}
+                    label="With Remarks"
+                  />
+                )}
+              </div>
+
+              {showConditional && field.conditional_logic && (
+                <ConditionalLogicEditor
+                  logic={field.conditional_logic}
+                  onChange={updateConditional}
+                  availableFields={allFields.filter(f => f.id !== field.id && !['photo', 'signature', 'heading', 'divider'].includes(f.field_type))}
+                />
+              )}
             </div>
           )}
 
           {/* Non-layout fields have more options */}
           {!isLayoutField && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label-base">Placeholder</label>
-                  <input
-                    type="text"
-                    value={field.placeholder}
-                    onChange={(e) => update({ placeholder: e.target.value })}
-                    className="input-base"
-                    placeholder="Optional placeholder"
-                  />
-                </div>
-                {field.field_type === 'number' && (
+              {/* Item 1: Placeholder only for text / number / textarea */}
+              {['text', 'number', 'textarea'].includes(field.field_type) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="label-base">Unit (e.g. kg, L, m)</label>
+                    <label className="label-base">Placeholder</label>
                     <input
                       type="text"
-                      value={field.unit}
-                      onChange={(e) => update({ unit: e.target.value })}
+                      value={field.placeholder}
+                      onChange={(e) => update({ placeholder: e.target.value })}
                       className="input-base"
-                      placeholder="kg"
+                      placeholder="Optional placeholder"
                     />
                   </div>
-                )}
-              </div>
-
-              <div>
-                <label className="label-base">Help Text</label>
-                <input
-                  type="text"
-                  value={field.help_text}
-                  onChange={(e) => update({ help_text: e.target.value })}
-                  className="input-base"
-                  placeholder="Optional instructions for surveyors"
-                />
-              </div>
-
-              {/* Required + With Remarks toggles */}
-              <div className="flex items-center gap-6">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <div
-                    onClick={() => update({ is_required: !field.is_required })}
-                    className={cn('relative w-10 h-6 rounded-full transition-colors', field.is_required ? 'bg-brand-600' : 'bg-gray-300')}
-                  >
-                    <div className={cn('absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform', field.is_required ? 'translate-x-5' : 'translate-x-1')} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700">Required</span>
-                </label>
-                {isYesNo && (
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <div
-                      onClick={() => update({ with_remarks: !field.with_remarks })}
-                      className={cn('relative w-10 h-6 rounded-full transition-colors', field.with_remarks ? 'bg-brand-600' : 'bg-gray-300')}
-                    >
-                      <div className={cn('absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform', field.with_remarks ? 'translate-x-5' : 'translate-x-1')} />
+                  {field.field_type === 'number' && (
+                    <div>
+                      <label className="label-base">Unit (e.g. kg, L, m)</label>
+                      <input
+                        type="text"
+                        value={field.unit}
+                        onChange={(e) => update({ unit: e.target.value })}
+                        className="input-base"
+                        placeholder="kg"
+                      />
                     </div>
-                    <span className="text-sm font-medium text-gray-700">With Remarks</span>
-                  </label>
+                  )}
+                </div>
+              )}
+
+              {/* Item 3: collapsible help text */}
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showHelp}
+                    onChange={(e) => {
+                      setShowHelp(e.target.checked)
+                      if (!e.target.checked) update({ help_text: '' })
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Add help text</span>
+                </label>
+                {showHelp && (
+                  <input
+                    type="text"
+                    value={field.help_text}
+                    onChange={(e) => update({ help_text: e.target.value })}
+                    className="input-base mt-2"
+                    placeholder="Optional instructions for surveyors"
+                  />
                 )}
               </div>
 
@@ -488,32 +532,6 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 </div>
               )}
 
-              {/* Conditional logic */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showConditional}
-                      onChange={(e) => {
-                        setShowConditional(e.target.checked)
-                        if (!e.target.checked) updateConditional(null)
-                        else updateConditional({ operator: 'and', conditions: [] })
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Conditional display</span>
-                  </label>
-                </div>
-
-                {showConditional && field.conditional_logic && (
-                  <ConditionalLogicEditor
-                    logic={field.conditional_logic}
-                    onChange={updateConditional}
-                    availableFields={allFields.filter(f => f.id !== field.id && !['photo', 'signature', 'heading', 'divider'].includes(f.field_type))}
-                  />
-                )}
-              </div>
             </>
           )}
         </div>
