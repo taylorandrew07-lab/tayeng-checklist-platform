@@ -138,6 +138,17 @@ export default function SurveyorNewChecklistPage() {
     }).select().single()
 
     if (err || !job) { setError(err?.message ?? 'Failed to create checklist'); setSaving(false); return }
+
+    if (finalClientId && job.id) {
+      await supabase.from('client_job_permissions').insert({
+        client_id: finalClientId,
+        job_id: job.id,
+        can_view_status: true,
+        can_view_pdf: false,
+        can_view_checklist_details: false,
+      })
+    }
+
     router.push(`/surveyor/jobs/${job.id}`)
   }
 
