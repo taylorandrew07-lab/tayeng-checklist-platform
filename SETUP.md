@@ -72,6 +72,12 @@ In your Supabase project → **SQL Editor**, run the migration files **in order*
 3. `supabase/migrations/003_enhancements.sql`
 4. `supabase/migrations/004_auth_hardening.sql`
 5. `supabase/migrations/005_production_hardening.sql`
+6. `supabase/migrations/006_rls_active_check.sql`
+7. `supabase/migrations/007_repair_bptt_conditional_logic.sql`
+8. `supabase/migrations/008_backfill_yesno_options.sql`
+9. `supabase/migrations/010_storage_policies.sql`
+10. `supabase/migrations/011_scoped_storage_policies.sql`
+11. `supabase/migrations/012_scoped_storage_upload.sql`
 
 Each file is idempotent — safe to re-run.
 
@@ -84,12 +90,16 @@ In Supabase SQL Editor:
 ```sql
 INSERT INTO storage.buckets (id, name, public) VALUES ('job-photos', 'job-photos', false) ON CONFLICT DO NOTHING;
 INSERT INTO storage.buckets (id, name, public) VALUES ('job-pdfs',   'job-pdfs',   false) ON CONFLICT DO NOTHING;
-
--- Allow authenticated users to upload/read/delete photos
-CREATE POLICY "Auth upload photos"  ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
-CREATE POLICY "Auth read photos"    ON storage.objects FOR SELECT USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
-CREATE POLICY "Auth delete photos"  ON storage.objects FOR DELETE USING (bucket_id = 'job-photos' AND auth.role() = 'authenticated');
 ```
+
+> **Do NOT use broad `auth.role() = 'authenticated'` storage policies.** Those were superseded by migrations 010–012.
+> After running the migrations above, your effective storage policies will be:
+>
+> | Operation | Who can |
+> |-----------|---------|
+> | **Upload** | Active admin or active surveyor only |
+> | **Read** | Active admin (all) · Assigned surveyor (own jobs) · Permitted client (own jobs with `can_view_checklist_details`) |
+> | **Delete** | Active admin (all) · Original uploader (own files) |
 
 ---
 
