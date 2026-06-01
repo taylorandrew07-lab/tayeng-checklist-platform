@@ -32,7 +32,7 @@ export default function ClientsPage() {
     // Get job counts per client
     const counts: Record<string, number> = {}
     for (const client of (c ?? [])) {
-      const { count } = await supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('client_id', client.id)
+      const { count } = await supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('client_id', client.id)
       counts[client.id] = count ?? 0
     }
     setJobCounts(counts)

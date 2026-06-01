@@ -45,7 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       // Load pending user count for admin
       if (data.role === 'admin') {
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_active', false)
+        const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false)
         setPendingCount(count ?? 0)
       }
 

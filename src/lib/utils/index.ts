@@ -104,6 +104,23 @@ export function evaluateCalculation(
   }
 }
 
+/**
+ * Formats a USG difference + true percentage for display in the "Difference" calculated field.
+ * Returns null pct when denominator is zero/missing (safe no-divide guard).
+ */
+export function formatDiffPercentage(
+  rawDiff: number,
+  denominatorStr: string | undefined
+): { display: string; pct: number | null } {
+  const denominator = parseFloat(denominatorStr ?? '')
+  if (!isFinite(denominator) || denominator === 0) {
+    return { display: '—', pct: null }
+  }
+  const pct = (rawDiff / denominator) * 100
+  const diffDisplay = Number.isInteger(rawDiff) ? String(rawDiff) : rawDiff.toFixed(2)
+  return { display: `${diffDisplay} USG: ${pct.toFixed(2)}%`, pct }
+}
+
 export function checkConditionalLogic(
   logic: { operator: 'and' | 'or'; conditions: Array<{ field_id: string; operator: string; value: string }> } | null,
   values: Record<string, string>

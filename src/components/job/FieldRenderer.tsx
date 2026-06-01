@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { Info } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
-import { evaluateCalculation, checkConditionalLogic } from '@/lib/utils'
+import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
 import SignaturePad from './SignaturePad'
 
 interface FieldRendererProps {
@@ -276,18 +276,27 @@ function CalculatedField({ field, allValues, onChange }: {
   let colorCls = 'bg-gray-50 text-gray-700'
 
   if (isPercent && !isNaN(numVal)) {
-    displayVal = `${numVal.toFixed(2)}%`
-    const absVal = Math.abs(numVal)
-    const thresholds = field.validation?.thresholds ?? [
-      { max: 1.0, color: 'green' as const },
-      { max: 2.0, color: 'amber' as const },
-      { color: 'red' as const },
-    ]
-    const match = thresholds.find(t => t.max === undefined || absVal < t.max)
-    const c = match?.color ?? 'red'
-    colorCls = c === 'green' ? 'bg-green-50 text-green-700 border-green-300 font-semibold'
-      : c === 'amber' ? 'bg-amber-50 text-amber-700 border-amber-300 font-semibold'
-      : 'bg-red-50 text-red-700 border-red-300 font-semibold'
+    // Denominator = last {uuid} token in the formula (the supplier / reference figure)
+    const tokens = Array.from((field.calculation_formula ?? '').matchAll(/\{([^}]+)\}/g), m => m[1])
+    const denominatorId = tokens[tokens.length - 1]
+    const { display, pct } = formatDiffPercentage(
+      numVal,
+      denominatorId ? allValues[denominatorId] : undefined
+    )
+    displayVal = display
+    if (pct !== null) {
+      const absVal = Math.abs(pct)
+      const thresholds = field.validation?.thresholds ?? [
+        { max: 1.0, color: 'green' as const },
+        { max: 2.0, color: 'amber' as const },
+        { color: 'red' as const },
+      ]
+      const match = thresholds.find(t => t.max === undefined || absVal < t.max)
+      const c = match?.color ?? 'red'
+      colorCls = c === 'green' ? 'bg-green-50 text-green-700 border-green-300 font-semibold'
+        : c === 'amber' ? 'bg-amber-50 text-amber-700 border-amber-300 font-semibold'
+        : 'bg-red-50 text-red-700 border-red-300 font-semibold'
+    }
   }
 
   return (

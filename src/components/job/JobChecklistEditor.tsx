@@ -169,6 +169,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setIsDirty(true)
     }, [])
 
+    // Calculated fields update values silently — they are derived, not user-driven
+    const updateCalculatedValue = useCallback((fieldId: string, val: string) => {
+      setValues(prev => ({ ...prev, [fieldId]: val }))
+    }, [])
+
     const updateArrayValue = useCallback((fieldId: string, val: string[]) => {
       setArrayValues(prev => ({ ...prev, [fieldId]: val }))
       setIsDirty(true)
@@ -609,7 +614,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         valueArray={arrayValues[field.id]}
                         signature={signatures[field.id]}
                         allValues={values}
-                        onChange={v => updateValue(field.id, v)}
+                        onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(field.id, v) : v => updateValue(field.id, v)}
                         onArrayChange={v => updateArrayValue(field.id, v)}
                         onSignatureChange={data => updateSignature(field.id, data)}
                         readOnly={readOnly}

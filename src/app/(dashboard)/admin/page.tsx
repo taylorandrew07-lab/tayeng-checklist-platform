@@ -42,12 +42,12 @@ export default function AdminDashboard() {
       { data: jobs },
     ] = await Promise.all([
       supabase.from('checklist_templates').select('status'),
-      supabase.from('jobs').select('*', { count: 'exact', head: true }),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('clients').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_active', false),
-      supabase.from('client_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('surveyor_name_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('jobs').select('id', { count: 'exact', head: true }),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('clients').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
+      supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('surveyor_name_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('jobs').select(`
         id, title, job_number, status, created_at, vessel_name, surveyor_name,
         template:checklist_templates(name),

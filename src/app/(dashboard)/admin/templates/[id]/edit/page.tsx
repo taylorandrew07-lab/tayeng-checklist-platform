@@ -51,10 +51,13 @@ export default function EditTemplatePage() {
   const originalSectionIds = useRef<Set<string>>(new Set())
   const originalFieldIds = useRef<Set<string>>(new Set())
   const loadedRef = useRef(false)
+  // One-time skip: suppress the dirty effect triggered by the initial state hydration
+  const skipDirtyRef = useRef(false)
 
-  // Mark dirty only after initial load
+  // Mark dirty only after initial load, skipping the hydration batch
   useEffect(() => {
     if (!loadedRef.current) return
+    if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
   }, [name, description, status, allowSurveyorStart, sections])
 
@@ -84,7 +87,7 @@ export default function EditTemplatePage() {
           .select('*, sections:template_sections(*, fields:template_fields(*))')
           .eq('id', templateId)
           .single(),
-        supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('template_id', templateId),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('template_id', templateId),
       ])
 
       if (!tmpl) { router.push('/admin/templates'); return }
@@ -135,6 +138,7 @@ export default function EditTemplatePage() {
 
       originalSectionIds.current = secIds
       originalFieldIds.current = fieldIds
+      skipDirtyRef.current = true
       setSections(builtSections)
       setLoading(false)
       loadedRef.current = true
@@ -211,7 +215,7 @@ export default function EditTemplatePage() {
     if (removedFieldIds.length > 0 && jobCount > 0) {
       const { count: answerCount } = await supabase
         .from('job_field_values')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .in('field_id', removedFieldIds)
       if ((answerCount ?? 0) > 0) {
         setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
@@ -404,7 +408,7 @@ export default function EditTemplatePage() {
           <p className="text-gray-500 mt-0.5">{jobCount > 0 ? `${jobCount} job${jobCount !== 1 ? 's' : ''} using this template` : 'No jobs yet'}</p>
         </div>
         {isDirty && (
-          <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
+          <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -466,7 +470,7 @@ export default function EditTemplatePage() {
         <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
           Cancel
         </button>
-        <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
+        <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
@@ -477,7 +481,7 @@ export default function EditTemplatePage() {
         <div className="sticky bottom-4 z-10">
           <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
             <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
-            <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
+            <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
