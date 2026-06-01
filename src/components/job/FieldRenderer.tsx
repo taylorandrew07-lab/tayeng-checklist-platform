@@ -80,7 +80,6 @@ export default function FieldRenderer({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={readOnly}
-          placeholder={field.placeholder ?? ''}
           className={baseInputClass}
         />
       )}
@@ -92,7 +91,6 @@ export default function FieldRenderer({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             disabled={readOnly}
-            placeholder={field.placeholder ?? ''}
             min={field.validation?.min}
             max={field.validation?.max}
             className={`${baseInputClass} flex-1`}
@@ -106,7 +104,6 @@ export default function FieldRenderer({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={readOnly}
-          placeholder={field.placeholder ?? ''}
           rows={3}
           className={`${baseInputClass} resize-y`}
         />

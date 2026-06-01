@@ -10,10 +10,8 @@ export interface BuilderField {
   validation: FieldValidation
   calculation_formula: string
   conditional_logic: ConditionalLogic | null
-  placeholder: string
   help_text: string
   unit: string
-  default_value: string
   item_number: string
   with_remarks: boolean
 }
@@ -71,10 +69,8 @@ export function createBlankField(order_index: number, field_type: BuilderField['
     validation: {},
     calculation_formula: '',
     conditional_logic: null,
-    placeholder: '',
     help_text: '',
     unit: '',
-    default_value: '',
     item_number: '',
     with_remarks: false,
   }

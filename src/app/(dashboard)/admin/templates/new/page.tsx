@@ -123,10 +123,8 @@ export default function NewTemplatePage() {
                 ? remapFormula(f.calculation_formula, idMap)
                 : '',
               conditional_logic: remapConditional(f.conditional_logic, idMap),
-              placeholder: f.placeholder ?? '',
               help_text: f.help_text ?? '',
               unit: f.unit ?? '',
-              default_value: f.default_value ?? '',
               item_number: f.item_number ?? '',
               with_remarks: f.with_remarks ?? false,
             })),
@@ -233,10 +231,8 @@ export default function NewTemplatePage() {
               ? remapFormula(field.calculation_formula, idMap)
               : null,
             conditional_logic: null,
-            placeholder: field.placeholder || null,
             help_text: field.help_text || null,
             unit: field.unit || null,
-            default_value: field.default_value || null,
             item_number: field.item_number || null,
             with_remarks: field.with_remarks || false,
           })

@@ -125,10 +125,8 @@ export default function EditTemplatePage() {
                   validation: f.validation ?? {},
                   calculation_formula: f.calculation_formula ?? '',
                   conditional_logic: f.conditional_logic,
-                  placeholder: f.placeholder ?? '',
                   help_text: f.help_text ?? '',
                   unit: f.unit ?? '',
-                  default_value: f.default_value ?? '',
                   item_number: f.item_number ?? '',
                   with_remarks: f.with_remarks ?? false,
                 }
@@ -276,10 +274,8 @@ export default function EditTemplatePage() {
             validation: Object.keys(field.validation).length ? field.validation : null,
             calculation_formula: field.calculation_formula || null,
             conditional_logic: field.conditional_logic,
-            placeholder: field.placeholder || null,
             help_text: field.help_text || null,
             unit: field.unit || null,
-            default_value: field.default_value || null,
             item_number: field.item_number || null,
             with_remarks: field.with_remarks || false,
           }).eq('id', field.id)
@@ -300,10 +296,8 @@ export default function EditTemplatePage() {
                 ? remapFormula(field.calculation_formula, newFieldIdMap)
                 : null,
               conditional_logic: null, // remapped in pass f
-              placeholder: field.placeholder || null,
               help_text: field.help_text || null,
               unit: field.unit || null,
-              default_value: field.default_value || null,
               item_number: field.item_number || null,
               with_remarks: field.with_remarks || false,
             })

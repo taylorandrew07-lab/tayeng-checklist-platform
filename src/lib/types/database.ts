@@ -122,10 +122,8 @@ export interface TemplateField {
   validation: FieldValidation | null
   calculation_formula: string | null
   conditional_logic: ConditionalLogic | null
-  placeholder: string | null
   help_text: string | null
   unit: string | null
-  default_value: string | null
   item_number: string | null
   with_remarks: boolean
   created_at: string

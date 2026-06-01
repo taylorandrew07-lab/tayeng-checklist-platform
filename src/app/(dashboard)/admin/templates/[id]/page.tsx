@@ -187,13 +187,13 @@ export default function TemplatePreviewPage() {
                         })()}
                         {(field.field_type === 'text' || field.field_type === 'number' || field.field_type === 'date' || field.field_type === 'time') && (
                           <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-xs text-gray-400 mt-1">
-                            {field.placeholder || FIELD_TYPE_LABELS[field.field_type]}
+                            {FIELD_TYPE_LABELS[field.field_type]}
                             {field.unit && <span className="ml-1 text-gray-500">({field.unit})</span>}
                           </div>
                         )}
                         {field.field_type === 'textarea' && (
                           <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-xs text-gray-400 mt-1 h-16">
-                            {field.placeholder || 'Long text…'}
+                            Long text…
                           </div>
                         )}
                         {(field.field_type === 'dropdown' || field.field_type === 'multiple_choice') && field.options?.length > 0 && (

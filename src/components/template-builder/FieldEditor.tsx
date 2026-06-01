@@ -246,31 +246,17 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
           {/* Non-layout fields have more options */}
           {!isLayoutField && (
             <>
-              {/* Item 1: Placeholder only for text / number / textarea */}
-              {['text', 'number', 'textarea'].includes(field.field_type) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="label-base">Placeholder</label>
-                    <input
-                      type="text"
-                      value={field.placeholder}
-                      onChange={(e) => update({ placeholder: e.target.value })}
-                      className="input-base"
-                      placeholder="Optional placeholder"
-                    />
-                  </div>
-                  {field.field_type === 'number' && (
-                    <div>
-                      <label className="label-base">Unit (e.g. kg, L, m)</label>
-                      <input
-                        type="text"
-                        value={field.unit}
-                        onChange={(e) => update({ unit: e.target.value })}
-                        className="input-base"
-                        placeholder="kg"
-                      />
-                    </div>
-                  )}
+              {/* Unit — number fields only */}
+              {field.field_type === 'number' && (
+                <div>
+                  <label className="label-base">Unit (e.g. kg, L, m)</label>
+                  <input
+                    type="text"
+                    value={field.unit}
+                    onChange={(e) => update({ unit: e.target.value })}
+                    className="input-base"
+                    placeholder="kg"
+                  />
                 </div>
               )}
 
@@ -485,50 +471,6 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {/* Default value for yes_no / yes_no_na */}
-              {isYesNo && (
-                <div>
-                  <label className="label-base">Default Value</label>
-                  <select
-                    value={field.default_value}
-                    onChange={(e) => update({ default_value: e.target.value })}
-                    className="input-base"
-                  >
-                    <option value="">No default</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                    {field.field_type === 'yes_no_na' && <option value="na">N/A</option>}
-                  </select>
-                </div>
-              )}
-
-              {/* Default value (not for photo/signature/calculated/yes_no/yes_no_na) */}
-              {!['photo', 'signature', 'calculated', 'yes_no', 'yes_no_na', 'multiple_choice'].includes(field.field_type) && (
-                <div>
-                  <label className="label-base">Default Value</label>
-                  {field.field_type === 'dropdown' ? (
-                    <select
-                      value={field.default_value}
-                      onChange={(e) => update({ default_value: e.target.value })}
-                      className="input-base"
-                    >
-                      <option value="">No default</option>
-                      {field.options.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type={field.field_type === 'date' ? 'date' : field.field_type === 'time' ? 'time' : 'text'}
-                      value={field.default_value}
-                      onChange={(e) => update({ default_value: e.target.value })}
-                      className="input-base"
-                      placeholder="Optional default value"
-                    />
-                  )}
                 </div>
               )}
 

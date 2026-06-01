@@ -139,9 +139,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       for (const section of processedSections) {
         for (const field of section.fields) {
-          if (field.default_value && !vals[field.id] && !arrVals[field.id]) {
-            vals[field.id] = field.default_value
-          }
           // Auto-fill vessel/surveyor from job metadata (only if field is text and currently empty)
           if (field.field_type === 'text' && !vals[field.id]) {
             const lbl = field.label.toLowerCase()

@@ -113,8 +113,6 @@ export default function TemplatesPage() {
             options: f.options,
             unit: f.unit,
             help_text: f.help_text,
-            placeholder: f.placeholder,
-            default_value: f.default_value,
             item_number: f.item_number,
             with_remarks: f.with_remarks,
             validation: f.validation,
