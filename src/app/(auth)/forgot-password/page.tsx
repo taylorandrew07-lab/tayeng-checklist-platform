@@ -17,7 +17,9 @@ export default function ForgotPasswordPage() {
     setError(null)
 
     const supabase = createClient()
-    const redirectTo = `${window.location.origin}/reset-password`
+    // Route through callback so the PKCE code is exchanged server-side,
+    // then redirected to /reset-password with a live session.
+    const redirectTo = `${window.location.origin}/api/auth/callback?next=/reset-password`
 
     const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
 
@@ -27,6 +29,7 @@ export default function ForgotPasswordPage() {
       return
     }
 
+    // Always show a generic message — do not confirm whether the email exists.
     setSent(true)
     setLoading(false)
   }
@@ -43,11 +46,16 @@ export default function ForgotPasswordPage() {
         </Link>
 
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset your password</h2>
-        <p className="text-sm text-gray-500 mb-6">Enter your email and we'll send you a reset link.</p>
+        <p className="text-sm text-gray-500 mb-6">Enter your email and we&apos;ll send you a reset link.</p>
 
         {sent ? (
-          <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-700">
-            Reset link sent to <strong>{email}</strong>. Check your inbox.
+          <div className="space-y-4">
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-700">
+              If an account exists for that email address, a reset link has been sent. Check your inbox.
+            </div>
+            <Link href="/login" className="btn-secondary w-full justify-center">
+              Back to sign in
+            </Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">

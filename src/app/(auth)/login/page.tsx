@@ -1,11 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import logoFull from '../../../../public/logo-full.jpeg'
+
+const ROLE_REDIRECT: Record<string, string> = {
+  admin: '/admin',
+  surveyor: '/surveyor',
+  client: '/client',
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -14,16 +20,24 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Show errors passed via URL (e.g. from callback redirect for pending/expired users)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('error')
+    if (err === 'pending') {
+      setError('Your account is pending administrator approval. Please wait for an admin to activate your account.')
+    } else if (err === 'auth_callback_failed') {
+      setError('Authentication failed. Please try again or contact your administrator.')
+    }
+  }, [])
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
     const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (authError) {
       setError('Invalid email or password. Please try again.')
@@ -31,7 +45,17 @@ export default function LoginPage() {
       return
     }
 
-    window.location.href = '/admin'
+    // Fetch profile to determine where to route the user
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user!.id)
+      .single()
+
+    // Route to the role-appropriate dashboard.
+    // Inactive users land on their dashboard where the layout shows the pending screen.
+    window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
   }
 
   return (
@@ -39,7 +63,7 @@ export default function LoginPage() {
       {/* Logo / Brand */}
       <div className="text-center mb-8">
         <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4 rounded-xl" unoptimized />
-        <p className="text-brand-200 text-sm">Checklist & Survey Platform</p>
+        <p className="text-brand-200 text-sm">Checklist &amp; Survey Platform</p>
       </div>
 
       {/* Login Card */}
@@ -104,7 +128,7 @@ export default function LoginPage() {
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Signing in…
+                Signing in&hellip;
               </>
             ) : (
               'Sign in'
@@ -113,7 +137,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-5 text-center text-sm text-gray-500">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <Link href="/signup" className="text-brand-600 hover:text-brand-800 font-medium">Request access</Link>
         </p>
 

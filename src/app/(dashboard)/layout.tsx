@@ -1,11 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import type { Profile } from '@/lib/types/database'
+
+const ROLE_HOME: Record<string, string> = {
+  admin: '/admin',
+  surveyor: '/surveyor',
+  client: '/client',
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -13,6 +19,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     async function loadProfile() {
@@ -45,6 +52,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!data) { router.push('/login'); return }
       setProfile(data)
 
+      // Role-based path guard: redirect users who landed on the wrong dashboard
+      const expectedPrefix = ROLE_HOME[data.role]
+      if (expectedPrefix && !pathname.startsWith(expectedPrefix)) {
+        router.replace(expectedPrefix)
+        return
+      }
+
       // Load pending user count for admin
       if (data.role === 'admin') {
         const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_active', false)
@@ -54,14 +68,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setLoading(false)
     }
     loadProfile()
-  }, [router])
+  }, [router, pathname])
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading…</p>
+          <p className="text-sm text-gray-500">Loading&hellip;</p>
         </div>
       </div>
     )
@@ -79,7 +93,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <h2 className="text-xl font-semibold text-gray-900">Account pending approval</h2>
           <p className="text-sm text-gray-500">
-            Your account is waiting for administrator approval. You'll receive access once it's been reviewed.
+            Your account is waiting for administrator approval. You&apos;ll receive access once it&apos;s been reviewed.
           </p>
           <button
             onClick={async () => { const s = createClient(); await s.auth.signOut(); window.location.href = '/login' }}

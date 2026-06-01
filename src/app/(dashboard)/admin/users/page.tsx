@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Users, Check, X, Pencil, ShieldCheck } from 'lucide-react'
+import { Plus, Loader2, Check, X, Pencil, ShieldCheck } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
 import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest } from '@/lib/types/database'
@@ -26,6 +26,13 @@ export default function UsersPage() {
     password: '',
     client_id: '',
   })
+
+  // Approval state: when approving a client-role user, we need a client link
+  const [approvalTarget, setApprovalTarget] = useState<Profile | null>(null)
+  const [approvalClientId, setApprovalClientId] = useState('')
+  const [approvalRole, setApprovalRole] = useState<UserRole>('surveyor')
+  const [approvingSaving, setApprovingSaving] = useState(false)
+  const [approvalError, setApprovalError] = useState<string | null>(null)
 
   async function load() {
     const supabase = createClient()
@@ -66,8 +73,7 @@ export default function UsersPage() {
   async function handleSave() {
     if (!form.email || !form.full_name) { setError('Email and full name are required'); return }
 
-    // Role restrictions: regular admin can only create surveyor/client
-    if (!isSuperAdmin && (form.role === 'admin')) {
+    if (!isSuperAdmin && form.role === 'admin') {
       setError('You do not have permission to create Admin accounts. Contact the Super Admin.')
       return
     }
@@ -79,13 +85,11 @@ export default function UsersPage() {
 
     if (editUser) {
       const patch: any = { full_name: form.full_name, role: form.role, phone: form.phone || null }
-      // Only super admin can change someone to admin
       if (!isSuperAdmin && form.role === 'admin') {
         setError('Only the Super Admin can assign the Admin role.')
         setSaving(false)
         return
       }
-      // Prevent non-super-admin from editing a super admin
       if (!isSuperAdmin && (editUser as any).is_super_admin) {
         setError('You cannot edit the Super Admin account.')
         setSaving(false)
@@ -124,9 +128,53 @@ export default function UsersPage() {
     load()
   }
 
-  async function approveUser(user: Profile) {
+  // Start approval flow — for client-role users we show a modal to pick the client first
+  function startApprove(user: Profile) {
+    setApprovalTarget(user)
+    setApprovalRole(user.role)
+    setApprovalClientId('')
+    setApprovalError(null)
+  }
+
+  async function confirmApprove() {
+    if (!approvalTarget) return
+
+    if (approvalRole === 'client' && !approvalClientId) {
+      setApprovalError('Please select the client this user belongs to.')
+      return
+    }
+
+    setApprovingSaving(true)
+    setApprovalError(null)
     const supabase = createClient()
-    await supabase.from('profiles').update({ is_active: true }).eq('id', user.id)
+
+    // Allow admin to change the role at approval time
+    if (approvalRole !== approvalTarget.role) {
+      const { error: roleErr } = await supabase
+        .from('profiles')
+        .update({ role: approvalRole })
+        .eq('id', approvalTarget.id)
+      if (roleErr) { setApprovalError(roleErr.message); setApprovingSaving(false); return }
+    }
+
+    // Create client link for client-role users
+    if (approvalRole === 'client' && approvalClientId) {
+      const { error: linkErr } = await supabase.from('client_users').upsert({
+        profile_id: approvalTarget.id,
+        client_id: approvalClientId,
+      })
+      if (linkErr) { setApprovalError(linkErr.message); setApprovingSaving(false); return }
+    }
+
+    const { error: actErr } = await supabase
+      .from('profiles')
+      .update({ is_active: true })
+      .eq('id', approvalTarget.id)
+
+    if (actErr) { setApprovalError(actErr.message); setApprovingSaving(false); return }
+
+    setApprovalTarget(null)
+    setApprovingSaving(false)
     load()
   }
 
@@ -242,20 +290,11 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <select
-                        defaultValue={user.role}
-                        onChange={async (e) => {
-                          const supabase = createClient()
-                          await supabase.from('profiles').update({ role: e.target.value as UserRole }).eq('id', user.id)
-                        }}
-                        className="text-xs border border-gray-300 rounded px-2 py-1"
+                      <button
+                        onClick={() => startApprove(user)}
+                        className="btn-primary py-1 px-3 text-xs"
                       >
-                        <option value="surveyor">Surveyor</option>
-                        <option value="client">Client</option>
-                        {isSuperAdmin && <option value="admin">Admin</option>}
-                      </select>
-                      <button onClick={() => approveUser(user)} className="btn-primary py-1 px-3 text-xs">
-                        Approve
+                        Review &amp; Approve
                       </button>
                       <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
                         Reject
@@ -372,13 +411,11 @@ export default function UsersPage() {
                 <td className="px-4 py-3 text-gray-500">{formatDate(user.created_at)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    {/* Only super admin can edit admin users; everyone can edit surveyor/client */}
                     {(isSuperAdmin || user.role !== 'admin') && !(user as any).is_super_admin && (
                       <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
                         <Pencil className="h-3.5 w-3.5" />Edit
                       </button>
                     )}
-                    {/* Can't deactivate super admin unless you are super admin */}
                     {(isSuperAdmin || !(user as any).is_super_admin) && (
                       <button
                         onClick={() => toggleActive(user)}
@@ -395,6 +432,7 @@ export default function UsersPage() {
         </table>
       </div>
 
+      {/* Create / Edit user modal */}
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
@@ -450,7 +488,7 @@ export default function UsersPage() {
             <div>
               <label className="label-base">Link to Client</label>
               <select value={form.client_id} onChange={(e) => setForm(p => ({ ...p, client_id: e.target.value }))} className="input-base">
-                <option value="">Select client…</option>
+                <option value="">Select client&hellip;</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -461,6 +499,66 @@ export default function UsersPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Approval modal — always shown; client-role users require a client selection */}
+      <Modal
+        open={!!approvalTarget}
+        onClose={() => setApprovalTarget(null)}
+        title={`Approve Account — ${approvalTarget?.full_name ?? ''}`}
+        size="sm"
+        footer={
+          <>
+            <button onClick={() => setApprovalTarget(null)} className="btn-secondary">Cancel</button>
+            <button onClick={confirmApprove} disabled={approvingSaving} className="btn-primary">
+              {approvingSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {approvingSaving ? 'Approving…' : 'Approve & Activate'}
+            </button>
+          </>
+        }
+      >
+        {approvalTarget && (
+          <div className="space-y-4">
+            {approvalError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{approvalError}</div>
+            )}
+
+            <p className="text-sm text-gray-600">
+              Review the details below before activating <strong>{approvalTarget.full_name}</strong>&apos;s account.
+            </p>
+
+            <div>
+              <label className="label-base">Role</label>
+              <select
+                value={approvalRole}
+                onChange={(e) => { setApprovalRole(e.target.value as UserRole); setApprovalClientId('') }}
+                className="input-base"
+              >
+                <option value="surveyor">Surveyor</option>
+                <option value="client">Client</option>
+                {isSuperAdmin && <option value="admin">Admin</option>}
+              </select>
+            </div>
+
+            {approvalRole === 'client' && (
+              <div>
+                <label className="label-base">
+                  Link to Client <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={approvalClientId}
+                  onChange={(e) => setApprovalClientId(e.target.value)}
+                  className="input-base"
+                >
+                  <option value="">Select client&hellip;</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Client users must be linked to a client company to access jobs.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
     </div>
   )
 }

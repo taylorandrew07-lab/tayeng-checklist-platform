@@ -22,34 +22,26 @@ export default function SignUpPage() {
 
     const supabase = createClient()
 
-    // Create auth user
-    const { data, error: signUpErr } = await supabase.auth.signUp({
+    // Pass full_name and role in metadata so the handle_new_user trigger can use them.
+    // The trigger always sets is_active=false — no client-side profile upsert needed.
+    const { error: signUpErr } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
+      options: {
+        data: {
+          full_name: form.fullName,
+          role: form.role,
+        },
+      },
     })
 
-    if (signUpErr || !data.user) {
-      setError(signUpErr?.message ?? 'Sign up failed')
+    if (signUpErr) {
+      setError(signUpErr.message)
       setLoading(false)
       return
     }
 
-    // Upsert profile — is_active: false means pending admin approval
-    const { error: profileErr } = await supabase.from('profiles').upsert({
-      id: data.user.id,
-      email: form.email,
-      full_name: form.fullName,
-      role: form.role,
-      is_active: false,
-    })
-
-    if (profileErr) {
-      setError('Account created but profile setup failed: ' + profileErr.message)
-      setLoading(false)
-      return
-    }
-
-    // Sign out immediately — they need admin approval before accessing the app
+    // Sign out immediately — account requires admin approval before access is granted
     await supabase.auth.signOut()
     setDone(true)
     setLoading(false)
@@ -66,7 +58,7 @@ export default function SignUpPage() {
           </div>
           <h2 className="text-xl font-semibold text-gray-900">Account request submitted</h2>
           <p className="text-sm text-gray-500">
-            Your account is pending approval by an administrator. You'll be able to log in once it's approved.
+            Your account is pending approval by an administrator. You&apos;ll be able to log in once it&apos;s approved.
           </p>
           <Link href="/login" className="btn-primary justify-center w-full">Back to Sign In</Link>
         </div>
@@ -78,7 +70,7 @@ export default function SignUpPage() {
     <div className="w-full max-w-md">
       <div className="text-center mb-8">
         <img src="/logo-full.jpeg" alt="Taylor Engineering" className="h-20 w-auto mx-auto mb-4 rounded-xl" />
-        <p className="text-brand-200 text-sm">Checklist & Survey Platform</p>
+        <p className="text-brand-200 text-sm">Checklist &amp; Survey Platform</p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8">
@@ -119,7 +111,7 @@ export default function SignUpPage() {
           </div>
 
           <div>
-            <label className="label-base">I am a…</label>
+            <label className="label-base">I am a&hellip;</label>
             <div className="grid grid-cols-2 gap-3 mt-1">
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },

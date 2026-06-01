@@ -16,7 +16,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  // Only super admin can create admin accounts
   if (role === 'admin' && !profile.is_super_admin) {
     return NextResponse.json({ error: 'Only the Super Admin can create Admin accounts.' }, { status: 403 })
   }
@@ -34,11 +33,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  if (data.user && phone) {
-    await serviceClient
-      .from('profiles')
-      .update({ phone })
-      .eq('id', data.user.id)
+  if (data.user) {
+    // handle_new_user trigger creates the profile with is_active=false.
+    // Admin-created users are pre-approved — activate immediately and set phone.
+    await serviceClient.from('profiles').update({
+      is_active: true,
+      phone: phone || null,
+    }).eq('id', data.user.id)
   }
 
   return NextResponse.json({ user_id: data.user?.id }, { status: 201 })
