@@ -24,6 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           role: 'admin',
           phone: null,
           is_active: true,
+          is_super_admin: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
