@@ -27,6 +27,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
+      // Enforce session-only mode when user did not check "Remember me":
+      // if neither the persistent remember flag nor the current-session flag
+      // is present, this is a resumed browser session the user didn't want kept.
+      const remembered = localStorage.getItem('te_remember') === '1'
+      const activeSession = sessionStorage.getItem('te_session') === '1'
+      if (!remembered && !activeSession) {
+        await supabase.auth.signOut()
+        router.push('/login')
+        return
+      }
+
       const { data } = await supabase
         .from('profiles')
         .select('*')

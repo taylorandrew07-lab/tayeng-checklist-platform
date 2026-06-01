@@ -16,6 +16,7 @@ const ROLE_REDIRECT: Record<string, string> = {
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +44,15 @@ export default function LoginPage() {
       setError('Invalid email or password. Please try again.')
       setLoading(false)
       return
+    }
+
+    // Persist remember-me preference so the dashboard layout can enforce session-only behavior
+    if (rememberMe) {
+      localStorage.setItem('te_remember', '1')
+      sessionStorage.removeItem('te_session')
+    } else {
+      localStorage.removeItem('te_remember')
+      sessionStorage.setItem('te_session', '1')
     }
 
     // Fetch profile to determine where to route the user
@@ -113,6 +123,17 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span className="text-sm text-gray-600">Remember me</span>
+            <span className="text-xs text-gray-400 ml-1">— stay signed in across browser restarts</span>
+          </label>
 
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">

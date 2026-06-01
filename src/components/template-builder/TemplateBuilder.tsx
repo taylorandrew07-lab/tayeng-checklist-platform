@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, Fragment } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -56,11 +56,17 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
     onChange(sections.filter(s => s.id !== id))
   }
 
-  function addField(sectionId: string) {
+  // Insert a new blank field at the given position within the section
+  function addFieldAt(sectionId: string, atIndex: number) {
     onChange(sections.map(s => {
       if (s.id !== sectionId) return s
-      const newField = createBlankField(s.fields.length)
-      return { ...s, fields: [...s.fields, newField] }
+      const newField = createBlankField(atIndex)
+      const updated = [
+        ...s.fields.slice(0, atIndex),
+        newField,
+        ...s.fields.slice(atIndex),
+      ].map((f, i) => ({ ...f, order_index: i }))
+      return { ...s, fields: updated }
     }))
   }
 
@@ -117,7 +123,7 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
               allFields={allFields}
               onUpdate={(patch) => updateSection(section.id, patch)}
               onDelete={() => deleteSection(section.id)}
-              onAddField={() => addField(section.id)}
+              onAddFieldAt={(atIndex) => addFieldAt(section.id, atIndex)}
               onUpdateField={(fieldId, field) => updateField(section.id, fieldId, field)}
               onDeleteField={(fieldId) => deleteField(section.id, fieldId)}
               onFieldDragEnd={(event) => handleFieldDragEnd(section.id, event)}
@@ -138,12 +144,30 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
   )
 }
 
+// Thin insert-field button rendered between fields
+function InsertFieldButton({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="flex items-center gap-2 my-1 group/insert">
+      <div className="flex-1 h-px border-t border-dashed border-gray-200 group-hover/insert:border-brand-300 transition-colors" />
+      <button
+        type="button"
+        onClick={onClick}
+        title="Insert field here"
+        className="w-5 h-5 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 transition-colors flex-shrink-0 shadow-sm"
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+      <div className="flex-1 h-px border-t border-dashed border-gray-200 group-hover/insert:border-brand-300 transition-colors" />
+    </div>
+  )
+}
+
 interface SortableSectionProps {
   section: BuilderSection
   allFields: BuilderField[]
   onUpdate: (patch: Partial<BuilderSection>) => void
   onDelete: () => void
-  onAddField: () => void
+  onAddFieldAt: (atIndex: number) => void
   onUpdateField: (fieldId: string, field: BuilderField) => void
   onDeleteField: (fieldId: string) => void
   onFieldDragEnd: (event: DragEndEvent) => void
@@ -154,7 +178,7 @@ function SortableSection({
   allFields,
   onUpdate,
   onDelete,
-  onAddField,
+  onAddFieldAt,
   onUpdateField,
   onDeleteField,
   onFieldDragEnd,
@@ -177,9 +201,11 @@ function SortableSection({
     <div ref={setNodeRef} style={style} className="card overflow-hidden">
       {/* Section header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+        {/* Fix #2: use inline style for grab cursor so it's never overridden */}
         <button
           type="button"
-          className="text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          className="text-gray-400 hover:text-gray-600 touch-none"
           {...attributes}
           {...listeners}
         >
@@ -223,44 +249,45 @@ function SortableSection({
       </div>
 
       {!collapsed && (
-        <div className="p-4 space-y-3">
-          {/* Fields */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={onFieldDragEnd}
-          >
-            <SortableContext
-              items={section.fields.map(f => f.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {section.fields.map((field) => (
-                <SortableField
-                  key={field.id}
-                  field={field}
-                  sections={[]}
-                  allFields={allFields}
-                  onUpdate={(updated) => onUpdateField(field.id, updated)}
-                  onDelete={() => onDeleteField(field.id)}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+        <div className="p-4">
+          {section.fields.length === 0 ? (
+            <>
+              <p className="text-sm text-gray-400 italic text-center py-3">
+                No fields yet — click below to add your first field.
+              </p>
+              <InsertFieldButton onClick={() => onAddFieldAt(0)} />
+            </>
+          ) : (
+            <>
+              {/* Top insert button */}
+              <InsertFieldButton onClick={() => onAddFieldAt(0)} />
 
-          {section.fields.length === 0 && (
-            <p className="text-sm text-gray-400 italic text-center py-4">
-              No fields yet. Add a field below.
-            </p>
+              {/* Fields with insert buttons between each pair */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={onFieldDragEnd}
+              >
+                <SortableContext
+                  items={section.fields.map(f => f.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {section.fields.map((field, i) => (
+                    <Fragment key={field.id}>
+                      <SortableField
+                        field={field}
+                        sections={[]}
+                        allFields={allFields}
+                        onUpdate={(updated) => onUpdateField(field.id, updated)}
+                        onDelete={() => onDeleteField(field.id)}
+                      />
+                      <InsertFieldButton onClick={() => onAddFieldAt(i + 1)} />
+                    </Fragment>
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </>
           )}
-
-          <button
-            type="button"
-            onClick={onAddField}
-            className="w-full border border-dashed border-gray-300 rounded-lg py-2.5 text-xs text-gray-500 hover:border-brand-300 hover:text-brand-600 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add Field
-          </button>
         </div>
       )}
     </div>
@@ -285,10 +312,12 @@ function SortableField({ field, sections, allFields, onUpdate, onDelete }: Sorta
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="flex gap-2">
+    <div ref={setNodeRef} style={style} className="flex gap-2 mb-3">
+      {/* Fix #2: inline style cursor, slightly darker icon for visibility */}
       <button
         type="button"
-        className="mt-3 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none flex-shrink-0"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        className="mt-3 text-gray-400 hover:text-gray-600 touch-none flex-shrink-0"
         {...attributes}
         {...listeners}
       >

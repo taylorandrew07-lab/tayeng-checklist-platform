@@ -15,6 +15,7 @@ import {
   LogOut,
   ChevronRight,
   X,
+  Settings,
 } from 'lucide-react'
 
 interface NavItem {
@@ -29,6 +30,10 @@ const adminNav: NavItem[] = [
   { label: 'Checklists', href: '/admin/jobs', icon: Briefcase },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
+]
+
+const superAdminNav: NavItem[] = [
+  { label: 'Settings', href: '/admin/settings', icon: Settings },
 ]
 
 const surveyorNav: NavItem[] = [
@@ -71,6 +76,9 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     }
     const supabase = createClient()
     await supabase.auth.signOut()
+    // Clear remember-me flags so session is fully gone on next visit
+    localStorage.removeItem('te_remember')
+    sessionStorage.removeItem('te_session')
     dirtyState.set(false)
     dirtyState.setHandler(null)
     router.push('/login')
@@ -117,7 +125,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {nav.map((item) => {
+          {[...nav, ...(profile.is_super_admin ? superAdminNav : [])].map((item) => {
             const isActive =
               item.href === '/admin' || item.href === '/surveyor' || item.href === '/client'
                 ? pathname === item.href
