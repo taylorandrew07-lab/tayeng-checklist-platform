@@ -239,6 +239,37 @@ interface PDFProps {
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
 const YES_NO_FG: Record<string, string> = { green: '#166534', red: '#991b1b', gray: '#94a3b8', amber: '#92400e' }
 
+// Resolve {uuid} tokens in field labels using current answered values
+function resolvePdfLabel(label: string, fieldValues: Record<string, string>, allFields: any[]): string {
+  return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
+    const raw = fieldValues[fieldId] ?? ''
+    const val = raw.includes('|||') ? raw.split('|||')[0] : raw
+    if (!val) return ''
+    const src = allFields.find((f: any) => f.id === fieldId)
+    if (src?.field_type === 'dropdown') {
+      const opt = (src.options ?? []).find((o: any) => o.value === val)
+      return opt?.label ?? val
+    }
+    return val
+  })
+}
+
+// Percentage calculated field with color coding
+function CalcPercentCell({ rawValue, validation }: { rawValue: string; validation: any }) {
+  const num = parseFloat(rawValue)
+  if (isNaN(num)) return <Text style={{ fontSize: 9, color: '#94a3b8' }}>—</Text>
+  const display = `${num.toFixed(2)}%`
+  const abs = Math.abs(num)
+  const thresholds = validation?.thresholds ?? [{ max: 1.0, color: 'green' }, { max: 2.0, color: 'amber' }, { color: 'red' }]
+  const match = thresholds.find((t: any) => t.max === undefined || abs < t.max)
+  const c = match?.color ?? 'red'
+  return (
+    <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
+      {display}
+    </Text>
+  )
+}
+
 function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | null | undefined }) {
   const answerKey = rawValue.includes('|||') ? rawValue.split('|||')[0] : rawValue
   const remarks = rawValue.includes('|||') ? rawValue.split('|||')[1] : ''
@@ -257,6 +288,7 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
 
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount }: PDFProps) {
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME ?? 'Taylor Engineering'
+  const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const companyEmail = process.env.NEXT_PUBLIC_COMPANY_EMAIL ?? ''
   const companyPhone = process.env.NEXT_PUBLIC_COMPANY_PHONE ?? ''
   const companyAddress = process.env.NEXT_PUBLIC_COMPANY_ADDRESS ?? ''
@@ -360,7 +392,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <View key={field.id} style={styles.fieldRow}>
                   <View style={styles.fieldLabel}>
                     <Text style={styles.fieldLabelText}>
-                      {field.label}
+                      {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
                       {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
                     </Text>
                     {field.help_text && (
@@ -382,6 +414,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                       <YesNoCell rawValue={rawValue} options={field.options} />
                     ) : field.field_type === 'textarea' ? (
                       <Text style={styles.textareaValue}>{rawValue || '—'}</Text>
+                    ) : field.field_type === 'calculated' && field.validation?.display_as === 'percentage' ? (
+                      <CalcPercentCell rawValue={rawValue} validation={field.validation} />
                     ) : (
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>

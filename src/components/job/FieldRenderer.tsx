@@ -16,6 +16,8 @@ interface FieldRendererProps {
   onArrayChange?: (values: string[]) => void
   onSignatureChange?: (data: string) => void
   readOnly?: boolean
+  /** Pre-computed label with {uuid} tokens already substituted. Falls back to field.label. */
+  resolvedLabel?: string
 }
 
 export default function FieldRenderer({
@@ -28,6 +30,7 @@ export default function FieldRenderer({
   onArrayChange,
   onSignatureChange,
   readOnly = false,
+  resolvedLabel,
 }: FieldRendererProps) {
   // Check conditional visibility
   const isVisible = checkConditionalLogic(field.conditional_logic, allValues)
@@ -55,7 +58,7 @@ export default function FieldRenderer({
           {field.item_number && (
             <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>
           )}
-          {field.label}
+          {resolvedLabel ?? field.label}
           {field.is_required && <span className="text-red-500 ml-1">*</span>}
         </label>
         {field.unit && (
@@ -259,19 +262,40 @@ function CalculatedField({ field, allValues, onChange }: {
   allValues: Record<string, string>
   onChange: (v: string) => void
 }) {
-  const result = field.calculation_formula
+  const rawResult = field.calculation_formula
     ? evaluateCalculation(field.calculation_formula, allValues)
     : ''
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onChange(result) }, [result])
+  useEffect(() => { onChange(rawResult) }, [rawResult])
+
+  const isPercent = field.validation?.display_as === 'percentage'
+  const numVal = parseFloat(rawResult)
+
+  let displayVal = rawResult || '—'
+  let colorCls = 'bg-gray-50 text-gray-700'
+
+  if (isPercent && !isNaN(numVal)) {
+    displayVal = `${numVal.toFixed(2)}%`
+    const absVal = Math.abs(numVal)
+    const thresholds = field.validation?.thresholds ?? [
+      { max: 1.0, color: 'green' as const },
+      { max: 2.0, color: 'amber' as const },
+      { color: 'red' as const },
+    ]
+    const match = thresholds.find(t => t.max === undefined || absVal < t.max)
+    const c = match?.color ?? 'red'
+    colorCls = c === 'green' ? 'bg-green-50 text-green-700 border-green-300 font-semibold'
+      : c === 'amber' ? 'bg-amber-50 text-amber-700 border-amber-300 font-semibold'
+      : 'bg-red-50 text-red-700 border-red-300 font-semibold'
+  }
 
   return (
     <div className="flex items-center gap-2">
-      <div className="input-base bg-gray-50 text-gray-700 flex-1 font-mono">
-        {result || '—'}
+      <div className={`input-base flex-1 font-mono ${colorCls}`}>
+        {displayVal}
       </div>
-      {field.unit && <span className="text-sm text-gray-500">{field.unit}</span>}
+      {field.unit && !isPercent && <span className="text-sm text-gray-500">{field.unit}</span>}
     </div>
   )
 }

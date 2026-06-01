@@ -77,6 +77,9 @@ export interface FieldValidation {
   minLength?: number
   maxLength?: number
   regex?: string
+  // Calculated field display options
+  display_as?: 'number' | 'percentage'
+  thresholds?: Array<{ max?: number; color: 'green' | 'amber' | 'red' }>
 }
 
 export interface ChecklistTemplate {

@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
-  AlertCircle, ChevronDown, ChevronUp, AlertTriangle,
+  AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
 } from 'lucide-react'
 import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
@@ -53,6 +53,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [showLeaveDialog, setShowLeaveDialog] = useState(false)
     const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
     const [uploadingField, setUploadingField] = useState<string | null>(null)
+    const [showPreview, setShowPreview] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -376,6 +377,25 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const isSubmitted = ['submitted', 'completed', 'client_visible'].includes(job.status)
     const readOnly = isSubmitted
 
+    // Flat list of all fields for token substitution
+    const allFieldsFlat = sections.flatMap(s => s.fields)
+
+    // Replace {uuid} tokens in field labels with the current selected value of that field.
+    // Used for dynamic labels like "Manual sounding of {method_of_delivery_field_id}".
+    function resolveLabel(label: string): string {
+      return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
+        const raw = values[fieldId] ?? ''
+        const val = raw.includes('|||') ? raw.split('|||')[0] : raw
+        if (!val) return label.match(/\{[0-9a-f-]{36}\}/gi)?.length === 1 ? label : ''
+        const srcField = allFieldsFlat.find(f => f.id === fieldId)
+        if (srcField?.field_type === 'dropdown') {
+          const opt = (srcField.options ?? []).find((o: any) => o.value === val)
+          return opt?.label ?? val
+        }
+        return val
+      })
+    }
+
     return (
       <div className="space-y-5 pb-10">
         {/* Top action bar */}
@@ -393,21 +413,20 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             </div>
           </div>
 
-          {!readOnly && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {isDirty && (
-                <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
-              )}
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-secondary"
-              >
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!readOnly && isDirty && (
+              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            )}
+            <button onClick={() => setShowPreview(true)} className="btn-secondary">
+              <Eye className="h-4 w-4" />Preview
+            </button>
+            {!readOnly && (
+              <button onClick={handleSave} disabled={saving} className="btn-secondary">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {saving ? 'Saving…' : 'Save Draft'}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Job info banner */}
@@ -578,6 +597,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       <FieldRenderer
                         key={field.id}
                         field={field}
+                        resolvedLabel={resolveLabel(field.label)}
                         value={values[field.id] ?? ''}
                         valueArray={arrayValues[field.id]}
                         signature={signatures[field.id]}
@@ -724,6 +744,68 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <button onClick={() => setShowLeaveDialog(false)} className="btn-ghost justify-center">
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Preview modal — read-only formatted view of all current answers */}
+        {showPreview && (
+          <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto">
+            <div className="max-w-3xl mx-auto my-8 px-4 pb-8">
+              <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-200">
+                  <div>
+                    <h2 className="font-semibold text-gray-900">{job.title}</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">{job.job_number} · Preview (read-only)</p>
+                  </div>
+                  <button onClick={() => setShowPreview(false)} className="btn-ghost py-1.5 px-3">
+                    <X className="h-4 w-4" />Close
+                  </button>
+                </div>
+                <div className="p-6 space-y-5">
+                  {sections.map(section => {
+                    if (!checkConditionalLogic(section.conditional_logic, values)) return null
+                    return (
+                      <div key={section.id} className="card overflow-hidden">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                          <h3 className="font-semibold text-gray-900">{section.title}</h3>
+                          {section.description && <p className="text-xs text-gray-500 mt-0.5">{section.description}</p>}
+                        </div>
+                        <div className="p-5 space-y-4">
+                          {section.fields.map(field => {
+                            if (!checkConditionalLogic(field.conditional_logic, values)) return null
+                            if (field.field_type === 'photo') {
+                              const count = (fieldPhotos[field.id] ?? []).length
+                              return (
+                                <div key={field.id} className="space-y-1">
+                                  <p className="text-xs font-medium text-gray-500">
+                                    {field.item_number && <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>}
+                                    {resolveLabel(field.label)}
+                                  </p>
+                                  <p className="text-sm text-gray-700">{count} photo{count !== 1 ? 's' : ''} uploaded</p>
+                                </div>
+                              )
+                            }
+                            return (
+                              <FieldRenderer
+                                key={field.id}
+                                field={field}
+                                resolvedLabel={resolveLabel(field.label)}
+                                value={values[field.id] ?? ''}
+                                valueArray={arrayValues[field.id]}
+                                signature={signatures[field.id]}
+                                allValues={values}
+                                onChange={() => {}}
+                                readOnly
+                              />
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>

@@ -136,6 +136,27 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
                 className="input-base"
                 placeholder="Field label"
               />
+              {/* Insert field-value reference tokens into the label */}
+              {allFields.filter(f => f.id !== field.id && ['dropdown', 'yes_no', 'yes_no_na'].includes(f.field_type)).length > 0 && (
+                <div className="mt-1.5">
+                  <p className="text-xs text-gray-500 mb-1">Insert dynamic value into label:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {allFields
+                      .filter(f => f.id !== field.id && ['dropdown', 'yes_no', 'yes_no_na'].includes(f.field_type))
+                      .map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => update({ label: field.label + `{${f.id}}` })}
+                          className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200 hover:bg-purple-100"
+                          title={`Insert value of "${f.label}" into this label`}
+                        >
+                          + {f.label}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
               {METADATA_PATTERNS.some(p => field.label.toLowerCase().includes(p)) && (
                 <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
                   <span>ℹ</span>
@@ -250,32 +271,90 @@ export default function FieldEditor({ field, sections, allFields, onChange, onDe
 
               {/* Calculated formula */}
               {field.field_type === 'calculated' && (
-                <div>
-                  <label className="label-base">Calculation Formula</label>
-                  <input
-                    type="text"
-                    value={field.calculation_formula}
-                    onChange={(e) => update({ calculation_formula: e.target.value })}
-                    className="input-base font-mono"
-                    placeholder="{field_id_1} + {field_id_2} * 1.1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Reference other fields using their ID in curly braces: {'{field_id}'}. Supports +, -, *, /
-                  </p>
-                  {allFields.filter(f => f.field_type === 'number' && f.id !== field.id).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {allFields
-                        .filter(f => f.field_type === 'number' && f.id !== field.id)
-                        .map(f => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            onClick={() => update({ calculation_formula: field.calculation_formula + `{${f.id}}` })}
-                            className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-100"
-                          >
-                            + {f.label}
-                          </button>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label-base">Calculation Formula</label>
+                    <input
+                      type="text"
+                      value={field.calculation_formula}
+                      onChange={(e) => update({ calculation_formula: e.target.value })}
+                      className="input-base font-mono"
+                      placeholder="{field_id_1} + {field_id_2} * 1.1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Reference other fields using their ID in curly braces: {'{field_id}'}. Supports +, -, *, /
+                    </p>
+                    {allFields.filter(f => f.field_type === 'number' && f.id !== field.id).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {allFields
+                          .filter(f => f.field_type === 'number' && f.id !== field.id)
+                          .map(f => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => update({ calculation_formula: field.calculation_formula + `{${f.id}}` })}
+                              className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-100"
+                            >
+                              + {f.label}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Display format */}
+                  <div>
+                    <label className="label-base">Display Format</label>
+                    <div className="flex gap-4 mt-1">
+                      {(['number', 'percentage'] as const).map(fmt => (
+                        <label key={fmt} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="radio"
+                            checked={(field.validation.display_as ?? 'number') === fmt}
+                            onChange={() => update({ validation: { ...field.validation, display_as: fmt } })}
+                            className="rounded-full"
+                          />
+                          {fmt === 'percentage' ? 'Percentage (%)' : 'Number'}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Percentage thresholds */}
+                  {field.validation.display_as === 'percentage' && (
+                    <div>
+                      <label className="label-base">Color Thresholds (absolute %)</label>
+                      <div className="space-y-1.5 mt-1">
+                        {(field.validation.thresholds ?? [
+                          { max: 1.0, color: 'green' as const },
+                          { max: 2.0, color: 'amber' as const },
+                          { color: 'red' as const },
+                        ]).map((t, i, arr) => (
+                          <div key={i} className="flex items-center gap-2 text-xs">
+                            <span className={`w-3 h-3 rounded-full flex-shrink-0 ${t.color === 'green' ? 'bg-green-500' : t.color === 'amber' ? 'bg-amber-400' : 'bg-red-500'}`} />
+                            <span className="text-gray-600 w-16">{t.color === 'green' ? 'Green' : t.color === 'amber' ? 'Amber' : 'Red'}</span>
+                            {t.max !== undefined ? (
+                              <>
+                                <span className="text-gray-400">below</span>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={t.max}
+                                  onChange={(e) => {
+                                    const updated = arr.map((th, j) => j === i ? { ...th, max: parseFloat(e.target.value) } : th)
+                                    update({ validation: { ...field.validation, thresholds: updated } })
+                                  }}
+                                  className="w-16 border border-gray-300 rounded px-2 py-0.5 text-xs"
+                                />
+                                <span className="text-gray-400">%</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400">2.00%+</span>
+                            )}
+                          </div>
                         ))}
+                        <p className="text-xs text-gray-400">Uses absolute value of result</p>
+                      </div>
                     </div>
                   )}
                 </div>
