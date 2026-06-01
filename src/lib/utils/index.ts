@@ -111,7 +111,9 @@ export function checkConditionalLogic(
   if (!logic || !logic.conditions?.length) return true
 
   const results = logic.conditions.map((condition) => {
-    const fieldValue = values[condition.field_id] ?? ''
+    // Strip |||remarks suffix from yes_no/yes_no_na values before comparing
+    const raw = values[condition.field_id] ?? ''
+    const fieldValue = raw.includes('|||') ? raw.split('|||')[0] : raw
     switch (condition.operator) {
       case 'equals': return fieldValue === condition.value
       case 'not_equals': return fieldValue !== condition.value

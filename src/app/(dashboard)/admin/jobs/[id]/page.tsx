@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -11,11 +11,13 @@ import {
 import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Client, SurveyorName } from '@/lib/types/database'
 import { Modal } from '@/components/ui/Modal'
+import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 
 export default function AdminChecklistDetailPage() {
   const params = useParams()
   const router = useRouter()
   const jobId = params.id as string
+  const editorRef = useRef<JobChecklistEditorHandle>(null)
 
   const [job, setJob] = useState<any>(null)
   const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
@@ -301,6 +303,12 @@ export default function AdminChecklistDetailPage() {
         onSave={handlePermissionSave}
         clientName={job.client?.name}
       />
+
+      {/* Checklist fields editor */}
+      <div className="border-t border-gray-200 pt-6 mt-2">
+        <h2 className="section-title mb-5">Checklist Fields</h2>
+        <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
+      </div>
     </div>
   )
 }

@@ -127,6 +127,7 @@ export default function NewChecklistPage() {
         surveyor_name: finalSurveyor,
         client_id: finalClientId,
         created_by: user.id,
+        assigned_to: user.id,
         status: 'in_progress',
         started_at: new Date().toISOString(),
       })

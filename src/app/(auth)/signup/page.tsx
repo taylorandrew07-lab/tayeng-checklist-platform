@@ -90,24 +90,28 @@ export default function SignUpPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label-base">Full name</label>
-            <input type="text" required value={form.fullName} onChange={(e) => update({ fullName: e.target.value })}
+            <label htmlFor="su-name" className="label-base">Full name</label>
+            <input id="su-name" type="text" autoComplete="name" required value={form.fullName}
+              onChange={(e) => update({ fullName: e.target.value })}
               className="input-base" placeholder="Your full name" />
           </div>
 
           <div>
-            <label className="label-base">Email address</label>
-            <input type="email" required value={form.email} onChange={(e) => update({ email: e.target.value })}
+            <label htmlFor="su-email" className="label-base">Email address</label>
+            <input id="su-email" type="email" autoComplete="email" required value={form.email}
+              onChange={(e) => update({ email: e.target.value })}
               className="input-base" placeholder="you@tayeng.com" />
           </div>
 
           <div>
-            <label className="label-base">Password</label>
+            <label htmlFor="su-password" className="label-base">Password</label>
             <div className="relative">
-              <input type={showPassword ? 'text' : 'password'} required value={form.password}
+              <input id="su-password" type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password" required value={form.password}
                 onChange={(e) => update({ password: e.target.value })}
                 className="input-base pr-10" placeholder="Min. 8 characters" />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
