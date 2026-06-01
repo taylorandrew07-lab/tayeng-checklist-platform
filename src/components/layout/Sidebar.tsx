@@ -1,9 +1,9 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { dirtyState } from '@/lib/dirty-state'
 import type { Profile } from '@/lib/types/database'
 import {
   LayoutDashboard,
@@ -58,9 +58,21 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
       ? surveyorNav
       : clientNav
 
+  function handleNavClick(href: string) {
+    onClose?.()
+    if (!dirtyState.requestNavigate(href)) return // handler shows dialog; dialog calls router.push
+    router.push(href)
+  }
+
   async function handleSignOut() {
+    // Check dirty state before signing out
+    if (dirtyState.isDirty) {
+      if (!window.confirm('You have unsaved changes. Sign out anyway?')) return
+    }
     const supabase = createClient()
     await supabase.auth.signOut()
+    dirtyState.set(false)
+    dirtyState.setHandler(null)
     router.push('/login')
     router.refresh()
   }
@@ -89,10 +101,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
             <img src="/logo-full.jpeg" alt="Taylor Engineering Agencies Limited" className="h-10 w-auto rounded-md" />
           </div>
           {onClose && (
-            <button
-              onClick={onClose}
-              className="lg:hidden text-brand-400 hover:text-white"
-            >
+            <button onClick={onClose} className="lg:hidden text-brand-400 hover:text-white">
               <X className="h-5 w-5" />
             </button>
           )}
@@ -114,12 +123,11 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
                 ? pathname === item.href
                 : pathname.startsWith(item.href)
             return (
-              <Link
+              <button
                 key={item.href}
-                href={item.href}
-                onClick={onClose}
+                onClick={() => handleNavClick(item.href)}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
                   isActive
                     ? 'bg-brand-700 text-white'
                     : 'text-brand-300 hover:bg-brand-800 hover:text-white'
@@ -133,7 +141,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
                   </span>
                 )}
                 {isActive && pendingCount === 0 && <ChevronRight className="h-4 w-4 ml-auto" />}
-              </Link>
+              </button>
             )
           })}
         </nav>

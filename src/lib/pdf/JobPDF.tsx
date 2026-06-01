@@ -236,6 +236,25 @@ interface PDFProps {
   photoCount: number
 }
 
+const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
+const YES_NO_FG: Record<string, string> = { green: '#166534', red: '#991b1b', gray: '#94a3b8', amber: '#92400e' }
+
+function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | null | undefined }) {
+  const answerKey = rawValue.includes('|||') ? rawValue.split('|||')[0] : rawValue
+  const remarks = rawValue.includes('|||') ? rawValue.split('|||')[1] : ''
+  const optColor = (options ?? []).find((o: any) => o.value === answerKey)?.color as string | undefined
+  const fallback = answerKey === 'yes' ? 'green' : answerKey === 'no' ? 'red' : 'gray'
+  const c = optColor ?? fallback
+  return (
+    <View>
+      <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
+        {answerKey ? answerKey.toUpperCase() : '—'}
+      </Text>
+      {remarks ? <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>{remarks}</Text> : null}
+    </View>
+  )
+}
+
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount }: PDFProps) {
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME ?? 'Taylor Engineering'
   const companyEmail = process.env.NEXT_PUBLIC_COMPANY_EMAIL ?? ''
@@ -359,14 +378,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                       ) : (
                         <Text style={styles.fieldValueEmpty}>No signature</Text>
                       )
-                    ) : field.field_type === 'yes_no' ? (
-                      <Text style={[
-                        styles.yesNoValue,
-                        { backgroundColor: rawValue === 'yes' ? '#dcfce7' : rawValue === 'no' ? '#fee2e2' : '#f1f5f9',
-                          color: rawValue === 'yes' ? '#166534' : rawValue === 'no' ? '#991b1b' : '#94a3b8' }
-                      ]}>
-                        {rawValue ? rawValue.toUpperCase() : '—'}
-                      </Text>
+                    ) : (field.field_type === 'yes_no' || field.field_type === 'yes_no_na') ? (
+                      <YesNoCell rawValue={rawValue} options={field.options} />
                     ) : field.field_type === 'textarea' ? (
                       <Text style={styles.textareaValue}>{rawValue || '—'}</Text>
                     ) : (

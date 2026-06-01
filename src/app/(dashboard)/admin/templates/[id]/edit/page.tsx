@@ -7,6 +7,7 @@ import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
 import type { TemplateStatus, ConditionalLogic } from '@/lib/types/database'
+import { dirtyState } from '@/lib/dirty-state'
 
 // --- Remap helpers ---
 function remapConditional(
@@ -55,6 +56,14 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     setIsDirty(true)
   }, [name, description, status, allowSurveyorStart, sections])
+
+  // Sync to global dirty-state so sidebar links respect it
+  useEffect(() => {
+    dirtyState.set(isDirty)
+    dirtyState.setHandler(isDirty ? requestNavigate : null)
+  }, [isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { return () => { dirtyState.set(false); dirtyState.setHandler(null) } }, [])
 
   // Warn on browser close when dirty
   useEffect(() => {
@@ -134,6 +143,35 @@ export default function EditTemplatePage() {
 
   async function handleSave() {
     if (!name.trim()) { setError('Template name is required'); return }
+
+    // Validate: no broken conditional/formula references
+    const allFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
+    const broken: string[] = []
+    for (const section of sections) {
+      if (section.conditional_logic) {
+        for (const c of section.conditional_logic.conditions) {
+          if (c.field_id && !allFieldIds.has(c.field_id)) broken.push(`Section "${section.title}" condition → missing field`)
+        }
+      }
+      for (const field of section.fields) {
+        if (field.conditional_logic) {
+          for (const c of field.conditional_logic.conditions) {
+            if (c.field_id && !allFieldIds.has(c.field_id)) broken.push(`"${field.label}" condition → missing field`)
+          }
+        }
+        if (field.calculation_formula) {
+          const refs = Array.from(field.calculation_formula.matchAll(/\{([^}]+)\}/g)).map(m => m[1])
+          for (const r of refs) {
+            if (!allFieldIds.has(r)) broken.push(`"${field.label}" formula → missing field {${r}}`)
+          }
+        }
+      }
+    }
+    if (broken.length > 0) {
+      setError(`Cannot save — broken references:\n• ${broken.join('\n• ')}`)
+      return
+    }
+
     setSaving(true)
     setError(null)
 

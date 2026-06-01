@@ -154,7 +154,20 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
                           ) : (
                             <p className="text-sm text-gray-400 mt-1 italic">No signature</p>
                           )
-                        ) : (
+                        ) : (field.field_type === 'yes_no' || field.field_type === 'yes_no_na') ? (() => {
+                          const BADGE: Record<string,string> = { green:'bg-green-100 text-green-800', red:'bg-red-100 text-red-800', gray:'bg-gray-100 text-gray-600', amber:'bg-amber-100 text-amber-800' }
+                          const answerPart = (displayVal || '').includes('|||') ? (displayVal || '').split('|||')[0] : (displayVal || '')
+                          const remarksPart = (displayVal || '').includes('|||') ? (displayVal || '').split('|||')[1] : ''
+                          const optColor = (field.options ?? []).find((o: any) => o.value === answerPart)?.color
+                          const fallback = answerPart === 'yes' ? 'green' : answerPart === 'no' ? 'red' : 'gray'
+                          const cls = BADGE[optColor ?? fallback] ?? BADGE.gray
+                          return answerPart ? (
+                            <div className="mt-1 space-y-1">
+                              <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${cls}`}>{answerPart.toUpperCase()}</span>
+                              {remarksPart && <p className="text-sm text-gray-600 italic">{remarksPart}</p>}
+                            </div>
+                          ) : <p className="text-sm text-gray-400 mt-1">—</p>
+                        })() : (
                           <p className="text-sm text-gray-900 mt-1">{displayVal || '—'}</p>
                         )}
                       </div>

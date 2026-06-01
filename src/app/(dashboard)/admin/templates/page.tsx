@@ -65,6 +65,7 @@ export default function TemplatesPage() {
         version: 1,
         allow_surveyor_start: template.allow_surveyor_start,
         created_by: userId,
+        duplicated_from: template.id,
       })
       .select()
       .single()
@@ -77,6 +78,11 @@ export default function TemplatesPage() {
       .eq('template_id', template.id)
       .order('order_index')
 
+    // Build id map: old id -> new DB id
+    const idMap: Record<string, string> = {}
+
+    // Pass 1: insert sections + fields WITHOUT conditional_logic/formula
+    const sectionData: Array<{ oldSection: any; newSectionId: string }> = []
     for (const section of sections ?? []) {
       const { data: newSection } = await supabase
         .from('template_sections')
@@ -85,14 +91,19 @@ export default function TemplatesPage() {
           title: section.title,
           description: section.description,
           order_index: section.order_index,
-          conditional_logic: section.conditional_logic,
+          conditional_logic: null,
         })
         .select()
         .single()
 
-      if (newSection && section.fields?.length) {
-        await supabase.from('template_fields').insert(
-          section.fields.map((f: any) => ({
+      if (!newSection) continue
+      idMap[section.id] = newSection.id
+      sectionData.push({ oldSection: section, newSectionId: newSection.id })
+
+      for (const f of section.fields ?? []) {
+        const { data: newField } = await supabase
+          .from('template_fields')
+          .insert({
             template_id: newTemplate.id,
             section_id: newSection.id,
             label: f.label,
@@ -102,12 +113,43 @@ export default function TemplatesPage() {
             options: f.options,
             unit: f.unit,
             help_text: f.help_text,
-            conditional_logic: f.conditional_logic,
-            calculation_formula: f.calculation_formula,
+            placeholder: f.placeholder,
+            default_value: f.default_value,
             item_number: f.item_number,
             with_remarks: f.with_remarks,
-          }))
-        )
+            validation: f.validation,
+            conditional_logic: null,
+            calculation_formula: null,
+          })
+          .select()
+          .single()
+
+        if (newField) idMap[f.id] = newField.id
+      }
+    }
+
+    // Pass 2: remap and apply conditional_logic + calculation_formula
+    function remapLogic(logic: any) {
+      if (!logic) return null
+      return { ...logic, conditions: logic.conditions.map((c: any) => ({ ...c, field_id: idMap[c.field_id] ?? c.field_id })) }
+    }
+    function remapFormula(f: string) {
+      return f.replace(/\{([^}]+)\}/g, (_: string, id: string) => `{${idMap[id] ?? id}}`)
+    }
+
+    for (const { oldSection, newSectionId } of sectionData) {
+      if (oldSection.conditional_logic) {
+        await supabase.from('template_sections').update({ conditional_logic: remapLogic(oldSection.conditional_logic) }).eq('id', newSectionId)
+      }
+      for (const f of oldSection.fields ?? []) {
+        const newFieldId = idMap[f.id]
+        if (!newFieldId) continue
+        const updates: any = {}
+        if (f.conditional_logic) updates.conditional_logic = remapLogic(f.conditional_logic)
+        if (f.calculation_formula) updates.calculation_formula = remapFormula(f.calculation_formula)
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('template_fields').update(updates).eq('id', newFieldId)
+        }
       }
     }
 

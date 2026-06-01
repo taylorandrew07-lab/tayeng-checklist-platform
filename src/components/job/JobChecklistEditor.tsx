@@ -10,6 +10,7 @@ import {
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react'
 import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
+import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature } from '@/lib/types/database'
@@ -61,6 +62,17 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       save: handleSave,
       navigate: requestNavigate,
     }))
+
+    // Sync isDirty to global dirty-state so sidebar links respect it
+    useEffect(() => {
+      dirtyState.set(isDirty)
+      dirtyState.setHandler(isDirty ? requestNavigate : null)
+    }, [isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Clear global dirty-state on unmount
+    useEffect(() => {
+      return () => { dirtyState.set(false); dirtyState.setHandler(null) }
+    }, [])
 
     // Warn on browser close/refresh when dirty
     useEffect(() => {
