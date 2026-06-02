@@ -16,7 +16,7 @@ const ROLE_REDIRECT: Record<string, string> = {
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,14 +46,12 @@ export default function LoginPage() {
       return
     }
 
-    // Persist remember-me preference so the dashboard layout can enforce session-only behavior
-    if (rememberMe) {
-      localStorage.setItem('te_remember', '1')
-      sessionStorage.removeItem('te_session')
-    } else {
-      localStorage.removeItem('te_remember')
-      sessionStorage.setItem('te_session', '1')
-    }
+    // Supabase persists the session in cookies (auto-refreshed) by default, which
+    // keeps the user signed in across browser/app restarts on mobile and desktop —
+    // this is what makes "Remember me" work. We intentionally do NOT add a
+    // tab-close / visibility sign-out for the unchecked case: on mobile those
+    // events also fire when switching apps, which would break normal usage.
+    // Unchecked is therefore best-effort; an explicit Sign Out always clears it.
 
     // Fetch profile to determine where to route the user
     const { data: { user } } = await supabase.auth.getUser()

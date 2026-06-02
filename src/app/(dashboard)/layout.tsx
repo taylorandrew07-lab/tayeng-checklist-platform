@@ -25,18 +25,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function loadProfile() {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
+      // Supabase persists the session itself (cookie storage, auto-refreshed).
+      // Only redirect when there is genuinely no valid session — never force a
+      // sign-out based on custom localStorage flags, which mobile browsers evict
+      // and which was logging "Remember me" users out on every app open.
       if (!session) { router.push('/login'); return }
-
-      // Enforce session-only mode when user did not check "Remember me":
-      // if neither the persistent remember flag nor the current-session flag
-      // is present, this is a resumed browser session the user didn't want kept.
-      const remembered = localStorage.getItem('te_remember') === '1'
-      const activeSession = sessionStorage.getItem('te_session') === '1'
-      if (!remembered && !activeSession) {
-        await supabase.auth.signOut()
-        router.push('/login')
-        return
-      }
 
       const { data } = await supabase
         .from('profiles')

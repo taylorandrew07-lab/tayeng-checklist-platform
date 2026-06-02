@@ -75,10 +75,8 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
       if (!window.confirm('You have unsaved changes. Sign out anyway?')) return
     }
     const supabase = createClient()
+    // Supabase clears its own persisted session (cookies) on signOut
     await supabase.auth.signOut()
-    // Clear remember-me flags so session is fully gone on next visit
-    localStorage.removeItem('te_remember')
-    sessionStorage.removeItem('te_session')
     dirtyState.set(false)
     dirtyState.setHandler(null)
     router.push('/login')
