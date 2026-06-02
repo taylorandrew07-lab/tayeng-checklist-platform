@@ -48,10 +48,16 @@ export default function LoginPage() {
 
     // Supabase persists the session in cookies (auto-refreshed) by default, which
     // keeps the user signed in across browser/app restarts on mobile and desktop —
-    // this is what makes "Remember me" work. We intentionally do NOT add a
-    // tab-close / visibility sign-out for the unchecked case: on mobile those
-    // events also fire when switching apps, which would break normal usage.
-    // Unchecked is therefore best-effort; an explicit Sign Out always clears it.
+    // this is what makes "Remember me" work.
+    //
+    // Remember-me preference drives a real, eviction-safe difference (see the
+    // dashboard layout): unchecked enables a 30-minute inactivity auto-logout;
+    // checked keeps the persisted session with no app-level timeout. We store the
+    // preference as a simple flag and treat a MISSING flag as "remembered", so if
+    // a mobile browser clears storage it can only relax the timeout — never wrongly
+    // sign a user out. No passwords or tokens are stored here.
+    localStorage.setItem('te_remember', rememberMe ? '1' : '0')
+    localStorage.setItem('te_last_activity', String(Date.now()))
 
     // Fetch profile to determine where to route the user
     const { data: { user } } = await supabase.auth.getUser()
@@ -122,16 +128,25 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-            />
-            <span className="text-sm text-gray-600">Remember me</span>
-            <span className="text-xs text-gray-400 ml-1">— stay signed in across browser restarts</span>
-          </label>
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span className="text-sm text-gray-600">Stay signed in on this device</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1 ml-6">
+              {rememberMe
+                ? 'You’ll stay signed in when you reopen the app.'
+                : 'You’ll be signed out automatically after 30 minutes of inactivity.'}
+            </p>
+            <p className="text-xs text-amber-600 mt-1 ml-6">
+              Use only on your own device. Always sign out on shared devices.
+            </p>
+          </div>
 
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">

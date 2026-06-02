@@ -13,6 +13,10 @@ const ROLE_HOME: Record<string, string> = {
   client: '/client',
 }
 
+// Inactivity auto-logout window applied only when the user did NOT choose to stay
+// signed in. Long enough that normal mobile app-switching never triggers it.
+const IDLE_LIMIT_MS = 30 * 60 * 1000
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -57,6 +61,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     loadProfile()
   }, [router, pathname])
+
+  // Inactivity auto-logout — only when the user did NOT choose to stay signed in.
+  // Eviction-safe: a missing "te_remember" flag is treated as "remembered" (no
+  // timeout), and a missing "te_last_activity" skips the check, so clearing mobile
+  // storage can never wrongly sign a user out — it only relaxes the timeout.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const remembered = localStorage.getItem('te_remember') !== '0'
+    if (remembered) return // stay signed in; rely on Supabase persisted session
+
+    const supabase = createClient()
+    const mark = () => localStorage.setItem('te_last_activity', String(Date.now()))
+    const checkIdle = async () => {
+      const last = parseInt(localStorage.getItem('te_last_activity') ?? '', 10)
+      if (!isNaN(last) && Date.now() - last > IDLE_LIMIT_MS) {
+        await supabase.auth.signOut()
+        window.location.href = '/login'
+      }
+    }
+
+    // Check immediately (covers reopening the app after a long idle), then track activity
+    checkIdle()
+    const events = ['pointerdown', 'keydown', 'touchstart']
+    events.forEach(e => window.addEventListener(e, mark, { passive: true }))
+    const onVisible = () => { if (document.visibilityState === 'visible') checkIdle() }
+    document.addEventListener('visibilitychange', onVisible)
+    const interval = setInterval(checkIdle, 60_000)
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, mark))
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(interval)
+    }
+  }, [])
 
   if (loading) {
     return (
