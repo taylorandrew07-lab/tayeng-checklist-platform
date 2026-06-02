@@ -28,6 +28,30 @@ describe('bilinearInterpolate', () => {
   })
 })
 
+describe('bilinear as three linear steps (new block layout)', () => {
+  it('worked example → y2c1=1120, y2c2=1220, final=1160', () => {
+    const tX = 126
+    const y2c1 = linearInterpolate(120, 1000, 130, 1200, tX)
+    const y2c2 = linearInterpolate(120, 1100, 130, 1300, tX)
+    const final = linearInterpolate(0, y2c1, 1, y2c2, 0.4)
+    expect(y2c1).toBe(1120)
+    expect(y2c2).toBe(1220)
+    expect(final).toBeCloseTo(1160, 6)
+  })
+
+  it('fractional target x (120 1/2) interpolates condition 1', () => {
+    const tX = parseValue('120 1/2')!
+    expect(linearInterpolate(120, 1000, 130, 1200, tX)).toBe(1010)
+  })
+
+  it('negative condition values still interpolate', () => {
+    const y2c1 = linearInterpolate(120, 1000, 130, 1200, 126) // 1120
+    const y2c2 = linearInterpolate(120, 1100, 130, 1300, 126) // 1220
+    // condition values -2 and 2, target -1 → 25% of the way → 1120 + 0.25*100 = 1145
+    expect(linearInterpolate(-2, y2c1, 2, y2c2, -1)).toBeCloseTo(1145, 6)
+  })
+})
+
 describe('parseValue', () => {
   it('parses decimals and negatives', () => {
     expect(parseValue('12.5')).toBe(12.5)
