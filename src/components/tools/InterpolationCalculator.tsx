@@ -45,7 +45,14 @@ function CalcInput({ label, value, active, keypadMode, onChange, onFocus }: {
         inputMode={keypadMode ? 'none' : 'decimal'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={onFocus}
+        onFocus={(e) => {
+          onFocus()
+          // When the on-screen keypad is up, keep the tapped field visible above it.
+          if (keypadMode) {
+            const el = e.currentTarget
+            setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50)
+          }
+        }}
         onClick={onFocus}
         className={`input-base ${active ? 'ring-2 ring-brand-500 border-brand-500' : ''} ${invalid ? 'border-red-400' : ''}`}
         placeholder="0"
@@ -159,7 +166,7 @@ export default function InterpolationCalculator() {
     : null
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className={`mx-auto space-y-6 ${mode === 'bilinear' ? 'max-w-5xl' : 'max-w-2xl'} ${showKeypad ? 'pb-72 lg:pb-0' : ''}`}>
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center flex-shrink-0">
           <Calculator className="h-5 w-5 text-brand-700" />
@@ -235,26 +242,26 @@ export default function InterpolationCalculator() {
             </div>
           )}
 
-          {showKeypad && <Keypad onKey={pressKey} />}
-
           <div className="flex justify-end">
             <button onClick={resetLinear} className="btn-secondary"><RotateCcw className="h-4 w-4" />Clear</button>
           </div>
         </div>
       )}
 
-      {/* BILINEAR MODE — three stacked blocks */}
+      {/* BILINEAR MODE — Condition 1 & 2 side-by-side on desktop, Target full-width.
+          On mobile the blocks stack with Target first (order utilities). */}
       {mode === 'bilinear' && (
-        <div className="space-y-4">
+        <>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* Helper to render a condition block */}
           {([
-            { n: 1, valueKey: 'c1value', x1: 'c1x1', y1: 'c1y1', x3: 'c1x3', y3: 'c1y3', y2: y2c1 },
-            { n: 2, valueKey: 'c2value', x1: 'c2x1', y1: 'c2y1', x3: 'c2x3', y3: 'c2y3', y2: y2c2 },
+            { n: 1, valueKey: 'c1value', x1: 'c1x1', y1: 'c1y1', x3: 'c1x3', y3: 'c1y3', y2: y2c1, orderCls: 'order-2 lg:order-1' },
+            { n: 2, valueKey: 'c2value', x1: 'c2x1', y1: 'c2y1', x3: 'c2x3', y3: 'c2y3', y2: y2c2, orderCls: 'order-3 lg:order-2' },
           ] as const).map(blk => {
             const biVals = bi as Record<string, string>
             const set = (key: string) => (v: string) => setBi(p => ({ ...p, [key]: v }))
             return (
-              <div key={blk.n} className="card p-5 space-y-4">
+              <div key={blk.n} className={`card p-5 space-y-4 ${blk.orderCls}`}>
                 <h2 className="section-title">Condition {blk.n} (e.g. Trim {blk.n})</h2>
                 <CalcInput
                   label={`Condition ${blk.n} value (e.g. Trim)`}
@@ -288,8 +295,8 @@ export default function InterpolationCalculator() {
             )
           })}
 
-          {/* BLOCK 3 — Target */}
-          <div className="card p-5 space-y-4">
+          {/* BLOCK 3 — Target (full width below the conditions on desktop, first on mobile) */}
+          <div className="card p-5 space-y-4 order-1 lg:order-3 lg:col-span-2">
             <h2 className="section-title">Target</h2>
             <div className="grid grid-cols-2 gap-3">
               <CalcInput label="Target x (e.g. Sounding/Height)" value={bi.targetX} active={activeField === 'targetX'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, targetX: v }))} onFocus={() => setActiveField('targetX')} />
@@ -327,11 +334,20 @@ export default function InterpolationCalculator() {
               </div>
             )}
           </div>
+        </div>
 
-          {showKeypad && <Keypad onKey={pressKey} />}
+        <div className="flex justify-end">
+          <button onClick={resetBilinear} className="btn-secondary"><RotateCcw className="h-4 w-4" />Clear</button>
+        </div>
+        </>
+      )}
 
-          <div className="flex justify-end">
-            <button onClick={resetBilinear} className="btn-secondary"><RotateCcw className="h-4 w-4" />Clear</button>
+      {/* On-screen keypad — sticky at the bottom on mobile, inline on desktop.
+          Only affects this calculator. */}
+      {showKeypad && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] lg:static lg:inset-auto lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+          <div className="mx-auto max-w-md lg:max-w-none">
+            <Keypad onKey={pressKey} />
           </div>
         </div>
       )}
