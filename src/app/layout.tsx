@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   },
   description: 'Internal checklist and survey job platform for Taylor Engineering Agencies Limited',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/logo-square.jpeg',
+    shortcut: '/logo-square.jpeg',
+    apple: '/logo-square.jpeg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
