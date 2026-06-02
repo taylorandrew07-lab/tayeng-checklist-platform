@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { linearInterpolate, bilinearInterpolate, formatNumber } from './interpolation'
+import { linearInterpolate, bilinearInterpolate, formatNumber, parseValue } from './interpolation'
 
 describe('linearInterpolate', () => {
   it('midpoint: X1=10,Y1=1000,X2=20,Y2=2000, targetX=15 → 1500', () => {
@@ -25,6 +25,48 @@ describe('bilinearInterpolate', () => {
     expect(r1).toBeCloseTo(1040, 6)
     expect(r2).toBeCloseTo(1240, 6)
     expect(result).toBeCloseTo(1160, 6)
+  })
+})
+
+describe('parseValue', () => {
+  it('parses decimals and negatives', () => {
+    expect(parseValue('12.5')).toBe(12.5)
+    expect(parseValue('-1')).toBe(-1)
+    expect(parseValue('0.5')).toBe(0.5)
+  })
+
+  it('parses simple fractions', () => {
+    expect(parseValue('1/2')).toBe(0.5)
+    expect(parseValue('3/4')).toBe(0.75)
+    expect(parseValue('5/16')).toBe(0.3125)
+  })
+
+  it('parses mixed numbers with space or hyphen', () => {
+    expect(parseValue('12 1/2')).toBe(12.5)
+    expect(parseValue('12-1/2')).toBe(12.5)
+    expect(parseValue('12 5/16')).toBe(12.3125)
+  })
+
+  it('parses negative fractions / mixed numbers', () => {
+    expect(parseValue('-1/2')).toBe(-0.5)
+    expect(parseValue('-2 1/4')).toBe(-2.25)
+  })
+
+  it('returns null for blank or invalid input', () => {
+    expect(parseValue('')).toBeNull()
+    expect(parseValue('-')).toBeNull()
+    expect(parseValue('abc')).toBeNull()
+    expect(parseValue('1/0')).toBeNull()
+    expect(parseValue('1/2/3')).toBeNull()
+  })
+
+  it('fraction interpolation examples resolve correctly', () => {
+    // x2 = 10 1/2 between x1=10,x3=11 → halfway → y2=1500
+    expect(linearInterpolate(10, 1000, 11, 2000, parseValue('10 1/2')!)).toBe(1500)
+    // x2 = 5/16 with x1=0,x3=1,y1=0,y3=16 → 5
+    expect(linearInterpolate(0, 0, 1, 16, parseValue('5/16')!)).toBe(5)
+    // x1=-1/2,x3=1/2,x2=0,y1=100,y3=200 → 150
+    expect(linearInterpolate(parseValue('-1/2')!, 100, parseValue('1/2')!, 200, 0)).toBe(150)
   })
 })
 

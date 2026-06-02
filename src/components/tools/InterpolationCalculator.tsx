@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { RotateCcw, ChevronDown, ChevronUp, Calculator, Delete } from 'lucide-react'
-import { linearInterpolate, bilinearInterpolate, formatNumber } from '@/lib/interpolation'
+import { linearInterpolate, bilinearInterpolate, formatNumber, parseValue } from '@/lib/interpolation'
 
 type Mode = 'linear' | 'bilinear'
 
@@ -10,33 +10,42 @@ type Mode = 'linear' | 'bilinear'
 const LINEAR_ORDER = ['x1', 'y1', 'x2', 'x3', 'y3'] as const
 const BILINEAR_ORDER = ['x1', 'x2', 'tx', 'y1', 'y2', 'ty', 'q11', 'q21', 'q12', 'q22'] as const
 
-// Parse a user-entered string to a finite number, or null if blank/invalid.
-function parse(v: string): number | null {
-  if (v.trim() === '' || v.trim() === '-' || v.trim() === '.') return null
-  const n = Number(v)
-  return isFinite(n) ? n : null
+// Short, readable rendering of a parsed value for the fraction hint.
+function shortNum(n: number): string {
+  return String(Math.round(n * 1e6) / 1e6)
 }
 
-function CalcInput({ label, value, active, onChange, onFocus }: {
+function CalcInput({ label, value, active, keypadMode, onChange, onFocus }: {
   label: string
   value: string
   active: boolean
+  keypadMode: boolean
   onChange: (v: string) => void
   onFocus: () => void
 }) {
+  const trimmed = value.trim()
+  const parsed = parseValue(value)
+  const invalid = trimmed !== '' && trimmed !== '-' && parsed === null
+  const showFractionHint = !invalid && parsed !== null && value.includes('/')
   return (
     <div>
       <label className="label-base">{label}</label>
       <input
-        // text + inputMode lets the on-screen keypad show partial values like "-" or "1."
+        // text + inputMode lets the on-screen keypad show partial values like "-" or "1/".
         type="text"
-        inputMode="decimal"
+        // When the custom keypad is active, suppress the native mobile keyboard but keep
+        // the field tappable/selectable (readOnly stays focusable and fires onFocus).
+        readOnly={keypadMode}
+        inputMode={keypadMode ? 'none' : 'decimal'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
-        className={`input-base ${active ? 'ring-2 ring-brand-500 border-brand-500' : ''}`}
+        onClick={onFocus}
+        className={`input-base ${active ? 'ring-2 ring-brand-500 border-brand-500' : ''} ${invalid ? 'border-red-400' : ''}`}
         placeholder="0"
       />
+      {invalid && <p className="text-xs text-red-600 mt-1">Invalid number or fraction</p>}
+      {showFractionHint && <p className="text-xs text-gray-500 mt-1">{trimmed} = {shortNum(parsed!)}</p>}
     </div>
   )
 }
@@ -85,6 +94,10 @@ export default function InterpolationCalculator() {
       if (!cur.includes('.')) setFieldValue(key, cur === '' ? '0.' : cur + '.')
       return
     }
+    if (op === '/') {
+      if (!cur.includes('/') && cur !== '' && cur !== '-') setFieldValue(key, cur + '/')
+      return
+    }
     // digit
     setFieldValue(key, cur + op)
   }
@@ -96,7 +109,7 @@ export default function InterpolationCalculator() {
   }
 
   // --- Linear computation (y2 = y1 + ((x2-x1)/(x3-x1))*(y3-y1)) ---
-  const lx1 = parse(lin.x1), ly1 = parse(lin.y1), lx2 = parse(lin.x2), lx3 = parse(lin.x3), ly3 = parse(lin.y3)
+  const lx1 = parseValue(lin.x1), ly1 = parseValue(lin.y1), lx2 = parseValue(lin.x2), lx3 = parseValue(lin.x3), ly3 = parseValue(lin.y3)
   let linError: string | null = null
   let y2: number | null = null
   if (lx1 !== null && lx3 !== null && lx1 === lx3) {
@@ -108,9 +121,9 @@ export default function InterpolationCalculator() {
   // --- Bilinear computation ---
   function computeBilinear(): { error?: string; r1?: number; r2?: number; result?: number } {
     const v = {
-      x1: parse(bi.x1), x2: parse(bi.x2), tx: parse(bi.tx),
-      y1: parse(bi.y1), y2: parse(bi.y2), ty: parse(bi.ty),
-      q11: parse(bi.q11), q21: parse(bi.q21), q12: parse(bi.q12), q22: parse(bi.q22),
+      x1: parseValue(bi.x1), x2: parseValue(bi.x2), tx: parseValue(bi.tx),
+      y1: parseValue(bi.y1), y2: parseValue(bi.y2), ty: parseValue(bi.ty),
+      q11: parseValue(bi.q11), q21: parseValue(bi.q21), q12: parseValue(bi.q12), q22: parseValue(bi.q22),
     }
     if (Object.values(v).some(x => x === null)) return {}
     if (v.x1 === v.x2) return { error: 'X1 and X2 (Trim) cannot be the same.' }
@@ -174,10 +187,10 @@ export default function InterpolationCalculator() {
         <div className="card p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             {/* Row 1 */}
-            <CalcInput label="x1" value={lin.x1} active={activeField === 'x1'} onChange={(v) => setLin(p => ({ ...p, x1: v }))} onFocus={() => setActiveField('x1')} />
-            <CalcInput label="y1" value={lin.y1} active={activeField === 'y1'} onChange={(v) => setLin(p => ({ ...p, y1: v }))} onFocus={() => setActiveField('y1')} />
+            <CalcInput label="x1" value={lin.x1} active={activeField === 'x1'} keypadMode={showKeypad} onChange={(v) => setLin(p => ({ ...p, x1: v }))} onFocus={() => setActiveField('x1')} />
+            <CalcInput label="y1" value={lin.y1} active={activeField === 'y1'} keypadMode={showKeypad} onChange={(v) => setLin(p => ({ ...p, y1: v }))} onFocus={() => setActiveField('y1')} />
             {/* Row 2 — x2 (target) + y2 (result) */}
-            <CalcInput label="x2 (target)" value={lin.x2} active={activeField === 'x2'} onChange={(v) => setLin(p => ({ ...p, x2: v }))} onFocus={() => setActiveField('x2')} />
+            <CalcInput label="x2 (target)" value={lin.x2} active={activeField === 'x2'} keypadMode={showKeypad} onChange={(v) => setLin(p => ({ ...p, x2: v }))} onFocus={() => setActiveField('x2')} />
             <div>
               <label className="label-base text-brand-700">y2 (result)</label>
               <div className={`input-base flex items-center font-mono font-semibold ${
@@ -187,8 +200,8 @@ export default function InterpolationCalculator() {
               </div>
             </div>
             {/* Row 3 */}
-            <CalcInput label="x3" value={lin.x3} active={activeField === 'x3'} onChange={(v) => setLin(p => ({ ...p, x3: v }))} onFocus={() => setActiveField('x3')} />
-            <CalcInput label="y3" value={lin.y3} active={activeField === 'y3'} onChange={(v) => setLin(p => ({ ...p, y3: v }))} onFocus={() => setActiveField('y3')} />
+            <CalcInput label="x3" value={lin.x3} active={activeField === 'x3'} keypadMode={showKeypad} onChange={(v) => setLin(p => ({ ...p, x3: v }))} onFocus={() => setActiveField('x3')} />
+            <CalcInput label="y3" value={lin.y3} active={activeField === 'y3'} keypadMode={showKeypad} onChange={(v) => setLin(p => ({ ...p, y3: v }))} onFocus={() => setActiveField('y3')} />
           </div>
 
           {linError && (
@@ -214,25 +227,25 @@ export default function InterpolationCalculator() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">X axis — Trim</p>
-              <CalcInput label="X1 (Trim)" value={bi.x1} active={activeField === 'x1'} onChange={(v) => setBi(p => ({ ...p, x1: v }))} onFocus={() => setActiveField('x1')} />
-              <CalcInput label="X2 (Trim)" value={bi.x2} active={activeField === 'x2'} onChange={(v) => setBi(p => ({ ...p, x2: v }))} onFocus={() => setActiveField('x2')} />
-              <CalcInput label="Target X (Trim)" value={bi.tx} active={activeField === 'tx'} onChange={(v) => setBi(p => ({ ...p, tx: v }))} onFocus={() => setActiveField('tx')} />
+              <CalcInput label="X1 (Trim)" value={bi.x1} active={activeField === 'x1'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, x1: v }))} onFocus={() => setActiveField('x1')} />
+              <CalcInput label="X2 (Trim)" value={bi.x2} active={activeField === 'x2'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, x2: v }))} onFocus={() => setActiveField('x2')} />
+              <CalcInput label="Target X (Trim)" value={bi.tx} active={activeField === 'tx'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, tx: v }))} onFocus={() => setActiveField('tx')} />
             </div>
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Y axis — Sounding / Height</p>
-              <CalcInput label="Y1 (Sounding)" value={bi.y1} active={activeField === 'y1'} onChange={(v) => setBi(p => ({ ...p, y1: v }))} onFocus={() => setActiveField('y1')} />
-              <CalcInput label="Y2 (Sounding)" value={bi.y2} active={activeField === 'y2'} onChange={(v) => setBi(p => ({ ...p, y2: v }))} onFocus={() => setActiveField('y2')} />
-              <CalcInput label="Target Y (Sounding)" value={bi.ty} active={activeField === 'ty'} onChange={(v) => setBi(p => ({ ...p, ty: v }))} onFocus={() => setActiveField('ty')} />
+              <CalcInput label="Y1 (Sounding)" value={bi.y1} active={activeField === 'y1'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, y1: v }))} onFocus={() => setActiveField('y1')} />
+              <CalcInput label="Y2 (Sounding)" value={bi.y2} active={activeField === 'y2'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, y2: v }))} onFocus={() => setActiveField('y2')} />
+              <CalcInput label="Target Y (Sounding)" value={bi.ty} active={activeField === 'ty'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, ty: v }))} onFocus={() => setActiveField('ty')} />
             </div>
           </div>
 
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Known Volumes (2×2 grid)</p>
             <div className="grid grid-cols-2 gap-3">
-              <CalcInput label="Volume at X1 / Y1" value={bi.q11} active={activeField === 'q11'} onChange={(v) => setBi(p => ({ ...p, q11: v }))} onFocus={() => setActiveField('q11')} />
-              <CalcInput label="Volume at X2 / Y1" value={bi.q21} active={activeField === 'q21'} onChange={(v) => setBi(p => ({ ...p, q21: v }))} onFocus={() => setActiveField('q21')} />
-              <CalcInput label="Volume at X1 / Y2" value={bi.q12} active={activeField === 'q12'} onChange={(v) => setBi(p => ({ ...p, q12: v }))} onFocus={() => setActiveField('q12')} />
-              <CalcInput label="Volume at X2 / Y2" value={bi.q22} active={activeField === 'q22'} onChange={(v) => setBi(p => ({ ...p, q22: v }))} onFocus={() => setActiveField('q22')} />
+              <CalcInput label="Volume at X1 / Y1" value={bi.q11} active={activeField === 'q11'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, q11: v }))} onFocus={() => setActiveField('q11')} />
+              <CalcInput label="Volume at X2 / Y1" value={bi.q21} active={activeField === 'q21'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, q21: v }))} onFocus={() => setActiveField('q21')} />
+              <CalcInput label="Volume at X1 / Y2" value={bi.q12} active={activeField === 'q12'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, q12: v }))} onFocus={() => setActiveField('q12')} />
+              <CalcInput label="Volume at X2 / Y2" value={bi.q22} active={activeField === 'q22'} keypadMode={showKeypad} onChange={(v) => setBi(p => ({ ...p, q22: v }))} onFocus={() => setActiveField('q22')} />
             </div>
           </div>
 
@@ -291,8 +304,8 @@ function Keypad({ onKey }: { onKey: (op: string) => void }) {
         <Btn op="clear" className="text-red-600 text-sm">C</Btn>
         <Btn op="1">1</Btn><Btn op="2">2</Btn><Btn op="3">3</Btn>
         <Btn op="-" className="text-brand-700 font-bold">−</Btn>
-        <Btn op=".">.</Btn><Btn op="0">0</Btn>
-        <Btn op="next" className="col-span-2 bg-brand-600 text-white border-brand-600 hover:bg-brand-700 active:bg-brand-700">Next</Btn>
+        <Btn op=".">.</Btn><Btn op="0">0</Btn><Btn op="/" className="text-brand-700 font-bold">/</Btn>
+        <Btn op="next" className="bg-brand-600 text-white border-brand-600 hover:bg-brand-700 active:bg-brand-700">Next</Btn>
       </div>
     </div>
   )
