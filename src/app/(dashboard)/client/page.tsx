@@ -59,13 +59,17 @@ export default function ClientPortal() {
         .eq('client_id', link.client_id)
         .order('created_at', { ascending: false })
 
-      // Supabase returns nested relations as arrays; normalize to single objects
-      const normalized: PermittedJob[] = ((perms ?? []) as any[]).map((p: any) => ({
-        can_view_status: p.can_view_status,
-        can_view_pdf: p.can_view_pdf,
-        can_view_checklist_details: p.can_view_checklist_details,
-        job: Array.isArray(p.job) ? (p.job[0] ?? null) : (p.job ?? null),
-      }))
+      // Supabase returns nested relations as arrays; normalize to single objects.
+      // When "View status" is off, RLS hides the job row (job is null) so the
+      // permission alone never reveals a job — drop those entries entirely.
+      const normalized: PermittedJob[] = ((perms ?? []) as any[])
+        .map((p: any) => ({
+          can_view_status: p.can_view_status,
+          can_view_pdf: p.can_view_pdf,
+          can_view_checklist_details: p.can_view_checklist_details,
+          job: Array.isArray(p.job) ? (p.job[0] ?? null) : (p.job ?? null),
+        }))
+        .filter(p => p.job !== null)
       setJobs(normalized)
       setLoading(false)
     }
