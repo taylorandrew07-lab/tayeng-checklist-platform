@@ -9,7 +9,7 @@ import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
 } from 'lucide-react'
-import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout } from '@/lib/utils'
+import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout, vesselPrefixForLabel, normalizeVesselName } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -152,6 +152,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               vals[field.id] = jobData.surveyor_name
             }
           }
+          // Normalise vessel-name fields to canonical "M.V./M.T. Title Case"
+          if (field.field_type === 'text' && vals[field.id]) {
+            const prefix = vesselPrefixForLabel(field.label)
+            if (prefix) vals[field.id] = normalizeVesselName(vals[field.id], prefix)
+          }
         }
       }
 
@@ -209,7 +214,26 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const supabase = createClient()
 
       try {
-        const upserts = Object.entries(values).map(([field_id, value]) => ({
+        // Canonicalise vessel-name fields before saving (safety net in case the
+        // input never fired its blur normaliser, e.g. clicking Save while focused).
+        let valuesToSave = values
+        const normalized: Record<string, string> = {}
+        for (const section of sections) {
+          for (const field of section.fields) {
+            if (field.field_type !== 'text') continue
+            const prefix = vesselPrefixForLabel(field.label)
+            const current = values[field.id]
+            if (!prefix || !current) continue
+            const next = normalizeVesselName(current, prefix)
+            if (next !== current) normalized[field.id] = next
+          }
+        }
+        if (Object.keys(normalized).length > 0) {
+          valuesToSave = { ...values, ...normalized }
+          setValues(valuesToSave)
+        }
+
+        const upserts = Object.entries(valuesToSave).map(([field_id, value]) => ({
           job_id: jobId, field_id, value, value_array: null,
         }))
         const arrayUpserts = Object.entries(arrayValues).map(([field_id, value_array]) => ({
@@ -251,7 +275,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       } finally {
         setSaving(false)
       }
-    }, [jobId, values, arrayValues, signatures])
+    }, [jobId, values, arrayValues, signatures, sections])
 
     // --- Submit ---
     async function handleSubmit() {
@@ -719,6 +743,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(field.id, v) : v => updateValue(field.id, v)}
                         onArrayChange={v => updateArrayValue(field.id, v)}
                         onSignatureChange={data => updateSignature(field.id, data)}
+                        onBlur={v => {
+                          const prefix = vesselPrefixForLabel(field.label)
+                          if (!prefix) return
+                          const next = normalizeVesselName(v, prefix)
+                          if (next !== v) updateValue(field.id, next)
+                        }}
                         readOnly={readOnly}
                       />
                     )

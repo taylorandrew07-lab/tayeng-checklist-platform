@@ -15,6 +15,8 @@ interface FieldRendererProps {
   onChange: (value: string) => void
   onArrayChange?: (values: string[]) => void
   onSignatureChange?: (data: string) => void
+  /** Called when a text field loses focus, with its current value (for normalisation). */
+  onBlur?: (value: string) => void
   readOnly?: boolean
   /** Pre-computed label with {uuid} tokens already substituted. Falls back to field.label. */
   resolvedLabel?: string
@@ -29,6 +31,7 @@ export default function FieldRenderer({
   onChange,
   onArrayChange,
   onSignatureChange,
+  onBlur,
   readOnly = false,
   resolvedLabel,
 }: FieldRendererProps) {
@@ -79,6 +82,7 @@ export default function FieldRenderer({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => onBlur?.(e.target.value)}
           disabled={readOnly}
           className={baseInputClass}
         />

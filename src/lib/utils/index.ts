@@ -25,6 +25,44 @@ export function formatDateTime(dateStr: string | null | undefined): string {
   }
 }
 
+/**
+ * Returns the canonical vessel-type prefix a text field's value should carry,
+ * based on its label, or null if the field is not a vessel-name field.
+ *  - "Bunker Vessel Name" (a tanker) → "M.T." (Motor Tanker)
+ *  - the surveyed vessel (e.g. "Vessel", "Vessel Name") → "M.V." (Motor Vessel)
+ * Mirrors the vessel/bunker matching used for metadata auto-fill so the same
+ * fields are affected.
+ */
+export function vesselPrefixForLabel(label: string): 'M.T.' | 'M.V.' | null {
+  const l = label.toLowerCase()
+  if (!l.includes('vessel')) return null
+  if (l.includes('bunker')) return 'M.T.'
+  return 'M.V.'
+}
+
+/**
+ * Normalises a vessel name to "<prefix> Title Cased Name":
+ *  - strips any existing prefix the user typed (so we never double up, e.g.
+ *    "M.T. M.T. Test" → "M.T. Test"), matching forms like "MT", "M.T.", "M T"
+ *  - title-cases the remaining words ("TEST VESSEL" → "Test Vessel")
+ *  - re-applies the canonical prefix
+ * Returns '' for empty input (and never returns a bare prefix on its own).
+ */
+export function normalizeVesselName(raw: string, prefix: 'M.T.' | 'M.V.'): string {
+  if (!raw) return ''
+  let v = raw.trim()
+  if (!v) return ''
+  const initials = prefix.replace(/\./g, '').toLowerCase() // e.g. 'M.T.' → 'mt'
+  const a = initials[0], b = initials[1]
+  // Strip one or more leading "<a> <b>" prefix tokens (dots/spaces optional),
+  // each followed by a separator so real words like "Mtoto" are left intact.
+  const stripRe = new RegExp(`^(?:${a}\\.?\\s*${b}\\.?[\\s.]+)+`, 'i')
+  v = v.replace(stripRe, '').trim()
+  if (!v) return ''
+  const titled = v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
+  return `${prefix} ${titled}`
+}
+
 export function getJobStatusLabel(status: JobStatus): string {
   const labels: Record<JobStatus, string> = {
     draft: 'Draft',
