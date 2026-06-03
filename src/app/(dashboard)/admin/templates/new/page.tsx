@@ -8,6 +8,7 @@ import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
 import type { TemplateStatus, ConditionalLogic } from '@/lib/types/database'
 import { dirtyState } from '@/lib/dirty-state'
+import { withTimeout } from '@/lib/utils'
 
 // --- Remap helpers ---
 function remapConditional(
@@ -195,82 +196,56 @@ export default function NewTemplatePage() {
       return { ok: false }
     }
 
-    // Pass 1: Insert all sections and fields WITHOUT conditional_logic
-    // Build idMap: localId -> dbId
-    const idMap: Record<string, string> = {}
-
-    for (const section of sections) {
-      const { data: sec } = await supabase
-        .from('template_sections')
-        .insert({
-          template_id: template.id,
-          title: section.title,
-          description: section.description || null,
-          order_index: section.order_index,
-          conditional_logic: null,
-        })
-        .select()
-        .single()
-
-      if (!sec) continue
-      idMap[section.id] = sec.id
-
-      for (const field of section.fields) {
-        const { data: f } = await supabase
-          .from('template_fields')
-          .insert({
-            template_id: template.id,
-            section_id: sec.id,
-            label: field.label,
-            field_type: field.field_type,
-            order_index: field.order_index,
-            is_required: field.is_required,
-            options: field.options.length ? field.options : null,
-            validation: Object.keys(field.validation).length ? field.validation : null,
-            calculation_formula: field.calculation_formula
-              ? remapFormula(field.calculation_formula, idMap)
-              : null,
-            conditional_logic: null,
-            help_text: field.help_text || null,
-            unit: field.unit || null,
-            item_number: field.item_number || null,
-            with_remarks: field.with_remarks || false,
-          })
-          .select()
-          .single()
-
-        if (f) idMap[field.id] = f.id
-      }
-    }
-
-    // Pass 2: Update conditional_logic and calculation_formula using remapped IDs
-    for (const section of sections) {
-      if (section.conditional_logic) {
-        const remapped = remapConditional(section.conditional_logic, idMap)
-        const dbSecId = idMap[section.id]
-        if (dbSecId) {
-          await supabase.from('template_sections').update({ conditional_logic: remapped }).eq('id', dbSecId)
-        }
+    // The builder assigns a real UUID to every section/field (duplicates were
+    // remapped on load), so persist everything in two bulk inserts — no per-row
+    // round-trips and no id remapping. Conditional logic already references UUIDs.
+    try {
+      const sectionRows = sections.map(s => ({
+        id: s.id,
+        template_id: template.id,
+        title: s.title,
+        description: s.description || null,
+        order_index: s.order_index,
+        conditional_logic: s.conditional_logic,
+      }))
+      if (sectionRows.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_sections').insert(sectionRows),
+          20_000, 'Saving sections'
+        )
+        if (error) throw error
       }
 
-      for (const field of section.fields) {
-        const dbFieldId = idMap[field.id]
-        if (!dbFieldId) continue
-
-        const updates: Record<string, unknown> = {}
-
-        if (field.conditional_logic) {
-          updates.conditional_logic = remapConditional(field.conditional_logic, idMap)
-        }
-        // Re-apply formula with fully-populated idMap
-        if (field.calculation_formula) {
-          updates.calculation_formula = remapFormula(field.calculation_formula, idMap)
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('template_fields').update(updates).eq('id', dbFieldId)
-        }
+      const fieldRows = sections.flatMap(s => s.fields.map(f => ({
+        id: f.id,
+        template_id: template.id,
+        section_id: s.id,
+        label: f.label,
+        field_type: f.field_type,
+        order_index: f.order_index,
+        is_required: f.is_required,
+        options: f.options.length ? f.options : null,
+        validation: Object.keys(f.validation).length ? f.validation : null,
+        calculation_formula: f.calculation_formula || null,
+        conditional_logic: f.conditional_logic,
+        help_text: f.help_text || null,
+        unit: f.unit || null,
+        item_number: f.item_number || null,
+        with_remarks: f.with_remarks || false,
+      })))
+      if (fieldRows.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_fields').insert(fieldRows),
+          20_000, 'Saving fields'
+        )
+        if (error) throw error
       }
+    } catch (err: any) {
+      // Roll back the template row so a failed save doesn't leave an empty template.
+      await supabase.from('checklist_templates').delete().eq('id', template.id)
+      setError(err?.message ?? 'Save failed — please try again')
+      setSaving(false)
+      return { ok: false, errorMsg: err?.message }
     }
 
     setSaving(false)

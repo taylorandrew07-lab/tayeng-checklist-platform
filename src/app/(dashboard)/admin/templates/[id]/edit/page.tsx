@@ -6,27 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
-import type { TemplateStatus, ConditionalLogic } from '@/lib/types/database'
+import type { TemplateStatus } from '@/lib/types/database'
 import { dirtyState } from '@/lib/dirty-state'
-
-// --- Remap helpers ---
-function remapConditional(
-  logic: ConditionalLogic | null,
-  map: Record<string, string>
-): ConditionalLogic | null {
-  if (!logic || !Object.keys(map).length) return logic
-  return {
-    ...logic,
-    conditions: logic.conditions.map(c => ({
-      ...c,
-      field_id: map[c.field_id] ?? c.field_id,
-    })),
-  }
-}
-
-function remapFormula(f: string, map: Record<string, string>): string {
-  return f.replace(/\{([^}]+)\}/g, (_, id) => `{${map[id] ?? id}}`)
-}
+import { withTimeout } from '@/lib/utils'
 
 export default function EditTemplatePage() {
   const router = useRouter()
@@ -181,167 +163,107 @@ export default function EditTemplatePage() {
 
     const supabase = createClient()
 
-    // a. Update template meta
-    const { error: tmplErr } = await supabase
-      .from('checklist_templates')
-      .update({
-        name: name.trim(),
-        description: description.trim() || null,
-        status,
-        allow_surveyor_start: allowSurveyorStart,
-      })
-      .eq('id', templateId)
-
-    if (tmplErr) {
-      setError(tmplErr.message)
-      setSaving(false)
-      return { ok: false }
-    }
-
+    // Compute removed items up front (original ids no longer present in the builder).
     const currentSectionIds = new Set(sections.map(s => s.id))
     const currentFieldIds = new Set(sections.flatMap(s => s.fields.map(f => f.id)))
-
-    // b. Delete removed sections (CASCADE deletes fields)
-    for (const id of Array.from(originalSectionIds.current)) {
-      if (!currentSectionIds.has(id)) {
-        await supabase.from('template_sections').delete().eq('id', id)
-      }
-    }
-
-    // d. Delete removed fields — but first check for existing answers (guard against cascade data loss)
+    const removedSectionIds = Array.from(originalSectionIds.current).filter(id => !currentSectionIds.has(id))
     const removedFieldIds = Array.from(originalFieldIds.current).filter(id => !currentFieldIds.has(id))
+
+    // Guard against destroying existing answers via cascade — checked before any writes.
     if (removedFieldIds.length > 0 && jobCount > 0) {
-      const { count: answerCount } = await supabase
-        .from('job_field_values')
-        .select('id', { count: 'exact', head: true })
-        .in('field_id', removedFieldIds)
+      const { count: answerCount } = await withTimeout(
+        supabase.from('job_field_values').select('id', { count: 'exact', head: true }).in('field_id', removedFieldIds),
+        15_000, 'Checking existing answers'
+      )
       if ((answerCount ?? 0) > 0) {
         setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
         setSaving(false)
         return { ok: false }
       }
     }
-    for (const id of removedFieldIds) {
-      await supabase.from('template_fields').delete().eq('id', id)
-    }
 
-    // Maps from local builder IDs to new DB IDs (only for newly inserted items)
-    const sectionIdMap: Record<string, string> = {}
-    const newFieldIdMap: Record<string, string> = {}
+    // The builder assigns a real UUID to every section/field (new and existing),
+    // so the whole template persists in a handful of bulk calls — no per-row
+    // round-trips and no id remapping (conditional logic already references UUIDs).
+    try {
+      const { error: tmplErr } = await withTimeout(
+        supabase.from('checklist_templates').update({
+          name: name.trim(),
+          description: description.trim() || null,
+          status,
+          allow_surveyor_start: allowSurveyorStart,
+        }).eq('id', templateId),
+        15_000, 'Saving template'
+      )
+      if (tmplErr) throw tmplErr
 
-    for (const section of sections) {
-      let dbSectionId: string
-
-      if (originalSectionIds.current.has(section.id)) {
-        // c. Update existing section
-        await supabase.from('template_sections').update({
-          title: section.title,
-          description: section.description || null,
-          order_index: section.order_index,
-          conditional_logic: section.conditional_logic,
-        }).eq('id', section.id)
-        dbSectionId = section.id
-      } else {
-        // c. Insert new section
-        const { data: sec } = await supabase
-          .from('template_sections')
-          .insert({
-            template_id: templateId,
-            title: section.title,
-            description: section.description || null,
-            order_index: section.order_index,
-            conditional_logic: null, // remapped in pass f
-          })
-          .select()
-          .single()
-
-        if (!sec) continue
-        sectionIdMap[section.id] = sec.id
-        dbSectionId = sec.id
+      const sectionRows = sections.map(s => ({
+        id: s.id,
+        template_id: templateId,
+        title: s.title,
+        description: s.description || null,
+        order_index: s.order_index,
+        conditional_logic: s.conditional_logic,
+      }))
+      if (sectionRows.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_sections').upsert(sectionRows, { onConflict: 'id' }),
+          20_000, 'Saving sections'
+        )
+        if (error) throw error
       }
 
-      // e. Upsert fields
-      for (const field of section.fields) {
-        if (originalFieldIds.current.has(field.id)) {
-          // Update existing field
-          await supabase.from('template_fields').update({
-            section_id: dbSectionId,
-            label: field.label,
-            field_type: field.field_type,
-            order_index: field.order_index,
-            is_required: field.is_required,
-            options: field.options.length ? field.options : null,
-            validation: Object.keys(field.validation).length ? field.validation : null,
-            calculation_formula: field.calculation_formula || null,
-            conditional_logic: field.conditional_logic,
-            help_text: field.help_text || null,
-            unit: field.unit || null,
-            item_number: field.item_number || null,
-            with_remarks: field.with_remarks || false,
-          }).eq('id', field.id)
-        } else {
-          // Insert new field
-          const { data: f } = await supabase
-            .from('template_fields')
-            .insert({
-              template_id: templateId,
-              section_id: dbSectionId,
-              label: field.label,
-              field_type: field.field_type,
-              order_index: field.order_index,
-              is_required: field.is_required,
-              options: field.options.length ? field.options : null,
-              validation: Object.keys(field.validation).length ? field.validation : null,
-              calculation_formula: field.calculation_formula
-                ? remapFormula(field.calculation_formula, newFieldIdMap)
-                : null,
-              conditional_logic: null, // remapped in pass f
-              help_text: field.help_text || null,
-              unit: field.unit || null,
-              item_number: field.item_number || null,
-              with_remarks: field.with_remarks || false,
-            })
-            .select()
-            .single()
-
-          if (f) newFieldIdMap[field.id] = f.id
-        }
+      const fieldRows = sections.flatMap(s => s.fields.map(f => ({
+        id: f.id,
+        template_id: templateId,
+        section_id: s.id,
+        label: f.label,
+        field_type: f.field_type,
+        order_index: f.order_index,
+        is_required: f.is_required,
+        options: f.options.length ? f.options : null,
+        validation: Object.keys(f.validation).length ? f.validation : null,
+        calculation_formula: f.calculation_formula || null,
+        conditional_logic: f.conditional_logic,
+        help_text: f.help_text || null,
+        unit: f.unit || null,
+        item_number: f.item_number || null,
+        with_remarks: f.with_remarks || false,
+      })))
+      if (fieldRows.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_fields').upsert(fieldRows, { onConflict: 'id' }),
+          20_000, 'Saving fields'
+        )
+        if (error) throw error
       }
+
+      // Delete removed items AFTER the upserts, so a field moved out of a deleted
+      // section (now pointing at its new section) is not lost to the cascade.
+      if (removedSectionIds.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_sections').delete().in('id', removedSectionIds),
+          15_000, 'Removing deleted sections'
+        )
+        if (error) throw error
+      }
+      if (removedFieldIds.length > 0) {
+        const { error } = await withTimeout(
+          supabase.from('template_fields').delete().in('id', removedFieldIds),
+          15_000, 'Removing deleted fields'
+        )
+        if (error) throw error
+      }
+    } catch (err: any) {
+      setError(err?.message ?? 'Save failed — please try again')
+      setSaving(false)
+      return { ok: false, errorMsg: err?.message }
     }
 
-    // f. Remap pass — fix conditional_logic for newly inserted items
-    const hasNewIds = Object.keys(newFieldIdMap).length > 0 || Object.keys(sectionIdMap).length > 0
-    if (hasNewIds) {
-      for (const section of sections) {
-        // Remap section conditional_logic if it's a new section
-        if (!originalSectionIds.current.has(section.id) && section.conditional_logic) {
-          const remapped = remapConditional(section.conditional_logic, newFieldIdMap)
-          const dbId = sectionIdMap[section.id]
-          if (dbId) {
-            await supabase.from('template_sections').update({ conditional_logic: remapped }).eq('id', dbId)
-          }
-        }
-
-        for (const field of section.fields) {
-          if (!originalFieldIds.current.has(field.id) && field.conditional_logic) {
-            const remapped = remapConditional(field.conditional_logic, newFieldIdMap)
-            const dbId = newFieldIdMap[field.id]
-            if (dbId) {
-              await supabase.from('template_fields').update({ conditional_logic: remapped }).eq('id', dbId)
-            }
-          }
-          // Also remap calculation_formula for new fields (already done during insert above,
-          // but if newFieldIdMap grew after the insert we re-apply)
-          if (!originalFieldIds.current.has(field.id) && field.calculation_formula) {
-            const remapped = remapFormula(field.calculation_formula, newFieldIdMap)
-            const dbId = newFieldIdMap[field.id]
-            if (dbId && remapped !== field.calculation_formula) {
-              await supabase.from('template_fields').update({ calculation_formula: remapped }).eq('id', dbId)
-            }
-          }
-        }
-      }
-    }
+    // The just-persisted items become the baseline so a subsequent save (without
+    // leaving the page) correctly distinguishes new vs. removed items.
+    originalSectionIds.current = currentSectionIds
+    originalFieldIds.current = currentFieldIds
 
     setSaving(false)
     setIsDirty(false)
