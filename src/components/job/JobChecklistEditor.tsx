@@ -142,7 +142,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // Auto-fill vessel/surveyor from job metadata (only if field is text and currently empty)
           if (field.field_type === 'text' && !vals[field.id]) {
             const lbl = field.label.toLowerCase()
-            if (lbl.includes('vessel') && jobData.vessel_name) {
+            // The "Bunker Vessel Name" is a different vessel — never auto-fill it
+            // with the surveyed vessel's name; the surveyor enters it manually.
+            if (lbl.includes('vessel') && !lbl.includes('bunker') && jobData.vessel_name) {
               vals[field.id] = jobData.vessel_name
             } else if (lbl.includes('surveyor') && jobData.surveyor_name) {
               vals[field.id] = jobData.surveyor_name
