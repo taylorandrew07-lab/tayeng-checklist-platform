@@ -12,28 +12,20 @@ function logoUrl(path?: string | null): string | null {
   return path ? `${LOGO_BASE}/${path}` : null
 }
 
-// Renders a client logo in a fixed-height zone, choosing a "wide" or "square"
-// presentation from the image's natural aspect ratio (read on load): long logos
-// span the card width, square logos stay large. Always object-contain — never
-// cropped or distorted. Aspect ratio is tracked per logo (component-local state).
+// Renders a client logo filling a fixed-height zone, left-aligned. object-contain
+// keeps the aspect ratio (never cropped/distorted): wide logos run the full width
+// of the zone, square logos fill its height — both as large as they can go.
 function ClientLogo({ src, name }: { src: string | null; name: string }) {
-  const [wide, setWide] = useState(false)
   return (
-    <div className="h-20 sm:h-24 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center px-3 overflow-hidden">
+    <div className="h-24 sm:h-28 rounded-lg bg-gray-50 border border-gray-100 flex items-center p-3 overflow-hidden">
       {src ? (
         <img
           src={src}
           alt={`${name} logo`}
-          onLoad={(e) => {
-            const img = e.currentTarget
-            if (img.naturalWidth && img.naturalHeight) {
-              setWide(img.naturalWidth / img.naturalHeight >= 2.2)
-            }
-          }}
-          className={`object-contain ${wide ? 'w-full max-h-14 sm:max-h-16' : 'h-16 w-16 sm:h-20 sm:w-20'}`}
+          className="h-full w-full object-contain object-left"
         />
       ) : (
-        <Building2 className="h-9 w-9 text-gray-300" />
+        <Building2 className="h-10 w-10 text-gray-300 mx-auto" />
       )}
     </div>
   )
