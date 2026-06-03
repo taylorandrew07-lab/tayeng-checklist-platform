@@ -12,6 +12,33 @@ function logoUrl(path?: string | null): string | null {
   return path ? `${LOGO_BASE}/${path}` : null
 }
 
+// Renders a client logo in a fixed-height zone, choosing a "wide" or "square"
+// presentation from the image's natural aspect ratio (read on load): long logos
+// span the card width, square logos stay large. Always object-contain — never
+// cropped or distorted. Aspect ratio is tracked per logo (component-local state).
+function ClientLogo({ src, name }: { src: string | null; name: string }) {
+  const [wide, setWide] = useState(false)
+  return (
+    <div className="h-20 sm:h-24 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center px-3 overflow-hidden">
+      {src ? (
+        <img
+          src={src}
+          alt={`${name} logo`}
+          onLoad={(e) => {
+            const img = e.currentTarget
+            if (img.naturalWidth && img.naturalHeight) {
+              setWide(img.naturalWidth / img.naturalHeight >= 2.2)
+            }
+          }}
+          className={`object-contain ${wide ? 'w-full max-h-14 sm:max-h-16' : 'h-16 w-16 sm:h-20 sm:w-20'}`}
+        />
+      ) : (
+        <Building2 className="h-9 w-9 text-gray-300" />
+      )}
+    </div>
+  )
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
@@ -146,7 +173,7 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Clients</h1>
@@ -169,31 +196,29 @@ export default function ClientsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {clients.map(client => (
-            <div key={client.id} className={`card p-5 ${!client.is_active ? 'opacity-60' : ''}`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                  {logoUrl(client.logo_path) ? (
-                    <img src={logoUrl(client.logo_path)!} alt="" className="h-full w-full object-contain bg-white" />
-                  ) : (
-                    <Building2 className="h-5 w-5 text-indigo-700" />
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  {client.is_active ? (
-                    <span className="text-xs text-green-600 font-medium flex items-center gap-0.5"><Check className="h-3 w-3" />Active</span>
-                  ) : (
-                    <span className="text-xs text-gray-400 font-medium">Inactive</span>
-                  )}
-                </div>
+            <div key={client.id} className={`card p-5 sm:p-6 flex flex-col ${!client.is_active ? 'opacity-60' : ''}`}>
+              {/* Status */}
+              <div className="flex justify-end mb-3">
+                {client.is_active ? (
+                  <span className="text-xs text-green-600 font-medium flex items-center gap-0.5"><Check className="h-3 w-3" />Active</span>
+                ) : (
+                  <span className="text-xs text-gray-400 font-medium">Inactive</span>
+                )}
               </div>
-              <h3 className="font-semibold text-gray-900">{client.name}</h3>
-              {client.contact_name && <p className="text-sm text-gray-600 mt-0.5">{client.contact_name}</p>}
-              {client.contact_email && <p className="text-sm text-gray-500">{client.contact_email}</p>}
-              {client.contact_phone && <p className="text-sm text-gray-500">{client.contact_phone}</p>}
 
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+              {/* Logo */}
+              <ClientLogo src={logoUrl(client.logo_path)} name={client.name} />
+
+              {/* Name + contacts */}
+              <h3 className="font-semibold text-gray-900 mt-4 break-words">{client.name}</h3>
+              {client.contact_name && <p className="text-sm text-gray-600 mt-0.5 truncate">{client.contact_name}</p>}
+              {client.contact_email && <p className="text-sm text-gray-500 truncate">{client.contact_email}</p>}
+              {client.contact_phone && <p className="text-sm text-gray-500 truncate">{client.contact_phone}</p>}
+
+              {/* Footer */}
+              <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
                 <span className="text-xs text-gray-400">{jobCounts[client.id] ?? 0} jobs</span>
                 <div className="flex items-center gap-2">
                   <button onClick={() => openEdit(client)} className="text-xs btn-ghost py-1 px-2">
