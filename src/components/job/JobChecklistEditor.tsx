@@ -452,6 +452,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         const srcField = allFieldsFlat.find(f => f.id === fieldId)
         if (srcField?.field_type === 'dropdown') {
           const opt = (srcField.options ?? []).find((o: any) => o.value === val)
+          if (opt?.useFieldId) {
+            const deferred = values[opt.useFieldId] ?? ''
+            const text = deferred.includes('|||') ? deferred.split('|||')[0] : deferred
+            return text || opt.label || val
+          }
           return opt?.label ?? val
         }
         return val

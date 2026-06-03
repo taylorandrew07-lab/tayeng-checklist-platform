@@ -4,6 +4,27 @@ import Link from 'next/link'
 import { ArrowLeft, Download, Lock } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate, checkConditionalLogic } from '@/lib/utils'
 
+// Resolve {uuid} tokens in a label to the selected dropdown option label (or the
+// live value of a deferred "Other" text field). Mirrors the editor/PDF resolvers.
+function resolveLabel(label: string, values: Record<string, string>, allFields: any[]): string {
+  return label.replace(/\{([0-9a-f-]{36})\}/gi, (_m, fieldId) => {
+    const raw = values[fieldId] ?? ''
+    const val = raw.includes('|||') ? raw.split('|||')[0] : raw
+    if (!val) return ''
+    const src = allFields.find((f: any) => f.id === fieldId)
+    if (src?.field_type === 'dropdown') {
+      const opt = (src.options ?? []).find((o: any) => o.value === val)
+      if (opt?.useFieldId) {
+        const deferred = values[opt.useFieldId] ?? ''
+        const text = deferred.includes('|||') ? deferred.split('|||')[0] : deferred
+        return text || opt.label || val
+      }
+      return opt?.label ?? val
+    }
+    return val
+  })
+}
+
 export default async function ClientJobDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -70,6 +91,8 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
   const allValues: Record<string, string> = Object.fromEntries(
     Object.entries(fieldValues).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : String(v ?? '')])
   )
+
+  const allFieldsFlat: any[] = sections.flatMap((s: any) => s.fields ?? [])
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -143,7 +166,7 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
 
                     return (
                       <div key={field.id}>
-                        <p className="text-xs font-medium text-gray-500">{field.label}</p>
+                        <p className="text-xs font-medium text-gray-500">{resolveLabel(field.label, allValues, allFieldsFlat)}</p>
                         {field.field_type === 'signature' ? (
                           signatures[field.id] ? (
                             <img

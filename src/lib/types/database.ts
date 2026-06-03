@@ -69,6 +69,13 @@ export interface FieldOption {
   value: string
   label: string
   color?: 'green' | 'red' | 'gray' | 'amber'
+  /**
+   * For dynamic {field} labels: when this option is selected, resolve the
+   * token to the live value of the field with this id instead of the option
+   * label. Used for "Other" choices that defer to a free-text field.
+   * Falls back to the option label when that field is empty.
+   */
+  useFieldId?: string
 }
 
 export interface FieldValidation {

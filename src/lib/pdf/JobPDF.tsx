@@ -203,6 +203,11 @@ function resolvePdfLabel(label: string, fieldValues: Record<string, string>, all
     const src = allFields.find((f: any) => f.id === fieldId)
     if (src?.field_type === 'dropdown') {
       const opt = (src.options ?? []).find((o: any) => o.value === val)
+      if (opt?.useFieldId) {
+        const deferred = fieldValues[opt.useFieldId] ?? ''
+        const text = deferred.includes('|||') ? deferred.split('|||')[0] : deferred
+        return text || opt.label || val
+      }
       return opt?.label ?? val
     }
     return val
