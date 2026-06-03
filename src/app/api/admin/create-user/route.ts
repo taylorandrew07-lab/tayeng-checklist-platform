@@ -7,13 +7,22 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('profiles').select('role, is_super_admin').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { data: profile } = await supabase.from('profiles').select('role, is_super_admin, is_active').eq('id', user.id).single()
+  // Must be an *active* admin — a deactivated admin's session must not reach the service role.
+  if (profile?.role !== 'admin' || profile.is_active !== true) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const { email, password, full_name, role, phone } = await request.json()
 
   if (!email || !password || !full_name || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  // Validate the requested role server-side; never trust the client payload.
+  const ALLOWED_ROLES = ['admin', 'surveyor', 'client']
+  if (!ALLOWED_ROLES.includes(role)) {
+    return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
 
   if (role === 'admin' && !profile.is_super_admin) {

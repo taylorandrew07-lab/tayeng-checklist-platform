@@ -15,6 +15,9 @@ build/
 .env.test.local
 .env.production.local
 
+# Supabase CLI local temp
+supabase/.temp/
+
 # Vercel
 .vercel
 
