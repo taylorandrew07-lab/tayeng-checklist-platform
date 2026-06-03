@@ -63,6 +63,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [isPrivileged, setIsPrivileged] = useState(false) // admin or super_admin
     const [adminOverride, setAdminOverride] = useState(false) // "Edit as admin" engaged
     const [showOverrideDialog, setShowOverrideDialog] = useState(false)
+    const [editSubmitted, setEditSubmitted] = useState(false) // admin re-opened a submitted/completed checklist
+    const [showEditSubmittedDialog, setShowEditSubmittedDialog] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -439,7 +441,14 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const canOverride = isPrivileged && !canEditByIdentity && !isSubmitted
     const editingDenied = !canEditByIdentity && !adminOverride
 
-    const readOnly = isSubmitted || forceReadOnly || editingDenied
+    // A privileged user can re-open a submitted/completed checklist to correct mistakes
+    // via an explicit confirmed action. Saving preserves the job's current status (it is
+    // NOT re-submitted), so e.g. a completed job stays completed.
+    const adminEditingSubmitted = isPrivileged && isSubmitted && editSubmitted
+
+    const readOnly = forceReadOnly || (
+      isSubmitted ? !adminEditingSubmitted : editingDenied
+    )
 
     // Flat list of all fields for token substitution
     const allFieldsFlat = sections.flatMap(s => s.fields)
@@ -494,6 +503,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit as admin</span>
               </button>
             )}
+            {isSubmitted && isPrivileged && !editSubmitted && !forceReadOnly && (
+              <button onClick={() => setShowEditSubmittedDialog(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
+                <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit submitted</span>
+              </button>
+            )}
             {!readOnly && (
               <button onClick={handleSave} disabled={saving} className="btn-secondary">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -517,6 +531,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>Admin override active — you are editing a checklist assigned to another surveyor. Changes will overwrite their working copy.</span>
+          </div>
+        )}
+        {adminEditingSubmitted && (
+          <div className="rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              Admin edit mode — this checklist is already {getJobStatusLabel(job.status).toLowerCase()}. Use <strong>Save Draft</strong> to keep your corrections;
+              its status stays <strong>{getJobStatusLabel(job.status).toLowerCase()}</strong> and it is not re-submitted.
+            </span>
           </div>
         )}
 
@@ -780,13 +803,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {saving ? 'Saving…' : 'Save Draft'}
                 </button>
-                <button
-                  onClick={() => { setSubmitError(null); setShowSubmitDialog(true) }}
-                  disabled={saving || submitting}
-                  className="btn-primary"
-                >
-                  <Send className="h-4 w-4" />Submit
-                </button>
+                {!isSubmitted && (
+                  <button
+                    onClick={() => { setSubmitError(null); setShowSubmitDialog(true) }}
+                    disabled={saving || submitting}
+                    className="btn-primary"
+                  >
+                    <Send className="h-4 w-4" />Submit
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -823,6 +848,17 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           title="Take over editing?"
           message="This checklist is assigned to another surveyor. Editing it as an admin may overwrite their working copy. Only continue if you intend to take over this checklist."
           confirmLabel="Edit as admin"
+          danger
+        />
+
+        {/* Edit-submitted-checklist confirmation (admin only) */}
+        <ConfirmDialog
+          open={showEditSubmittedDialog}
+          onClose={() => setShowEditSubmittedDialog(false)}
+          onConfirm={() => { setEditSubmitted(true); setShowEditSubmittedDialog(false) }}
+          title="Edit submitted checklist?"
+          message="This checklist has already been submitted. As an admin you can correct its answers — use Save Draft to store your changes. The checklist keeps its current status and is not re-submitted."
+          confirmLabel="Edit checklist"
           danger
         />
 
