@@ -3,6 +3,23 @@ import { createClient } from '@/lib/supabase/server'
 
 const ADMIN_EMAIL = 'andrew.taylor@tayeng.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tayeng-checklist-platform.vercel.app'
+const VALID_TYPES = ['signup', 'surveyor_request', 'client_request']
+
+/** Escape user-supplied values before interpolating into the notification HTML. */
+function escapeHtml(value: string | undefined): string {
+  if (!value) return '—'
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** Single-line, header-safe text for email subjects. */
+function safeSubject(value: string | undefined): string {
+  return (value ?? '').replace(/[\r\n]+/g, ' ').trim()
+}
 
 type NotifyPayload = {
   type: 'signup' | 'surveyor_request' | 'client_request'
@@ -49,18 +66,40 @@ export async function POST(request: Request) {
   const payload: NotifyPayload = await request.json()
   const { type, name, email, role, requestedName } = payload
 
+  if (!VALID_TYPES.includes(type)) {
+    return NextResponse.json({ error: 'Invalid notification type' }, { status: 400 })
+  }
+
+  // 'signup' is sent by a just-created (still inactive) user, so it only needs a
+  // valid session. Request notifications must come from an active surveyor/admin.
+  if (type === 'surveyor_request' || type === 'client_request') {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single()
+    if (!profile?.is_active || !['surveyor', 'admin'].includes(profile.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
+  // Escape all user-supplied values before placing them in the email HTML.
+  const safeName = escapeHtml(name)
+  const safeEmail = escapeHtml(email)
+  const safeRole = escapeHtml(role)
+  const safeRequested = escapeHtml(requestedName)
   const reviewUrl = `${APP_URL}/admin/users`
 
   switch (type) {
     case 'signup': {
       await sendEmail(
-        `New account request — ${name ?? email}`,
+        safeSubject(`New account request — ${name ?? email ?? ''}`),
         `
           <p>A new user has requested an account on the TEAL Checklist Platform.</p>
           <ul>
-            <li><strong>Name:</strong> ${name ?? '—'}</li>
-            <li><strong>Email:</strong> ${email ?? '—'}</li>
-            <li><strong>Requested role:</strong> ${role ?? '—'}</li>
+            <li><strong>Name:</strong> ${safeName}</li>
+            <li><strong>Email:</strong> ${safeEmail}</li>
+            <li><strong>Requested role:</strong> ${safeRole}</li>
           </ul>
           <p><a href="${reviewUrl}">Review pending accounts →</a></p>
         `
@@ -69,12 +108,12 @@ export async function POST(request: Request) {
     }
     case 'surveyor_request': {
       await sendEmail(
-        `New surveyor name request — ${requestedName}`,
+        safeSubject(`New surveyor name request — ${requestedName ?? ''}`),
         `
           <p>A surveyor has requested a new surveyor name to be added to the system.</p>
           <ul>
-            <li><strong>Requested by:</strong> ${name ?? '—'} (${email ?? '—'})</li>
-            <li><strong>Surveyor name:</strong> ${requestedName ?? '—'}</li>
+            <li><strong>Requested by:</strong> ${safeName} (${safeEmail})</li>
+            <li><strong>Surveyor name:</strong> ${safeRequested}</li>
           </ul>
           <p><a href="${reviewUrl}">Review pending requests →</a></p>
         `
@@ -83,12 +122,12 @@ export async function POST(request: Request) {
     }
     case 'client_request': {
       await sendEmail(
-        `New client company request — ${requestedName}`,
+        safeSubject(`New client company request — ${requestedName ?? ''}`),
         `
           <p>A surveyor has requested a new client company to be added to the system.</p>
           <ul>
-            <li><strong>Requested by:</strong> ${name ?? '—'} (${email ?? '—'})</li>
-            <li><strong>Client name:</strong> ${requestedName ?? '—'}</li>
+            <li><strong>Requested by:</strong> ${safeName} (${safeEmail})</li>
+            <li><strong>Client name:</strong> ${safeRequested}</li>
           </ul>
           <p><a href="${reviewUrl}">Review pending requests →</a></p>
         `

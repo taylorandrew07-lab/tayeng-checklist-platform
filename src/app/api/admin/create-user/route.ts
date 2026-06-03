@@ -45,10 +45,21 @@ export async function POST(request: Request) {
   if (data.user) {
     // handle_new_user trigger creates the profile with is_active=false.
     // Admin-created users are pre-approved — activate immediately and set phone.
-    await serviceClient.from('profiles').update({
+    const { error: profileErr } = await serviceClient.from('profiles').update({
       is_active: true,
       phone: phone || null,
     }).eq('id', data.user.id)
+
+    if (profileErr) {
+      // Roll back the auth user so we don't leave a half-initialised, inactive
+      // account that the admin believes was created successfully.
+      console.error('[create-user:activate]', profileErr)
+      await serviceClient.auth.admin.deleteUser(data.user.id)
+      return NextResponse.json(
+        { error: 'Account was created but could not be activated; it has been rolled back. Please try again.' },
+        { status: 500 }
+      )
+    }
   }
 
   return NextResponse.json({ user_id: data.user?.id }, { status: 201 })

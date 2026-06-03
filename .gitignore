@@ -8,12 +8,10 @@ node_modules/
 out/
 build/
 
-# Environment files — NEVER commit these
+# Environment files — NEVER commit these (ignore all .env*, but keep examples)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env*.example
 
 # Supabase CLI local temp
 supabase/.temp/

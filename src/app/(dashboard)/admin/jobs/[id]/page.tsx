@@ -90,13 +90,18 @@ export default function AdminChecklistDetailPage() {
     if (err) { setError(err.message); setSaving(false); return }
 
     if (editForm.client_id) {
-      await supabase.from('client_job_permissions').upsert({
+      const { error: permErr } = await supabase.from('client_job_permissions').upsert({
         client_id: editForm.client_id,
         job_id: jobId,
         can_view_status: permissions?.can_view_status ?? true,
         can_view_pdf: permissions?.can_view_pdf ?? false,
         can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
       }, { onConflict: 'client_id,job_id' })
+      if (permErr) {
+        setError('Job details saved, but client permissions could not be updated: ' + permErr.message)
+        setSaving(false)
+        return
+      }
     }
 
     setEditMode(false)

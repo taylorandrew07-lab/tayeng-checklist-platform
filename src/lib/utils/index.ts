@@ -33,9 +33,19 @@ export function formatDateTime(dateStr: string | null | undefined): string {
  * Mirrors the vessel/bunker matching used for metadata auto-fill so the same
  * fields are affected.
  */
+// Descriptor fields that contain "vessel" but are NOT the vessel name, so must
+// not receive an M.V./M.T. prefix (e.g. "Vessel Type", "Vessel IMO Number").
+const NON_NAME_VESSEL_QUALIFIERS = [
+  'type', 'imo', 'flag', 'owner', 'call sign', 'callsign', 'grt', 'nrt', 'dwt',
+  'length', 'beam', 'draft', 'draught', 'year', 'built', 'class', 'port',
+  'registry', 'number', 'no.', 'gross', 'net', 'tonnage', 'loa',
+]
+
 export function vesselPrefixForLabel(label: string): 'M.T.' | 'M.V.' | null {
   const l = label.toLowerCase()
   if (!l.includes('vessel')) return null
+  // Only the vessel *name* fields are prefixed — skip descriptor fields.
+  if (NON_NAME_VESSEL_QUALIFIERS.some(q => l.includes(q))) return null
   if (l.includes('bunker')) return 'M.T.'
   return 'M.V.'
 }
@@ -134,7 +144,6 @@ export function evaluateCalculation(
     }
     // Only allow safe math expressions
     if (!/^[\d\s+\-*/().]+$/.test(expr)) return ''
-    // eslint-disable-next-line no-new-func
     const result = Function(`"use strict"; return (${expr})`)()
     return isFinite(result) ? String(Math.round(result * 10000) / 10000) : ''
   } catch {

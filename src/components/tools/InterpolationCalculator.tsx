@@ -355,28 +355,38 @@ export default function InterpolationCalculator() {
   )
 }
 
+// Keypad layout — declared once at module scope so no component is created
+// during render (a React Compiler lint requirement).
+const KEYPAD_BTN_BASE =
+  'h-11 rounded-lg border border-gray-200 bg-white text-gray-800 font-medium text-base active:bg-gray-100 hover:bg-gray-50 transition-colors flex items-center justify-center'
+
+const KEYPAD_KEYS: { op: string; label: React.ReactNode; className?: string }[] = [
+  { op: '7', label: '7' }, { op: '8', label: '8' }, { op: '9', label: '9' },
+  { op: 'back', label: <Delete className="h-4 w-4" />, className: 'text-gray-500' },
+  { op: '4', label: '4' }, { op: '5', label: '5' }, { op: '6', label: '6' },
+  { op: 'clear', label: 'C', className: 'text-red-600 text-sm' },
+  { op: '1', label: '1' }, { op: '2', label: '2' }, { op: '3', label: '3' },
+  { op: '-', label: '−', className: 'text-brand-700 font-bold' },
+  { op: '.', label: '.' }, { op: '0', label: '0' },
+  { op: '/', label: '/', className: 'text-brand-700 font-bold' },
+  { op: 'next', label: 'Next', className: 'bg-brand-600 text-white border-brand-600 hover:bg-brand-700 active:bg-brand-700' },
+]
+
 // On-screen keypad — renders inline (below results, never covering them).
 function Keypad({ onKey }: { onKey: (op: string) => void }) {
-  const Btn = ({ children, op, className = '' }: { children: React.ReactNode; op: string; className?: string }) => (
-    <button
-      type="button"
-      onClick={() => onKey(op)}
-      className={`h-11 rounded-lg border border-gray-200 bg-white text-gray-800 font-medium text-base active:bg-gray-100 hover:bg-gray-50 transition-colors flex items-center justify-center ${className}`}
-    >
-      {children}
-    </button>
-  )
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-2">
       <div className="grid grid-cols-4 gap-2">
-        <Btn op="7">7</Btn><Btn op="8">8</Btn><Btn op="9">9</Btn>
-        <Btn op="back" className="text-gray-500"><Delete className="h-4 w-4" /></Btn>
-        <Btn op="4">4</Btn><Btn op="5">5</Btn><Btn op="6">6</Btn>
-        <Btn op="clear" className="text-red-600 text-sm">C</Btn>
-        <Btn op="1">1</Btn><Btn op="2">2</Btn><Btn op="3">3</Btn>
-        <Btn op="-" className="text-brand-700 font-bold">−</Btn>
-        <Btn op=".">.</Btn><Btn op="0">0</Btn><Btn op="/" className="text-brand-700 font-bold">/</Btn>
-        <Btn op="next" className="bg-brand-600 text-white border-brand-600 hover:bg-brand-700 active:bg-brand-700">Next</Btn>
+        {KEYPAD_KEYS.map(k => (
+          <button
+            key={k.op}
+            type="button"
+            onClick={() => onKey(k.op)}
+            className={`${KEYPAD_BTN_BASE} ${k.className ?? ''}`}
+          >
+            {k.label}
+          </button>
+        ))}
       </div>
     </div>
   )

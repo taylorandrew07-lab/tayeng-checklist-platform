@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { JobPDF } from '@/lib/pdf/JobPDF'
 import React from 'react'
 import { checkConditionalLogic } from '@/lib/utils'
@@ -43,6 +43,12 @@ export async function GET(
 
   if (!canAccess) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  // Authorization is complete above. Render the full report with the service
+  // client so the PDF is complete for anyone allowed to download it — RLS detail
+  // flags (e.g. can_view_checklist_details) gate the in-app view, not the PDF,
+  // and "View PDF" permission means the client receives the complete report.
+  const db = createServiceClient()
+
   // Load all job data
   const [
     { data: job },
@@ -51,19 +57,19 @@ export async function GET(
     { data: signatureData },
     { count: photoCount },
   ] = await Promise.all([
-    supabase.from('jobs').select(`
+    db.from('jobs').select(`
       *,
       template:checklist_templates(name),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single(),
-    supabase.from('template_sections')
+    db.from('template_sections')
       .select('*, fields:template_fields(*)')
-      .eq('template_id', (await supabase.from('jobs').select('template_id').eq('id', jobId).single()).data?.template_id ?? '')
+      .eq('template_id', (await db.from('jobs').select('template_id').eq('id', jobId).single()).data?.template_id ?? '')
       .order('order_index'),
-    supabase.from('job_field_values').select('*').eq('job_id', jobId),
-    supabase.from('job_signatures').select('*').eq('job_id', jobId),
-    supabase.from('job_photos').select('id', { count: 'exact', head: true }).eq('job_id', jobId),
+    db.from('job_field_values').select('*').eq('job_id', jobId),
+    db.from('job_signatures').select('*').eq('job_id', jobId),
+    db.from('job_photos').select('id', { count: 'exact', head: true }).eq('job_id', jobId),
   ])
 
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })

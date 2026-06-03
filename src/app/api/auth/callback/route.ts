@@ -7,6 +7,9 @@ const ROLE_REDIRECT: Record<string, string> = {
   client: '/client',
 }
 
+// Only these internal paths may be used as a post-auth `next` redirect target.
+const ALLOWED_NEXT = ['/reset-password']
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
@@ -18,8 +21,8 @@ export async function GET(request: Request) {
     const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error && session) {
-      // If caller specified a next page (e.g. /reset-password), honour it
-      if (next) {
+      // If caller specified an allowlisted next page (e.g. /reset-password), honour it
+      if (next && ALLOWED_NEXT.includes(next)) {
         return NextResponse.redirect(`${origin}${next}`)
       }
 
