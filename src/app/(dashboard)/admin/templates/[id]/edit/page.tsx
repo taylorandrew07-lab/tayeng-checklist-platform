@@ -169,23 +169,24 @@ export default function EditTemplatePage() {
     const removedSectionIds = Array.from(originalSectionIds.current).filter(id => !currentSectionIds.has(id))
     const removedFieldIds = Array.from(originalFieldIds.current).filter(id => !currentFieldIds.has(id))
 
-    // Guard against destroying existing answers via cascade — checked before any writes.
-    if (removedFieldIds.length > 0 && jobCount > 0) {
-      const { count: answerCount } = await withTimeout(
-        supabase.from('job_field_values').select('id', { count: 'exact', head: true }).in('field_id', removedFieldIds),
-        15_000, 'Checking existing answers'
-      )
-      if ((answerCount ?? 0) > 0) {
-        setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
-        setSaving(false)
-        return { ok: false }
-      }
-    }
-
     // The builder assigns a real UUID to every section/field (new and existing),
     // so the whole template persists in a handful of bulk calls — no per-row
     // round-trips and no id remapping (conditional logic already references UUIDs).
+    // Everything below runs inside try/catch so any failure clears the Saving state.
     try {
+      // Guard against destroying existing answers via cascade — before any writes.
+      if (removedFieldIds.length > 0 && jobCount > 0) {
+        const { count: answerCount } = await withTimeout(
+          supabase.from('job_field_values').select('id', { count: 'exact', head: true }).in('field_id', removedFieldIds),
+          15_000, 'Checking existing answers'
+        )
+        if ((answerCount ?? 0) > 0) {
+          setError(`Cannot delete fields that have existing answers (${answerCount} answer record${answerCount !== 1 ? 's' : ''} would be lost). Remove from the checklist answers first, or duplicate the template instead.`)
+          setSaving(false)
+          return { ok: false }
+        }
+      }
+
       const { error: tmplErr } = await withTimeout(
         supabase.from('checklist_templates').update({
           name: name.trim(),
