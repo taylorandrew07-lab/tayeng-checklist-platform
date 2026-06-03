@@ -43,11 +43,11 @@ export default function SurveyorDashboard() {
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">My Checklists</h1>
+          <h1 className="page-title">My Jobs</h1>
           <p className="text-gray-500 mt-1">Welcome, {profile?.full_name ?? '…'}</p>
         </div>
         <Link href="/surveyor/jobs/new" className="btn-primary">
-          <Plus className="h-4 w-4" />New Checklist
+          <Plus className="h-4 w-4" />New Job
         </Link>
       </div>
 
@@ -74,7 +74,7 @@ export default function SurveyorDashboard() {
 
           {active.length > 0 && (
             <div>
-              <h2 className="section-title mb-3">Active Checklists</h2>
+              <h2 className="section-title mb-3">Active Jobs</h2>
               <div className="space-y-3">
                 {active.map(job => (
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -122,9 +122,9 @@ export default function SurveyorDashboard() {
 
           {jobs.length === 0 && (
             <div className="card p-10 text-center text-gray-400">
-              <p className="mb-3">You haven&apos;t created any checklists yet.</p>
+              <p className="mb-3">You haven&apos;t created any jobs yet.</p>
               <Link href="/surveyor/jobs/new" className="btn-primary inline-flex">
-                <Plus className="h-4 w-4" />Start your first checklist
+                <Plus className="h-4 w-4" />Start your first job
               </Link>
             </div>
           )}

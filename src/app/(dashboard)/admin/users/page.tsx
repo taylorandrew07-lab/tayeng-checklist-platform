@@ -390,7 +390,7 @@ export default function UsersPage() {
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900 text-sm">Surveyor Name Links</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Link a surveyor display name to a real login account. Checklists created with a linked name are assigned to that user, so they can edit/submit even when logged in as admin.
+            Link a surveyor display name to a real login account. Jobs created with a linked name are assigned to that user, so they can edit/submit even when logged in as admin.
           </p>
         </div>
         {surveyorNames.length === 0 ? (

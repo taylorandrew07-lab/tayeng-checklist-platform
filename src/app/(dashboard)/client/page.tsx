@@ -101,8 +101,8 @@ export default function ClientPortal() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
-        <h1 className="page-title">Checklists{clientName ? ` — ${clientName}` : ''}</h1>
-        <p className="text-gray-500 mt-1">{visibleJobs.length} checklist{visibleJobs.length !== 1 ? 's' : ''} visible to you</p>
+        <h1 className="page-title">Jobs{clientName ? ` — ${clientName}` : ''}</h1>
+        <p className="text-gray-500 mt-1">{visibleJobs.length} job{visibleJobs.length !== 1 ? 's' : ''} visible to you</p>
       </div>
 
       {visibleJobs.length === 0 ? (
@@ -116,7 +116,7 @@ export default function ClientPortal() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 font-medium text-gray-700">Checklist</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Document</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Template</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Scheduled</th>

@@ -214,7 +214,7 @@ export default function SurveyorNewChecklistPage() {
       <div className="flex items-center gap-4">
         <Link href="/surveyor" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
-          <h1 className="page-title">New Checklist</h1>
+          <h1 className="page-title">New Job</h1>
           <p className="text-gray-500 mt-0.5">Create a new survey checklist</p>
         </div>
       </div>

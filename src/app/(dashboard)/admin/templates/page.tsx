@@ -156,7 +156,7 @@ export default function TemplatesPage() {
   }
 
   async function handleArchive(template: any) {
-    if (!confirm(`Archive "${template.name}"?\n\nArchived templates will not appear in the New Checklist dropdown for surveyors. You can restore it later.`)) return
+    if (!confirm(`Archive "${template.name}"?\n\nArchived templates will not appear in the New Job dropdown for surveyors. You can restore it later.`)) return
 
     setArchiving(template.id)
     const supabase = createClient()

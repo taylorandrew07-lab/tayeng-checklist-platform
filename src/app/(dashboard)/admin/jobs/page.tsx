@@ -31,10 +31,10 @@ export default function AdminChecklistsPage() {
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Checklists</h1>
-          <p className="text-gray-500 mt-1">{loading ? '…' : `${jobs.length} checklist${jobs.length !== 1 ? 's' : ''}`}</p>
+          <h1 className="page-title">Jobs</h1>
+          <p className="text-gray-500 mt-1">{loading ? '…' : `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`}</p>
         </div>
-        <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Checklist</Link>
+        <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
       </div>
 
       <div className="card overflow-hidden">
@@ -42,7 +42,7 @@ export default function AdminChecklistsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 font-medium text-gray-700">Checklist</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Document</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Template</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Client</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-700">Surveyor</th>

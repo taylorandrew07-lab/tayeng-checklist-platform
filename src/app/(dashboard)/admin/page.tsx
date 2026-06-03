@@ -131,7 +131,7 @@ export default function AdminDashboard() {
         <Link href="/admin/jobs" className="card p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Checklists</p>
+              <p className="text-sm text-gray-500">Jobs</p>
               <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : stats.checklists}</p>
               <p className="text-xs text-gray-400 mt-0.5">total</p>
             </div>
@@ -198,7 +198,7 @@ export default function AdminDashboard() {
       {/* Recent Checklists */}
       <div className="card">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="section-title">Recent Checklists</h2>
+          <h2 className="section-title">Recent Jobs</h2>
           <div className="flex items-center gap-2">
             {clearedAt && (
               <button
@@ -261,7 +261,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'New Template', href: '/admin/templates/new', icon: FileText },
-          { label: 'New Checklist', href: '/admin/jobs/new', icon: Briefcase },
+          { label: 'New Job', href: '/admin/jobs/new', icon: Briefcase },
           { label: 'Add User', href: '/admin/users', icon: Users },
           { label: 'Add Client', href: '/admin/clients', icon: Building2 },
         ].map((action) => (

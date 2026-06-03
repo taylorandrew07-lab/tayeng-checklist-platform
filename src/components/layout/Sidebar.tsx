@@ -28,7 +28,7 @@ interface NavItem {
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
-  { label: 'Checklists', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
@@ -40,7 +40,7 @@ const superAdminNav: NavItem[] = [
 
 const surveyorNav: NavItem[] = [
   { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
-  { label: 'My Checklists', href: '/surveyor/jobs', icon: Briefcase },
+  { label: 'My Jobs', href: '/surveyor/jobs', icon: Briefcase },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
