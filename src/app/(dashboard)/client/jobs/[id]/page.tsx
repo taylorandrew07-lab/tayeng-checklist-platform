@@ -25,8 +25,9 @@ function resolveLabel(label: string, values: Record<string, string>, allFields: 
   })
 }
 
-export default async function ClientJobDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient()
+export default async function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
@@ -44,7 +45,7 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
   const { data: perm } = await supabase
     .from('client_job_permissions')
     .select('*')
-    .eq('job_id', params.id)
+    .eq('job_id', id)
     .eq('client_id', clientId)
     .single()
 
@@ -58,7 +59,7 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
       template:checklist_templates(name, id),
       client:clients(name)
     `)
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!job) redirect('/client')
@@ -71,8 +72,8 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
   if (perm.can_view_checklist_details) {
     const [{ data: tmplSections }, { data: vals }, { data: sigs }] = await Promise.all([
       supabase.from('template_sections').select('*, fields:template_fields(*)').eq('template_id', job.template_id).order('order_index'),
-      supabase.from('job_field_values').select('*').eq('job_id', params.id),
-      supabase.from('job_signatures').select('*').eq('job_id', params.id),
+      supabase.from('job_field_values').select('*').eq('job_id', id),
+      supabase.from('job_signatures').select('*').eq('job_id', id),
     ])
 
     sections = (tmplSections ?? []).map((s: any) => ({
@@ -103,7 +104,7 @@ export default async function ClientJobDetailPage({ params }: { params: { id: st
           <p className="text-sm text-gray-500 mt-0.5">{job.job_number}</p>
         </div>
         {perm.can_view_pdf && ['submitted', 'completed', 'client_visible'].includes(job.status) && (
-          <a href={`/api/pdf/${params.id}`} target="_blank" rel="noopener noreferrer" className="btn-primary">
+          <a href={`/api/pdf/${id}`} target="_blank" rel="noopener noreferrer" className="btn-primary">
             <Download className="h-4 w-4" />
             Download PDF
           </a>

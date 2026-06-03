@@ -7,9 +7,9 @@ import { checkConditionalLogic } from '@/lib/utils'
 
 export async function GET(
   _request: Request,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -19,7 +19,7 @@ export async function GET(
     .eq('id', user.id)
     .single()
 
-  const jobId = params.jobId
+  const { jobId } = await params
 
   // Authorization check
   let canAccess = false
