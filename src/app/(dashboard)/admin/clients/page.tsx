@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Building2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
 import type { Client } from '@/lib/types/database'
+
+const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
+function logoUrl(path?: string | null): string | null {
+  return path ? `${LOGO_BASE}/${path}` : null
+}
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -22,7 +27,11 @@ export default function ClientsPage() {
     contact_phone: '',
     address: '',
     notes: '',
+    logo_path: '',
   })
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
     const supabase = createClient()
@@ -43,7 +52,9 @@ export default function ClientsPage() {
 
   function openCreate() {
     setEditClient(null)
-    setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '' })
+    setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '', logo_path: '' })
+    setLogoFile(null)
+    setLogoPreview(null)
     setError(null)
     setShowModal(true)
   }
@@ -57,7 +68,10 @@ export default function ClientsPage() {
       contact_phone: client.contact_phone ?? '',
       address: client.address ?? '',
       notes: client.notes ?? '',
+      logo_path: client.logo_path ?? '',
     })
+    setLogoFile(null)
+    setLogoPreview(logoUrl(client.logo_path))
     setError(null)
     setShowModal(true)
   }
@@ -68,6 +82,18 @@ export default function ClientsPage() {
     setError(null)
     const supabase = createClient()
 
+    // Upload a newly-selected logo first; keep the existing path otherwise.
+    let logo_path: string | null = form.logo_path || null
+    if (logoFile) {
+      const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${crypto.randomUUID()}-${safeName}`
+      const { error: upErr } = await supabase.storage
+        .from('client-logos')
+        .upload(path, logoFile, { contentType: logoFile.type, upsert: false })
+      if (upErr) { setError('Logo upload failed: ' + upErr.message); setSaving(false); return }
+      logo_path = path
+    }
+
     const payload = {
       name: form.name.trim(),
       contact_name: form.contact_name || null,
@@ -75,6 +101,7 @@ export default function ClientsPage() {
       contact_phone: form.contact_phone || null,
       address: form.address || null,
       notes: form.notes || null,
+      logo_path,
     }
 
     if (editClient) {
@@ -88,6 +115,20 @@ export default function ClientsPage() {
     setShowModal(false)
     setSaving(false)
     load()
+  }
+
+  function onLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoFile(file)
+    setLogoPreview(URL.createObjectURL(file))
+  }
+
+  function removeLogo() {
+    setLogoFile(null)
+    setLogoPreview(null)
+    setForm(p => ({ ...p, logo_path: '' }))
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   async function toggleActive(client: Client) {
@@ -132,8 +173,12 @@ export default function ClientsPage() {
           {clients.map(client => (
             <div key={client.id} className={`card p-5 ${!client.is_active ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                  <Building2 className="h-5 w-5 text-indigo-700" />
+                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {logoUrl(client.logo_path) ? (
+                    <img src={logoUrl(client.logo_path)!} alt="" className="h-full w-full object-contain bg-white" />
+                  ) : (
+                    <Building2 className="h-5 w-5 text-indigo-700" />
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {client.is_active ? (
@@ -208,6 +253,30 @@ export default function ClientsPage() {
           <div>
             <label className="label-base">Notes</label>
             <textarea value={form.notes} onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))} className="input-base resize-none" rows={2} placeholder="Internal notes about this client" />
+          </div>
+          <div>
+            <label className="label-base">Logo</label>
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Client logo" className="h-full w-full object-contain" />
+                ) : (
+                  <Building2 className="h-7 w-7 text-gray-300" />
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={onLogoSelect} className="hidden" />
+                <button type="button" onClick={() => fileRef.current?.click()} className="btn-secondary">
+                  <Upload className="h-4 w-4" />{logoPreview ? 'Replace' : 'Upload'}
+                </button>
+                {logoPreview && (
+                  <button type="button" onClick={removeLogo} className="btn-ghost text-red-600">
+                    <Trash2 className="h-4 w-4" />Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">PNG, JPG, SVG or WebP, up to 2 MB.</p>
           </div>
         </div>
       </Modal>

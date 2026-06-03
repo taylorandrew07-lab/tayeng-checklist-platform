@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, ClipboardList } from 'lucide-react'
 import { getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
 
+const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
+
 type PermittedJob = {
   can_view_status: boolean
   can_view_pdf: boolean
@@ -24,6 +26,7 @@ type PermittedJob = {
 export default function ClientPortal() {
   const router = useRouter()
   const [clientName, setClientName] = useState<string | null>(null)
+  const [clientLogo, setClientLogo] = useState<string | null>(null)
   const [jobs, setJobs] = useState<PermittedJob[]>([])
   const [loading, setLoading] = useState(true)
   const [noClient, setNoClient] = useState(false)
@@ -37,7 +40,7 @@ export default function ClientPortal() {
       // Find the client company this user belongs to
       const { data: link } = await supabase
         .from('client_users')
-        .select('client_id, client:clients(name)')
+        .select('client_id, client:clients(name, logo_path)')
         .eq('profile_id', user.id)
         .single()
 
@@ -45,6 +48,7 @@ export default function ClientPortal() {
 
       const clientObj = (link as any).client
       setClientName(clientObj?.name ?? null)
+      setClientLogo(clientObj?.logo_path ? `${LOGO_BASE}/${clientObj.logo_path}` : null)
 
       // Load all jobs this client has permission to see
       const { data: perms } = await supabase
@@ -100,9 +104,14 @@ export default function ClientPortal() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="page-title">Jobs{clientName ? ` — ${clientName}` : ''}</h1>
-        <p className="text-gray-500 mt-1">{visibleJobs.length} job{visibleJobs.length !== 1 ? 's' : ''} visible to you</p>
+      <div className="flex items-center gap-3">
+        {clientLogo && (
+          <img src={clientLogo} alt="" className="h-12 w-12 rounded-lg object-contain bg-white border border-gray-200 flex-shrink-0" />
+        )}
+        <div>
+          <h1 className="page-title">Jobs{clientName ? ` — ${clientName}` : ''}</h1>
+          <p className="text-gray-500 mt-1">{visibleJobs.length} job{visibleJobs.length !== 1 ? 's' : ''} visible to you</p>
+        </div>
       </div>
 
       {visibleJobs.length === 0 ? (

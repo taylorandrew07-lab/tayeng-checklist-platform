@@ -44,6 +44,7 @@ export interface Client {
   contact_phone: string | null
   address: string | null
   notes: string | null
+  logo_path: string | null
   is_active: boolean
   created_at: string
   updated_at: string
