@@ -56,6 +56,19 @@ function computeDisplayNumber(fields: BuilderField[], index: number): string {
   return ''
 }
 
+// True when a field's visibility depends on another field (a conditional
+// follow-up). Used to indent it and to hide the "add follow-up" button (one level).
+function fieldDependsOn(field: BuilderField, targetId: string): boolean {
+  return !!field.conditional_logic?.conditions?.some(c => c.field_id === targetId)
+}
+
+// A sensible default trigger value when creating a follow-up.
+function defaultTriggerValue(parent: BuilderField): string {
+  if (parent.field_type === 'yes_no' || parent.field_type === 'yes_no_na') return 'no'
+  if (parent.field_type === 'dropdown') return parent.options[0]?.value ?? ''
+  return ''
+}
+
 export default function TemplateBuilder({ sections, onChange }: TemplateBuilderProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -106,6 +119,32 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
     }))
   }
 
+  // Add a conditional follow-up question under a parent: a new field placed
+  // right after the parent (and any existing follow-ups), with its visibility
+  // wired to the parent's answer via the existing conditional_logic engine.
+  function addFollowUp(sectionId: string, parentFieldId: string) {
+    onChange(sections.map(s => {
+      if (s.id !== sectionId) return s
+      const parentIndex = s.fields.findIndex(f => f.id === parentFieldId)
+      if (parentIndex === -1) return s
+      const parent = s.fields[parentIndex]
+      let insertAt = parentIndex + 1
+      while (insertAt < s.fields.length && fieldDependsOn(s.fields[insertAt], parentFieldId)) insertAt++
+      const child = createBlankField(insertAt, 'text')
+      child.label = 'Follow-up question'
+      child.conditional_logic = {
+        operator: 'and',
+        conditions: [{ field_id: parentFieldId, operator: 'equals', value: defaultTriggerValue(parent) }],
+      }
+      const updated = renumberFields([
+        ...s.fields.slice(0, insertAt),
+        child,
+        ...s.fields.slice(insertAt),
+      ])
+      return { ...s, fields: updated }
+    }))
+  }
+
   function handleSectionDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -149,6 +188,7 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
               onUpdateField={(fieldId, field) => updateField(section.id, fieldId, field)}
               onDeleteField={(fieldId) => deleteField(section.id, fieldId)}
               onFieldDragEnd={(event) => handleFieldDragEnd(section.id, event)}
+              onAddFollowUp={(fieldId) => addFollowUp(section.id, fieldId)}
             />
           ))}
         </SortableContext>
@@ -193,6 +233,7 @@ interface SortableSectionProps {
   onUpdateField: (fieldId: string, field: BuilderField) => void
   onDeleteField: (fieldId: string) => void
   onFieldDragEnd: (event: DragEndEvent) => void
+  onAddFollowUp: (fieldId: string) => void
 }
 
 function SortableSection({
@@ -204,8 +245,10 @@ function SortableSection({
   onUpdateField,
   onDeleteField,
   onFieldDragEnd,
+  onAddFollowUp,
 }: SortableSectionProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const sectionFieldIds = new Set(section.fields.map(f => f.id))
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id })
 
   const sensors = useSensors(
@@ -294,19 +337,33 @@ function SortableSection({
                   items={section.fields.map(f => f.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {section.fields.map((field, i) => (
-                    <Fragment key={field.id}>
-                      <SortableField
-                        field={field}
-                        sections={[]}
-                        allFields={allFields}
-                        displayNumber={computeDisplayNumber(section.fields, i)}
-                        onUpdate={(updated) => onUpdateField(field.id, updated)}
-                        onDelete={() => onDeleteField(field.id)}
-                      />
-                      <InsertFieldButton onClick={() => onAddFieldAt(i + 1)} />
-                    </Fragment>
-                  ))}
+                  {section.fields.map((field, i) => {
+                    const isFollowUp = !!field.conditional_logic?.conditions?.some(c => sectionFieldIds.has(c.field_id))
+                    return (
+                      <Fragment key={field.id}>
+                        <div className={isFollowUp ? 'pl-4 border-l-2 border-amber-200 ml-1.5' : ''}>
+                          <SortableField
+                            field={field}
+                            sections={[]}
+                            allFields={allFields}
+                            displayNumber={computeDisplayNumber(section.fields, i)}
+                            onUpdate={(updated) => onUpdateField(field.id, updated)}
+                            onDelete={() => onDeleteField(field.id)}
+                          />
+                          {!isFollowUp && (
+                            <button
+                              type="button"
+                              onClick={() => onAddFollowUp(field.id)}
+                              className="ml-7 -mt-1 mb-1 text-xs text-amber-700 hover:text-amber-800 inline-flex items-center gap-1"
+                            >
+                              <Plus className="h-3 w-3" />Add follow-up question
+                            </button>
+                          )}
+                        </div>
+                        <InsertFieldButton onClick={() => onAddFieldAt(i + 1)} />
+                      </Fragment>
+                    )
+                  })}
                 </SortableContext>
               </DndContext>
             </>
