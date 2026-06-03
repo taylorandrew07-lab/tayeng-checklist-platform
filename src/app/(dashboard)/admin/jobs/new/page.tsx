@@ -89,7 +89,7 @@ export default function NewChecklistPage() {
   }
 
   async function handleSave() {
-    if (!templateId) { setError('Please select a checklist template'); return }
+    if (!templateId) { setError('Please select a template'); return }
     if (!vesselName.trim()) { setError('Vessel name is required'); return }
 
     const finalSurveyor = showNewSurveyor ? newSurveyorName.trim() : surveyorName
@@ -186,7 +186,7 @@ export default function NewChecklistPage() {
       <div className="card p-6 space-y-5">
         {/* Template */}
         <div>
-          <label className="label-base">Checklist Template *</label>
+          <label className="label-base">Template *</label>
           <select value={templateId} onChange={(e) => handleTemplateChange(e.target.value)} className="input-base">
             <option value="">Select a template…</option>
             {templates.map(t => (

@@ -212,7 +212,7 @@ export default function TemplatesPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Checklist Templates</h1>
+          <h1 className="page-title">Templates</h1>
           <p className="text-gray-500 mt-1">{loading ? '…' : `${active.length} active/draft · ${archived.length} archived`}</p>
         </div>
         <Link href="/admin/templates/new" className="btn-primary">
