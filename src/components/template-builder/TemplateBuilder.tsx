@@ -56,10 +56,49 @@ function computeDisplayNumber(fields: BuilderField[], index: number): string {
   return ''
 }
 
-// True when a field's visibility depends on another field (a conditional
-// follow-up). Used to indent it and to hide the "add follow-up" button (one level).
-function fieldDependsOn(field: BuilderField, targetId: string): boolean {
-  return !!field.conditional_logic?.conditions?.some(c => c.field_id === targetId)
+// The same-section field a field's visibility depends on (its logical parent).
+function parentOf(field: BuilderField, sectionFieldIds: Set<string>): string | undefined {
+  return field.conditional_logic?.conditions?.find(c => sectionFieldIds.has(c.field_id))?.field_id
+}
+
+// Nesting depth of each field within a section (0 = top level), from the
+// conditional-logic parent chain. Cycle-safe.
+function computeDepths(fields: BuilderField[]): Map<string, number> {
+  const byId = new Map(fields.map(f => [f.id, f] as const))
+  const ids = new Set(fields.map(f => f.id))
+  const memo = new Map<string, number>()
+  function depthOf(f: BuilderField, stack: Set<string>): number {
+    const cached = memo.get(f.id)
+    if (cached !== undefined) return cached
+    const pid = parentOf(f, ids)
+    const parent = pid ? byId.get(pid) : undefined
+    let d = 0
+    if (parent && !stack.has(f.id)) {
+      stack.add(f.id)
+      d = 1 + depthOf(parent, stack)
+      stack.delete(f.id)
+    }
+    memo.set(f.id, d)
+    return d
+  }
+  for (const f of fields) depthOf(f, new Set())
+  return memo
+}
+
+// Is `field` somewhere in the subtree beneath `ancestorId`?
+function isDescendantOf(
+  field: BuilderField,
+  ancestorId: string,
+  byId: Map<string, BuilderField>,
+  ids: Set<string>,
+  stack = new Set<string>()
+): boolean {
+  const pid = parentOf(field, ids)
+  if (!pid || stack.has(field.id)) return false
+  if (pid === ancestorId) return true
+  stack.add(field.id)
+  const parent = byId.get(pid)
+  return parent ? isDescendantOf(parent, ancestorId, byId, ids, stack) : false
 }
 
 // A sensible default trigger value when creating a follow-up.
@@ -128,8 +167,10 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
       const parentIndex = s.fields.findIndex(f => f.id === parentFieldId)
       if (parentIndex === -1) return s
       const parent = s.fields[parentIndex]
+      const byId = new Map(s.fields.map(f => [f.id, f] as const))
+      const ids = new Set(s.fields.map(f => f.id))
       let insertAt = parentIndex + 1
-      while (insertAt < s.fields.length && fieldDependsOn(s.fields[insertAt], parentFieldId)) insertAt++
+      while (insertAt < s.fields.length && isDescendantOf(s.fields[insertAt], parentFieldId, byId, ids)) insertAt++
       const child = createBlankField(insertAt, 'text')
       child.label = 'Follow-up question'
       child.conditional_logic = {
@@ -248,7 +289,7 @@ function SortableSection({
   onAddFollowUp,
 }: SortableSectionProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const sectionFieldIds = new Set(section.fields.map(f => f.id))
+  const depths = computeDepths(section.fields)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id })
 
   const sensors = useSensors(
@@ -338,10 +379,14 @@ function SortableSection({
                   strategy={verticalListSortingStrategy}
                 >
                   {section.fields.map((field, i) => {
-                    const isFollowUp = !!field.conditional_logic?.conditions?.some(c => sectionFieldIds.has(c.field_id))
+                    const depth = depths.get(field.id) ?? 0
+                    const isLayout = field.field_type === 'heading' || field.field_type === 'divider'
                     return (
                       <Fragment key={field.id}>
-                        <div className={isFollowUp ? 'pl-4 border-l-2 border-amber-200 ml-1.5' : ''}>
+                        <div
+                          style={depth > 0 ? { marginLeft: Math.min(depth, 5) * 16 } : undefined}
+                          className={depth > 0 ? 'border-l-2 border-amber-200 pl-3' : ''}
+                        >
                           <SortableField
                             field={field}
                             sections={[]}
@@ -350,7 +395,7 @@ function SortableSection({
                             onUpdate={(updated) => onUpdateField(field.id, updated)}
                             onDelete={() => onDeleteField(field.id)}
                           />
-                          {!isFollowUp && (
+                          {!isLayout && (
                             <button
                               type="button"
                               onClick={() => onAddFollowUp(field.id)}
