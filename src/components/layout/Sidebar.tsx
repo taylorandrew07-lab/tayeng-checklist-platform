@@ -1,22 +1,21 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import type { Profile } from '@/lib/types/database'
 import {
-  LayoutDashboard,
-  FileText,
-  Briefcase,
-  Users,
-  Building2,
-  ClipboardList,
-  LogOut,
-  ChevronRight,
-  X,
-  Settings,
-  Calculator,
+  LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
+  LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
 } from 'lucide-react'
 
 interface NavItem {
@@ -33,8 +32,8 @@ const adminNav: NavItem[] = [
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
 ]
-// Settings (superAdminNav) is appended after this list, so it stays at the bottom.
 
+// Settings is pinned to the bottom and is never reorderable.
 const superAdminNav: NavItem[] = [
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ]
@@ -49,6 +48,24 @@ const clientNav: NavItem[] = [
   { label: 'My Jobs', href: '/client', icon: ClipboardList },
 ]
 
+function roleNav(role: string): NavItem[] {
+  return role === 'admin' ? adminNav : role === 'surveyor' ? surveyorNav : clientNav
+}
+
+// Apply a saved order; keep unknown saved entries out, append new canonical
+// items at the end so adding a nav item later never hides it.
+function orderedNav(canonical: NavItem[], savedOrder?: string[]): NavItem[] {
+  if (!savedOrder?.length) return canonical
+  const byHref = new Map(canonical.map(i => [i.href, i]))
+  const result: NavItem[] = []
+  for (const href of savedOrder) {
+    const item = byHref.get(href)
+    if (item) { result.push(item); byHref.delete(href) }
+  }
+  for (const item of canonical) if (byHref.has(item.href)) result.push(item)
+  return result
+}
+
 interface SidebarProps {
   profile: Profile & { is_super_admin?: boolean }
   open?: boolean
@@ -60,12 +77,16 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
   const pathname = usePathname()
   const router = useRouter()
 
-  const nav =
-    profile.role === 'admin'
-      ? adminNav
-      : profile.role === 'surveyor'
-      ? surveyorNav
-      : clientNav
+  const canonical = roleNav(profile.role)
+  const [order, setOrder] = useState<NavItem[]>(() => orderedNav(canonical, profile.ui_prefs?.nav_order))
+  const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savedRef = useRef<NavItem[]>(order)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
 
   function handleNavClick(href: string) {
     onClose?.()
@@ -73,13 +94,43 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     router.push(href)
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setOrder(prev => {
+      const oldIndex = prev.findIndex(i => i.href === active.id)
+      const newIndex = prev.findIndex(i => i.href === over.id)
+      return arrayMove(prev, oldIndex, newIndex)
+    })
+  }
+
+  async function saveOrder() {
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const nav_order = order.map(i => i.href)
+      const ui_prefs = { ...(profile.ui_prefs ?? {}), nav_order }
+      const { error } = await supabase.from('profiles').update({ ui_prefs }).eq('id', profile.id)
+      if (error) throw error
+      savedRef.current = order
+      setEditMode(false)
+    } catch {
+      // Keep edit mode open on failure (e.g. migration not yet applied).
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function cancelEdit() {
+    setOrder(savedRef.current)
+    setEditMode(false)
+  }
+
   async function handleSignOut() {
-    // Check dirty state before signing out
     if (dirtyState.isDirty) {
       if (!window.confirm('You have unsaved changes. Sign out anyway?')) return
     }
     const supabase = createClient()
-    // Supabase clears its own persisted session (cookies) on signOut
     await supabase.auth.signOut()
     dirtyState.set(false)
     dirtyState.setHandler(null)
@@ -87,15 +138,12 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     router.refresh()
   }
 
+  const settingsItem = profile.is_super_admin ? superAdminNav : []
+
   return (
     <>
-      {/* Mobile overlay */}
       {open && (
-        <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
+        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} aria-hidden="true" />
       )}
 
       <aside
@@ -127,33 +175,79 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {[...nav, ...(profile.is_super_admin ? superAdminNav : [])].map((item) => {
-            const isActive =
-              item.href === '/admin' || item.href === '/surveyor' || item.href === '/client'
-                ? pathname === item.href
-                : pathname.startsWith(item.href)
-            return (
-              <button
-                key={item.href}
-                onClick={() => handleNavClick(item.href)}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
-                  isActive
-                    ? 'bg-brand-700 text-white'
-                    : 'text-brand-300 hover:bg-brand-800 hover:text-white'
-                )}
-              >
-                <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
-                {item.label}
-                {item.href === '/admin/users' && pendingCount > 0 && (
-                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                    {pendingCount}
-                  </span>
-                )}
-                {isActive && pendingCount === 0 && <ChevronRight className="h-4 w-4 ml-auto" />}
-              </button>
-            )
-          })}
+          {editMode ? (
+            <>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={order.map(i => i.href)} strategy={verticalListSortingStrategy}>
+                  {order.map(item => <SortableNavItem key={item.href} item={item} />)}
+                </SortableContext>
+              </DndContext>
+              {settingsItem.map(item => (
+                <div key={item.href} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-400 opacity-60">
+                  <span className="w-4" />
+                  <item.icon className="h-5 w-5 flex-shrink-0" />
+                  {item.label}
+                  <span className="ml-auto text-[10px] uppercase tracking-wide">Fixed</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            [...order, ...settingsItem].map((item) => {
+              const isActive =
+                item.href === '/admin' || item.href === '/surveyor' || item.href === '/client'
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href)
+              return (
+                <button
+                  key={item.href}
+                  onClick={() => handleNavClick(item.href)}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
+                    isActive ? 'bg-brand-700 text-white' : 'text-brand-300 hover:bg-brand-800 hover:text-white'
+                  )}
+                >
+                  <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
+                  {item.label}
+                  {item.href === '/admin/users' && pendingCount > 0 && (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {pendingCount}
+                    </span>
+                  )}
+                  {isActive && pendingCount === 0 && <ChevronRight className="h-4 w-4 ml-auto" />}
+                </button>
+              )
+            })
+          )}
+
+          {/* Customize controls (only when there's more than one item to order) */}
+          {order.length > 1 && (
+            <div className="pt-2">
+              {editMode ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveOrder}
+                    disabled={saving}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-500 transition-colors"
+                  >
+                    <Check className="h-3.5 w-3.5" />{saving ? 'Saving…' : 'Done'}
+                  </button>
+                  <button
+                    onClick={cancelEdit}
+                    className="px-3 py-2 rounded-lg text-xs font-medium text-brand-300 hover:bg-brand-800 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEditMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-brand-400 hover:bg-brand-800 hover:text-white transition-colors w-full"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />Customize menu
+                </button>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Sign out */}
@@ -168,5 +262,23 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         </div>
       </aside>
     </>
+  )
+}
+
+function SortableNavItem({ item }: { item: NavItem }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.href })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-100 bg-brand-800/70 cursor-grab touch-none select-none"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical className="h-4 w-4 text-brand-400 flex-shrink-0" />
+      <item.icon className="h-5 w-5 flex-shrink-0 text-brand-300" />
+      {item.label}
+    </div>
   )
 }

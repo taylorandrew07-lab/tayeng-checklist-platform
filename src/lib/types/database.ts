@@ -24,6 +24,11 @@ export type JobStatus =
   | 'client_visible'
   | 'archived'
 
+export interface UiPrefs {
+  /** Ordered list of nav item hrefs for this user's sidebar. */
+  nav_order?: string[]
+}
+
 export interface Profile {
   id: string
   email: string
@@ -32,6 +37,7 @@ export interface Profile {
   phone: string | null
   is_active: boolean
   is_super_admin: boolean
+  ui_prefs?: UiPrefs | null
   created_at: string
   updated_at: string
 }
