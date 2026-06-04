@@ -51,8 +51,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             try {
               const parsed = JSON.parse(cached)
               // Only trust the cache if it's the same user as the live session, and
-              // only for the offline-supported surveyor routes.
-              if (parsed?.id === session.user.id && pathname.startsWith('/surveyor')) {
+              // only for the offline-supported staff routes (surveyor + admin).
+              const staffPath = pathname.startsWith('/surveyor') || pathname.startsWith('/admin')
+              if (parsed?.id === session.user.id && staffPath) {
                 setProfile(parsed); setLoading(false); return
               }
             } catch { /* fall through to login */ }
@@ -155,7 +156,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <ServiceWorkerRegister />
+      {/* Offline support is for staff only (surveyors + admins/super-admins),
+          never client accounts. */}
+      {(profile.role === 'admin' || profile.role === 'surveyor') && <ServiceWorkerRegister />}
       <Sidebar
         profile={profile}
         open={sidebarOpen}

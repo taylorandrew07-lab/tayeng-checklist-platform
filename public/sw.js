@@ -52,7 +52,8 @@ self.addEventListener('fetch', (event) => {
   // Only CACHE the offline-relevant surveyor routes so private client/admin
   // pages are never stored on the device.
   if (request.mode === 'navigate') {
-    const cacheable = url.pathname === OFFLINE_URL || url.pathname.startsWith('/surveyor')
+    const cacheable = url.pathname === OFFLINE_URL ||
+      url.pathname.startsWith('/surveyor') || url.pathname.startsWith('/admin')
     event.respondWith(
       fetch(request)
         .then((res) => {
