@@ -24,6 +24,10 @@ export interface OfflineDraft {
   /** True once the surveyor has hit Submit offline — applied to the server on sync. */
   pendingSubmit: boolean
   dirty: boolean
+  /** True ONLY for changes made offline that must be pushed to the server. Online
+   *  local-cache autosaves are `dirty` but NOT `needsSync`, so background sync
+   *  never publishes unsaved online edits without an explicit Save. */
+  needsSync: boolean
   updatedAt: number
   lastSyncedAt: number | null
   syncError: string | null

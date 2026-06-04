@@ -31,6 +31,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
   const draft = await getDraft(user.id, jobId)
   if (!draft) return { ok: true, submitted: false, nothing: true }
   if (draft.userId !== user.id) return { ok: false, reason: 'wrong-user', message: 'This draft belongs to a different user.' }
+  // An online-only local-cache draft has nothing to push — never publish it.
+  if (!draft.needsSync && !draft.pendingSubmit) return { ok: true, submitted: false, nothing: true }
 
   const rev = draft.updatedAt
 
@@ -41,14 +43,14 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     await putDraft({ ...draft, syncError: message })
     return { ok: false, reason: 'error', message }
   }
-  if (LOCKED.includes(serverJob.status) && (draft.dirty || draft.pendingSubmit)) {
+  if (LOCKED.includes(serverJob.status) && (draft.needsSync || draft.pendingSubmit)) {
     const message = `This job is now "${serverJob.status}" on the server — your local changes were kept and not sent.`
     await putDraft({ ...draft, syncError: message })
     return { ok: false, reason: 'conflict', message }
   }
 
   // Concurrent-edit conflict: did the server answers change since we cached them?
-  if (draft.dirty || draft.pendingSubmit) {
+  if (draft.needsSync || draft.pendingSubmit) {
     const [valsRes, sigsRes] = await Promise.all([
       supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
       supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
@@ -141,11 +143,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     const baseline = { serverValues: draft.values, serverArrayValues: draft.arrayValues, serverSignatures: draft.signatures }
     if (submitted) {
       if (unchanged) await deleteDraft(user.id, jobId)
-      else if (current) await putDraft({ ...current, pendingSubmit: false }) // keep newer edits; submit already applied
+      // keep newer edits; submit already applied, but they still need syncing
+      else if (current) await putDraft({ ...current, ...baseline, pendingSubmit: false, lastSyncedAt: Date.now(), syncError: null })
     } else if (current) {
       await putDraft({
         ...current, ...baseline,
-        dirty: unchanged ? false : current.dirty, // keep dirty if edited mid-sync
+        dirty: unchanged ? false : current.dirty,
+        needsSync: unchanged ? false : current.needsSync, // clear only if nothing new
         lastSyncedAt: Date.now(), syncError: null,
       })
     }

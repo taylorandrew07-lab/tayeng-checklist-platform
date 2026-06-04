@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Page navigations: network-first, fall back to cached page, then offline page.
-  // Only CACHE the offline-relevant surveyor routes so private client/admin
+  // Only CACHE the offline-relevant staff routes (/surveyor, /admin); client
   // pages are never stored on the device.
   if (request.mode === 'navigate') {
     const cacheable = url.pathname === OFFLINE_URL ||

@@ -63,10 +63,10 @@ export async function putDraft(draft: OfflineDraft): Promise<void> {
   await (await getDB()).put('drafts', { ...draft, key: draftKey(draft.userId, draft.jobId) })
 }
 
-/** All of a user's drafts that still need syncing (dirty or a queued submit). */
+/** A user's drafts with OFFLINE work to push (never online local-cache autosaves). */
 export async function getPendingDrafts(userId: string): Promise<OfflineDraft[]> {
   const all = await (await getDB()).getAll('drafts')
-  return all.filter(d => d.userId === userId && (d.dirty || d.pendingSubmit))
+  return all.filter(d => d.userId === userId && (d.needsSync || d.pendingSubmit))
 }
 
 export async function deleteDraft(userId: string, jobId: string): Promise<void> {

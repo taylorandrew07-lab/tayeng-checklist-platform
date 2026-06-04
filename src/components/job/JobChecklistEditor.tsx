@@ -161,7 +161,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         signatures: draft.serverSignatures ?? {},
       }
       setIsDirty(draft.dirty)
-      if (draft.dirty || draft.pendingSubmit) setSyncStatus('pending')
+      if (draft.needsSync || draft.pendingSubmit) setSyncStatus('pending')
     }
 
     // Persists the local draft. Throws on failure so explicit Save/Submit can
@@ -169,6 +169,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     async function persistDraft(pendingSubmit: boolean): Promise<void> {
       if (!offlineEditable() || !currentUserId) throw new Error('Offline saving is not available here.')
       const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
+      const offlineNow = typeof navigator !== 'undefined' && !navigator.onLine
       await putDraft({
         key: '', jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
         fieldPhotos, generalPhotos,
@@ -176,7 +177,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         serverArrayValues: serverBaselineRef.current.arrayValues,
         serverSignatures: serverBaselineRef.current.signatures,
         pendingSubmit: pendingSubmit || existing?.pendingSubmit || false,
-        dirty: true, updatedAt: Date.now(),
+        dirty: true,
+        // Only mark for server sync when the change was made offline (or queued
+        // submit). Online autosaves are a local safety cache, not a push.
+        needsSync: offlineNow || pendingSubmit || existing?.needsSync || false,
+        updatedAt: Date.now(),
         lastSyncedAt: existing?.lastSyncedAt ?? null, syncError: existing?.syncError ?? null,
       })
     }
@@ -192,7 +197,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         key: '', jobId, userId: currentUserId, job, sections, values: v, arrayValues: a, signatures: s,
         fieldPhotos, generalPhotos,
         serverValues: v, serverArrayValues: a, serverSignatures: s,
-        pendingSubmit: false, dirty: false, updatedAt: Date.now(),
+        pendingSubmit: false, dirty: false, needsSync: false, updatedAt: Date.now(),
         lastSyncedAt: Date.now(), syncError: null,
       }).catch(() => {})
       setSyncStatus('idle')
@@ -210,7 +215,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     async function syncNow() {
       if (!offlineAvailable() || typeof navigator === 'undefined' || !navigator.onLine || !currentUserId) return
       const existing = await getDraft(currentUserId, jobId).catch(() => null)
-      if (!existing || (!existing.dirty && !existing.pendingSubmit)) return
+      if (!existing || (!existing.needsSync && !existing.pendingSubmit)) return
       setSyncStatus('syncing'); setSyncMessage(null)
       const result = await syncDraft(createClient(), jobId)
       if (result.ok) {
@@ -219,7 +224,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         const after = await getDraft(currentUserId, jobId).catch(() => null)
         setIsDirty(!!after?.dirty)
         if (after) serverBaselineRef.current = { values: after.serverValues, arrayValues: after.serverArrayValues, signatures: after.serverSignatures }
-        setSyncStatus(after && (after.dirty || after.pendingSubmit) ? 'pending' : 'synced')
+        setSyncStatus(after && (after.needsSync || after.pendingSubmit) ? 'pending' : 'synced')
       } else {
         setSyncStatus('error'); setSyncMessage(result.message)
       }
@@ -356,7 +361,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (offlineAvailable()) {
         try {
           const draft = await getDraft(userId, jobId)
-          if (draft && draft.userId === userId && (draft.dirty || draft.pendingSubmit)) {
+          if (draft && draft.userId === userId && (draft.needsSync || draft.pendingSubmit)) {
             hydrateFromDraft(draft)
           } else if (!['submitted', 'completed', 'client_visible', 'archived'].includes(jobData.status)) {
             await putDraft({
@@ -364,7 +369,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               values: vals, arrayValues: arrVals, signatures: sigs,
               fieldPhotos: fPhotos, generalPhotos: gPhotos,
               serverValues: vals, serverArrayValues: arrVals, serverSignatures: sigs,
-              pendingSubmit: false, dirty: false, updatedAt: Date.now(),
+              pendingSubmit: false, dirty: false, needsSync: false, updatedAt: Date.now(),
               lastSyncedAt: Date.now(), syncError: null,
             })
             await requestPersistentStorage()

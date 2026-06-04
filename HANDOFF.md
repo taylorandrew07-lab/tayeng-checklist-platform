@@ -1,0 +1,48 @@
+# Tayeng Checklist App — Session Handoff
+
+Paste this into a new chat to resume.
+
+## Project
+- **Stack:** Next.js 16.2.7 (App Router, TS) + React 19 + Tailwind + Supabase (Postgres/Auth/Storage/RLS) + Vercel.
+- **App:** https://tayeng-checklist-platform.vercel.app · **Repo:** github.com/taylorandrew07-lab/tayeng-checklist-platform · branch **main**.
+- **Domain:** marine survey / fuel-transfer inspection platform for Taylor Engineering.
+- **Roles:** `admin`, `surveyor`, `client` (enum `user_role`) + `is_super_admin` flag. Permissions enforced in Postgres **RLS** (`get_my_role()`, `is_admin()`).
+- **Super admin id:** `77fdfdae-f417-4f95-853d-a9fc48bfab8d`.
+
+## Critical build/workflow facts
+- **Production build MUST be `next build --webpack`** — Next 16's default Turbopack build fails collecting route-group pages. Pinned in `vercel.json` (`buildCommand`). Don't "clean up" the `--webpack` flag.
+- **Migrations are run by the human** by pasting the `.sql` into the Supabase SQL Editor. NEVER via CLI or Claude-in-Chrome (auto-pairing corrupts `$`/`{}`/`[]`). I write migration files; I do not apply them.
+- **Always push code changes to `main`** automatically once verified (Vercel deploys on push). Do NOT push/apply DB migrations.
+- Risky/auth changes → **branch + Vercel preview + test before merging.**
+- Gates: `npx tsc --noEmit`, `npm run lint` (ESLint 9 flat config; ~8 advisory React-Compiler warnings, **0 errors** is the bar), `npm test` (21 vitest), `npm run build`.
+- `npm audit`: down to **2 moderate** (PostCSS via Next's bundled copy; only fixed by a future Next patch / Next 15+). Not a blocker.
+
+## Migrations — status
+Run by user: **019** (security hardening RLS), **020** (RLS round 2 + surveyor-update trigger), **021** (FK indexes), **022** (client logos + `client-logos` bucket).
+NOT yet run: **023_job_photo_metadata.sql** — only needed for **offline photos (phase 2)**, not phase 1.
+Also pending (dashboard, not SQL): set MIME/size limits on the `job-photos` bucket (Storage → Configuration).
+
+## Shipped to `main` this session
+- Admin **"Edit submitted checklist"** (reopen a finished checklist; status preserved).
+- **Vessel-name normalization** → `M.V.`/`M.T.` Title Case (`vesselPrefixForLabel`/`normalizeVesselName` in `src/lib/utils`).
+- **Security hardening:** Next 14→16 + React 18→19 upgrade; ESLint 9 flat config; `create-user` API requires active admin + validates role; migrations 019/020/021; `middleware.ts`→`proxy.ts`.
+- Removed unused Fuel Transfer seed (was migration 018). (User also manually cleaned duplicated rows from a real "Fuel Transfer Checklist" template caused by the OLD template-save bug — see below.)
+- **Template save rewritten** to bulk upserts (was ~240 sequential calls → ~5; fixed a duplication-on-resave bug and a stuck-"Saving…" bug).
+- **Relabel:** "Checklist Templates"→**Templates**; the jobs area ("Checklists"/"My Checklists")→**Jobs**/**My Jobs**; job-list "Checklist" column→**Document**. (DB tables unchanged.)
+- **Client logos** — `clients.logo_path` + public `client-logos` bucket; upload/replace/remove in the client form; shown on client cards (aspect-aware: wide logos fill width, square fill height, left-aligned) and the client portal header.
+- **Conditional follow-up questions** in the template builder — "Add follow-up question" on any question creates a child wired via the existing `conditional_logic`; **multi-level nesting** supported; indented in the builder. No schema/save change.
+
+## IN PROGRESS — Offline mode (branch `feature/offline-mode`, NOT merged)
+Surveyor/admin offline checklist editing. **Phase 1** = offline answers / multi-selects / signatures / submit + PWA + auto-sync + status UI. **Photos are online-only (phase 2 deferred).** Latest commit **`7ac23e0`**.
+- Files: `src/lib/offline/{types,db,sync,photo}.ts`, `public/sw.js`, `src/components/offline/{ServiceWorkerRegister,OfflineSyncManager}.tsx`, `src/app/offline/page.tsx`, plus integration in `src/components/job/JobChecklistEditor.tsx` and `src/app/(dashboard)/layout.tsx`. Uses `idb`. Migration **023** ready (run before phase-2 photo testing).
+- IndexedDB drafts (user-scoped compound key, v2), idempotent retry-safe sync (conflict refetch + revision check), service worker is **staff-only** (admin/surveyor; unregisters for clients), `OfflineSyncManager` syncs pending drafts on reconnect even after the editor unmounts.
+- **Reviewed by Codex 3 times**; all Critical/High resolved. Device testing was **skipped** (user couldn't do it now) — decision was to rely on Codex static review + merge.
+- **NEXT STEP:** a final Codex re-verification prompt was provided (re-check commit `7ac23e0`). **If Codex returns GO → merge `feature/offline-mode` into `main`.** If NO-GO, fix on the branch + re-verify.
+- Deferred (noted, pre-launch acceptable): IDB v2 destructive upgrade (dev-test drafts only); network-failure "saved locally" fallback for the online path (mitigated — autosave persists draft on every change); release-stamped SW cache version (deploy-time).
+
+## Backlog / future
+- **Phase 2 offline:** photos + GPS/EXIF stamping (infra in `photo.ts`/`sync.ts` ready; needs migration 023 + photo-preview changes in the editor).
+- **Big project — Airtable-style ops workflow** (jobs lifecycle: request→assign→report→time/overtime→verify→approve→invoice→send→paid→closed). **Decision: build on existing Supabase, NOT Airtable** (Supabase is more capable — RLS, storage, PDF, offline). Needs: `secretary` role (enum add + RLS), `invoices`/`time_logs`/`job_attachments`/`activity_log` tables, generalize `jobs` (currently every job requires a `template_id`), paid/closed gating via trigger, audit trail, secretary dashboard. Phased plan exists (Phase 1 MVP workflow → 2 invoicing/overtime → 3 dashboards/automation → 4 audit). **Open decision:** keep jobs checklist-centric or make a "job" an engagement that *contains* a checklist + reports + time + invoice.
+
+## Reviewer note
+The user uses **Codex** for independent code-review passes and pastes the results back for me to triage/fix. Reviews have been high quality.
