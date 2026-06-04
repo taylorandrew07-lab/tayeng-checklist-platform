@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
+import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
@@ -156,9 +157,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Offline support is for staff only (surveyors + admins/super-admins),
-          never client accounts. */}
-      {(profile.role === 'admin' || profile.role === 'surveyor') && <ServiceWorkerRegister />}
+      {/* Offline support is staff-only. ServiceWorkerRegister unregisters itself
+          for client accounts; OfflineSyncManager pushes pending drafts (e.g. an
+          offline submit) once back online, independent of the checklist editor. */}
+      <ServiceWorkerRegister enabled={profile.role === 'admin' || profile.role === 'surveyor'} />
+      {(profile.role === 'admin' || profile.role === 'surveyor') && <OfflineSyncManager />}
       <Sidebar
         profile={profile}
         open={sidebarOpen}

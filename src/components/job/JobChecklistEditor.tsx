@@ -125,6 +125,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     useEffect(() => {
       if (!draftLoadedRef.current || !offlineEditable() || !isDirty) return
       const t = setTimeout(() => {
+        if (!draftLoadedRef.current) return // editor left / draft discarded
         persistDraft(false).catch(() => { /* best-effort autosave; explicit Save surfaces errors */ })
         if (typeof navigator !== 'undefined' && !navigator.onLine) setSyncStatus('pending')
       }, 700)
@@ -214,11 +215,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const result = await syncDraft(createClient(), jobId)
       if (result.ok) {
         if (result.submitted) { setIsDirty(false); setSyncStatus('synced'); router.push(backHref); return }
-        setSyncStatus('synced')
-        // Reflect post-sync draft state (edits made during sync stay dirty).
+        // Reflect post-sync draft state (edits made during sync stay dirty/pending).
         const after = await getDraft(currentUserId, jobId).catch(() => null)
         setIsDirty(!!after?.dirty)
         if (after) serverBaselineRef.current = { values: after.serverValues, arrayValues: after.serverArrayValues, signatures: after.serverSignatures }
+        setSyncStatus(after && (after.dirty || after.pendingSubmit) ? 'pending' : 'synced')
       } else {
         setSyncStatus('error'); setSyncMessage(result.message)
       }
@@ -587,8 +588,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
     }
 
-    function confirmLeaveWithout() {
+    async function confirmLeaveWithout() {
       setIsDirty(false)
+      draftLoadedRef.current = false
+      // Discard the local draft so explicitly-abandoned edits can't resurrect and
+      // later overwrite the server on the next online load.
+      if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
       if (leaveDestination) router.push(leaveDestination)
       setShowLeaveDialog(false)
     }

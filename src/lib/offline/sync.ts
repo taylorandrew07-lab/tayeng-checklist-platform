@@ -116,7 +116,16 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       // keep it queued so the newer edits sync and submit on the next attempt.
       const mid = await getDraft(user.id, jobId)
       if (mid && mid.updatedAt !== rev) {
-        await putDraft({ ...mid, lastSyncedAt: Date.now(), syncError: null })
+        // The values were already written to the server above; advance the
+        // baseline so the next sync doesn't false-conflict against our own write.
+        await putDraft({
+          ...mid,
+          serverValues: draft.values,
+          serverArrayValues: draft.arrayValues,
+          serverSignatures: draft.signatures,
+          lastSyncedAt: Date.now(),
+          syncError: null,
+        })
         return { ok: true, submitted: false }
       }
       const { error } = await supabase.from('jobs')

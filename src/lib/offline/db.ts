@@ -63,6 +63,12 @@ export async function putDraft(draft: OfflineDraft): Promise<void> {
   await (await getDB()).put('drafts', { ...draft, key: draftKey(draft.userId, draft.jobId) })
 }
 
+/** All of a user's drafts that still need syncing (dirty or a queued submit). */
+export async function getPendingDrafts(userId: string): Promise<OfflineDraft[]> {
+  const all = await (await getDB()).getAll('drafts')
+  return all.filter(d => d.userId === userId && (d.dirty || d.pendingSubmit))
+}
+
 export async function deleteDraft(userId: string, jobId: string): Promise<void> {
   const db = await getDB()
   await db.delete('drafts', draftKey(userId, jobId))
