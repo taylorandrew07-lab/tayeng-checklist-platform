@@ -153,13 +153,11 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-brand-800">
-          <div className="flex items-center gap-2.5">
-            <img src="/logo-full.png" alt="Taylor Engineering Agencies Limited" className="h-10 w-auto" />
-          </div>
+        {/* Header / logo */}
+        <div className="relative px-3 pt-4 pb-3 border-b border-brand-800">
+          <img src="/logo-full.png" alt="Taylor Engineering Agencies Limited" className="w-full h-auto" />
           {onClose && (
-            <button onClick={onClose} className="lg:hidden text-brand-400 hover:text-white">
+            <button onClick={onClose} className="lg:hidden absolute top-2 right-2 text-brand-400 hover:text-white">
               <X className="h-5 w-5" />
             </button>
           )}

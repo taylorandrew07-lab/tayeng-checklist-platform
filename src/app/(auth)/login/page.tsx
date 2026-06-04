@@ -76,7 +76,7 @@ export default function LoginPage() {
     <div className="w-full max-w-md">
       {/* Logo / Brand */}
       <div className="text-center mb-8">
-        <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4" unoptimized />
+        <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="w-full max-w-xs mx-auto mb-4 h-auto" unoptimized />
         <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 
