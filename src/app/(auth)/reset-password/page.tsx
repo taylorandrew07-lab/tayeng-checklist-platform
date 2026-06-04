@@ -118,7 +118,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="w-full max-w-md">
       <div className="text-center mb-8">
-        <img src="/logo-full.png" alt="Taylor Engineering" className="w-full max-w-xs mx-auto mb-4" />
+        <img src="/logo-full.png" alt="Taylor Engineering" className="w-full mx-auto mb-4" />
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8">
