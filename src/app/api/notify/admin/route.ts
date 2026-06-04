@@ -44,7 +44,7 @@ async function sendEmail(subject: string, html: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'TEAL Platform <noreply@tayeng.com>',
+      from: 'Tayeng App <noreply@tayeng.com>',
       to: [ADMIN_EMAIL],
       subject,
       html,
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       await sendEmail(
         safeSubject(`New account request — ${name ?? email ?? ''}`),
         `
-          <p>A new user has requested an account on the TEAL Checklist Platform.</p>
+          <p>A new user has requested an account on the Tayeng App.</p>
           <ul>
             <li><strong>Name:</strong> ${safeName}</li>
             <li><strong>Email:</strong> ${safeEmail}</li>

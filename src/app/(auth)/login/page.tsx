@@ -77,7 +77,7 @@ export default function LoginPage() {
       {/* Logo / Brand */}
       <div className="text-center mb-8">
         <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4 rounded-xl" unoptimized />
-        <p className="text-brand-200 text-sm">Checklist &amp; Survey Platform</p>
+        <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 
       {/* Login Card */}
@@ -181,7 +181,7 @@ export default function LoginPage() {
       </div>
 
       <p className="mt-6 text-center text-xs text-brand-300">
-        Taylor Engineering Agencies Limited — Private Internal Platform
+        Taylor Engineering Agencies Limited — Private Internal App
       </p>
     </div>
   )

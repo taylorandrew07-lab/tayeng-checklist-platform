@@ -92,7 +92,7 @@ export default function AdminDashboard() {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="page-title">Admin Dashboard</h1>
-        <p className="text-gray-500 mt-1">Overview of all platform activity</p>
+        <p className="text-gray-500 mt-1">Overview of all activity</p>
       </div>
 
       {/* Pending approvals banner */}

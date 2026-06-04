@@ -1,7 +1,7 @@
 {
-  "name": "TEAL Checklist Platform",
-  "short_name": "TEAL",
-  "description": "Internal checklist and survey job platform for Taylor Engineering Agencies Limited",
+  "name": "Tayeng App",
+  "short_name": "Tayeng",
+  "description": "Internal survey & job management app for Taylor Engineering Agencies Limited",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

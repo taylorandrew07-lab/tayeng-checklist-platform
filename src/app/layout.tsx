@@ -3,10 +3,10 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Taylor Engineering Agencies Limited | Checklist Platform',
+    default: 'Tayeng App',
     template: '%s | TEAL',
   },
-  description: 'Internal checklist and survey job platform for Taylor Engineering Agencies Limited',
+  description: 'Internal survey & job management app for Taylor Engineering Agencies Limited',
   manifest: '/manifest.json',
   icons: {
     icon: '/logo-square.png',
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'TE Checklist',
+    title: 'Tayeng App',
   },
 }
 

@@ -77,7 +77,7 @@ export default function SignUpPage() {
     <div className="w-full max-w-md">
       <div className="text-center mb-8">
         <img src="/logo-full.jpeg" alt="Taylor Engineering" className="h-20 w-auto mx-auto mb-4 rounded-xl" />
-        <p className="text-brand-200 text-sm">Checklist &amp; Survey Platform</p>
+        <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8">
@@ -151,7 +151,7 @@ export default function SignUpPage() {
       </div>
 
       <p className="mt-6 text-center text-xs text-brand-300">
-        Taylor Engineering Agencies Limited — Private Internal Platform
+        Taylor Engineering Agencies Limited — Private Internal App
       </p>
     </div>
   )
