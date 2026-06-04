@@ -10,7 +10,7 @@ import {
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw,
 } from 'lucide-react'
-import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout, vesselPrefixForLabel, normalizeVesselName } from '@/lib/utils'
+import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -314,9 +314,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // Auto-fill vessel/surveyor from job metadata (only if field is text and currently empty)
           if (field.field_type === 'text' && !vals[field.id]) {
             const lbl = field.label.toLowerCase()
-            // The "Bunker Vessel Name" is a different vessel — never auto-fill it
-            // with the surveyed vessel's name; the surveyor enters it manually.
-            if (lbl.includes('vessel') && !lbl.includes('bunker') && jobData.vessel_name) {
+            // Only the surveyed vessel's NAME field is auto-filled. This excludes
+            // the separate "Bunker Vessel Name" and descriptor fields like
+            // "Vessel IMO Number" / "Vessel Type" (see isSurveyedVesselNameField).
+            if (isSurveyedVesselNameField(field.label) && jobData.vessel_name) {
               vals[field.id] = jobData.vessel_name
             } else if (lbl.includes('surveyor') && jobData.surveyor_name) {
               vals[field.id] = jobData.surveyor_name

@@ -11,6 +11,7 @@ const ROLE_REDIRECT: Record<string, string> = {
   admin: '/admin',
   surveyor: '/surveyor',
   client: '/client',
+  office: '/office',
 }
 
 export default function LoginPage() {

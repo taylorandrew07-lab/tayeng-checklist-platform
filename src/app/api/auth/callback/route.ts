@@ -5,6 +5,7 @@ const ROLE_REDIRECT: Record<string, string> = {
   admin: '/admin',
   surveyor: '/surveyor',
   client: '/client',
+  office: '/office',
 }
 
 // Only these internal paths may be used as a post-auth `next` redirect target.

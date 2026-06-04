@@ -8,7 +8,7 @@ import {
   Image,
 } from '@react-pdf/renderer'
 import { format, parseISO } from 'date-fns'
-import { formatDiffPercentage } from '@/lib/utils'
+import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -292,8 +292,10 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const bunkerVesselField = allFieldsFlat.find((f: any) =>
     /bunker/i.test(f.label) && /vessel/i.test(f.label)
   ) ?? null
+  // The surveyed vessel's NAME field only — excludes descriptor fields
+  // ("Vessel IMO Number", "Vessel Type", …) and the bunker vessel.
   const vesselField = allFieldsFlat.find((f: any) =>
-    /vessel/i.test(f.label) && f.id !== bunkerVesselField?.id
+    isSurveyedVesselNameField(f.label) && f.id !== bunkerVesselField?.id
   ) ?? null
   const dateField = allFieldsFlat.find((f: any) => /\bdate\b/i.test(f.label)) ?? null
   const portField = allFieldsFlat.find((f: any) => /\bport\b/i.test(f.label)) ?? null

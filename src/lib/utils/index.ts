@@ -51,6 +51,17 @@ export function vesselPrefixForLabel(label: string): 'M.T.' | 'M.V.' | null {
 }
 
 /**
+ * True when a field's label denotes the SURVEYED vessel's name field — the one
+ * that should be auto-filled with the job's vessel_name and shown as "the
+ * vessel" in the PDF. Built on vesselPrefixForLabel so descriptor fields
+ * ("Vessel IMO Number", "Vessel Type", …) and the separate bunker vessel are
+ * excluded. Use this instead of an ad-hoc `label.includes('vessel')` check.
+ */
+export function isSurveyedVesselNameField(label: string): boolean {
+  return vesselPrefixForLabel(label) === 'M.V.'
+}
+
+/**
  * Normalises a vessel name to "<prefix> Title Cased Name":
  *  - strips any existing prefix the user typed (so we never double up, e.g.
  *    "M.T. M.T. Test" → "M.T. Test"), matching forms like "MT", "M.T.", "M T"
