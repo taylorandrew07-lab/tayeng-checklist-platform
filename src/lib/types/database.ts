@@ -1,4 +1,17 @@
-export type UserRole = 'admin' | 'surveyor' | 'client'
+export type UserRole = 'admin' | 'surveyor' | 'client' | 'office'
+
+/**
+ * Known office permission keys (seeded in migration 025's
+ * office_permission_catalog). The catalog is the source of truth at runtime —
+ * this union is a convenience for type-safe checks against the well-known keys.
+ * New keys can be added to the catalog without breaking this type.
+ */
+export type OfficePermissionKey =
+  | 'jobs.monitor.view'
+  | 'jobs.detail.view'
+  | 'clients.view'
+  | 'invoicing.view'
+  | 'invoicing.manage'
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 export type FieldType =
   | 'text'
@@ -61,6 +74,24 @@ export interface ClientUser {
   profile_id: string
   client_id: string
   created_at: string
+}
+
+/** A permission key office staff can be granted (migration 025). */
+export interface OfficePermissionCatalogRow {
+  key: string
+  label: string
+  description: string | null
+  category: string
+  created_at: string
+}
+
+/** Per-user grant of an office permission key (migration 025). */
+export interface OfficeUserPermission {
+  profile_id: string
+  permission_key: string
+  allowed: boolean
+  updated_by: string | null
+  updated_at: string
 }
 
 export interface ConditionalLogic {

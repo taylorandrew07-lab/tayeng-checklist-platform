@@ -13,9 +13,11 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import type { Profile } from '@/lib/types/database'
+import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
+  Receipt,
 } from 'lucide-react'
 
 interface NavItem {
@@ -48,8 +50,27 @@ const clientNav: NavItem[] = [
   { label: 'My Jobs', href: '/client', icon: ClipboardList },
 ]
 
-function roleNav(role: string): NavItem[] {
-  return role === 'admin' ? adminNav : role === 'surveyor' ? surveyorNav : clientNav
+// Office nav. Dashboard + Jobs Monitor are always present; Invoicing is added
+// only when the user holds an invoicing permission (see officeNav()).
+const officeBaseNav: NavItem[] = [
+  { label: 'Dashboard', href: '/office', icon: LayoutDashboard },
+  { label: 'Jobs Monitor', href: '/office/jobs', icon: Briefcase },
+]
+
+function officeNav(officePermissions: string[]): NavItem[] {
+  const nav = [...officeBaseNav]
+  const granted = new Set(officePermissions)
+  if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
+    nav.push({ label: 'Invoicing', href: '/office/invoicing', icon: Receipt })
+  }
+  return nav
+}
+
+function roleNav(role: string, officePermissions: string[]): NavItem[] {
+  if (role === 'admin') return adminNav
+  if (role === 'surveyor') return surveyorNav
+  if (role === 'office') return officeNav(officePermissions)
+  return clientNav
 }
 
 // Apply a saved order; keep unknown saved entries out, append new canonical
@@ -71,13 +92,15 @@ interface SidebarProps {
   open?: boolean
   onClose?: () => void
   pendingCount?: number
+  /** Granted office permission keys; drives which office nav items appear. */
+  officePermissions?: string[]
 }
 
-export default function Sidebar({ profile, open = true, onClose, pendingCount = 0 }: SidebarProps) {
+export default function Sidebar({ profile, open = true, onClose, pendingCount = 0, officePermissions = [] }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
-  const canonical = roleNav(profile.role)
+  const canonical = roleNav(profile.role, officePermissions)
   const [order, setOrder] = useState<NavItem[]>(() => orderedNav(canonical, profile.ui_prefs?.nav_order))
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -166,7 +189,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         {/* Role badge */}
         <div className="px-4 py-3 border-b border-brand-800">
           <p className="text-brand-400 text-xs uppercase tracking-wide font-medium">
-            {profile.is_super_admin ? 'Super Admin' : profile.role === 'admin' ? 'Administrator' : profile.role === 'surveyor' ? 'Surveyor' : 'Client'}
+            {profile.is_super_admin ? 'Super Admin' : profile.role === 'admin' ? 'Administrator' : profile.role === 'surveyor' ? 'Surveyor' : profile.role === 'office' ? 'Office' : 'Client'}
           </p>
           <p className="text-white text-sm font-medium mt-0.5 truncate">{profile.full_name}</p>
         </div>
@@ -192,7 +215,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
           ) : (
             [...order, ...settingsItem].map((item) => {
               const isActive =
-                item.href === '/admin' || item.href === '/surveyor' || item.href === '/client'
+                item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
                   ? pathname === item.href
                   : pathname.startsWith(item.href)
               return (

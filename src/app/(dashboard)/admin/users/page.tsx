@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Check, X, Pencil, ShieldCheck } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
-import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName } from '@/lib/types/database'
+import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName, OfficePermissionCatalogRow } from '@/lib/types/database'
 
 export default function UsersPage() {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
@@ -14,6 +14,10 @@ export default function UsersPage() {
   const [surveyorRequests, setSurveyorRequests] = useState<SurveyorNameRequest[]>([])
   const [clientRequests, setClientRequests] = useState<ClientRequest[]>([])
   const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
+  const [officeCatalog, setOfficeCatalog] = useState<OfficePermissionCatalogRow[]>([])
+  // Toggled office permission state for the user currently being edited.
+  const [officePerms, setOfficePerms] = useState<Record<string, boolean>>({})
+  const [officePermsLoading, setOfficePermsLoading] = useState(false)
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -39,13 +43,14 @@ export default function UsersPage() {
   async function load() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: sn }] = await Promise.all([
+    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: sn }, { data: oc }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session?.user.id ?? '').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
       supabase.from('surveyor_name_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('client_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
+      supabase.from('office_permission_catalog').select('*').order('category').order('label'),
     ])
     setCurrentProfile(me)
     setUsers(u ?? [])
@@ -53,6 +58,7 @@ export default function UsersPage() {
     setSurveyorRequests(sr ?? [])
     setClientRequests(cr ?? [])
     setSurveyorNames(sn ?? [])
+    setOfficeCatalog(oc ?? [])
     setLoading(false)
   }
 
@@ -78,6 +84,7 @@ export default function UsersPage() {
   function openCreate() {
     setEditUser(null)
     setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '' })
+    setOfficePerms({})
     setError(null)
     setShowModal(true)
   }
@@ -85,8 +92,55 @@ export default function UsersPage() {
   function openEdit(user: Profile) {
     setEditUser(user)
     setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '' })
+    setOfficePerms({})
     setError(null)
     setShowModal(true)
+    // Office permissions are managed only when editing; load the user's current grants.
+    loadOfficePermissions(user.id)
+  }
+
+  // Load the saved office permission grants for a user into the toggle state.
+  async function loadOfficePermissions(profileId: string) {
+    setOfficePermsLoading(true)
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('office_user_permissions')
+      .select('permission_key, allowed')
+      .eq('profile_id', profileId)
+    const map: Record<string, boolean> = {}
+    for (const row of data ?? []) map[row.permission_key] = row.allowed
+    setOfficePerms(map)
+    setOfficePermsLoading(false)
+  }
+
+  // Persist office permission rows for an edited user.
+  // - role is office: upsert the full catalog with the toggled allow state.
+  // - role changed away from office: remove their grants entirely.
+  // Returns an error message string, or null on success.
+  async function syncOfficePermissions(
+    supabase: ReturnType<typeof createClient>,
+    user: Profile,
+    newRole: UserRole,
+  ): Promise<{ error: string | null }> {
+    if (newRole === 'office') {
+      if (officeCatalog.length === 0) return { error: null }
+      const nowIso = new Date().toISOString()
+      const rows = officeCatalog.map(c => ({
+        profile_id: user.id,
+        permission_key: c.key,
+        allowed: !!officePerms[c.key],
+        updated_by: currentProfile?.id ?? null,
+        updated_at: nowIso,
+      }))
+      const { error } = await supabase.from('office_user_permissions').upsert(rows)
+      return { error: error ? error.message : null }
+    }
+    // Changed away from office — clean up any existing grants.
+    if (user.role === 'office') {
+      const { error } = await supabase.from('office_user_permissions').delete().eq('profile_id', user.id)
+      return { error: error ? error.message : null }
+    }
+    return { error: null }
   }
 
   async function handleSave() {
@@ -116,6 +170,10 @@ export default function UsersPage() {
       }
       const { error: err } = await supabase.from('profiles').update(patch).eq('id', editUser.id)
       if (err) { setError(err.message); setSaving(false); return }
+
+      // Sync office permission rows (RLS enforces admin-only writes).
+      const { error: permErr } = await syncOfficePermissions(supabase, editUser, form.role)
+      if (permErr) { setError(permErr); setSaving(false); return }
     } else {
       if (!form.password || form.password.length < 8) { setError('Password must be at least 8 characters'); setSaving(false); return }
 
@@ -256,6 +314,7 @@ export default function UsersPage() {
     admin: 'bg-red-100 text-red-700',
     surveyor: 'bg-blue-100 text-blue-700',
     client: 'bg-green-100 text-green-700',
+    office: 'bg-teal-100 text-teal-700',
   }
 
   const pending = users.filter(u => !u.is_active)
@@ -552,6 +611,7 @@ export default function UsersPage() {
             <select value={form.role} onChange={(e) => setForm(p => ({ ...p, role: e.target.value as UserRole }))} className="input-base">
               <option value="surveyor">Surveyor</option>
               <option value="client">Client</option>
+              <option value="office">Office</option>
               {isSuperAdmin && <option value="admin">Admin</option>}
             </select>
             {!isSuperAdmin && (
@@ -571,6 +631,41 @@ export default function UsersPage() {
             <label className="label-base">Phone</label>
             <input type="tel" value={form.phone} onChange={(e) => setForm(p => ({ ...p, phone: e.target.value }))} className="input-base" placeholder="+1 555 000 0000" />
           </div>
+
+          {/* Office permissions — only when editing an existing office user.
+              New office users start with everything denied; grant access here. */}
+          {editUser && form.role === 'office' && (
+            <div className="border-t border-gray-100 pt-4">
+              <label className="label-base">Office Permissions</label>
+              <p className="text-xs text-gray-400 mb-2">
+                Office staff are read-only. Grant only what this person needs; access is enforced by the database.
+              </p>
+              {officePermsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading permissions…
+                </div>
+              ) : officeCatalog.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">No permission catalog found. Run migration 025.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {officeCatalog.map(perm => (
+                    <label key={perm.key} className="flex items-start gap-3 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!officePerms[perm.key]}
+                        onChange={(e) => setOfficePerms(p => ({ ...p, [perm.key]: e.target.checked }))}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{perm.label}</p>
+                        {perm.description && <p className="text-xs text-gray-500">{perm.description}</p>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -609,6 +704,7 @@ export default function UsersPage() {
               >
                 <option value="surveyor">Surveyor</option>
                 <option value="client">Client</option>
+                <option value="office">Office</option>
                 {isSuperAdmin && <option value="admin">Admin</option>}
               </select>
             </div>

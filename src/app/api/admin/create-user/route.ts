@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   }
 
   // Validate the requested role server-side; never trust the client payload.
-  const ALLOWED_ROLES = ['admin', 'surveyor', 'client']
+  const ALLOWED_ROLES = ['admin', 'surveyor', 'client', 'office']
   if (!ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }

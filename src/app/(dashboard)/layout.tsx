@@ -7,12 +7,14 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
 import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
+import { fetchMyOfficePermissions } from '@/lib/office/permissions'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
   admin: '/admin',
   surveyor: '/surveyor',
   client: '/client',
+  office: '/office',
 }
 
 // Inactivity auto-logout window applied only when the user did NOT choose to stay
@@ -23,6 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [officePermissions, setOfficePermissions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
@@ -76,6 +79,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (data.role === 'admin') {
         const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false)
         setPendingCount(count ?? 0)
+      }
+
+      // Load this office user's granted permission keys to drive their nav.
+      if (data.role === 'office') {
+        const granted = await fetchMyOfficePermissions(supabase)
+        setOfficePermissions(Array.from(granted))
       }
 
       setLoading(false)
@@ -167,6 +176,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         pendingCount={pendingCount}
+        officePermissions={officePermissions}
       />
       <div className="flex flex-col min-h-screen lg:pl-64">
         <Header profile={profile} onMenuClick={() => setSidebarOpen(true)} />
