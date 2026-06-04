@@ -27,12 +27,13 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Templates', href: '/admin/templates', icon: FileText },
+  { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
-  { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
 ]
+// Settings (superAdminNav) is appended after this list, so it stays at the bottom.
 
 const superAdminNav: NavItem[] = [
   { label: 'Settings', href: '/admin/settings', icon: Settings },
