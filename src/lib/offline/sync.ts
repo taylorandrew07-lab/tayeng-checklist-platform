@@ -7,25 +7,35 @@ export type SyncResult =
 
 const LOCKED = ['submitted', 'completed', 'client_visible', 'archived']
 
+function canon(
+  v: Record<string, string>,
+  a: Record<string, string[]>,
+  s: Record<string, string>
+): string {
+  const pv = Object.keys(v).sort().map(k => `${k}=${v[k] ?? ''}`).join('|')
+  const pa = Object.keys(a).sort().map(k => `${k}=${(a[k] ?? []).join(',')}`).join('|')
+  const ps = Object.keys(s).sort().map(k => `${k}=${s[k] ?? ''}`).join('|')
+  return `${pv}#${pa}#${ps}`
+}
+
 /**
  * Push a job's local draft to Supabase using the normal logged-in user client.
- * Idempotent and retry-safe: values/signatures upsert on (job_id, field_id),
- * photos upsert on client_local_id. The queued submit is applied only after all
- * data + photos have synced. Never bypasses RLS.
+ * Idempotent and retry-safe. Refuses to overwrite if the job locked OR its
+ * server-side answers changed since we cached them (concurrent edit), and never
+ * clobbers edits made on the device while the sync was running (revision check).
  */
 export async function syncDraft(supabase: SupabaseClient, jobId: string): Promise<SyncResult> {
-  const draft = await getDraft(jobId)
-  if (!draft) return { ok: true, submitted: false, nothing: true }
-
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, reason: 'no-user', message: 'You are signed out.' }
-  if (draft.userId !== user.id) {
-    return { ok: false, reason: 'wrong-user', message: 'This draft belongs to a different user.' }
-  }
 
-  // Conflict check — refetch the live job before overwriting.
-  const { data: serverJob, error: jobErr } = await supabase
-    .from('jobs').select('id, status').eq('id', jobId).single()
+  const draft = await getDraft(user.id, jobId)
+  if (!draft) return { ok: true, submitted: false, nothing: true }
+  if (draft.userId !== user.id) return { ok: false, reason: 'wrong-user', message: 'This draft belongs to a different user.' }
+
+  const rev = draft.updatedAt
+
+  // Status-lock conflict.
+  const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, status').eq('id', jobId).single()
   if (jobErr || !serverJob) {
     const message = jobErr?.message ?? 'Job not found on the server.'
     await putDraft({ ...draft, syncError: message })
@@ -37,8 +47,25 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     return { ok: false, reason: 'conflict', message }
   }
 
+  // Concurrent-edit conflict: did the server answers change since we cached them?
+  if (draft.dirty || draft.pendingSubmit) {
+    const [{ data: svVals }, { data: svSigs }] = await Promise.all([
+      supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
+      supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
+    ])
+    const nowVals: Record<string, string> = {}
+    const nowArr: Record<string, string[]> = {}
+    for (const v of (svVals ?? [])) { if (v.value_array) nowArr[v.field_id] = v.value_array; else nowVals[v.field_id] = v.value ?? '' }
+    const nowSigs: Record<string, string> = {}
+    for (const s of (svSigs ?? [])) nowSigs[s.field_id] = s.signature_data
+    if (canon(nowVals, nowArr, nowSigs) !== canon(draft.serverValues, draft.serverArrayValues, draft.serverSignatures)) {
+      const message = 'This checklist was changed on the server since you went offline. Your local changes were kept and not sent — reload to merge.'
+      await putDraft({ ...draft, syncError: message })
+      return { ok: false, reason: 'conflict', message }
+    }
+  }
+
   try {
-    // 1. Field values + multi-select arrays
     const valueRows = Object.entries(draft.values).map(([field_id, value]) => ({ job_id: jobId, field_id, value, value_array: null }))
     const arrayRows = Object.entries(draft.arrayValues).map(([field_id, value_array]) => ({ job_id: jobId, field_id, value: null, value_array }))
     if (valueRows.length) {
@@ -49,8 +76,6 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       const { error } = await supabase.from('job_field_values').upsert(arrayRows, { onConflict: 'job_id,field_id' })
       if (error) throw error
     }
-
-    // 2. Signatures
     for (const [field_id, signature_data] of Object.entries(draft.signatures)) {
       if (!signature_data) continue
       const { error } = await supabase.from('job_signatures').upsert(
@@ -60,8 +85,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       if (error) throw error
     }
 
-    // 3. Queued photos — upload, then upsert the row by client_local_id (idempotent)
-    for (const p of await getPhotosForJob(jobId)) {
+    // Queued photos (phase 2; no-op in phase 1). Idempotent via client_local_id.
+    for (const p of await getPhotosForJob(user.id, jobId)) {
       if (p.uploaded) continue
       const path = p.storagePath ?? `${jobId}/${p.fieldId ?? 'general'}/${p.localId}_${p.filename}`
       const { error: upErr } = await supabase.storage.from('job-photos')
@@ -76,7 +101,6 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       await putPhoto({ ...p, storagePath: path, uploaded: true, error: null })
     }
 
-    // 4. Apply the queued submit only after all data + photos are in.
     let submitted = false
     if (draft.pendingSubmit) {
       const { error } = await supabase.from('jobs')
@@ -85,17 +109,26 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       submitted = true
     }
 
-    // Clean up synced photos; clear or remove the draft.
-    for (const p of await getPhotosForJob(jobId)) if (p.uploaded) await deletePhoto(p.localId)
+    // Cleanup — only touch the draft if it hasn't been edited during this sync.
+    for (const p of await getPhotosForJob(user.id, jobId)) if (p.uploaded) await deletePhoto(p.localId)
+    const current = await getDraft(user.id, jobId)
+    const unchanged = !!current && current.updatedAt === rev
+    const baseline = { serverValues: draft.values, serverArrayValues: draft.arrayValues, serverSignatures: draft.signatures }
     if (submitted) {
-      await deleteDraft(jobId)
-    } else {
-      await putDraft({ ...draft, dirty: false, lastSyncedAt: Date.now(), syncError: null })
+      if (unchanged) await deleteDraft(user.id, jobId)
+      else if (current) await putDraft({ ...current, pendingSubmit: false }) // keep newer edits; submit already applied
+    } else if (current) {
+      await putDraft({
+        ...current, ...baseline,
+        dirty: unchanged ? false : current.dirty, // keep dirty if edited mid-sync
+        lastSyncedAt: Date.now(), syncError: null,
+      })
     }
     return { ok: true, submitted }
   } catch (err: any) {
     const message = err?.message ?? 'Sync failed — will retry.'
-    await putDraft({ ...draft, syncError: message })
+    const latest = await getDraft(user.id, jobId)
+    if (latest) await putDraft({ ...latest, syncError: message })
     return { ok: false, reason: 'error', message }
   }
 }

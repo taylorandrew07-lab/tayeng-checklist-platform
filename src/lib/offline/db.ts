@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb'
-import type { OfflineDraft, QueuedPhoto } from './types'
+import { draftKey, type OfflineDraft, type QueuedPhoto } from './types'
 
 interface OfflineSchema extends DBSchema {
   drafts: { key: string; value: OfflineDraft }
@@ -13,13 +13,13 @@ export function offlineAvailable(): boolean {
 }
 
 function getDB(): Promise<IDBPDatabase<OfflineSchema>> {
-  if (!offlineAvailable()) return Promise.reject(new Error('IndexedDB not available'))
+  if (!offlineAvailable()) return Promise.reject(new Error('Offline storage is not available on this device.'))
   if (!dbPromise) {
-    dbPromise = openDB<OfflineSchema>('tayeng-offline', 1, {
+    dbPromise = openDB<OfflineSchema>('tayeng-offline', 2, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains('drafts')) {
-          db.createObjectStore('drafts', { keyPath: 'jobId' })
-        }
+        // v2: drafts keyed by `${userId}::${jobId}` so users on one device can't collide.
+        if (db.objectStoreNames.contains('drafts')) db.deleteObjectStore('drafts')
+        db.createObjectStore('drafts', { keyPath: 'key' })
         if (!db.objectStoreNames.contains('photos')) {
           const store = db.createObjectStore('photos', { keyPath: 'localId' })
           store.createIndex('by-job', 'jobId')
@@ -53,31 +53,33 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
   return null
 }
 
-// --- Drafts ---
-export async function getDraft(jobId: string): Promise<OfflineDraft | undefined> {
-  return (await getDB()).get('drafts', jobId)
+// --- Drafts (always scoped by userId) ---
+export async function getDraft(userId: string, jobId: string): Promise<OfflineDraft | undefined> {
+  return (await getDB()).get('drafts', draftKey(userId, jobId))
 }
 
+/** Persist a draft. Throws on failure so explicit saves can surface the error. */
 export async function putDraft(draft: OfflineDraft): Promise<void> {
-  await (await getDB()).put('drafts', draft)
+  await (await getDB()).put('drafts', { ...draft, key: draftKey(draft.userId, draft.jobId) })
 }
 
-export async function deleteDraft(jobId: string): Promise<void> {
+export async function deleteDraft(userId: string, jobId: string): Promise<void> {
   const db = await getDB()
-  await db.delete('drafts', jobId)
+  await db.delete('drafts', draftKey(userId, jobId))
   const photos = await db.getAllFromIndex('photos', 'by-job', jobId)
   const tx = db.transaction('photos', 'readwrite')
-  for (const p of photos) tx.store.delete(p.localId)
+  for (const p of photos) if (p.userId === userId) tx.store.delete(p.localId)
   await tx.done
 }
 
-// --- Queued photos ---
+// --- Queued photos (phase 2) ---
 export async function putPhoto(photo: QueuedPhoto): Promise<void> {
   await (await getDB()).put('photos', photo)
 }
 
-export async function getPhotosForJob(jobId: string): Promise<QueuedPhoto[]> {
-  return (await getDB()).getAllFromIndex('photos', 'by-job', jobId)
+export async function getPhotosForJob(userId: string, jobId: string): Promise<QueuedPhoto[]> {
+  const all = await (await getDB()).getAllFromIndex('photos', 'by-job', jobId)
+  return all.filter(p => p.userId === userId)
 }
 
 export async function deletePhoto(localId: string): Promise<void> {

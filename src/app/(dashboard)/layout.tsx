@@ -48,7 +48,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           const cached = localStorage.getItem('te_profile')
           if (cached) {
-            try { setProfile(JSON.parse(cached)); setLoading(false); return } catch { /* fall through to login */ }
+            try {
+              const parsed = JSON.parse(cached)
+              // Only trust the cache if it's the same user as the live session.
+              if (parsed?.id === session.user.id) { setProfile(parsed); setLoading(false); return }
+            } catch { /* fall through to login */ }
           }
         }
         router.push('/login'); return

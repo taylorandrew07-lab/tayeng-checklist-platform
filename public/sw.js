@@ -49,12 +49,17 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Page navigations: network-first, fall back to cached page, then offline page.
+  // Only CACHE the offline-relevant surveyor routes so private client/admin
+  // pages are never stored on the device.
   if (request.mode === 'navigate') {
+    const cacheable = url.pathname === OFFLINE_URL || url.pathname.startsWith('/surveyor')
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone()
-          caches.open(PAGE_CACHE).then((c) => c.put(request, copy))
+          if (cacheable && res.ok) {
+            const copy = res.clone()
+            caches.open(PAGE_CACHE).then((c) => c.put(request, copy))
+          }
           return res
         })
         .catch(() => caches.match(request).then((cached) => cached || caches.match(OFFLINE_URL)))

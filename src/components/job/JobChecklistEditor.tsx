@@ -76,6 +76,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'syncing' | 'synced' | 'error'>('idle')
     const [syncMessage, setSyncMessage] = useState<string | null>(null)
     const draftLoadedRef = useRef(false)
+    const serverBaselineRef = useRef<{ values: Record<string, string>; arrayValues: Record<string, string[]>; signatures: Record<string, string> }>({ values: {}, arrayValues: {}, signatures: {} })
 
     // Expose isDirty + save + navigate to parent via ref
     useImperativeHandle(ref, () => ({
@@ -119,7 +120,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     useEffect(() => {
       if (!draftLoadedRef.current || !offlineEditable() || !isDirty) return
       const t = setTimeout(() => {
-        void persistDraft(false)
+        persistDraft(false).catch(() => { /* best-effort autosave; explicit Save surfaces errors */ })
         if (typeof navigator !== 'undefined' && !navigator.onLine) setSyncStatus('pending')
       }, 700)
       return () => clearTimeout(t)
@@ -146,25 +147,41 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setValues(draft.values)
       setArrayValues(draft.arrayValues)
       setSignatures(draft.signatures)
+      setFieldPhotos(draft.fieldPhotos ?? {})
+      setGeneralPhotos(draft.generalPhotos ?? [])
+      serverBaselineRef.current = {
+        values: draft.serverValues ?? {},
+        arrayValues: draft.serverArrayValues ?? {},
+        signatures: draft.serverSignatures ?? {},
+      }
       setIsDirty(draft.dirty)
       if (draft.dirty || draft.pendingSubmit) setSyncStatus('pending')
     }
 
-    async function persistDraft(pendingSubmit: boolean) {
-      if (!offlineEditable() || !currentUserId) return
-      const existing = await getDraft(jobId).catch(() => undefined)
+    // Persists the local draft. Throws on failure so explicit Save/Submit can
+    // surface the error instead of falsely reporting success.
+    async function persistDraft(pendingSubmit: boolean): Promise<void> {
+      if (!offlineEditable() || !currentUserId) throw new Error('Offline saving is not available here.')
+      const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
       await putDraft({
-        jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        key: '', jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        fieldPhotos, generalPhotos,
+        serverValues: serverBaselineRef.current.values,
+        serverArrayValues: serverBaselineRef.current.arrayValues,
+        serverSignatures: serverBaselineRef.current.signatures,
         pendingSubmit: pendingSubmit || existing?.pendingSubmit || false,
         dirty: true, updatedAt: Date.now(),
         lastSyncedAt: existing?.lastSyncedAt ?? null, syncError: existing?.syncError ?? null,
-      }).catch(() => {})
+      })
     }
 
     async function markDraftSynced() {
       if (!offlineAvailable() || !currentUserId) return
+      serverBaselineRef.current = { values, arrayValues, signatures }
       await putDraft({
-        jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        key: '', jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        fieldPhotos, generalPhotos,
+        serverValues: values, serverArrayValues: arrayValues, serverSignatures: signatures,
         pendingSubmit: false, dirty: false, updatedAt: Date.now(),
         lastSyncedAt: Date.now(), syncError: null,
       }).catch(() => {})
@@ -173,21 +190,28 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     async function syncNow() {
-      if (!offlineAvailable() || typeof navigator === 'undefined' || !navigator.onLine) return
-      const existing = await getDraft(jobId).catch(() => null)
+      if (!offlineAvailable() || typeof navigator === 'undefined' || !navigator.onLine || !currentUserId) return
+      const existing = await getDraft(currentUserId, jobId).catch(() => null)
       if (!existing || (!existing.dirty && !existing.pendingSubmit)) return
       setSyncStatus('syncing'); setSyncMessage(null)
       const result = await syncDraft(createClient(), jobId)
       if (result.ok) {
+        if (result.submitted) { setIsDirty(false); setSyncStatus('synced'); router.push(backHref); return }
         setSyncStatus('synced')
-        if (result.submitted) { setIsDirty(false); router.push(backHref) }
+        // Reflect post-sync draft state (edits made during sync stay dirty).
+        const after = await getDraft(currentUserId, jobId).catch(() => null)
+        setIsDirty(!!after?.dirty)
+        if (after) serverBaselineRef.current = { values: after.serverValues, arrayValues: after.serverArrayValues, signatures: after.serverSignatures }
       } else {
         setSyncStatus('error'); setSyncMessage(result.message)
       }
     }
 
     async function discardDraft() {
-      await deleteDraft(jobId).catch(() => {})
+      if (typeof window !== 'undefined' && !window.confirm(
+        'Discard the changes saved on this device and reload from the server? Anything not yet synced will be lost.'
+      )) return
+      if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
       draftLoadedRef.current = false
       setSyncStatus('idle'); setSyncMessage(null)
       setLoading(true)
@@ -196,14 +220,25 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     async function load() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      setCurrentUserId(user.id)
+      const isOffline = offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine
+
+      // Identify the user. getUser() validates over the network, which fails
+      // offline — so offline we trust only the locally-persisted session.
+      let userId: string | null = null
+      if (isOffline) {
+        const { data: { session } } = await supabase.auth.getSession()
+        userId = session?.user?.id ?? null
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        userId = user?.id ?? null
+      }
+      if (!userId) { router.push('/login'); return }
+      setCurrentUserId(userId)
 
       // Offline: load from a saved local draft for this user if we have one.
-      if (offlineAvailable() && !navigator.onLine) {
-        const draft = await getDraft(jobId).catch(() => undefined)
-        if (draft && draft.userId === user.id) {
+      if (isOffline) {
+        const draft = await getDraft(userId, jobId).catch(() => undefined)
+        if (draft && draft.userId === userId) {
           hydrateFromDraft(draft)
           setOnline(false)
           draftLoadedRef.current = true
@@ -219,7 +254,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const { data: profileRow } = await supabase
         .from('profiles')
         .select('role, is_super_admin')
-        .eq('id', user.id)
+        .eq('id', userId)
         .single()
       setIsPrivileged(profileRow?.role === 'admin' || profileRow?.is_super_admin === true)
 
@@ -295,17 +330,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         await supabase.from('jobs').update({ status: 'in_progress', started_at: new Date().toISOString() }).eq('id', jobId)
       }
 
+      // Conflict baseline = what the server currently holds.
+      serverBaselineRef.current = { values: vals, arrayValues: arrVals, signatures: sigs }
+
       // Offline cache: keep a clean snapshot for offline reopen, or restore a
       // newer unsynced local draft so unsynced field work is never lost.
       if (offlineAvailable()) {
         try {
-          const draft = await getDraft(jobId)
-          if (draft && draft.userId === user.id && (draft.dirty || draft.pendingSubmit)) {
+          const draft = await getDraft(userId, jobId)
+          if (draft && draft.userId === userId && (draft.dirty || draft.pendingSubmit)) {
             hydrateFromDraft(draft)
           } else if (!['submitted', 'completed', 'client_visible', 'archived'].includes(jobData.status)) {
             await putDraft({
-              jobId, userId: user.id, job: jobData, sections: processedSections,
+              key: '', jobId, userId, job: jobData, sections: processedSections,
               values: vals, arrayValues: arrVals, signatures: sigs,
+              fieldPhotos: fPhotos, generalPhotos: gPhotos,
+              serverValues: vals, serverArrayValues: arrVals, serverSignatures: sigs,
               pendingSubmit: false, dirty: false, updatedAt: Date.now(),
               lastSyncedAt: Date.now(), syncError: null,
             })
@@ -353,7 +393,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           setSyncStatus('pending')
           return true
         } catch (err: any) {
-          setSaveError('Could not save on this device: ' + (err?.message ?? 'error'))
+          setSaveError('Your changes are NOT saved — this device blocked local storage (' + (err?.message ?? 'unavailable') + '). Try again, or keep this page open and reconnect.')
           return false
         } finally {
           setSaving(false)
@@ -497,7 +537,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }
 
         setShowSubmitDialog(false)
-        await deleteDraft(jobId).catch(() => {})
+        if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
         router.push(backHref)
       } catch (err: any) {
         const message = 'Submit failed: ' + (err.message ?? 'Unexpected error')
