@@ -18,9 +18,15 @@ Paste this into a new chat to resume. `main` HEAD at handoff: `2f5edd4`.
 - `npm audit`: down to **2 moderate** (PostCSS via Next's bundled copy; only fixed by a future Next patch / Next 15+). Not a blocker.
 
 ## Migrations — status
-Run by user: **019** (security hardening RLS), **020** (RLS round 2 + surveyor-update trigger), **021** (FK indexes), **022** (client logos + `client-logos` bucket), **024** (per-user `ui_prefs` for customizable sidebar order).
+Run by user: **019** (security hardening RLS), **020** (RLS round 2 + surveyor-update trigger), **021** (FK indexes), **022** (client logos + `client-logos` bucket), **024** (per-user `ui_prefs` for customizable sidebar order), **025** (office role + per-user office permission system).
 NOT yet run: **023_job_photo_metadata.sql** — only needed for **offline photos (phase 2)**, not phase 1.
 Also pending (dashboard, not SQL): set MIME/size limits on the `job-photos` bucket (Storage → Configuration).
+
+## Office role — SHIPPED to `main` (migration 025 applied)
+New read-only **`office`** role (office / admin-office staff) — NOT admin/surveyor/client. Built as a **future-proof per-user permission system** so office duties can expand without touching RLS.
+- **Migration 025** (run): `office` enum value; `office_permission_catalog` + `office_user_permissions` tables (seeded keys: `jobs.monitor.view`, `jobs.detail.view`, `clients.view`, `invoicing.view`, `invoicing.manage`); `is_office()` / `has_office_permission(key)` helpers (SECURITY DEFINER, STABLE, locked search_path, active-profile-gated); RLS gives office **SELECT-only** on jobs/clients/templates *by permission*. No office write policies anywhere; office NOT in `is_admin()`. Authorization = RLS + permission rows, never `user_metadata`. (Migration has an intentional mid-script `COMMIT;` after `ALTER TYPE … ADD VALUE` — paste the whole file.)
+- **App:** `/office` protected route + role redirect; offline SW/sync stay OFF for office (unregistered like clients); Sidebar nav + "Office" badge (Invoicing item only when granted); pages = dashboard, read-only jobs monitor, read-only job metadata (NO checklist editor/values/signatures/photos/PDF), invoicing placeholder. Admin Users page: Office role option (create/edit/approve) + per-user Office Permissions toggle editor; `create-user` API allows `office`; grants deleted when a user moves off office. Helper `src/lib/office/permissions.ts`.
+- **Next for office:** real invoicing feature (ties into the ops-workflow project); optional surveyor-name display in monitor; consider activity-log read perm later.
 
 ## Shipped to `main` this session
 - Admin **"Edit submitted checklist"** (reopen a finished checklist; status preserved).
