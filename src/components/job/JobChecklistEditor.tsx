@@ -8,12 +8,16 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
+  Cloud, CloudOff, RefreshCw,
 } from 'lucide-react'
 import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout, vesselPrefixForLabel, normalizeVesselName } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature } from '@/lib/types/database'
+import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
+import { syncDraft } from '@/lib/offline/sync'
+import type { OfflineDraft } from '@/lib/offline/types'
 
 interface SectionWithFields extends TemplateSection {
   fields: TemplateField[]
@@ -67,6 +71,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [showEditSubmittedDialog, setShowEditSubmittedDialog] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
+    // Offline state
+    const [online, setOnline] = useState(true)
+    const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'syncing' | 'synced' | 'error'>('idle')
+    const [syncMessage, setSyncMessage] = useState<string | null>(null)
+    const draftLoadedRef = useRef(false)
 
     // Expose isDirty + save + navigate to parent via ref
     useImperativeHandle(ref, () => ({
@@ -95,13 +104,116 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       return () => window.removeEventListener('beforeunload', handler)
     }, [isDirty])
 
+    // Track connectivity; auto-sync the local draft when we come back online.
+    useEffect(() => {
+      if (!offlineAvailable()) return
+      setOnline(navigator.onLine)
+      const goOnline = () => { setOnline(true); void syncNow() }
+      const goOffline = () => setOnline(false)
+      window.addEventListener('online', goOnline)
+      window.addEventListener('offline', goOffline)
+      return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline) }
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Persist the local draft (debounced) while editing an offline-eligible job.
+    useEffect(() => {
+      if (!draftLoadedRef.current || !offlineEditable() || !isDirty) return
+      const t = setTimeout(() => {
+        void persistDraft(false)
+        if (typeof navigator !== 'undefined' && !navigator.onLine) setSyncStatus('pending')
+      }, 700)
+      return () => clearTimeout(t)
+    }, [values, arrayValues, signatures, isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Auto-clear the transient "synced" badge.
+    useEffect(() => {
+      if (syncStatus !== 'synced') return
+      const t = setTimeout(() => setSyncStatus('idle'), 3000)
+      return () => clearTimeout(t)
+    }, [syncStatus])
+
     useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // --- Offline helpers ---
+    function offlineEditable(): boolean {
+      return offlineAvailable() && !forceReadOnly && !!job && !!currentUserId &&
+        !['submitted', 'completed', 'client_visible', 'archived'].includes(job?.status)
+    }
+
+    function hydrateFromDraft(draft: OfflineDraft) {
+      setJob(draft.job)
+      setSections(draft.sections)
+      setValues(draft.values)
+      setArrayValues(draft.arrayValues)
+      setSignatures(draft.signatures)
+      setIsDirty(draft.dirty)
+      if (draft.dirty || draft.pendingSubmit) setSyncStatus('pending')
+    }
+
+    async function persistDraft(pendingSubmit: boolean) {
+      if (!offlineEditable() || !currentUserId) return
+      const existing = await getDraft(jobId).catch(() => undefined)
+      await putDraft({
+        jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        pendingSubmit: pendingSubmit || existing?.pendingSubmit || false,
+        dirty: true, updatedAt: Date.now(),
+        lastSyncedAt: existing?.lastSyncedAt ?? null, syncError: existing?.syncError ?? null,
+      }).catch(() => {})
+    }
+
+    async function markDraftSynced() {
+      if (!offlineAvailable() || !currentUserId) return
+      await putDraft({
+        jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        pendingSubmit: false, dirty: false, updatedAt: Date.now(),
+        lastSyncedAt: Date.now(), syncError: null,
+      }).catch(() => {})
+      setSyncStatus('idle')
+      setSyncMessage(null)
+    }
+
+    async function syncNow() {
+      if (!offlineAvailable() || typeof navigator === 'undefined' || !navigator.onLine) return
+      const existing = await getDraft(jobId).catch(() => null)
+      if (!existing || (!existing.dirty && !existing.pendingSubmit)) return
+      setSyncStatus('syncing'); setSyncMessage(null)
+      const result = await syncDraft(createClient(), jobId)
+      if (result.ok) {
+        setSyncStatus('synced')
+        if (result.submitted) { setIsDirty(false); router.push(backHref) }
+      } else {
+        setSyncStatus('error'); setSyncMessage(result.message)
+      }
+    }
+
+    async function discardDraft() {
+      await deleteDraft(jobId).catch(() => {})
+      draftLoadedRef.current = false
+      setSyncStatus('idle'); setSyncMessage(null)
+      setLoading(true)
+      await load()
+    }
 
     async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setCurrentUserId(user.id)
+
+      // Offline: load from a saved local draft for this user if we have one.
+      if (offlineAvailable() && !navigator.onLine) {
+        const draft = await getDraft(jobId).catch(() => undefined)
+        if (draft && draft.userId === user.id) {
+          hydrateFromDraft(draft)
+          setOnline(false)
+          draftLoadedRef.current = true
+          setLoading(false)
+          return
+        }
+        setSaveError('You are offline and this checklist isn’t saved on this device yet. Reconnect to load it.')
+        setLoading(false)
+        return
+      }
 
       // Determine privilege (admin / super admin) for the "Edit as admin" override
       const { data: profileRow } = await supabase
@@ -183,6 +295,26 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         await supabase.from('jobs').update({ status: 'in_progress', started_at: new Date().toISOString() }).eq('id', jobId)
       }
 
+      // Offline cache: keep a clean snapshot for offline reopen, or restore a
+      // newer unsynced local draft so unsynced field work is never lost.
+      if (offlineAvailable()) {
+        try {
+          const draft = await getDraft(jobId)
+          if (draft && draft.userId === user.id && (draft.dirty || draft.pendingSubmit)) {
+            hydrateFromDraft(draft)
+          } else if (!['submitted', 'completed', 'client_visible', 'archived'].includes(jobData.status)) {
+            await putDraft({
+              jobId, userId: user.id, job: jobData, sections: processedSections,
+              values: vals, arrayValues: arrVals, signatures: sigs,
+              pendingSubmit: false, dirty: false, updatedAt: Date.now(),
+              lastSyncedAt: Date.now(), syncError: null,
+            })
+            await requestPersistentStorage()
+          }
+        } catch { /* offline cache is best-effort */ }
+      }
+      draftLoadedRef.current = true
+
       setLoading(false)
     }
 
@@ -211,6 +343,23 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const handleSave = useCallback(async (): Promise<boolean> => {
       setSaving(true)
       setSaveError(null)
+
+      // Offline: persist locally instead of calling Supabase.
+      if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+        try {
+          await persistDraft(false)
+          setLastSaved(new Date())
+          setIsDirty(false)
+          setSyncStatus('pending')
+          return true
+        } catch (err: any) {
+          setSaveError('Could not save on this device: ' + (err?.message ?? 'error'))
+          return false
+        } finally {
+          setSaving(false)
+        }
+      }
+
       const supabase = createClient()
 
       try {
@@ -268,6 +417,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
         setLastSaved(new Date())
         setIsDirty(false)
+        void markDraftSynced()
         return true
       } catch (err: any) {
         setSaveError(err.message ?? 'Save failed — please try again')
@@ -275,7 +425,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       } finally {
         setSaving(false)
       }
-    }, [jobId, values, arrayValues, signatures, sections])
+    }, [jobId, values, arrayValues, signatures, sections]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // --- Submit ---
     async function handleSubmit() {
@@ -312,6 +462,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           return
         }
 
+        // Offline: queue the submit locally; it is applied to the server on sync.
+        if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+          await persistDraft(true)
+          setIsDirty(false)
+          setSyncStatus('pending')
+          setShowSubmitDialog(false)
+          router.push(backHref)
+          return
+        }
+
         const saved = await handleSave()
         if (!saved) {
           const message = 'The latest edits could not be saved, so the checklist was not submitted. Please try Save Draft first, then submit again.'
@@ -337,6 +497,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }
 
         setShowSubmitDialog(false)
+        await deleteDraft(jobId).catch(() => {})
         router.push(backHref)
       } catch (err: any) {
         const message = 'Submit failed: ' + (err.message ?? 'Unexpected error')
@@ -540,6 +701,39 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             )}
           </div>
         </div>
+
+        {/* Offline / sync status strip */}
+        {offlineAvailable() && (!online || syncStatus !== 'idle') && (
+          <div className={`rounded-lg border px-4 py-2.5 text-sm flex items-center gap-2 flex-wrap ${
+            !online ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : syncStatus === 'error' ? 'bg-red-50 border-red-200 text-red-700'
+              : syncStatus === 'syncing' ? 'bg-blue-50 border-blue-200 text-blue-700'
+              : syncStatus === 'synced' ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}>
+            {!online ? <CloudOff className="h-4 w-4 flex-shrink-0" />
+              : syncStatus === 'syncing' ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+              : syncStatus === 'synced' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              : <Cloud className="h-4 w-4 flex-shrink-0" />}
+            <span className="flex-1 min-w-0">
+              {!online ? 'Offline — your answers are saved on this device and will sync when you reconnect.'
+                : syncStatus === 'syncing' ? 'Syncing your changes…'
+                : syncStatus === 'synced' ? 'All changes synced.'
+                : syncStatus === 'error' ? (syncMessage ?? 'Sync failed — will retry.')
+                : 'Saved on this device — not yet synced to the server.'}
+            </span>
+            {online && (syncStatus === 'pending' || syncStatus === 'error') && (
+              <button onClick={() => void syncNow()} className="btn-secondary py-1 px-2 text-xs">
+                <RefreshCw className="h-3.5 w-3.5" />Sync now
+              </button>
+            )}
+            {(syncStatus === 'pending' || syncStatus === 'error') && (
+              <button onClick={() => void discardDraft()} className="text-xs underline opacity-70 hover:opacity-100">
+                Discard local copy
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Read-only notice for users who are not the assigned surveyor/creator */}
         {readOnly && !isSubmitted && editingDenied && (

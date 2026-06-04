@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
+import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
@@ -41,7 +42,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('id', session.user.id)
         .single()
 
-      if (!data) { router.push('/login'); return }
+      if (!data) {
+        // Offline fallback: reuse the last cached profile so a previously-loaded
+        // checklist can reopen without connectivity.
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const cached = localStorage.getItem('te_profile')
+          if (cached) {
+            try { setProfile(JSON.parse(cached)); setLoading(false); return } catch { /* fall through to login */ }
+          }
+        }
+        router.push('/login'); return
+      }
+      try { localStorage.setItem('te_profile', JSON.stringify(data)) } catch { /* storage may be unavailable */ }
       setProfile(data)
 
       // Role-based path guard: redirect users who landed on the wrong dashboard
@@ -136,6 +148,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <ServiceWorkerRegister />
       <Sidebar
         profile={profile}
         open={sidebarOpen}
