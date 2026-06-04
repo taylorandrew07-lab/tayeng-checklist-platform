@@ -32,12 +32,11 @@ Also pending (dashboard, not SQL): set MIME/size limits on the `job-photos` buck
 - **Client logos** — `clients.logo_path` + public `client-logos` bucket; upload/replace/remove in the client form; shown on client cards (aspect-aware: wide logos fill width, square fill height, left-aligned) and the client portal header.
 - **Conditional follow-up questions** in the template builder — "Add follow-up question" on any question creates a child wired via the existing `conditional_logic`; **multi-level nesting** supported; indented in the builder. No schema/save change.
 
-## IN PROGRESS — Offline mode (branch `feature/offline-mode`, NOT merged)
-Surveyor/admin offline checklist editing. **Phase 1** = offline answers / multi-selects / signatures / submit + PWA + auto-sync + status UI. **Photos are online-only (phase 2 deferred).** Latest commit **`7ac23e0`**.
+## Offline mode — MERGED to `main` (commit `148c00b`), phase 1 live
+Surveyor/admin offline checklist editing. **Phase 1** = offline answers / multi-selects / signatures / submit + PWA + auto-sync + status UI. **Photos are online-only (phase 2 deferred).** Passed **4 Codex review passes** → GO. **Watch the first real offline use** on a device for IndexedDB/SW browser quirks (online paths are unaffected — offline code is gated on `!navigator.onLine`).
 - Files: `src/lib/offline/{types,db,sync,photo}.ts`, `public/sw.js`, `src/components/offline/{ServiceWorkerRegister,OfflineSyncManager}.tsx`, `src/app/offline/page.tsx`, plus integration in `src/components/job/JobChecklistEditor.tsx` and `src/app/(dashboard)/layout.tsx`. Uses `idb`. Migration **023** ready (run before phase-2 photo testing).
 - IndexedDB drafts (user-scoped compound key, v2), idempotent retry-safe sync (conflict refetch + revision check), service worker is **staff-only** (admin/surveyor; unregisters for clients), `OfflineSyncManager` syncs pending drafts on reconnect even after the editor unmounts.
-- **Reviewed by Codex 3 times**; all Critical/High resolved. Device testing was **skipped** (user couldn't do it now) — decision was to rely on Codex static review + merge.
-- **NEXT STEP:** a final Codex re-verification prompt was provided (re-check commit `7ac23e0`). **If Codex returns GO → merge `feature/offline-mode` into `main`.** If NO-GO, fix on the branch + re-verify.
+- Device testing was **skipped** (relied on Codex static review + merge). **NEXT real-world step:** watch a surveyor use it offline on a phone once; if anything's wrong it's revertable (online users unaffected).
 - Deferred (noted, pre-launch acceptable): IDB v2 destructive upgrade (dev-test drafts only); network-failure "saved locally" fallback for the online path (mitigated — autosave persists draft on every change); release-stamped SW cache version (deploy-time).
 
 ## Backlog / future
