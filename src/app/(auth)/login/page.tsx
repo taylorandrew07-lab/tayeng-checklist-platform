@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
-import logoFull from '../../../../public/logo-full.jpeg'
+import logoFull from '../../../../public/logo-full.png'
 
 const ROLE_REDIRECT: Record<string, string> = {
   admin: '/admin',
@@ -76,7 +76,7 @@ export default function LoginPage() {
     <div className="w-full max-w-md">
       {/* Logo / Brand */}
       <div className="text-center mb-8">
-        <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4 rounded-xl" unoptimized />
+        <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="h-20 w-auto mx-auto mb-4" unoptimized />
         <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 

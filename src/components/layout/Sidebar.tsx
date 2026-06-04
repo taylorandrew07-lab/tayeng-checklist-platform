@@ -156,7 +156,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         {/* Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-brand-800">
           <div className="flex items-center gap-2.5">
-            <img src="/logo-full.jpeg" alt="Taylor Engineering Agencies Limited" className="h-10 w-auto rounded-md" />
+            <img src="/logo-full.png" alt="Taylor Engineering Agencies Limited" className="h-10 w-auto" />
           </div>
           {onClose && (
             <button onClick={onClose} className="lg:hidden text-brand-400 hover:text-white">
