@@ -1,6 +1,6 @@
-# Tayeng Checklist App — Session Handoff
+# Tayeng App — Session Handoff
 
-Paste this into a new chat to resume.
+Paste this into a new chat to resume. `main` HEAD at handoff: `2f5edd4`.
 
 ## Project
 - **Stack:** Next.js 16.2.7 (App Router, TS) + React 19 + Tailwind + Supabase (Postgres/Auth/Storage/RLS) + Vercel.
@@ -18,7 +18,7 @@ Paste this into a new chat to resume.
 - `npm audit`: down to **2 moderate** (PostCSS via Next's bundled copy; only fixed by a future Next patch / Next 15+). Not a blocker.
 
 ## Migrations — status
-Run by user: **019** (security hardening RLS), **020** (RLS round 2 + surveyor-update trigger), **021** (FK indexes), **022** (client logos + `client-logos` bucket).
+Run by user: **019** (security hardening RLS), **020** (RLS round 2 + surveyor-update trigger), **021** (FK indexes), **022** (client logos + `client-logos` bucket), **024** (per-user `ui_prefs` for customizable sidebar order).
 NOT yet run: **023_job_photo_metadata.sql** — only needed for **offline photos (phase 2)**, not phase 1.
 Also pending (dashboard, not SQL): set MIME/size limits on the `job-photos` bucket (Storage → Configuration).
 
@@ -31,6 +31,9 @@ Also pending (dashboard, not SQL): set MIME/size limits on the `job-photos` buck
 - **Relabel:** "Checklist Templates"→**Templates**; the jobs area ("Checklists"/"My Checklists")→**Jobs**/**My Jobs**; job-list "Checklist" column→**Document**. (DB tables unchanged.)
 - **Client logos** — `clients.logo_path` + public `client-logos` bucket; upload/replace/remove in the client form; shown on client cards (aspect-aware: wide logos fill width, square fill height, left-aligned) and the client portal header.
 - **Conditional follow-up questions** in the template builder — "Add follow-up question" on any question creates a child wired via the existing `conditional_logic`; **multi-level nesting** supported; indented in the builder. No schema/save change.
+- **Sidebar reorder + per-user customization** — admin nav order is Dashboard · Jobs · Templates · Tools · Users · Clients (Settings pinned bottom). Each user can drag-reorder their own sidebar via a "Customize menu" toggle (@dnd-kit, touch-friendly); saved to `profiles.ui_prefs.nav_order` (migration 024) so it follows them across devices; merges with the canonical list so newly-added nav items append rather than hide. Secure via the existing migration-004 "safe own profile fields" policy (role/is_active/is_super_admin/email stay locked).
+- **Rebrand → "Tayeng App"** (display name only; dropped "Checklist Platform"): page metadata/title, `manifest.json`, login/auth subtitles + footer, notification email sender. **TEAL kept as the logo/brand mark.** Left unchanged (would break things): the Vercel URL, DB tables (`checklist_templates`), IndexedDB/cache keys (`tayeng-*`), repo. A Vercel project rename was **declined** (would change the URL + require Supabase Auth URL updates or login breaks).
+- **New logo** — transparent white-lettered Taylor Engineering PNG at `public/logo-full.png` (old `logo-full.jpeg` retired from references), shown **large**: full-width sidebar header + full card-width on the auth screens. Square favicon/PWA icon (`logo-square.png`) unchanged. Note: logo file is ~1.6 MB — could be downsized later for faster first loads.
 
 ## Offline mode — MERGED to `main` (commit `148c00b`), phase 1 live
 Surveyor/admin offline checklist editing. **Phase 1** = offline answers / multi-selects / signatures / submit + PWA + auto-sync + status UI. **Photos are online-only (phase 2 deferred).** Passed **4 Codex review passes** → GO. **Watch the first real offline use** on a device for IndexedDB/SW browser quirks (online paths are unaffected — offline code is gated on `!navigator.onLine`).
@@ -41,7 +44,7 @@ Surveyor/admin offline checklist editing. **Phase 1** = offline answers / multi-
 
 ## Backlog / future
 - **Phase 2 offline:** photos + GPS/EXIF stamping (infra in `photo.ts`/`sync.ts` ready; needs migration 023 + photo-preview changes in the editor).
-- **Big project — Airtable-style ops workflow** (jobs lifecycle: request→assign→report→time/overtime→verify→approve→invoice→send→paid→closed). **Decision: build on existing Supabase, NOT Airtable** (Supabase is more capable — RLS, storage, PDF, offline). Needs: `secretary` role (enum add + RLS), `invoices`/`time_logs`/`job_attachments`/`activity_log` tables, generalize `jobs` (currently every job requires a `template_id`), paid/closed gating via trigger, audit trail, secretary dashboard. Phased plan exists (Phase 1 MVP workflow → 2 invoicing/overtime → 3 dashboards/automation → 4 audit). **Open decision:** keep jobs checklist-centric or make a "job" an engagement that *contains* a checklist + reports + time + invoice.
+- **⭐ NEXT (big project) — Airtable-style ops workflow** (jobs lifecycle: request→assign→report→time/overtime→verify→approve→invoice→send→paid→closed). **Decision: build on existing Supabase, NOT Airtable** (Supabase is more capable — RLS, storage, PDF, offline). Needs: `secretary` role (enum add + RLS), `invoices`/`time_logs`/`job_attachments`/`activity_log` tables, generalize `jobs` (currently every job requires a `template_id`), paid/closed gating via trigger, audit trail, secretary dashboard. Phased plan exists (Phase 1 MVP workflow → 2 invoicing/overtime → 3 dashboards/automation → 4 audit). **Open decision:** keep jobs checklist-centric or make a "job" an engagement that *contains* a checklist + reports + time + invoice.
 
 ## Reviewer note
 The user uses **Codex** for independent code-review passes and pastes the results back for me to triage/fix. Reviews have been high quality.
