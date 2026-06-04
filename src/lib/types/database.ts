@@ -179,6 +179,13 @@ export interface JobPhoto {
   include_in_pdf: boolean
   uploaded_by: string
   created_at: string
+  // Offline capture metadata (migration 023)
+  client_local_id: string | null
+  captured_at: string | null
+  gps_lat: number | null
+  gps_lng: number | null
+  gps_accuracy_m: number | null
+  uploaded_offline: boolean
 }
 
 export interface JobSignature {
