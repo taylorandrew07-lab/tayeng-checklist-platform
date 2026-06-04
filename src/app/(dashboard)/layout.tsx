@@ -50,8 +50,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           if (cached) {
             try {
               const parsed = JSON.parse(cached)
-              // Only trust the cache if it's the same user as the live session.
-              if (parsed?.id === session.user.id) { setProfile(parsed); setLoading(false); return }
+              // Only trust the cache if it's the same user as the live session, and
+              // only for the offline-supported surveyor routes.
+              if (parsed?.id === session.user.id && pathname.startsWith('/surveyor')) {
+                setProfile(parsed); setLoading(false); return
+              }
             } catch { /* fall through to login */ }
           }
         }

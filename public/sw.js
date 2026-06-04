@@ -67,17 +67,23 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Other same-origin GETs (manifest, icons, fonts): stale-while-revalidate.
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((res) => {
-          const copy = res.clone()
-          caches.open(STATIC_CACHE).then((c) => c.put(request, copy))
+  // Static public assets ONLY (manifest, icons, fonts, images): cache-first.
+  // Everything else — RSC payloads, prefetches, dynamic data GETs — is passed
+  // straight to the network and never stored, so no private data is cached.
+  const isStaticAsset =
+    url.pathname === '/manifest.json' ||
+    /\.(?:png|jpe?g|svg|webp|gif|ico|woff2?|ttf|otf)$/i.test(url.pathname)
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(request).then((cached) =>
+        cached || fetch(request).then((res) => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(STATIC_CACHE).then((c) => c.put(request, copy))
+          }
           return res
         })
-        .catch(() => cached)
-      return cached || network
-    })
-  )
+      )
+    )
+  }
 })

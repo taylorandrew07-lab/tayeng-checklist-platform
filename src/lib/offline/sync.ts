@@ -13,7 +13,7 @@ function canon(
   s: Record<string, string>
 ): string {
   const pv = Object.keys(v).sort().map(k => `${k}=${v[k] ?? ''}`).join('|')
-  const pa = Object.keys(a).sort().map(k => `${k}=${(a[k] ?? []).join(',')}`).join('|')
+  const pa = Object.keys(a).sort().map(k => `${k}=${[...(a[k] ?? [])].sort().join(',')}`).join('|')
   const ps = Object.keys(s).sort().map(k => `${k}=${s[k] ?? ''}`).join('|')
   return `${pv}#${pa}#${ps}`
 }
@@ -49,10 +49,19 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
 
   // Concurrent-edit conflict: did the server answers change since we cached them?
   if (draft.dirty || draft.pendingSubmit) {
-    const [{ data: svVals }, { data: svSigs }] = await Promise.all([
+    const [valsRes, sigsRes] = await Promise.all([
       supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
       supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
     ])
+    if (valsRes.error || sigsRes.error) {
+      // Don't compare against an empty/failed read — that would false-conflict
+      // or, worse, false-pass. Treat a failed check as a retryable error.
+      const message = (valsRes.error || sigsRes.error)?.message ?? 'Could not verify the server state — will retry.'
+      await putDraft({ ...draft, syncError: message })
+      return { ok: false, reason: 'error', message }
+    }
+    const svVals = valsRes.data
+    const svSigs = sigsRes.data
     const nowVals: Record<string, string> = {}
     const nowArr: Record<string, string[]> = {}
     for (const v of (svVals ?? [])) { if (v.value_array) nowArr[v.field_id] = v.value_array; else nowVals[v.field_id] = v.value ?? '' }
@@ -103,6 +112,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
 
     let submitted = false
     if (draft.pendingSubmit) {
+      // If the surveyor edited during this sync, do NOT submit a stale version —
+      // keep it queued so the newer edits sync and submit on the next attempt.
+      const mid = await getDraft(user.id, jobId)
+      if (mid && mid.updatedAt !== rev) {
+        await putDraft({ ...mid, lastSyncedAt: Date.now(), syncError: null })
+        return { ok: true, submitted: false }
+      }
       const { error } = await supabase.from('jobs')
         .update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', jobId)
       if (error) throw error

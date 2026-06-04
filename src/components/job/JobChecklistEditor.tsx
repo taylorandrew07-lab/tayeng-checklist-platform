@@ -77,6 +77,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [syncMessage, setSyncMessage] = useState<string | null>(null)
     const draftLoadedRef = useRef(false)
     const serverBaselineRef = useRef<{ values: Record<string, string>; arrayValues: Record<string, string[]>; signatures: Record<string, string> }>({ values: {}, arrayValues: {}, signatures: {} })
+    const syncNowRef = useRef<() => void>(() => {})
 
     // Expose isDirty + save + navigate to parent via ref
     useImperativeHandle(ref, () => ({
@@ -105,11 +106,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       return () => window.removeEventListener('beforeunload', handler)
     }, [isDirty])
 
+    // Keep the latest syncNow in a ref so the reconnect listener (registered once)
+    // always calls the current closure (with currentUserId populated).
+    useEffect(() => { syncNowRef.current = syncNow })
+
     // Track connectivity; auto-sync the local draft when we come back online.
     useEffect(() => {
       if (!offlineAvailable()) return
       setOnline(navigator.onLine)
-      const goOnline = () => { setOnline(true); void syncNow() }
+      const goOnline = () => { setOnline(true); void syncNowRef.current() }
       const goOffline = () => setOnline(false)
       window.addEventListener('online', goOnline)
       window.addEventListener('offline', goOffline)
@@ -175,18 +180,30 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
-    async function markDraftSynced() {
+    async function markDraftSynced(
+      v: Record<string, string> = values,
+      a: Record<string, string[]> = arrayValues,
+      s: Record<string, string> = signatures,
+    ) {
       if (!offlineAvailable() || !currentUserId) return
-      serverBaselineRef.current = { values, arrayValues, signatures }
+      serverBaselineRef.current = { values: v, arrayValues: a, signatures: s }
       await putDraft({
-        key: '', jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        key: '', jobId, userId: currentUserId, job, sections, values: v, arrayValues: a, signatures: s,
         fieldPhotos, generalPhotos,
-        serverValues: values, serverArrayValues: arrayValues, serverSignatures: signatures,
+        serverValues: v, serverArrayValues: a, serverSignatures: s,
         pendingSubmit: false, dirty: false, updatedAt: Date.now(),
         lastSyncedAt: Date.now(), syncError: null,
       }).catch(() => {})
       setSyncStatus('idle')
       setSyncMessage(null)
+    }
+
+    // Refresh the offline draft's cached photo metadata after an online photo
+    // upload/delete, so an offline reopen sees current photos for validation.
+    async function cacheServerPhotos(fp: Record<string, any[]>, gp: any[]) {
+      if (!offlineAvailable() || !currentUserId) return
+      const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
+      if (existing) await putDraft({ ...existing, fieldPhotos: fp, generalPhotos: gp }).catch(() => {})
     }
 
     async function syncNow() {
@@ -457,7 +474,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
         setLastSaved(new Date())
         setIsDirty(false)
-        void markDraftSynced()
+        void markDraftSynced(valuesToSave)
         return true
       } catch (err: any) {
         setSaveError(err.message ?? 'Save failed — please try again')
@@ -594,7 +611,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
 
       const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId)
-      setFieldPhotos(prev => ({ ...prev, [fieldId]: fresh ?? [] }))
+      const nextFp = { ...fieldPhotos, [fieldId]: fresh ?? [] }
+      setFieldPhotos(nextFp)
+      void cacheServerPhotos(nextFp, generalPhotos)
       setUploadingField(null)
     }
 
@@ -615,7 +634,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
 
       const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
-      setGeneralPhotos(fresh ?? [])
+      const nextGp = fresh ?? []
+      setGeneralPhotos(nextGp)
+      void cacheServerPhotos(fieldPhotos, nextGp)
       setUploadingField(null)
     }
 
@@ -627,9 +648,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (dbErr) { setSaveError('Delete record failed: ' + dbErr.message); return }
 
       if (fieldId) {
-        setFieldPhotos(prev => ({ ...prev, [fieldId]: (prev[fieldId] ?? []).filter(p => p.id !== photoId) }))
+        const nextFp = { ...fieldPhotos, [fieldId]: (fieldPhotos[fieldId] ?? []).filter(p => p.id !== photoId) }
+        setFieldPhotos(nextFp)
+        void cacheServerPhotos(nextFp, generalPhotos)
       } else {
-        setGeneralPhotos(prev => prev.filter(p => p.id !== photoId))
+        const nextGp = generalPhotos.filter(p => p.id !== photoId)
+        setGeneralPhotos(nextGp)
+        void cacheServerPhotos(fieldPhotos, nextGp)
       }
     }
 
