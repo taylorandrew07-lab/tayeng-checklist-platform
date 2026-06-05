@@ -1,12 +1,12 @@
 # Tayeng App — Session Handoff
 
-Paste this into a new chat to resume. `main` HEAD at handoff: `2f5edd4`.
+Paste this into a new chat to resume. `main` HEAD at handoff: `8c4ed5c`.
 
 ## Project
 - **Stack:** Next.js 16.2.7 (App Router, TS) + React 19 + Tailwind + Supabase (Postgres/Auth/Storage/RLS) + Vercel.
 - **App:** https://tayeng-checklist-platform.vercel.app · **Repo:** github.com/taylorandrew07-lab/tayeng-checklist-platform · branch **main**.
 - **Domain:** marine survey / fuel-transfer inspection platform for Taylor Engineering.
-- **Roles:** `admin`, `surveyor`, `client` (enum `user_role`) + `is_super_admin` flag. Permissions enforced in Postgres **RLS** (`get_my_role()`, `is_admin()`).
+- **Roles:** `admin`, `surveyor`, `client`, `office` (enum `user_role`) + `is_super_admin` flag. Permissions enforced in Postgres **RLS** (`get_my_role()`, `is_admin()`, `is_office()`, `has_office_permission()`).
 - **Super admin id:** `77fdfdae-f417-4f95-853d-a9fc48bfab8d`.
 
 ## Critical build/workflow facts
@@ -27,6 +27,11 @@ New read-only **`office`** role (office / admin-office staff) — NOT admin/surv
 - **Migration 025** (run): `office` enum value; `office_permission_catalog` + `office_user_permissions` tables (seeded keys: `jobs.monitor.view`, `jobs.detail.view`, `clients.view`, `invoicing.view`, `invoicing.manage`); `is_office()` / `has_office_permission(key)` helpers (SECURITY DEFINER, STABLE, locked search_path, active-profile-gated); RLS gives office **SELECT-only** on jobs/clients/templates *by permission*. No office write policies anywhere; office NOT in `is_admin()`. Authorization = RLS + permission rows, never `user_metadata`. (Migration has an intentional mid-script `COMMIT;` after `ALTER TYPE … ADD VALUE` — paste the whole file.)
 - **App:** `/office` protected route + role redirect; offline SW/sync stay OFF for office (unregistered like clients); Sidebar nav + "Office" badge (Invoicing item only when granted); pages = dashboard, read-only jobs monitor, read-only job metadata (NO checklist editor/values/signatures/photos/PDF), invoicing placeholder. Admin Users page: Office role option (create/edit/approve) + per-user Office Permissions toggle editor; `create-user` API allows `office`; grants deleted when a user moves off office. Helper `src/lib/office/permissions.ts`.
 - **Next for office:** real invoicing feature (ties into the ops-workflow project); optional surveyor-name display in monitor; consider activity-log read perm later.
+
+## Also shipped this session (after office role)
+- **Audit fixes** (Codex read-only audit, triaged): added `office: '/office'` to the `ROLE_REDIRECT` maps in `login`, `reset-password`, and `api/auth/callback` (office users were missing → could land on `/login` after reset/magic-link flows). Replaced ad-hoc `label.includes('vessel')` checks with a shared **`isSurveyedVesselNameField()`** helper (in `src/lib/utils`, built on `vesselPrefixForLabel`) used by the checklist auto-fill (`JobChecklistEditor`) and the PDF vessel-field detection (`JobPDF`) — descriptor fields like "Vessel IMO Number" / "Vessel Type" are no longer mistaken for the vessel name.
+- **Audit — accepted/not actioned:** office gets *table-level* `SELECT` on `jobs` (all columns incl. `internal_notes`) by design — read-only, accepted (a restricted view/RPC was offered and declined). Still-open pre-existing Lows: photo upload writes storage-before-DB (orphan risk on failure); `/api/notify/admin` accepts client-supplied name/email/role with no throttle; `evaluateCalculation` uses `Function` (regex-guarded, admin-authored). npm audit 2 moderate (PostCSS via Next) — don't `--force`.
+- **PDF report changes** (`src/lib/pdf/JobPDF.tsx`): (1) **Job Details header is now two balanced columns** — Vessel + Date left, Port + Method of Delivery (+ Bunker Vessel when shown) right — instead of a wrapping row that pushed "Method of Delivery" onto an asymmetric second line. (2) **Field `help_text` is no longer rendered in the PDF** — it's on-screen surveyor guidance only; the report shows just question + answer. (Alternative single-line header is a quick swap if preferred.)
 
 ## Shipped to `main` this session
 - Admin **"Edit submitted checklist"** (reopen a finished checklist; status preserved).
