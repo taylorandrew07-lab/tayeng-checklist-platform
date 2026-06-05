@@ -36,18 +36,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color: '#1d4ed8',
   },
-  // Job details compact row block
+  // Job details block — two balanced columns (left: vessel/date, right: port/method)
   jobDetailsBlock: {
     backgroundColor: '#f8fafc',
     borderRadius: 3,
     padding: '5 8',
     marginBottom: 8,
     flexDirection: 'row',
-    flexWrap: 'wrap',
+  },
+  jobDetailCol: {
+    width: '50%',
+    flexDirection: 'column',
+    paddingRight: 8,
   },
   jobDetailRow: {
     flexDirection: 'row',
-    marginRight: 20,
     marginBottom: 3,
     alignItems: 'center',
   },
@@ -326,38 +329,42 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           <Text style={styles.reportTitle}>{reportTitle}</Text>
         </View>
 
-        {/* Compact Job Details */}
+        {/* Job Details — two balanced columns: vessel/date left, port/method right */}
         <View style={styles.jobDetailsBlock}>
-          {job.vessel_name && (
-            <View style={styles.jobDetailRow}>
-              <Text style={styles.jobDetailLabel}>Vessel:</Text>
-              <Text style={styles.jobDetailValue}>{withMvPrefix(job.vessel_name)}</Text>
-            </View>
-          )}
-          {dateField && fieldValues[dateField.id] && (
-            <View style={styles.jobDetailRow}>
-              <Text style={styles.jobDetailLabel}>Date:</Text>
-              <Text style={styles.jobDetailValue}>{fieldValues[dateField.id]}</Text>
-            </View>
-          )}
-          {portField && fieldValues[portField.id] && (
-            <View style={styles.jobDetailRow}>
-              <Text style={styles.jobDetailLabel}>Port:</Text>
-              <Text style={styles.jobDetailValue}>{fieldValues[portField.id]}</Text>
-            </View>
-          )}
-          {methodDisplay && (
-            <View style={styles.jobDetailRow}>
-              <Text style={styles.jobDetailLabel}>Method of Delivery:</Text>
-              <Text style={styles.jobDetailValue}>{methodDisplay}</Text>
-            </View>
-          )}
-          {showBunkerVessel && fieldValues[bunkerVesselField!.id] && (
-            <View style={styles.jobDetailRow}>
-              <Text style={styles.jobDetailLabel}>Bunker Vessel Name:</Text>
-              <Text style={styles.jobDetailValue}>{fieldValues[bunkerVesselField!.id]}</Text>
-            </View>
-          )}
+          <View style={styles.jobDetailCol}>
+            {job.vessel_name && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Vessel:</Text>
+                <Text style={styles.jobDetailValue}>{withMvPrefix(job.vessel_name)}</Text>
+              </View>
+            )}
+            {dateField && fieldValues[dateField.id] && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Date:</Text>
+                <Text style={styles.jobDetailValue}>{fieldValues[dateField.id]}</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.jobDetailCol}>
+            {portField && fieldValues[portField.id] && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Port:</Text>
+                <Text style={styles.jobDetailValue}>{fieldValues[portField.id]}</Text>
+              </View>
+            )}
+            {methodDisplay && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Method of Delivery:</Text>
+                <Text style={styles.jobDetailValue}>{methodDisplay}</Text>
+              </View>
+            )}
+            {showBunkerVessel && fieldValues[bunkerVesselField!.id] && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Bunker Vessel Name:</Text>
+                <Text style={styles.jobDetailValue}>{fieldValues[bunkerVesselField!.id]}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Checklist sections */}
@@ -437,9 +444,8 @@ function renderField(
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
           {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
         </Text>
-        {field.help_text && (
-          <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>{field.help_text}</Text>
-        )}
+        {/* help_text is on-screen surveyor guidance only — intentionally omitted
+            from the PDF so the report shows just the question + answer. */}
       </View>
 
       <View style={styles.fieldValue}>
