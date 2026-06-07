@@ -112,7 +112,14 @@ export default function CargoWorkspacePage() {
           <VoyageSetupForm voyage={voyage} onSaved={update} submitLabel="Save Setup" />
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Reading Types</h2>
-            <ReadingTypeManager voyage={voyage} onChange={update} />
+            {voyage.templateName && (
+              <p className="text-sm text-gray-500 mb-2">From template: <span className="font-medium text-gray-700">{voyage.templateName}</span>. Edits here apply only to this voyage.</p>
+            )}
+            <ReadingTypeManager
+              readingTypes={voyage.readingTypes}
+              holdCount={voyage.holdCount}
+              onChange={types => update({ ...voyage, readingTypes: types })}
+            />
           </div>
         </div>
       )}

@@ -5,17 +5,25 @@ import { Loader2, Save } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import {
-  type Voyage, defaultReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
+  type Voyage, type CargoTemplate, type ReadingType,
+  defaultReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
 } from '@/lib/cargo/types'
 
 interface Props {
   /** When provided, the form edits an existing voyage; otherwise it creates one. */
   voyage?: Voyage
+  /** On create, seeds reading types + default hold count from this template. */
+  seedTemplate?: CargoTemplate | null
   onSaved: (voyage: Voyage) => void
   submitLabel?: string
 }
 
-export default function VoyageSetupForm({ voyage, onSaved, submitLabel }: Props) {
+/** Deep-copy reading types so a voyage snapshot never aliases the template's array. */
+function cloneReadingTypes(types: ReadingType[]): ReadingType[] {
+  return types.map(rt => ({ ...rt, appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo] }))
+}
+
+export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitLabel }: Props) {
   const [vesselName, setVesselName] = useState(voyage?.vesselName ?? '')
   const [voyageNumber, setVoyageNumber] = useState(voyage?.voyageNumber ?? '')
   const [cargoType, setCargoType] = useState(voyage?.cargoType ?? '')
@@ -23,7 +31,7 @@ export default function VoyageSetupForm({ voyage, onSaved, submitLabel }: Props)
   const [dischargePort, setDischargePort] = useState(voyage?.dischargePort ?? '')
   const [startDate, setStartDate] = useState(voyage?.startDate ?? '')
   const [endDate, setEndDate] = useState(voyage?.endDate ?? '')
-  const [holdCount, setHoldCount] = useState(voyage?.holdCount ?? DEFAULT_HOLD_COUNT)
+  const [holdCount, setHoldCount] = useState(voyage?.holdCount ?? seedTemplate?.default_hold_count ?? DEFAULT_HOLD_COUNT)
   const [surveyorName, setSurveyorName] = useState(voyage?.surveyorName ?? '')
   const [clientName, setClientName] = useState(voyage?.clientName ?? '')
   const [remarks, setRemarks] = useState(voyage?.remarks ?? '')
@@ -50,7 +58,9 @@ export default function VoyageSetupForm({ voyage, onSaved, submitLabel }: Props)
         : {
             id: newId('voyage'),
             userId,
-            readingTypes: defaultReadingTypes(),
+            templateId: seedTemplate?.id || null,
+            templateName: seedTemplate?.name && seedTemplate.id ? seedTemplate.name : undefined,
+            readingTypes: seedTemplate ? cloneReadingTypes(seedTemplate.reading_types) : defaultReadingTypes(),
             readings: {},
             periodMeta: {},
             createdAt: now,

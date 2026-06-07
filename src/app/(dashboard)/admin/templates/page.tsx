@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, Copy, Edit, Loader2, Archive, RotateCcw, Trash2, Eye } from 'lucide-react'
+import { Plus, FileText, Copy, Edit, Loader2, Archive, RotateCcw, Trash2, Eye, ClipboardList, Ship } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatDateTime } from '@/lib/utils'
+import CargoTemplatesPanel from '@/components/cargo/CargoTemplatesPanel'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -20,6 +21,7 @@ export default function TemplatesPage() {
   const [archiving, setArchiving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [restoring, setRestoring] = useState<string | null>(null)
+  const [tab, setTab] = useState<'checklist' | 'cargo'>('checklist')
 
   useEffect(() => { load() }, [])
 
@@ -215,11 +217,31 @@ export default function TemplatesPage() {
           <h1 className="page-title">Templates</h1>
           <p className="text-gray-500 mt-1">{loading ? '…' : `${active.length} active/draft · ${archived.length} archived`}</p>
         </div>
-        <Link href="/admin/templates/new" className="btn-primary">
-          <Plus className="h-4 w-4" />New Template
-        </Link>
+        {tab === 'checklist' && (
+          <Link href="/admin/templates/new" className="btn-primary">
+            <Plus className="h-4 w-4" />New Template
+          </Link>
+        )}
       </div>
 
+      {/* Template kind tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {([['checklist', 'Checklist', ClipboardList], ['cargo', 'Cargo Monitoring', Ship]] as const).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
+              tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Icon className="h-4 w-4" />{label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'cargo' && <CargoTemplatesPanel />}
+
+      {tab === 'checklist' && (<>
       {!loading && templates.length > 0 && (
         <div className="flex gap-2">
           {[
@@ -307,6 +329,7 @@ export default function TemplatesPage() {
           ))}
         </div>
       )}
+      </>)}
     </div>
   )
 }

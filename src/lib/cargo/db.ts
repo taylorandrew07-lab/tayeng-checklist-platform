@@ -3,11 +3,12 @@
 // offline path is never touched. All records are scoped by `userId`.
 
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb'
-import type { Voyage, CargoPhoto } from './types'
+import type { Voyage, CargoPhoto, CargoTemplate } from './types'
 
 interface CargoSchema extends DBSchema {
   voyages: { key: string; value: Voyage; indexes: { 'by-user': string } }
   cargoPhotos: { key: string; value: CargoPhoto; indexes: { 'by-voyage': string } }
+  templates: { key: string; value: CargoTemplate }
 }
 
 let dbPromise: Promise<IDBPDatabase<CargoSchema>> | null = null
@@ -19,7 +20,7 @@ export function cargoAvailable(): boolean {
 function getDB(): Promise<IDBPDatabase<CargoSchema>> {
   if (!cargoAvailable()) return Promise.reject(new Error('Offline storage is not available on this device.'))
   if (!dbPromise) {
-    dbPromise = openDB<CargoSchema>('tayeng-cargo', 1, {
+    dbPromise = openDB<CargoSchema>('tayeng-cargo', 2, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('voyages')) {
           const v = db.createObjectStore('voyages', { keyPath: 'id' })
@@ -28,6 +29,10 @@ function getDB(): Promise<IDBPDatabase<CargoSchema>> {
         if (!db.objectStoreNames.contains('cargoPhotos')) {
           const p = db.createObjectStore('cargoPhotos', { keyPath: 'localId' })
           p.createIndex('by-voyage', 'voyageId')
+        }
+        // v2: cache of admin cargo templates for offline voyage creation.
+        if (!db.objectStoreNames.contains('templates')) {
+          db.createObjectStore('templates', { keyPath: 'id' })
         }
       },
     })
@@ -104,4 +109,18 @@ export async function getPhotosForVoyage(userId: string, voyageId: string): Prom
 
 export async function deletePhoto(localId: string): Promise<void> {
   await (await getDB()).delete('cargoPhotos', localId)
+}
+
+// --- Cached cargo templates (refreshed from Supabase when online) ---
+export async function cacheTemplates(templates: CargoTemplate[]): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction('templates', 'readwrite')
+  await tx.store.clear()
+  for (const t of templates) tx.store.put(t)
+  await tx.done
+}
+
+export async function getCachedTemplates(): Promise<CargoTemplate[]> {
+  const all = await (await getDB()).getAll('templates')
+  return all.sort((a, b) => a.name.localeCompare(b.name))
 }

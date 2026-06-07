@@ -40,6 +40,23 @@ export interface PeriodMeta {
 }
 
 /**
+ * A reusable Cargo Monitoring template (admin-managed, stored in Supabase and
+ * cached locally for offline voyage creation). Config only: the reading-type set
+ * and a default hold count. Voyages snapshot this config at creation.
+ */
+export interface CargoTemplate {
+  id: string
+  name: string
+  description: string | null
+  default_hold_count: number
+  reading_types: ReadingType[]
+  status: 'draft' | 'active' | 'archived'
+  created_by?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+/**
  * One voyage report. Readings are kept inline as a nested map keyed by
  * date → period → holdNumber → readingTypeId so the whole report loads/saves as a
  * single IndexedDB document. Photos live in a separate store (blobs).
@@ -47,6 +64,11 @@ export interface PeriodMeta {
 export interface Voyage {
   id: string
   userId: string
+
+  /** The cargo template this voyage was created from (null = blank). readingTypes
+   *  below is a snapshot taken at creation, so later template edits never alter it. */
+  templateId?: string | null
+  templateName?: string
 
   // --- Setup ---
   vesselName: string

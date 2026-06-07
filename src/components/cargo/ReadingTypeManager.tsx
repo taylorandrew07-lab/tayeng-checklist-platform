@@ -2,25 +2,22 @@
 
 import { useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
-import { type Voyage, type ReadingType } from '@/lib/cargo/types'
+import { type ReadingType } from '@/lib/cargo/types'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
 
 interface Props {
-  voyage: Voyage
-  onChange: (next: Voyage) => void
+  readingTypes: ReadingType[]
+  holdCount: number
+  onChange: (types: ReadingType[]) => void
 }
 
-export default function ReadingTypeManager({ voyage, onChange }: Props) {
+export default function ReadingTypeManager({ readingTypes, holdCount, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
-  const holds = holdNumbers(voyage.holdCount)
-
-  function update(types: ReadingType[]) {
-    onChange({ ...voyage, readingTypes: types })
-  }
+  const holds = holdNumbers(holdCount)
 
   function patch(id: string, p: Partial<ReadingType>) {
-    update(voyage.readingTypes.map(rt => (rt.id === id ? { ...rt, ...p } : rt)))
+    onChange(readingTypes.map(rt => (rt.id === id ? { ...rt, ...p } : rt)))
   }
 
   function addType() {
@@ -33,12 +30,12 @@ export default function ReadingTypeManager({ voyage, onChange }: Props) {
       includeInCharts: true,
       includeInPdf: true,
     }
-    update([...voyage.readingTypes, rt])
+    onChange([...readingTypes, rt])
     setExpanded(rt.id)
   }
 
   function removeType(id: string) {
-    update(voyage.readingTypes.filter(rt => rt.id !== id))
+    onChange(readingTypes.filter(rt => rt.id !== id))
   }
 
   function toggleHold(rt: ReadingType, hold: number) {
@@ -55,7 +52,7 @@ export default function ReadingTypeManager({ voyage, onChange }: Props) {
       </div>
 
       <div className="space-y-2">
-        {voyage.readingTypes.map(rt => {
+        {readingTypes.map(rt => {
           const isOpen = expanded === rt.id
           return (
             <div key={rt.id} className="card p-0 overflow-hidden">
@@ -126,7 +123,7 @@ export default function ReadingTypeManager({ voyage, onChange }: Props) {
             </div>
           )
         })}
-        {voyage.readingTypes.length === 0 && (
+        {readingTypes.length === 0 && (
           <p className="text-sm text-gray-400 text-center py-6">No reading types yet. Add one to start.</p>
         )}
       </div>
