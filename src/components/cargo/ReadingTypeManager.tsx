@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/cargo/types'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
@@ -32,6 +32,22 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
 
   function removeType(id: string) {
     onChange(readingTypes.filter(rt => rt.id !== id))
+  }
+
+  function duplicateType(rt: ReadingType) {
+    const copy: ReadingType = {
+      ...rt,
+      id: newId('rt'),
+      name: `${rt.name} (copy)`,
+      builtIn: false,
+      appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo],
+      points: rt.points.map(p => ({ ...p, id: newId('pt') })), // fresh ids so values stay independent
+    }
+    const idx = readingTypes.findIndex(t => t.id === rt.id)
+    const next = [...readingTypes]
+    next.splice(idx >= 0 ? idx + 1 : next.length, 0, copy)
+    onChange(next)
+    setExpanded(copy.id)
   }
 
   function toggleHold(rt: ReadingType, hold: number) {
@@ -67,6 +83,9 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
                     {[rt.includeInTables && 'Tables', rt.includeInCharts && 'Charts', rt.includeInPdf && 'PDF'].filter(Boolean).join(', ') || 'Hidden'}
                   </p>
                 </div>
+                <button onClick={() => duplicateType(rt)} className="text-gray-300 hover:text-brand-600" title="Duplicate">
+                  <Copy className="h-4 w-4" />
+                </button>
                 <button onClick={() => removeType(rt.id)} className="text-gray-300 hover:text-red-500" title="Remove">
                   <Trash2 className="h-4 w-4" />
                 </button>
