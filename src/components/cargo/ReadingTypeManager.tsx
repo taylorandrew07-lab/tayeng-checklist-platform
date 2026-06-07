@@ -1,7 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronUp, Copy } from 'lucide-react'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Plus, Trash2, ChevronDown, ChevronUp, Copy, GripVertical } from 'lucide-react'
 import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/cargo/types'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
@@ -15,6 +22,11 @@ interface Props {
 export default function ReadingTypeManager({ readingTypes, holdCount, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const holds = holdNumbers(holdCount)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
 
   function patch(id: string, p: Partial<ReadingType>) {
     onChange(readingTypes.map(rt => (rt.id === id ? { ...rt, ...p } : rt)))
@@ -56,97 +68,147 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
     patch(rt.id, { appliesTo: next.length === holds.length ? 'all' : next })
   }
 
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const oldIndex = readingTypes.findIndex(rt => rt.id === active.id)
+    const newIndex = readingTypes.findIndex(rt => rt.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    onChange(arrayMove(readingTypes, oldIndex, newIndex))
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">Each reading type holds one or more named points (e.g. 21 thermocouples, 9 camera zones). Recorded per hold, per period.</p>
+        <p className="text-sm text-gray-500">Each reading type holds one or more named points (e.g. 21 thermocouples, 9 camera zones). Drag the handle to reorder.</p>
         <button onClick={addType} className="btn-secondary text-sm whitespace-nowrap"><Plus className="h-4 w-4" />Add Reading Type</button>
       </div>
 
-      <div className="space-y-2">
-        {readingTypes.map(rt => {
-          const isOpen = expanded === rt.id
-          const pointSummary = rt.points.length === 1 && !rt.points[0].name ? 'single value' : `${rt.points.length} point${rt.points.length !== 1 ? 's' : ''}`
-          return (
-            <div key={rt.id} className="card p-0 overflow-hidden">
-              <div className="flex items-center gap-3 p-3">
-                <button onClick={() => setExpanded(isOpen ? null : rt.id)} className="text-gray-400 hover:text-gray-600">
-                  {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}</p>
-                  <p className="text-xs text-gray-400">
-                    {pointSummary}
-                    {' · '}
-                    {rt.appliesTo === 'all' ? 'All holds' : `Holds ${(rt.appliesTo as number[]).join(', ') || 'none'}`}
-                    {' · '}
-                    {[rt.includeInTables && 'Tables', rt.includeInCharts && 'Charts', rt.includeInPdf && 'PDF'].filter(Boolean).join(', ') || 'Hidden'}
-                  </p>
-                </div>
-                <button onClick={() => duplicateType(rt)} className="text-gray-300 hover:text-brand-600" title="Duplicate">
-                  <Copy className="h-4 w-4" />
-                </button>
-                <button onClick={() => removeType(rt.id)} className="text-gray-300 hover:text-red-500" title="Remove">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={readingTypes.map(rt => rt.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {readingTypes.map(rt => (
+              <SortableTypeCard
+                key={rt.id}
+                rt={rt}
+                holds={holds}
+                isOpen={expanded === rt.id}
+                onToggleOpen={() => setExpanded(expanded === rt.id ? null : rt.id)}
+                onPatch={patch}
+                onRemove={removeType}
+                onDuplicate={duplicateType}
+                onToggleHold={toggleHold}
+              />
+            ))}
+            {readingTypes.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">No reading types yet. Add one to start.</p>
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
+    </div>
+  )
+}
 
-              {isOpen && (
-                <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="label-base">Reading Name</label>
-                      <input className="input-base" value={rt.name} onChange={e => patch(rt.id, { name: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="label-base">Unit</label>
-                      <input className="input-base" value={rt.unit} onChange={e => patch(rt.id, { unit: e.target.value })} placeholder="°C, %, ppm…" />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="label-base">Description</label>
-                      <input className="input-base" value={rt.description ?? ''} onChange={e => patch(rt.id, { description: e.target.value })} placeholder="Optional" />
-                    </div>
-                  </div>
+interface CardProps {
+  rt: ReadingType
+  holds: number[]
+  isOpen: boolean
+  onToggleOpen: () => void
+  onPatch: (id: string, p: Partial<ReadingType>) => void
+  onRemove: (id: string) => void
+  onDuplicate: (rt: ReadingType) => void
+  onToggleHold: (rt: ReadingType, hold: number) => void
+}
 
-                  <PointsEditor rt={rt} onChange={patch} />
+function SortableTypeCard({ rt, holds, isOpen, onToggleOpen, onPatch, onRemove, onDuplicate, onToggleHold }: CardProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: rt.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const pointSummary = rt.points.length === 1 && !rt.points[0].name ? 'single value' : `${rt.points.length} point${rt.points.length !== 1 ? 's' : ''}`
 
-                  <div>
-                    <label className="label-base">Applies to holds</label>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      <button
-                        onClick={() => patch(rt.id, { appliesTo: 'all' })}
-                        className={`px-2.5 py-1 rounded text-xs font-medium border ${rt.appliesTo === 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                      >All</button>
-                      {holds.map(h => {
-                        const active = rt.appliesTo === 'all' || (rt.appliesTo as number[]).includes(h)
-                        return (
-                          <button
-                            key={h}
-                            onClick={() => toggleHold(rt, h)}
-                            className={`px-2.5 py-1 rounded text-xs font-medium border ${active && rt.appliesTo !== 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                          >{h}</button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-4">
-                    {([['includeInTables', 'Include in tables'], ['includeInCharts', 'Include in charts'], ['includeInPdf', 'Include in PDF']] as const).map(([key, label]) => (
-                      <label key={key} className="flex items-center gap-2 text-sm text-gray-700">
-                        <input type="checkbox" checked={rt[key]} onChange={e => patch(rt.id, { [key]: e.target.checked })} />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-        {readingTypes.length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-6">No reading types yet. Add one to start.</p>
-        )}
+  return (
+    <div ref={setNodeRef} style={style} className="card p-0 overflow-hidden">
+      <div className="flex items-center gap-2 p-3">
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="text-gray-300 hover:text-gray-500 cursor-grab touch-none"
+          title="Drag to reorder"
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        <button onClick={onToggleOpen} className="text-gray-400 hover:text-gray-600">
+          {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-gray-900 truncate">{rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}</p>
+          <p className="text-xs text-gray-400">
+            {pointSummary}
+            {' · '}
+            {rt.appliesTo === 'all' ? 'All holds' : `Holds ${(rt.appliesTo as number[]).join(', ') || 'none'}`}
+            {' · '}
+            {[rt.includeInTables && 'Tables', rt.includeInCharts && 'Charts', rt.includeInPdf && 'PDF'].filter(Boolean).join(', ') || 'Hidden'}
+          </p>
+        </div>
+        <button onClick={() => onDuplicate(rt)} className="text-gray-300 hover:text-brand-600" title="Duplicate">
+          <Copy className="h-4 w-4" />
+        </button>
+        <button onClick={() => onRemove(rt.id)} className="text-gray-300 hover:text-red-500" title="Remove">
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
+
+      {isOpen && (
+        <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label-base">Reading Name</label>
+              <input className="input-base" value={rt.name} onChange={e => onPatch(rt.id, { name: e.target.value })} />
+            </div>
+            <div>
+              <label className="label-base">Unit</label>
+              <input className="input-base" value={rt.unit} onChange={e => onPatch(rt.id, { unit: e.target.value })} placeholder="°C, %, ppm…" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label-base">Description</label>
+              <input className="input-base" value={rt.description ?? ''} onChange={e => onPatch(rt.id, { description: e.target.value })} placeholder="Optional" />
+            </div>
+          </div>
+
+          <PointsEditor rt={rt} onChange={onPatch} />
+
+          <div>
+            <label className="label-base">Applies to holds</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              <button
+                onClick={() => onPatch(rt.id, { appliesTo: 'all' })}
+                className={`px-2.5 py-1 rounded text-xs font-medium border ${rt.appliesTo === 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+              >All</button>
+              {holds.map(h => {
+                const active = rt.appliesTo === 'all' || (rt.appliesTo as number[]).includes(h)
+                return (
+                  <button
+                    key={h}
+                    onClick={() => onToggleHold(rt, h)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium border ${active && rt.appliesTo !== 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                  >{h}</button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
+            {([['includeInTables', 'Include in tables'], ['includeInCharts', 'Include in charts'], ['includeInPdf', 'Include in PDF']] as const).map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={rt[key]} onChange={e => onPatch(rt.id, { [key]: e.target.checked })} />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
