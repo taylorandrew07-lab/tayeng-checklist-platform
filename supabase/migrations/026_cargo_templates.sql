@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS public.cargo_templates (
                        CHECK (default_hold_count BETWEEN 1 AND 10),
   -- ReadingType[] snapshot: [{ id, name, unit, description?, appliesTo, includeInTables, includeInCharts, includeInPdf, builtIn? }]
   reading_types      JSONB NOT NULL DEFAULT '[]'::jsonb,
-  status             template_status NOT NULL DEFAULT 'active',
+  -- Plain TEXT (not the template_status enum) so this migration has no enum/search_path
+  -- dependency; the app only ever reads status as a string.
+  status             TEXT NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('draft', 'active', 'archived')),
   created_by         UUID REFERENCES public.profiles(id),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
