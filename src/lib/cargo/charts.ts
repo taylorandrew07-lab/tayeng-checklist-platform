@@ -3,7 +3,7 @@
 // coordinates. The same layout feeds both the on-screen preview (DOM SVG) and the
 // PDF (react-pdf SVG primitives), so they always match.
 
-import { type Voyage, type ReadingType, type Period, PERIODS, readingTypeAppliesToHold } from './types'
+import { type Voyage, type ReadingType, type ReadingPoint, type Period, PERIODS, readingTypeAppliesToHold, getReadingValue } from './types'
 import { monitoringDates, holdNumbers } from './periods'
 import { parseISO, format, isValid } from 'date-fns'
 
@@ -29,6 +29,7 @@ export interface ChartTimepoint { dateISO: string; period: Period }
 export interface ChartSeries { hold: number; color: string; values: (number | null)[] }
 export interface ChartModel {
   readingType: ReadingType
+  point: ReadingPoint
   timepoints: ChartTimepoint[]
   series: ChartSeries[]
   yMin: number
@@ -36,8 +37,11 @@ export interface ChartModel {
   hasData: boolean
 }
 
-/** Build one reading type's trend model (a line per hold over the timeline). */
-export function buildChartModel(voyage: Voyage, readingType: ReadingType, filter: ChartFilter = {}): ChartModel {
+/**
+ * Build one (reading type, point) trend model — a line per hold over the timeline.
+ * For single-value types pass the type's only point.
+ */
+export function buildChartModel(voyage: Voyage, readingType: ReadingType, point: ReadingPoint, filter: ChartFilter = {}): ChartModel {
   const [s, e] = filter.dateRange ?? [voyage.startDate, voyage.endDate]
   const dates = monitoringDates(s, e)
   const periods = filter.periods?.length ? filter.periods : PERIODS
@@ -53,8 +57,8 @@ export function buildChartModel(voyage: Voyage, readingType: ReadingType, filter
   let yMin = Infinity, yMax = -Infinity, hasData = false
   const series: ChartSeries[] = holds.map(hold => {
     const values = timepoints.map(tp => {
-      const raw = voyage.readings?.[tp.dateISO]?.[tp.period]?.[String(hold)]?.[readingType.id]
-      const n = raw == null || raw === '' ? NaN : parseFloat(raw)
+      const raw = getReadingValue(voyage, tp.dateISO, tp.period, hold, readingType.id, point.id)
+      const n = raw === '' ? NaN : parseFloat(raw)
       if (Number.isFinite(n)) {
         hasData = true
         if (n < yMin) yMin = n
@@ -69,7 +73,7 @@ export function buildChartModel(voyage: Voyage, readingType: ReadingType, filter
   if (!hasData) { yMin = 0; yMax = 1 }
   else if (yMin === yMax) { yMin -= 1; yMax += 1 } // pad a flat line so it isn't on the axis
 
-  return { readingType, timepoints, series, yMin, yMax, hasData }
+  return { readingType, point, timepoints, series, yMin, yMax, hasData }
 }
 
 export interface ChartLayout {

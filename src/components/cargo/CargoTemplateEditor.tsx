@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Save, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { type ReadingType, defaultReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT } from '@/lib/cargo/types'
+import { type ReadingType, defaultReadingTypes, normalizeReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT } from '@/lib/cargo/types'
 import ReadingTypeManager from '@/components/cargo/ReadingTypeManager'
 
 type Status = 'draft' | 'active' | 'archived'
@@ -41,7 +41,7 @@ export default function CargoTemplateEditor({ templateId }: Props) {
       setDescription(data.description ?? '')
       setStatus((data.status as Status) ?? 'active')
       setDefaultHoldCount(data.default_hold_count ?? DEFAULT_HOLD_COUNT)
-      setReadingTypes(Array.isArray(data.reading_types) ? data.reading_types : defaultReadingTypes())
+      setReadingTypes(Array.isArray(data.reading_types) && data.reading_types.length ? normalizeReadingTypes(data.reading_types) : defaultReadingTypes())
       setLoading(false)
     }
     load()

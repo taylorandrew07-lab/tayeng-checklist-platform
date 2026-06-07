@@ -4,7 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { cacheTemplates, getCachedTemplates } from './db'
-import { defaultReadingTypes, type CargoTemplate, type ReadingType } from './types'
+import { defaultReadingTypes, normalizeReadingTypes, type CargoTemplate, type ReadingType } from './types'
 
 function normalize(row: any): CargoTemplate {
   return {
@@ -12,7 +12,7 @@ function normalize(row: any): CargoTemplate {
     name: row.name,
     description: row.description ?? null,
     default_hold_count: row.default_hold_count ?? 5,
-    reading_types: Array.isArray(row.reading_types) ? (row.reading_types as ReadingType[]) : [],
+    reading_types: normalizeReadingTypes(Array.isArray(row.reading_types) ? (row.reading_types as ReadingType[]) : []),
     status: row.status ?? 'active',
     created_by: row.created_by ?? null,
     created_at: row.created_at,

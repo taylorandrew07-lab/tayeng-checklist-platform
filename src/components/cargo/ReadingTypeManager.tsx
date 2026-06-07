@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
-import { type ReadingType } from '@/lib/cargo/types'
+import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/cargo/types'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
 
@@ -22,13 +22,9 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
 
   function addType() {
     const rt: ReadingType = {
-      id: newId('rt'),
-      name: 'New Reading',
-      unit: '',
-      appliesTo: 'all',
-      includeInTables: true,
-      includeInCharts: true,
-      includeInPdf: true,
+      id: newId('rt'), name: 'New Reading', unit: '', appliesTo: 'all',
+      includeInTables: true, includeInCharts: true, includeInPdf: true,
+      points: [{ id: SINGLE_POINT_ID, name: '' }],
     }
     onChange([...readingTypes, rt])
     setExpanded(rt.id)
@@ -47,13 +43,14 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">Reading types are fully configurable — add gas, temperature, or client-specific readings without code changes.</p>
+        <p className="text-sm text-gray-500">Each reading type holds one or more named points (e.g. 21 thermocouples, 9 camera zones). Recorded per hold, per period.</p>
         <button onClick={addType} className="btn-secondary text-sm whitespace-nowrap"><Plus className="h-4 w-4" />Add Reading Type</button>
       </div>
 
       <div className="space-y-2">
         {readingTypes.map(rt => {
           const isOpen = expanded === rt.id
+          const pointSummary = rt.points.length === 1 && !rt.points[0].name ? 'single value' : `${rt.points.length} point${rt.points.length !== 1 ? 's' : ''}`
           return (
             <div key={rt.id} className="card p-0 overflow-hidden">
               <div className="flex items-center gap-3 p-3">
@@ -63,6 +60,8 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 truncate">{rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}</p>
                   <p className="text-xs text-gray-400">
+                    {pointSummary}
+                    {' · '}
                     {rt.appliesTo === 'all' ? 'All holds' : `Holds ${(rt.appliesTo as number[]).join(', ') || 'none'}`}
                     {' · '}
                     {[rt.includeInTables && 'Tables', rt.includeInCharts && 'Charts', rt.includeInPdf && 'PDF'].filter(Boolean).join(', ') || 'Hidden'}
@@ -89,6 +88,8 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
                       <input className="input-base" value={rt.description ?? ''} onChange={e => patch(rt.id, { description: e.target.value })} placeholder="Optional" />
                     </div>
                   </div>
+
+                  <PointsEditor rt={rt} onChange={patch} />
 
                   <div>
                     <label className="label-base">Applies to holds</label>
@@ -127,6 +128,85 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
           <p className="text-sm text-gray-400 text-center py-6">No reading types yet. Add one to start.</p>
         )}
       </div>
+    </div>
+  )
+}
+
+function PointsEditor({ rt, onChange }: { rt: ReadingType; onChange: (id: string, p: Partial<ReadingType>) => void }) {
+  const [bulkCount, setBulkCount] = useState(10)
+  const [bulkPrefix, setBulkPrefix] = useState('TC')
+
+  const single = rt.points.length === 1 && !rt.points[0].name
+
+  function setPoints(points: ReadingPoint[]) {
+    // Never allow zero points — collapse to a single unnamed value instead.
+    onChange(rt.id, { points: points.length ? points : [{ id: SINGLE_POINT_ID, name: '' }] })
+  }
+  function patchPoint(id: string, p: Partial<ReadingPoint>) {
+    setPoints(rt.points.map(pt => (pt.id === id ? { ...pt, ...p } : pt)))
+  }
+  function addOne() {
+    const named = rt.points.filter(p => p.name)
+    setPoints([...named, { id: newId('pt'), name: `${bulkPrefix} ${named.length + 1}` }])
+  }
+  function addBulk() {
+    const named = rt.points.filter(p => p.name)
+    const start = named.length
+    const extra = Array.from({ length: Math.max(1, bulkCount) }, (_, i) => ({ id: newId('pt'), name: `${bulkPrefix} ${start + i + 1}` }))
+    setPoints([...named, ...extra])
+  }
+  function makeSingleValue() {
+    setPoints([{ id: SINGLE_POINT_ID, name: '' }])
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="label-base mb-0">Points {single ? '(single value)' : `(${rt.points.length})`}</label>
+        {!single && (
+          <button onClick={makeSingleValue} className="text-xs text-gray-400 hover:text-gray-600">Make single value</button>
+        )}
+      </div>
+
+      {!single && (
+        <div className="space-y-1.5 max-h-72 overflow-y-auto">
+          {rt.points.map((pt, i) => (
+            <div key={pt.id} className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-5 text-right">{i + 1}</span>
+              <input
+                className="input-base py-1 text-sm flex-1"
+                value={pt.name}
+                onChange={e => patchPoint(pt.id, { name: e.target.value })}
+                placeholder="Point name (e.g. TC 1)"
+              />
+              <input
+                className="input-base py-1 text-sm w-24"
+                value={pt.group ?? ''}
+                onChange={e => patchPoint(pt.id, { group: e.target.value || undefined })}
+                placeholder="Group"
+              />
+              <button onClick={() => setPoints(rt.points.filter(p => p.id !== pt.id))} className="text-gray-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2 pt-1">
+        <button onClick={addOne} className="btn-secondary py-1.5 px-3 text-xs"><Plus className="h-3.5 w-3.5" />Add point</button>
+        <span className="text-gray-300">|</span>
+        <div className="flex items-end gap-1.5">
+          <div>
+            <label className="text-[11px] text-gray-500 block">Bulk add</label>
+            <input type="number" min={1} max={100} className="input-base py-1 text-sm w-16" value={bulkCount} onChange={e => setBulkCount(Number(e.target.value))} />
+          </div>
+          <div>
+            <label className="text-[11px] text-gray-500 block">named</label>
+            <input className="input-base py-1 text-sm w-20" value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} placeholder="TC" />
+          </div>
+          <button onClick={addBulk} className="btn-secondary py-1.5 px-3 text-xs">Add {Math.max(1, bulkCount)}</button>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400">Bulk add appends points named &ldquo;{bulkPrefix || 'Point'} 1, {bulkPrefix || 'Point'} 2&hellip;&rdquo;. Set a Group (e.g. BTM, LVL 1, TOP) on each point to organise tables.</p>
     </div>
   )
 }

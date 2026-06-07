@@ -2,11 +2,28 @@ import React from 'react'
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer'
 import { COMPANY } from '@/lib/company'
 import type { Voyage, ReadingType } from '../types'
-import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, type Period, type Camera } from '../types'
+import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
 import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { PERIODS } from '../types'
 import { buildChartModel } from '../charts'
 import { CargoChart } from './CargoChart'
+import { parseISO, format, isValid } from 'date-fns'
+
+/** All (date, period) timepoints across the voyage, in order. */
+function voyageTimepoints(voyage: Voyage): { dateISO: string; period: Period }[] {
+  const out: { dateISO: string; period: Period }[] = []
+  for (const d of monitoringDates(voyage.startDate, voyage.endDate)) for (const p of PERIODS) out.push({ dateISO: d, period: p })
+  return out
+}
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+function tpDateLabel(dateISO: string): string {
+  const d = parseISO(dateISO)
+  return isValid(d) ? format(d, 'dd MMM') : dateISO
+}
 
 /** A photo already compressed to a data URL, ready to embed. */
 export interface PreparedPhoto {
@@ -45,15 +62,24 @@ const styles = StyleSheet.create({
   periodHeading: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', marginTop: 8, marginBottom: 4 },
   dateHeading: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#0f172a', marginTop: 10, marginBottom: 2, borderBottomWidth: 1, borderBottomColor: '#1d4ed8', paddingBottom: 2 },
 
-  // Readings table
-  table: { marginBottom: 6 },
-  trHead: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' },
-  tr: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0' },
-  thHold: { width: 52, padding: 3, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155' },
-  th: { flex: 1, padding: 3, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155', textAlign: 'center' },
-  tdHold: { width: 52, padding: 3, fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#1e293b' },
-  td: { flex: 1, padding: 3, fontSize: 8, color: '#1e293b', textAlign: 'center' },
-  metaLine: { fontSize: 7.5, color: '#64748b', marginBottom: 3 },
+  // Readings table (per hold: rows = points, columns = timepoints)
+  holdHeading: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', marginTop: 10, marginBottom: 3 },
+  rdHeadRow: { flexDirection: 'row', backgroundColor: '#1e3a8a' },
+  rdSubHeadRow: { flexDirection: 'row', backgroundColor: '#eef2ff', borderBottomWidth: 0.5, borderBottomColor: '#cbd5e1' },
+  rdRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0' },
+  rdTypeRow: { flexDirection: 'row', backgroundColor: '#f8fafc' },
+  rdLabelCell: { width: 120, paddingVertical: 2, paddingHorizontal: 4 },
+  rdLabelText: { fontSize: 7, color: '#334155' },
+  rdGroupText: { fontSize: 6, color: '#94a3b8' },
+  rdHeadLabel: { width: 120, paddingVertical: 3, paddingHorizontal: 4, fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#ffffff' },
+  rdTpHead: { flex: 1, paddingVertical: 2, paddingHorizontal: 1, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 0.5, borderLeftColor: '#334155' },
+  rdTpHeadDate: { fontSize: 5.5, color: '#bfdbfe' },
+  rdTpHeadPeriod: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: '#ffffff' },
+  rdValueCell: { flex: 1, paddingVertical: 2, paddingHorizontal: 1, fontSize: 6.5, color: '#1e293b', textAlign: 'center', borderLeftWidth: 0.5, borderLeftColor: '#e2e8f0' },
+  rdTypeText: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.2, paddingVertical: 2, paddingHorizontal: 4 },
+  rdActualRow: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderBottomWidth: 0.5, borderBottomColor: '#cbd5e1' },
+  rdActualLabel: { width: 120, paddingVertical: 2, paddingHorizontal: 4, fontSize: 6, fontStyle: 'italic', color: '#64748b' },
+  rdActualVal: { flex: 1, paddingVertical: 2, paddingHorizontal: 1, fontSize: 6, color: '#64748b', textAlign: 'center', borderLeftWidth: 0.5, borderLeftColor: '#e2e8f0' },
 
   // Photo pages
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
@@ -139,30 +165,67 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
   )
 }
 
-function ReadingsTable({ voyage, dateISO, period, pdfTypes }: { voyage: Voyage; dateISO: string; period: Period; pdfTypes: ReadingType[] }) {
-  const holds = holdNumbers(voyage.holdCount)
-  const meta = voyage.periodMeta?.[dateISO]?.[period]
-  const cellAt = (hold: number, rtId: string) =>
-    voyage.readings?.[dateISO]?.[period]?.[String(hold)]?.[rtId] ?? ''
+/** One hold's readings as a wide table: rows = points (grouped by type), columns =
+ *  monitoring timepoints. Wide voyages are split into column slices. */
+function HoldReadings({ voyage, hold, pdfTypes }: { voyage: Voyage; hold: number; pdfTypes: ReadingType[] }) {
+  const types = pdfTypes.filter(rt => readingTypeAppliesToHold(rt, hold))
+  if (types.length === 0) return null
+  const slices = chunk(voyageTimepoints(voyage), 8)
 
   return (
-    <View style={styles.table} wrap={false}>
-      <Text style={styles.periodHeading}>{PERIOD_LABELS[period]}{meta?.actualTime ? `  (actual ${meta.actualTime} hrs)` : ''}</Text>
-      {meta?.remarks ? <Text style={styles.metaLine}>Remarks: {meta.remarks}</Text> : null}
-      <View style={styles.trHead}>
-        <Text style={styles.thHold}>Hold</Text>
-        {pdfTypes.map(rt => (
-          <Text key={rt.id} style={styles.th}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text>
-        ))}
-      </View>
-      {holds.map(h => (
-        <View key={h} style={styles.tr}>
-          <Text style={styles.tdHold}>Hold {h}</Text>
-          {pdfTypes.map(rt => (
-            <Text key={rt.id} style={styles.td}>
-              {readingTypeAppliesToHold(rt, h) ? (cellAt(h, rt.id) || '—') : '·'}
-            </Text>
-          ))}
+    <View>
+      <Text style={styles.holdHeading}>Hold {hold}</Text>
+      {slices.map((slice, si) => (
+        <View key={si} style={{ marginBottom: 8 }}>
+          {/* header (date + period) — kept with the first body rows */}
+          <View wrap={false}>
+            <View style={styles.rdHeadRow}>
+              <Text style={styles.rdHeadLabel}>Reading{slices.length > 1 ? ` (cols ${si + 1}/${slices.length})` : ''}</Text>
+              {slice.map((tp, i) => (
+                <View key={i} style={styles.rdTpHead}>
+                  <Text style={styles.rdTpHeadDate}>{tpDateLabel(tp.dateISO)}</Text>
+                  <Text style={styles.rdTpHeadPeriod}>{tp.period}</Text>
+                </View>
+              ))}
+            </View>
+            {/* actual times */}
+            <View style={styles.rdActualRow}>
+              <Text style={styles.rdActualLabel}>Actual time</Text>
+              {slice.map((tp, i) => (
+                <Text key={i} style={styles.rdActualVal}>{voyage.periodMeta?.[tp.dateISO]?.[tp.period]?.actualTime || ''}</Text>
+              ))}
+            </View>
+          </View>
+
+          {types.map(rt => {
+            const single = isSinglePoint(rt)
+            if (single) {
+              const pt = rt.points[0]
+              return (
+                <View key={rt.id} style={styles.rdRow}>
+                  <View style={styles.rdLabelCell}><Text style={styles.rdLabelText}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text></View>
+                  {slice.map((tp, i) => (
+                    <Text key={i} style={styles.rdValueCell}>{getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}</Text>
+                  ))}
+                </View>
+              )
+            }
+            return (
+              <View key={rt.id}>
+                <View style={styles.rdTypeRow}><Text style={styles.rdTypeText}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text></View>
+                {rt.points.map(pt => (
+                  <View key={pt.id} style={styles.rdRow}>
+                    <View style={styles.rdLabelCell}>
+                      <Text style={styles.rdLabelText}>{pt.name || '—'}{pt.group ? <Text style={styles.rdGroupText}>  {pt.group}</Text> : null}</Text>
+                    </View>
+                    {slice.map((tp, i) => (
+                      <Text key={i} style={styles.rdValueCell}>{getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}</Text>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            )
+          })}
         </View>
       ))}
     </View>
@@ -195,27 +258,22 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
   const hasReadings = pdfTypes.length > 0
   const hasPhotos = photos.length > 0
 
-  // Trend charts: one per reading type marked "include in charts" that has data.
+  // Trend charts: one per (reading type marked "include in charts", point) with data.
   const chartModels = (voyage.readingTypes ?? [])
     .filter(rt => rt.includeInCharts)
-    .map(rt => buildChartModel(voyage, rt))
+    .flatMap(rt => rt.points.map(pt => buildChartModel(voyage, rt, pt)))
     .filter(m => m.hasData)
 
   return (
     <Document title={`Cargo Hold Monitoring Report — ${voyage.vesselName}`} author={COMPANY.name} subject="Cargo Hold Monitoring Report">
       <CoverPage voyage={voyage} logoDataUrl={logoDataUrl} />
 
-      {/* Readings tables */}
+      {/* Readings tables — one per hold, rows = points, columns = timepoints */}
       {hasReadings && (
         <Page size="A4" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Monitoring Readings</Text></View>
-          {dates.map(dateISO => (
-            <View key={dateISO}>
-              <Text style={styles.dateHeading}>{formatVoyageDate(dateISO)}</Text>
-              {PERIODS.map(period => (
-                <ReadingsTable key={period} voyage={voyage} dateISO={dateISO} period={period} pdfTypes={pdfTypes} />
-              ))}
-            </View>
+          {holdNumbers(voyage.holdCount).map(h => (
+            <HoldReadings key={h} voyage={voyage} hold={h} pdfTypes={pdfTypes} />
           ))}
           <Footer voyage={voyage} />
         </Page>
@@ -225,9 +283,13 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
       {chartModels.length > 0 && (
         <Page size="A4" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Trend Charts</Text></View>
-          {chartModels.map(m => (
-            <View key={m.readingType.id} wrap={false} style={{ marginBottom: 12 }}>
-              <Text style={styles.periodHeading}>{m.readingType.name}{m.readingType.unit ? ` (${m.readingType.unit})` : ''}</Text>
+          {chartModels.map((m, idx) => (
+            <View key={`${m.readingType.id}-${m.point.id}-${idx}`} wrap={false} style={{ marginBottom: 12 }}>
+              <Text style={styles.periodHeading}>
+                {m.readingType.name}
+                {!isSinglePoint(m.readingType) ? ` — ${m.point.group ? `${m.point.group} · ` : ''}${m.point.name}` : ''}
+                {m.readingType.unit ? ` (${m.readingType.unit})` : ''}
+              </Text>
               <CargoChart model={m} />
             </View>
           ))}

@@ -2,26 +2,14 @@
 
 import { useMemo, useRef, useState } from 'react'
 import {
-  type Voyage, type Period, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold,
+  type Voyage, type Period, PERIODS, PERIOD_LABELS,
+  readingTypeAppliesToHold, isSinglePoint, getReadingValue, setReadingValue,
 } from '@/lib/cargo/types'
 import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 
 interface Props {
   voyage: Voyage
   onChange: (next: Voyage) => void
-}
-
-/** Immutably set one reading value in the nested readings map. */
-function setReading(v: Voyage, date: string, period: Period, hold: number, rtId: string, value: string): Voyage {
-  const readings = { ...v.readings }
-  const byDate = { ...(readings[date] ?? {}) }
-  const byPeriod = { ...(byDate[period] ?? {}) }
-  const byHold = { ...(byPeriod[String(hold)] ?? {}) }
-  byHold[rtId] = value
-  byPeriod[String(hold)] = byHold
-  byDate[period] = byPeriod
-  readings[date] = byDate
-  return { ...v, readings }
 }
 
 function setPeriodMeta(v: Voyage, date: string, period: Period, patch: { actualTime?: string; remarks?: string }): Voyage {
@@ -32,50 +20,61 @@ function setPeriodMeta(v: Voyage, date: string, period: Period, patch: { actualT
   return { ...v, periodMeta }
 }
 
+interface InputRow { rtId: string; ptId: string; label: string; group?: string; unit: string }
+
 export default function ReadingsGrid({ voyage, onChange }: Props) {
   const dates = useMemo(() => monitoringDates(voyage.startDate, voyage.endDate), [voyage.startDate, voyage.endDate])
   const holds = holdNumbers(voyage.holdCount)
-  const cols = voyage.readingTypes.filter(rt => rt.includeInTables)
 
+  const [hold, setHold] = useState(holds[0] ?? 1)
   const [date, setDate] = useState(dates[0] ?? '')
-  const [period, setPeriod] = useState<Period>('0600')
   const inputsRef = useRef<Map<string, HTMLInputElement>>(new Map())
 
-  const meta = voyage.periodMeta?.[date]?.[period] ?? {}
-  const getVal = (hold: number, rtId: string) => voyage.readings?.[date]?.[period]?.[String(hold)]?.[rtId] ?? ''
+  // Reading types shown for this hold, in order, with their points.
+  const types = voyage.readingTypes.filter(rt => rt.includeInTables && readingTypeAppliesToHold(rt, hold))
+
+  // Flat ordered list of input rows (one per point, or one per single-value type) for keyboard nav.
+  const orderedRows: InputRow[] = []
+  for (const rt of types) {
+    if (isSinglePoint(rt)) {
+      orderedRows.push({ rtId: rt.id, ptId: rt.points[0].id, label: rt.name, unit: rt.unit })
+    } else {
+      for (const pt of rt.points) orderedRows.push({ rtId: rt.id, ptId: pt.id, label: pt.name, group: pt.group, unit: rt.unit })
+    }
+  }
+  const rowIndexOf = new Map(orderedRows.map((r, i) => [`${r.rtId}:${r.ptId}`, i]))
 
   const key = (r: number, c: number) => `r${r}c${c}`
-
   function focusCell(r: number, c: number) {
     const el = inputsRef.current.get(key(r, c))
     if (el) { el.focus(); el.select() }
   }
 
   function handleKeyDown(e: React.KeyboardEvent, r: number, c: number) {
-    const maxR = holds.length - 1
-    const maxC = cols.length - 1
+    const maxR = orderedRows.length - 1
+    const maxC = PERIODS.length - 1
+    const el = e.currentTarget as HTMLInputElement
     if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); focusCell(Math.min(r + 1, maxR), c) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); focusCell(Math.max(r - 1, 0), c) }
-    else if (e.key === 'ArrowRight' && (e.currentTarget as HTMLInputElement).selectionStart === (e.currentTarget as HTMLInputElement).value.length) { e.preventDefault(); focusCell(r, Math.min(c + 1, maxC)) }
-    else if (e.key === 'ArrowLeft' && (e.currentTarget as HTMLInputElement).selectionStart === 0) { e.preventDefault(); focusCell(r, Math.max(c - 1, 0)) }
+    else if (e.key === 'ArrowRight' && el.selectionStart === el.value.length) { e.preventDefault(); focusCell(r, Math.min(c + 1, maxC)) }
+    else if (e.key === 'ArrowLeft' && el.selectionStart === 0) { e.preventDefault(); focusCell(r, Math.max(c - 1, 0)) }
   }
 
-  // Paste a tab/newline-separated block starting at (r,c).
+  // Paste a tab/newline block starting at (r,c): down a column, or a 2-D block.
   function handlePaste(e: React.ClipboardEvent, r: number, c: number) {
     const text = e.clipboardData.getData('text')
-    if (!text || (!text.includes('\t') && !text.includes('\n'))) return // single value: default behaviour
+    if (!text || (!text.includes('\t') && !text.includes('\n'))) return
     e.preventDefault()
-    const rows = text.replace(/\r/g, '').split('\n').filter((row, i, arr) => row.length > 0 || i < arr.length - 1)
+    const rows = text.replace(/\r/g, '').split('\n')
+    if (rows.length && rows[rows.length - 1] === '') rows.pop()
     let next = voyage
     rows.forEach((rowText, dr) => {
       const cells = rowText.split('\t')
       cells.forEach((cell, dc) => {
-        const rr = r + dr
-        const cc = c + dc
-        if (rr < holds.length && cc < cols.length) {
-          const hold = holds[rr]
-          const rt = cols[cc]
-          if (readingTypeAppliesToHold(rt, hold)) next = setReading(next, date, period, hold, rt.id, cell.trim())
+        const rr = r + dr, cc = c + dc
+        if (rr < orderedRows.length && cc < PERIODS.length) {
+          const row = orderedRows[rr]
+          next = setReadingValue(next, date, PERIODS[cc], hold, row.rtId, row.ptId, cell.trim())
         }
       })
     })
@@ -85,28 +84,24 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
   if (dates.length === 0) {
     return <p className="text-sm text-gray-400 py-6 text-center">Set valid monitoring start and end dates on the Setup tab to enter readings.</p>
   }
-  if (cols.length === 0) {
-    return <p className="text-sm text-gray-400 py-6 text-center">No reading types are marked &ldquo;Include in tables&rdquo;. Configure them on the Setup tab.</p>
+  if (types.length === 0) {
+    return <p className="text-sm text-gray-400 py-6 text-center">No reading types apply to this hold / are marked &ldquo;Include in tables&rdquo;. Configure them on the Setup tab.</p>
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
+          <label className="label-base">Hold</label>
+          <select className="input-base" value={hold} onChange={e => setHold(Number(e.target.value))}>
+            {holds.map(h => <option key={h} value={h}>Hold {h}</option>)}
+          </select>
+        </div>
+        <div>
           <label className="label-base">Date</label>
           <select className="input-base" value={date} onChange={e => setDate(e.target.value)}>
             {dates.map(d => <option key={d} value={d}>{formatVoyageDate(d)}</option>)}
           </select>
-        </div>
-        <div>
-          <label className="label-base">Monitoring Period</label>
-          <select className="input-base" value={period} onChange={e => setPeriod(e.target.value as Period)}>
-            {PERIODS.map(p => <option key={p} value={p}>{PERIOD_LABELS[p]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label-base">Actual Time</label>
-          <input type="time" className="input-base" value={meta.actualTime ?? ''} onChange={e => onChange(setPeriodMeta(voyage, date, period, { actualTime: e.target.value }))} />
         </div>
       </div>
 
@@ -114,53 +109,123 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-3 py-2 font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10">Hold</th>
-              {cols.map(rt => (
-                <th key={rt.id} className="px-2 py-2 font-semibold text-gray-600 text-center whitespace-nowrap min-w-[90px]">
-                  {rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}
+              <th className="text-left px-3 py-2 font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10 min-w-[150px]">Reading</th>
+              {PERIODS.map(p => (
+                <th key={p} className="px-2 py-2 font-semibold text-gray-600 text-center min-w-[90px]">{PERIOD_LABELS[p]}</th>
+              ))}
+            </tr>
+            <tr className="border-b border-gray-200 bg-white">
+              <th className="text-right px-3 py-1 text-xs font-medium text-gray-400 sticky left-0 bg-white z-10">Actual time</th>
+              {PERIODS.map(p => (
+                <th key={p} className="px-1 py-1">
+                  <input
+                    type="time"
+                    className="w-full text-center px-1 py-0.5 rounded border border-gray-200 text-xs"
+                    value={voyage.periodMeta?.[date]?.[p]?.actualTime ?? ''}
+                    onChange={e => onChange(setPeriodMeta(voyage, date, p, { actualTime: e.target.value }))}
+                  />
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {holds.map((hold, r) => (
-              <tr key={hold} className="border-b border-gray-100">
-                <td className="px-3 py-1.5 font-medium text-gray-700 sticky left-0 bg-white z-10">Hold {hold}</td>
-                {cols.map((rt, c) => {
-                  const applies = readingTypeAppliesToHold(rt, hold)
-                  return (
-                    <td key={rt.id} className="px-1 py-1">
-                      <input
-                        ref={el => { if (el) inputsRef.current.set(key(r, c), el); else inputsRef.current.delete(key(r, c)) }}
-                        disabled={!applies}
-                        value={applies ? getVal(hold, rt.id) : ''}
-                        onChange={e => onChange(setReading(voyage, date, period, hold, rt.id, e.target.value))}
-                        onKeyDown={e => handleKeyDown(e, r, c)}
-                        onPaste={e => handlePaste(e, r, c)}
-                        inputMode="decimal"
-                        className="w-full text-center px-2 py-1 rounded border border-gray-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none disabled:bg-gray-50 disabled:text-gray-300"
-                        placeholder={applies ? '' : '—'}
-                      />
+            {types.map(rt => {
+              const single = isSinglePoint(rt)
+              if (single) {
+                const r = rowIndexOf.get(`${rt.id}:${rt.points[0].id}`)!
+                return (
+                  <tr key={rt.id} className="border-b border-gray-100">
+                    <td className="px-3 py-1.5 font-medium text-gray-700 sticky left-0 bg-white z-10">
+                      {rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}
                     </td>
-                  )
-                })}
-              </tr>
-            ))}
+                    {PERIODS.map((p, c) => (
+                      <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id),
+                        onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id, val)),
+                        onKeyDown: handleKeyDown, onPaste: handlePaste }} />
+                    ))}
+                  </tr>
+                )
+              }
+              return (
+                <RowsForType key={rt.id} rt={rt}>
+                  {rt.points.map(pt => {
+                    const r = rowIndexOf.get(`${rt.id}:${pt.id}`)!
+                    return (
+                      <tr key={pt.id} className="border-b border-gray-100">
+                        <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
+                          <span className="text-gray-700">{pt.name || '—'}</span>
+                          {pt.group ? <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">{pt.group}</span> : null}
+                        </td>
+                        {PERIODS.map((p, c) => (
+                          <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, pt.id),
+                            onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, pt.id, val)),
+                            onKeyDown: handleKeyDown, onPaste: handlePaste }} />
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </RowsForType>
+              )
+            })}
           </tbody>
         </table>
       </div>
 
       <div>
         <label className="label-base">Period Remarks</label>
-        <textarea
-          className="input-base min-h-[60px]"
-          value={meta.remarks ?? ''}
-          onChange={e => onChange(setPeriodMeta(voyage, date, period, { remarks: e.target.value }))}
-          placeholder="Optional notes for this monitoring period"
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {PERIODS.map(p => (
+            <textarea
+              key={p}
+              className="input-base min-h-[52px] text-sm"
+              placeholder={`${PERIOD_LABELS[p]} notes`}
+              value={voyage.periodMeta?.[date]?.[p]?.remarks ?? ''}
+              onChange={e => onChange(setPeriodMeta(voyage, date, p, { remarks: e.target.value }))}
+            />
+          ))}
+        </div>
       </div>
 
-      <p className="text-xs text-gray-400">Tip: use arrow keys / Enter to move between cells. Paste a block copied from Excel directly into a cell.</p>
+      <p className="text-xs text-gray-400">Entering Hold {hold} · {formatVoyageDate(date)}. Arrow keys / Enter move between cells; paste a column straight from Excel.</p>
     </div>
+  )
+}
+
+/** Renders a reading-type sub-header row followed by its point rows. */
+function RowsForType({ rt, children }: { rt: { name: string; unit: string }; children: React.ReactNode }) {
+  return (
+    <>
+      <tr className="bg-gray-50/70 border-b border-gray-200">
+        <td colSpan={1 + PERIODS.length} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 sticky left-0 bg-gray-50/70">
+          {rt.name}{rt.unit ? ` (${rt.unit})` : ''}
+        </td>
+      </tr>
+      {children}
+    </>
+  )
+}
+
+function CellInput({
+  inputsRef, r, c, value, onValue, onKeyDown, onPaste,
+}: {
+  inputsRef: React.MutableRefObject<Map<string, HTMLInputElement>>
+  r: number; c: number; value: string
+  onValue: (v: string) => void
+  onKeyDown: (e: React.KeyboardEvent, r: number, c: number) => void
+  onPaste: (e: React.ClipboardEvent, r: number, c: number) => void
+}) {
+  const k = `r${r}c${c}`
+  return (
+    <td className="px-1 py-1">
+      <input
+        ref={el => { if (el) inputsRef.current.set(k, el); else inputsRef.current.delete(k) }}
+        value={value}
+        onChange={e => onValue(e.target.value)}
+        onKeyDown={e => onKeyDown(e, r, c)}
+        onPaste={e => onPaste(e, r, c)}
+        inputMode="decimal"
+        className="w-full text-center px-2 py-1 rounded border border-gray-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+      />
+    </td>
   )
 }

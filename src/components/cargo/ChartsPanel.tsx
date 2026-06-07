@@ -39,18 +39,28 @@ export default function ChartsPanel({ voyage }: Props) {
   const chartTypes = voyage.readingTypes.filter(rt => rt.includeInCharts)
 
   const [rtId, setRtId] = useState(chartTypes[0]?.id ?? '')
+  const [pointId, setPointId] = useState(chartTypes[0]?.points[0]?.id ?? '')
   const [start, setStart] = useState(dates[0] ?? '')
   const [end, setEnd] = useState(dates[dates.length - 1] ?? '')
   const [periods, setPeriods] = useState<Period[]>([...PERIODS])
   const [holdSel, setHoldSel] = useState<number[] | 'all'>('all')
 
   const readingType = chartTypes.find(rt => rt.id === rtId) ?? chartTypes[0]
+  const multiPoint = !!readingType && !(readingType.points.length === 1 && !readingType.points[0].name)
+  const point = readingType?.points.find(p => p.id === pointId) ?? readingType?.points[0]
   const applicableHolds = readingType
     ? holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(readingType, h))
     : []
 
-  const model = readingType
-    ? buildChartModel(voyage, readingType, { dateRange: [start, end], periods, holds: holdSel })
+  function selectType(id: string) {
+    setRtId(id)
+    const rt = chartTypes.find(t => t.id === id)
+    setPointId(rt?.points[0]?.id ?? '')
+    setHoldSel('all')
+  }
+
+  const model = readingType && point
+    ? buildChartModel(voyage, readingType, point, { dateRange: [start, end], periods, holds: holdSel })
     : null
 
   function togglePeriod(p: Period) {
@@ -75,10 +85,18 @@ export default function ChartsPanel({ voyage }: Props) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="label-base">Reading Type</label>
-            <select className="input-base" value={rtId} onChange={e => { setRtId(e.target.value); setHoldSel('all') }}>
+            <select className="input-base" value={rtId} onChange={e => selectType(e.target.value)}>
               {chartTypes.map(rt => <option key={rt.id} value={rt.id}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</option>)}
             </select>
           </div>
+          {multiPoint && readingType && (
+            <div>
+              <label className="label-base">Point</label>
+              <select className="input-base" value={pointId} onChange={e => setPointId(e.target.value)}>
+                {readingType.points.map(p => <option key={p.id} value={p.id}>{p.group ? `${p.group} · ` : ''}{p.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="label-base">From</label>
             <select className="input-base" value={start} onChange={e => setStart(e.target.value)}>
@@ -128,7 +146,7 @@ export default function ChartsPanel({ voyage }: Props) {
 
       <div className="card p-4">
         <h3 className="font-semibold text-gray-900 mb-2">
-          {readingType?.name}{readingType?.unit ? ` (${readingType.unit})` : ''} — trend
+          {readingType?.name}{multiPoint && point ? ` — ${point.group ? `${point.group} · ` : ''}${point.name}` : ''}{readingType?.unit ? ` (${readingType.unit})` : ''} — trend
         </h3>
         {model && model.hasData ? (
           <>

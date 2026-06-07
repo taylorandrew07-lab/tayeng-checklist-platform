@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
+import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import {
   type Voyage, type CargoTemplate,
   defaultReadingTypes, cloneReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
@@ -28,11 +29,26 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   const [endDate, setEndDate] = useState(voyage?.endDate ?? '')
   const [holdCount, setHoldCount] = useState(voyage?.holdCount ?? seedTemplate?.default_hold_count ?? DEFAULT_HOLD_COUNT)
   const [surveyorName, setSurveyorName] = useState(voyage?.surveyorName ?? '')
+  const [clientId, setClientId] = useState(voyage?.clientId ?? '')
   const [clientName, setClientName] = useState(voyage?.clientName ?? '')
   const [remarks, setRemarks] = useState(voyage?.remarks ?? '')
 
+  const [lists, setLists] = useState<PickLists>({ clients: [], surveyors: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    loadPickLists().then(l => { if (active) setLists(l) })
+    return () => { active = false }
+  }, [])
+
+  const haveClients = lists.clients.length > 0
+  const haveSurveyors = lists.surveyors.length > 0
+  // Keep the voyage's saved surveyor selectable even if it's not in the active list.
+  const surveyorOptions = haveSurveyors
+    ? Array.from(new Set([...lists.surveyors.map(s => s.name), ...(surveyorName ? [surveyorName] : [])]))
+    : []
 
   async function handleSave() {
     if (!vesselName.trim()) return setError('Vessel name is required')
@@ -62,6 +78,11 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
             updatedAt: now,
           } as Voyage
 
+      // Resolve the client: dropdown mode stores id + name snapshot; offline text mode stores name only.
+      const resolvedClientName = haveClients
+        ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
+        : clientName.trim()
+
       next.vesselName = vesselName.trim()
       next.voyageNumber = voyageNumber.trim()
       next.cargoType = cargoType.trim()
@@ -71,7 +92,8 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       next.endDate = endDate
       next.holdCount = holdCount
       next.surveyorName = surveyorName.trim()
-      next.clientName = clientName.trim() || undefined
+      next.clientId = haveClients ? (clientId || null) : null
+      next.clientName = resolvedClientName || undefined
       next.remarks = remarks.trim() || undefined
 
       await putVoyage(next)
@@ -123,11 +145,25 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
           </div>
           <div>
             <label className="label-base">Surveyor Name *</label>
-            <input className="input-base" value={surveyorName} onChange={e => setSurveyorName(e.target.value)} />
+            {haveSurveyors ? (
+              <select className="input-base" value={surveyorName} onChange={e => setSurveyorName(e.target.value)}>
+                <option value="">Select surveyor…</option>
+                {surveyorOptions.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            ) : (
+              <input className="input-base" value={surveyorName} onChange={e => setSurveyorName(e.target.value)} placeholder="Surveyor name" />
+            )}
           </div>
           <div>
-            <label className="label-base">Client Name</label>
-            <input className="input-base" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Optional" />
+            <label className="label-base">Client</label>
+            {haveClients ? (
+              <select className="input-base" value={clientId} onChange={e => setClientId(e.target.value)}>
+                <option value="">No client</option>
+                {lists.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : (
+              <input className="input-base" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name (optional)" />
+            )}
           </div>
           <div className="sm:col-span-2">
             <label className="label-base">Remarks</label>

@@ -1,7 +1,6 @@
 // Cargo Hold Monitoring — local-first data shapes stored in IndexedDB.
-// Everything here is browser-local (the slice has no Supabase tables yet); cloud
-// sync is a later phase. All records are scoped by `userId` so two staff users on
-// one device never see each other's voyages.
+// Everything here is browser-local (the slice has no Supabase voyage tables yet);
+// cloud sync is a later phase. All voyage/photo records are scoped by `userId`.
 
 /** The three nominal monitoring periods. Actual reading times may differ and are
  *  captured separately (periodMeta.actualTime + per-photo actualTime). */
@@ -16,7 +15,20 @@ export const PERIOD_LABELS: Record<Period, string> = {
 export type Camera = 'fwd' | 'aft'
 export const CAMERA_LABELS: Record<Camera, string> = { fwd: 'Forward', aft: 'Aft' }
 
-/** A configurable reading (temperature/gas/custom). New types need no code change. */
+/** Point id used for single-value reading types (gases etc.) and legacy data. */
+export const SINGLE_POINT_ID = 'main'
+
+/** One measurement channel within a reading type, recorded per hold per period.
+ *  e.g. a thermocouple "TC 7" in group "LVL 2", or an IR camera "Zone 3". */
+export interface ReadingPoint {
+  id: string
+  name: string
+  /** Optional location/grouping label, e.g. BTM / LVL 1 / LVL 2 / TOP / AMB. */
+  group?: string
+}
+
+/** A configurable reading (temperature/gas/custom). New types need no code change.
+ *  A type owns one or more named points; single-value types have one point. */
 export interface ReadingType {
   id: string
   name: string
@@ -29,14 +41,8 @@ export interface ReadingType {
   includeInPdf: boolean
   /** Default reading types are seeded; surveyors may still edit/remove them. */
   builtIn?: boolean
-}
-
-/** Per date+period operational metadata (actual time the round was walked, notes). */
-export interface PeriodMeta {
-  actualTime?: string
-  remarks?: string
-  /** Set once the surveyor has reviewed and confirmed this period's photo set. */
-  photosConfirmed?: boolean
+  /** One or more measurement channels. Always length >= 1 after normalization. */
+  points: ReadingPoint[]
 }
 
 /**
@@ -56,10 +62,18 @@ export interface CargoTemplate {
   updated_at?: string
 }
 
+/** Per date+period operational metadata (actual time the round was walked, notes). */
+export interface PeriodMeta {
+  actualTime?: string
+  remarks?: string
+  /** Set once the surveyor has reviewed and confirmed this period's photo set. */
+  photosConfirmed?: boolean
+}
+
 /**
  * One voyage report. Readings are kept inline as a nested map keyed by
- * date → period → holdNumber → readingTypeId so the whole report loads/saves as a
- * single IndexedDB document. Photos live in a separate store (blobs).
+ * date → period → holdNumber → readingTypeId → pointId so the whole report
+ * loads/saves as a single IndexedDB document. Photos live in a separate store.
  */
 export interface Voyage {
   id: string
@@ -80,6 +94,8 @@ export interface Voyage {
   endDate: string // ISO yyyy-mm-dd
   holdCount: number // 1–10
   surveyorName: string
+  /** Linked client id from the Clients list (null = none / free text). */
+  clientId?: string | null
   clientName?: string
   remarks?: string
 
@@ -87,8 +103,8 @@ export interface Voyage {
   readingTypes: ReadingType[]
 
   // --- Data ---
-  /** readings[dateISO][period][holdNumber][readingTypeId] = entered value */
-  readings: Record<string, Record<string, Record<string, Record<string, string>>>>
+  /** readings[dateISO][period][holdNumber][readingTypeId][pointId] = entered value */
+  readings: Record<string, Record<string, Record<string, Record<string, Record<string, string>>>>>
   /** periodMeta[dateISO][period] = { actualTime, remarks } */
   periodMeta: Record<string, Record<string, PeriodMeta>>
   observations?: string
@@ -121,16 +137,30 @@ export interface CargoPhoto {
 export const HOLD_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 export const DEFAULT_HOLD_COUNT = 5
 
-/** Default reading set seeded into every new voyage; fully editable afterwards. */
+/** Default reading set seeded into every new voyage/template; fully editable. */
 export function defaultReadingTypes(): ReadingType[] {
-  const base: Array<Omit<ReadingType, 'id'>> = [
-    { name: 'Thermocouple Temperature', unit: '°C', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true },
-    { name: 'Infrared Temperature', unit: '°C', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true },
-    { name: 'Oxygen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true },
-    { name: 'Carbon Monoxide', unit: 'ppm', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true },
-    { name: 'Hydrogen', unit: 'ppm', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true },
+  const single = (): ReadingPoint[] => [{ id: SINGLE_POINT_ID, name: '' }]
+  return [
+    {
+      id: 'rt_thermocouple', name: 'Thermocouple Temperature', unit: '°C', appliesTo: 'all',
+      includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
+      points: [{ id: 'tc_1', name: 'TC 1' }],
+    },
+    {
+      id: 'rt_ir_camera', name: 'Infrared Camera', unit: '°C', appliesTo: 'all',
+      includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
+      points: Array.from({ length: 9 }, (_, i) => ({ id: `zone_${i + 1}`, name: `Zone ${i + 1}` })),
+    },
+    {
+      id: 'rt_ir_gun', name: 'Infrared Gun', unit: '°C', appliesTo: 'all',
+      includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
+      points: [{ id: 'ir_fwd', name: 'Fwd' }, { id: 'ir_mid', name: 'Mid' }, { id: 'ir_aft', name: 'Aft' }],
+    },
+    { id: 'rt_oxygen', name: 'Oxygen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
+    { id: 'rt_co', name: 'Carbon Monoxide', unit: 'ppm', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
+    { id: 'rt_hydrogen', name: 'Hydrogen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
+    { id: 'rt_lel', name: 'H₂ LEL', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
   ]
-  return base.map((r, i) => ({ ...r, id: `rt_${i}_${r.name.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}` }))
 }
 
 /** Whether a reading type collects a value for a given hold. */
@@ -138,10 +168,84 @@ export function readingTypeAppliesToHold(rt: ReadingType, holdNumber: number): b
   return rt.appliesTo === 'all' || rt.appliesTo.includes(holdNumber)
 }
 
+/** True when a reading type is a single unnamed value (no per-point labels). */
+export function isSinglePoint(rt: ReadingType): boolean {
+  return rt.points.length === 1 && !rt.points[0].name
+}
+
+/** Ensure every reading type has at least one point (migrates pre-points data). */
+export function normalizeReadingTypes(types: ReadingType[] | undefined | null): ReadingType[] {
+  return (types ?? []).map(rt =>
+    rt.points && rt.points.length ? rt : { ...rt, points: [{ id: SINGLE_POINT_ID, name: '' }] }
+  )
+}
+
 /**
  * Deep-copy reading types for a voyage snapshot so it never aliases the source
- * template's array (later template edits must not mutate existing voyages).
+ * template's arrays (later template edits must not mutate existing voyages).
+ * Tolerates pre-points data by defaulting to a single value.
  */
 export function cloneReadingTypes(types: ReadingType[]): ReadingType[] {
-  return types.map(rt => ({ ...rt, appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo] }))
+  return types.map(rt => ({
+    ...rt,
+    appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo],
+    points: (rt.points && rt.points.length ? rt.points : [{ id: SINGLE_POINT_ID, name: '' }]).map(p => ({ ...p })),
+  }))
+}
+
+/** Read one value from the nested readings map. */
+export function getReadingValue(v: Voyage, date: string, period: Period, hold: number, rtId: string, ptId: string): string {
+  return v.readings?.[date]?.[period]?.[String(hold)]?.[rtId]?.[ptId] ?? ''
+}
+
+/** Immutably set one value in the nested readings map. */
+export function setReadingValue(v: Voyage, date: string, period: Period, hold: number, rtId: string, ptId: string, value: string): Voyage {
+  const readings = { ...v.readings }
+  const d = { ...(readings[date] ?? {}) }
+  const p = { ...(d[period] ?? {}) }
+  const h = { ...(p[String(hold)] ?? {}) }
+  const t = { ...(h[rtId] ?? {}) }
+  t[ptId] = value
+  h[rtId] = t
+  p[String(hold)] = h
+  d[period] = p
+  readings[date] = d
+  return { ...v, readings }
+}
+
+/**
+ * Bring older voyages forward to the points-based shape:
+ *  - every reading type gets at least one point;
+ *  - legacy readings stored as `[rtId] = string` become `[rtId][main] = string`.
+ * Returns the same object when nothing needed migrating.
+ */
+export function normalizeVoyage(v: Voyage): Voyage {
+  let changed = false
+
+  const readingTypes = v.readingTypes.map(rt => {
+    if (rt.points && rt.points.length) return rt
+    changed = true
+    return { ...rt, points: [{ id: SINGLE_POINT_ID, name: '' }] }
+  })
+
+  const readings: Voyage['readings'] = {}
+  for (const [date, byPeriod] of Object.entries(v.readings ?? {})) {
+    readings[date] = {}
+    for (const [period, byHold] of Object.entries(byPeriod ?? {})) {
+      readings[date][period] = {}
+      for (const [hold, byType] of Object.entries(byHold ?? {})) {
+        readings[date][period][hold] = {}
+        for (const [rtId, val] of Object.entries(byType ?? {})) {
+          if (typeof val === 'string') { // legacy single value
+            changed = true
+            readings[date][period][hold][rtId] = { [SINGLE_POINT_ID]: val }
+          } else {
+            readings[date][period][hold][rtId] = { ...(val as Record<string, string>) }
+          }
+        }
+      }
+    }
+  }
+
+  return changed ? { ...v, readingTypes, readings } : v
 }

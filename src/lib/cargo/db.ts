@@ -6,12 +6,20 @@
 // exposes to any staff user, for offline voyage creation.
 
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb'
-import type { Voyage, CargoPhoto, CargoTemplate } from './types'
+import { normalizeVoyage, type Voyage, type CargoPhoto, type CargoTemplate } from './types'
+
+/** Cached client/surveyor pick lists (single row, key 'lists'). */
+export interface CachedPickLists {
+  key: string
+  clients: { id: string; name: string }[]
+  surveyors: { name: string }[]
+}
 
 interface CargoSchema extends DBSchema {
   voyages: { key: string; value: Voyage; indexes: { 'by-user': string } }
   cargoPhotos: { key: string; value: CargoPhoto; indexes: { 'by-voyage': string } }
   templates: { key: string; value: CargoTemplate }
+  picklists: { key: string; value: CachedPickLists }
 }
 
 let dbPromise: Promise<IDBPDatabase<CargoSchema>> | null = null
@@ -23,7 +31,7 @@ export function cargoAvailable(): boolean {
 function getDB(): Promise<IDBPDatabase<CargoSchema>> {
   if (!cargoAvailable()) return Promise.reject(new Error('Offline storage is not available on this device.'))
   if (!dbPromise) {
-    dbPromise = openDB<CargoSchema>('tayeng-cargo', 2, {
+    dbPromise = openDB<CargoSchema>('tayeng-cargo', 3, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('voyages')) {
           const v = db.createObjectStore('voyages', { keyPath: 'id' })
@@ -36,6 +44,10 @@ function getDB(): Promise<IDBPDatabase<CargoSchema>> {
         // v2: cache of admin cargo templates for offline voyage creation.
         if (!db.objectStoreNames.contains('templates')) {
           db.createObjectStore('templates', { keyPath: 'id' })
+        }
+        // v3: cache of client/surveyor pick lists for offline voyage setup.
+        if (!db.objectStoreNames.contains('picklists')) {
+          db.createObjectStore('picklists', { keyPath: 'key' })
         }
       },
     })
@@ -77,7 +89,7 @@ export function newId(prefix: string): string {
 // --- Voyages ---
 export async function getVoyage(userId: string, id: string): Promise<Voyage | undefined> {
   const v = await (await getDB()).get('voyages', id)
-  return v && v.userId === userId ? v : undefined
+  return v && v.userId === userId ? normalizeVoyage(v) : undefined
 }
 
 export async function listVoyages(userId: string): Promise<Voyage[]> {
@@ -135,4 +147,14 @@ export async function cacheTemplates(templates: CargoTemplate[]): Promise<void> 
 export async function getCachedTemplates(): Promise<CargoTemplate[]> {
   const all = await (await getDB()).getAll('templates')
   return all.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+// --- Cached pick lists (clients + surveyor names) ---
+export async function cachePickLists(clients: { id: string; name: string }[], surveyors: { name: string }[]): Promise<void> {
+  await (await getDB()).put('picklists', { key: 'lists', clients, surveyors })
+}
+
+export async function getCachedPickLists(): Promise<{ clients: { id: string; name: string }[]; surveyors: { name: string }[] }> {
+  const row = await (await getDB()).get('picklists', 'lists')
+  return { clients: row?.clients ?? [], surveyors: row?.surveyors ?? [] }
 }
