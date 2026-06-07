@@ -17,7 +17,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt,
+  Receipt, Ship,
 } from 'lucide-react'
 
 interface NavItem {
@@ -43,6 +43,7 @@ const superAdminNav: NavItem[] = [
 const surveyorNav: NavItem[] = [
   { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
   { label: 'My Jobs', href: '/surveyor/jobs', icon: Briefcase },
+  { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
