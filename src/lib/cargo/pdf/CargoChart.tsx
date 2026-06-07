@@ -26,7 +26,7 @@ export function CargoChart({ model, width = 535, height = 180 }: { model: ChartM
         {/* one polyline per contiguous (non-gap) run, per hold */}
         {L.series.map(s => s.segments.map((seg, si) => (
           <Polyline
-            key={`${s.hold}-${si}`}
+            key={`${s.key}-${si}`}
             points={seg.map(p => `${p.x},${p.y}`).join(' ')}
             stroke={s.color}
             strokeWidth={1}
@@ -38,9 +38,9 @@ export function CargoChart({ model, width = 535, height = 180 }: { model: ChartM
       {/* legend */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 }}>
         {L.series.map(s => (
-          <View key={s.hold} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8, marginBottom: 2 }}>
+          <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8, marginBottom: 2 }}>
             <View style={{ width: 7, height: 7, backgroundColor: s.color, marginRight: 2, borderRadius: 1 }} />
-            <Text style={{ fontSize: 6, color: '#475569' }}>Hold {s.hold}</Text>
+            <Text style={{ fontSize: 6, color: '#475569' }}>{s.label}</Text>
           </View>
         ))}
       </View>

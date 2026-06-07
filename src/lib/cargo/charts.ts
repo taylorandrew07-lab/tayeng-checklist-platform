@@ -1,20 +1,27 @@
-// Chart model + layout for cargo reading trends. Pure and offline: it turns the
-// nested readings map into per-hold time series, then into concrete on-canvas
-// coordinates. The same layout feeds both the on-screen preview (DOM SVG) and the
-// PDF (react-pdf SVG primitives), so they always match.
+// Chart model + layout for cargo reading trends. Pure and offline. Turns the
+// nested readings map into time series, then into on-canvas coordinates. The same
+// layout feeds both the on-screen preview (DOM SVG) and the PDF (react-pdf SVG).
+//
+// Two ways to series-ize the same reading type:
+//  - buildHoldSeries: one line per HOLD for a single point (e.g. compare O₂ across
+//    holds). Natural for single-value gas readings.
+//  - buildPointSeries: one line per POINT for a single hold (e.g. all 21
+//    thermocouples of Hold 1 on one chart). Natural for multi-point types.
 
 import { type Voyage, type ReadingType, type ReadingPoint, type Period, PERIODS, readingTypeAppliesToHold, getReadingValue } from './types'
 import { monitoringDates, holdNumbers } from './periods'
 import { parseISO, format, isValid } from 'date-fns'
 
-// Distinct, print-safe line colours; cycled if there are >10 holds.
-export const HOLD_COLORS = [
-  '#1d4ed8', '#dc2626', '#059669', '#d97706', '#7c3aed',
-  '#0891b2', '#db2777', '#65a30d', '#475569', '#ea580c',
+// Distinct, print-safe line colours; cycled if there are more series than colours.
+export const SERIES_COLORS = [
+  '#1d4ed8', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d',
+  '#475569', '#ea580c', '#0d9488', '#9333ea', '#b91c1c', '#2563eb', '#ca8a04', '#16a34a',
 ]
-export function holdColor(hold: number): string {
-  return HOLD_COLORS[(hold - 1) % HOLD_COLORS.length]
+export function seriesColor(i: number): string {
+  return SERIES_COLORS[i % SERIES_COLORS.length]
 }
+/** Back-compat alias. */
+export const holdColor = (hold: number) => seriesColor(hold - 1)
 
 export interface ChartFilter {
   /** Specific holds, or 'all' (default = every hold the reading type applies to). */
@@ -26,10 +33,11 @@ export interface ChartFilter {
 }
 
 export interface ChartTimepoint { dateISO: string; period: Period }
-export interface ChartSeries { hold: number; color: string; values: (number | null)[] }
+export interface ChartSeries { key: string; label: string; color: string; values: (number | null)[] }
 export interface ChartModel {
   readingType: ReadingType
-  point: ReadingPoint
+  /** e.g. "Hold 1" for a points chart; undefined for a holds chart. */
+  subtitle?: string
   timepoints: ChartTimepoint[]
   series: ChartSeries[]
   yMin: number
@@ -37,43 +45,57 @@ export interface ChartModel {
   hasData: boolean
 }
 
-/**
- * Build one (reading type, point) trend model — a line per hold over the timeline.
- * For single-value types pass the type's only point.
- */
-export function buildChartModel(voyage: Voyage, readingType: ReadingType, point: ReadingPoint, filter: ChartFilter = {}): ChartModel {
+function timeline(voyage: Voyage, filter: ChartFilter): ChartTimepoint[] {
   const [s, e] = filter.dateRange ?? [voyage.startDate, voyage.endDate]
   const dates = monitoringDates(s, e)
   const periods = filter.periods?.length ? filter.periods : PERIODS
+  const out: ChartTimepoint[] = []
+  for (const d of dates) for (const p of periods) out.push({ dateISO: d, period: p })
+  return out
+}
 
-  const timepoints: ChartTimepoint[] = []
-  for (const d of dates) for (const p of periods) timepoints.push({ dateISO: d, period: p })
-
-  const applicable = holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(readingType, h))
-  const holds = filter.holds && filter.holds !== 'all'
-    ? applicable.filter(h => (filter.holds as number[]).includes(h))
-    : applicable
-
+function finish(readingType: ReadingType, subtitle: string | undefined, timepoints: ChartTimepoint[], series: ChartSeries[]): ChartModel {
   let yMin = Infinity, yMax = -Infinity, hasData = false
-  const series: ChartSeries[] = holds.map(hold => {
-    const values = timepoints.map(tp => {
-      const raw = getReadingValue(voyage, tp.dateISO, tp.period, hold, readingType.id, point.id)
-      const n = raw === '' ? NaN : parseFloat(raw)
-      if (Number.isFinite(n)) {
-        hasData = true
-        if (n < yMin) yMin = n
-        if (n > yMax) yMax = n
-        return n
-      }
-      return null
-    })
-    return { hold, color: holdColor(hold), values }
-  })
+  for (const s of series) for (const v of s.values) {
+    if (v != null) { hasData = true; if (v < yMin) yMin = v; if (v > yMax) yMax = v }
+  }
+  if (!hasData) { yMin = 0; yMax = 1 } else if (yMin === yMax) { yMin -= 1; yMax += 1 }
+  return { readingType, subtitle, timepoints, series, yMin, yMax, hasData }
+}
 
-  if (!hasData) { yMin = 0; yMax = 1 }
-  else if (yMin === yMax) { yMin -= 1; yMax += 1 } // pad a flat line so it isn't on the axis
+/** One line per hold for a single point (compare a reading across holds). */
+export function buildHoldSeries(voyage: Voyage, readingType: ReadingType, point: ReadingPoint, filter: ChartFilter = {}): ChartModel {
+  const timepoints = timeline(voyage, filter)
+  const applicable = holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(readingType, h))
+  const holds = filter.holds && filter.holds !== 'all' ? applicable.filter(h => (filter.holds as number[]).includes(h)) : applicable
 
-  return { readingType, point, timepoints, series, yMin, yMax, hasData }
+  const series: ChartSeries[] = holds.map((hold, i) => ({
+    key: `hold-${hold}`,
+    label: `Hold ${hold}`,
+    color: seriesColor(i),
+    values: timepoints.map(tp => {
+      const n = parseFloat(getReadingValue(voyage, tp.dateISO, tp.period, hold, readingType.id, point.id))
+      return Number.isFinite(n) ? n : null
+    }),
+  }))
+  return finish(readingType, undefined, timepoints, series)
+}
+
+/** One line per point for a single hold (e.g. all thermocouples of Hold 1). */
+export function buildPointSeries(voyage: Voyage, readingType: ReadingType, hold: number, pointSel: 'all' | string[], filter: ChartFilter = {}): ChartModel {
+  const timepoints = timeline(voyage, filter)
+  const points = pointSel === 'all' ? readingType.points : readingType.points.filter(p => pointSel.includes(p.id))
+
+  const series: ChartSeries[] = points.map((pt, i) => ({
+    key: pt.id,
+    label: pt.group ? `${pt.group} · ${pt.name}` : (pt.name || readingType.name),
+    color: seriesColor(i),
+    values: timepoints.map(tp => {
+      const n = parseFloat(getReadingValue(voyage, tp.dateISO, tp.period, hold, readingType.id, pt.id))
+      return Number.isFinite(n) ? n : null
+    }),
+  }))
+  return finish(readingType, `Hold ${hold}`, timepoints, series)
 }
 
 export interface ChartLayout {
@@ -83,7 +105,7 @@ export interface ChartLayout {
   baselineY: number
   yTicks: { value: number; y: number }[]
   xTicks: { label: string; x: number }[]
-  series: { hold: number; color: string; segments: { x: number; y: number }[][] }[]
+  series: { key: string; label: string; color: string; segments: { x: number; y: number }[][] }[]
 }
 
 function shortLabel(tp: ChartTimepoint): string {
@@ -126,7 +148,7 @@ export function layoutChart(model: ChartModel, width: number, height: number): C
       else cur.push({ x: xFor(i), y: yFor(v) })
     })
     if (cur.length) segments.push(cur)
-    return { hold: sr.hold, color: sr.color, segments }
+    return { key: sr.key, label: sr.label, color: sr.color, segments }
   })
 
   return { width, height, plot: { left, top, w, h }, baselineY: top + h, yTicks, xTicks, series }

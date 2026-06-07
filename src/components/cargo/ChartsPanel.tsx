@@ -2,16 +2,16 @@
 
 import { useMemo, useState } from 'react'
 import { LineChart } from 'lucide-react'
-import { type Voyage, type Period, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold } from '@/lib/cargo/types'
+import { type Voyage, type Period, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint } from '@/lib/cargo/types'
 import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
-import { buildChartModel, layoutChart, formatTick, type ChartModel } from '@/lib/cargo/charts'
+import { buildHoldSeries, buildPointSeries, layoutChart, formatTick, type ChartModel } from '@/lib/cargo/charts'
 
 interface Props {
   voyage: Voyage
   onChange: (next: Voyage) => void // unused (charts are read-only) — kept for tab uniformity
 }
 
-const W = 620, H = 240
+const W = 640, H = 260
 
 function ChartSvg({ model }: { model: ChartModel }) {
   const L = layoutChart(model, W, H)
@@ -28,7 +28,7 @@ function ChartSvg({ model }: { model: ChartModel }) {
         <text key={`x${i}`} x={t.x} y={H - 14} fontSize={8} fill="#94a3b8" textAnchor="middle">{t.label}</text>
       ))}
       {L.series.map(s => s.segments.map((seg, si) => (
-        <polyline key={`${s.hold}-${si}`} points={seg.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={s.color} strokeWidth={1.5} />
+        <polyline key={`${s.key}-${si}`} points={seg.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={s.color} strokeWidth={1.5} />
       )))}
     </svg>
   )
@@ -39,40 +39,49 @@ export default function ChartsPanel({ voyage }: Props) {
   const chartTypes = voyage.readingTypes.filter(rt => rt.includeInCharts)
 
   const [rtId, setRtId] = useState(chartTypes[0]?.id ?? '')
-  const [pointId, setPointId] = useState(chartTypes[0]?.points[0]?.id ?? '')
   const [start, setStart] = useState(dates[0] ?? '')
   const [end, setEnd] = useState(dates[dates.length - 1] ?? '')
   const [periods, setPeriods] = useState<Period[]>([...PERIODS])
-  const [holdSel, setHoldSel] = useState<number[] | 'all'>('all')
+  const [hold, setHold] = useState(1)               // selected hold for a points chart
+  const [pointSel, setPointSel] = useState<'all' | string[]>('all')
+  const [holdSel, setHoldSel] = useState<'all' | number[]>('all') // for single-value types
 
   const readingType = chartTypes.find(rt => rt.id === rtId) ?? chartTypes[0]
-  const multiPoint = !!readingType && !(readingType.points.length === 1 && !readingType.points[0].name)
-  const point = readingType?.points.find(p => p.id === pointId) ?? readingType?.points[0]
-  const applicableHolds = readingType
-    ? holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(readingType, h))
-    : []
+  const multiPoint = !!readingType && !isSinglePoint(readingType)
+  const applicableHolds = readingType ? holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(readingType, h)) : []
+  const effectiveHold = applicableHolds.includes(hold) ? hold : (applicableHolds[0] ?? 1)
 
   function selectType(id: string) {
     setRtId(id)
-    const rt = chartTypes.find(t => t.id === id)
-    setPointId(rt?.points[0]?.id ?? '')
+    setPointSel('all')
     setHoldSel('all')
+    const rt = chartTypes.find(t => t.id === id)
+    const firstHold = rt ? holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(rt, h))[0] : 1
+    setHold(firstHold ?? 1)
   }
 
-  const model = readingType && point
-    ? buildChartModel(voyage, readingType, point, { dateRange: [start, end], periods, holds: holdSel })
-    : null
+  const model = !readingType
+    ? null
+    : multiPoint
+      ? buildPointSeries(voyage, readingType, effectiveHold, pointSel, { dateRange: [start, end], periods })
+      : buildHoldSeries(voyage, readingType, readingType.points[0], { dateRange: [start, end], periods, holds: holdSel })
 
   function togglePeriod(p: Period) {
     setPeriods(prev => {
       const next = prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-      return PERIODS.filter(x => next.includes(x)) // keep canonical order
+      return PERIODS.filter(x => next.includes(x))
     })
+  }
+  function togglePoint(id: string) {
+    if (!readingType) return
+    const cur = pointSel === 'all' ? readingType.points.map(p => p.id) : [...pointSel]
+    const next = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]
+    setPointSel(next.length === readingType.points.length || next.length === 0 ? 'all' : next)
   }
   function toggleHold(h: number) {
     const cur = holdSel === 'all' ? [...applicableHolds] : [...holdSel]
     const next = cur.includes(h) ? cur.filter(x => x !== h) : [...cur, h].sort((a, b) => a - b)
-    setHoldSel(next.length === applicableHolds.length ? 'all' : next)
+    setHoldSel(next.length === applicableHolds.length || next.length === 0 ? 'all' : next)
   }
 
   if (chartTypes.length === 0) {
@@ -89,11 +98,11 @@ export default function ChartsPanel({ voyage }: Props) {
               {chartTypes.map(rt => <option key={rt.id} value={rt.id}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</option>)}
             </select>
           </div>
-          {multiPoint && readingType && (
+          {multiPoint && (
             <div>
-              <label className="label-base">Point</label>
-              <select className="input-base" value={pointId} onChange={e => setPointId(e.target.value)}>
-                {readingType.points.map(p => <option key={p.id} value={p.id}>{p.group ? `${p.group} · ` : ''}{p.name}</option>)}
+              <label className="label-base">Hold</label>
+              <select className="input-base" value={effectiveHold} onChange={e => setHold(Number(e.target.value))}>
+                {applicableHolds.map(h => <option key={h} value={h}>Hold {h}</option>)}
               </select>
             </div>
           )}
@@ -113,9 +122,7 @@ export default function ChartsPanel({ voyage }: Props) {
             <label className="label-base">Periods</label>
             <div className="flex flex-wrap gap-1.5 mt-1">
               {PERIODS.map(p => (
-                <button
-                  key={p}
-                  onClick={() => togglePeriod(p)}
+                <button key={p} onClick={() => togglePeriod(p)}
                   className={`px-2 py-1 rounded text-xs font-medium border ${periods.includes(p) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
                 >{PERIOD_LABELS[p]}</button>
               ))}
@@ -123,39 +130,56 @@ export default function ChartsPanel({ voyage }: Props) {
           </div>
         </div>
 
-        <div>
-          <label className="label-base">Holds</label>
-          <div className="flex flex-wrap gap-1.5 mt-1">
-            <button
-              onClick={() => setHoldSel('all')}
-              className={`px-2.5 py-1 rounded text-xs font-medium border ${holdSel === 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
-            >All</button>
-            {applicableHolds.map(h => {
-              const active = holdSel !== 'all' && holdSel.includes(h)
-              return (
-                <button
-                  key={h}
-                  onClick={() => toggleHold(h)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium border ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                >{h}</button>
-              )
-            })}
+        {/* Multi-point types: choose which points (All first). Single-value: choose holds. */}
+        {multiPoint ? (
+          <div>
+            <label className="label-base">Points</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              <button onClick={() => setPointSel('all')}
+                className={`px-2.5 py-1 rounded text-xs font-medium border ${pointSel === 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+              >All</button>
+              {readingType!.points.map(pt => {
+                const active = pointSel !== 'all' && pointSel.includes(pt.id)
+                return (
+                  <button key={pt.id} onClick={() => togglePoint(pt.id)} title={pt.group ? `${pt.group} · ${pt.name}` : pt.name}
+                    className={`px-2.5 py-1 rounded text-xs font-medium border ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                  >{pt.name || '—'}</button>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <label className="label-base">Holds</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              <button onClick={() => setHoldSel('all')}
+                className={`px-2.5 py-1 rounded text-xs font-medium border ${holdSel === 'all' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+              >All</button>
+              {applicableHolds.map(h => {
+                const active = holdSel !== 'all' && holdSel.includes(h)
+                return (
+                  <button key={h} onClick={() => toggleHold(h)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium border ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                  >{h}</button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card p-4">
         <h3 className="font-semibold text-gray-900 mb-2">
-          {readingType?.name}{multiPoint && point ? ` — ${point.group ? `${point.group} · ` : ''}${point.name}` : ''}{readingType?.unit ? ` (${readingType.unit})` : ''} — trend
+          {readingType?.name}{model?.subtitle ? ` — ${model.subtitle}` : ''}{readingType?.unit ? ` (${readingType.unit})` : ''}
         </h3>
         {model && model.hasData ? (
           <>
             <ChartSvg model={model} />
             <div className="flex flex-wrap gap-3 mt-2">
               {model.series.map(s => (
-                <div key={s.hold} className="flex items-center gap-1.5 text-xs text-gray-600">
+                <div key={s.key} className="flex items-center gap-1.5 text-xs text-gray-600">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-                  Hold {s.hold}
+                  {s.label}
                 </div>
               ))}
             </div>
@@ -168,7 +192,12 @@ export default function ChartsPanel({ voyage }: Props) {
         )}
       </div>
 
-      <p className="text-xs text-gray-400">All reading types marked &ldquo;Include in charts&rdquo; with data are added to the PDF automatically (whole voyage, all applicable holds).</p>
+      <p className="text-xs text-gray-400">
+        {multiPoint
+          ? 'Multi-point readings plot every point for the selected hold. Use All (default) or pick individual points.'
+          : 'Single-value readings plot one line per hold. Use All (default) or pick individual holds.'}
+        {' '}Charts in the PDF include all points/holds automatically.
+      </p>
     </div>
   )
 }

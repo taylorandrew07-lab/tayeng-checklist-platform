@@ -5,7 +5,7 @@ import type { Voyage, ReadingType } from '../types'
 import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
 import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { PERIODS } from '../types'
-import { buildChartModel } from '../charts'
+import { buildHoldSeries, buildPointSeries, type ChartModel } from '../charts'
 import { CargoChart } from './CargoChart'
 import { parseISO, format, isValid } from 'date-fns'
 
@@ -258,11 +258,21 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
   const hasReadings = pdfTypes.length > 0
   const hasPhotos = photos.length > 0
 
-  // Trend charts: one per (reading type marked "include in charts", point) with data.
-  const chartModels = (voyage.readingTypes ?? [])
-    .filter(rt => rt.includeInCharts)
-    .flatMap(rt => rt.points.map(pt => buildChartModel(voyage, rt, pt)))
-    .filter(m => m.hasData)
+  // Trend charts (only reading types marked "include in charts"):
+  //  - single-value types → one chart, a line per hold;
+  //  - multi-point types → one chart per hold, a line per point (all points).
+  const chartModels: ChartModel[] = []
+  for (const rt of (voyage.readingTypes ?? []).filter(r => r.includeInCharts)) {
+    if (isSinglePoint(rt)) {
+      const m = buildHoldSeries(voyage, rt, rt.points[0])
+      if (m.hasData) chartModels.push(m)
+    } else {
+      for (const h of holdNumbers(voyage.holdCount).filter(hh => readingTypeAppliesToHold(rt, hh))) {
+        const m = buildPointSeries(voyage, rt, h, 'all')
+        if (m.hasData) chartModels.push(m)
+      }
+    }
+  }
 
   return (
     <Document title={`Cargo Hold Monitoring Report — ${voyage.vesselName}`} author={COMPANY.name} subject="Cargo Hold Monitoring Report">
@@ -284,11 +294,9 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
         <Page size="A4" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Trend Charts</Text></View>
           {chartModels.map((m, idx) => (
-            <View key={`${m.readingType.id}-${m.point.id}-${idx}`} wrap={false} style={{ marginBottom: 12 }}>
+            <View key={`${m.readingType.id}-${idx}`} wrap={false} style={{ marginBottom: 12 }}>
               <Text style={styles.periodHeading}>
-                {m.readingType.name}
-                {!isSinglePoint(m.readingType) ? ` — ${m.point.group ? `${m.point.group} · ` : ''}${m.point.name}` : ''}
-                {m.readingType.unit ? ` (${m.readingType.unit})` : ''}
+                {m.readingType.name}{m.subtitle ? ` — ${m.subtitle}` : ''}{m.readingType.unit ? ` (${m.readingType.unit})` : ''}
               </Text>
               <CargoChart model={m} />
             </View>
