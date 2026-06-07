@@ -30,6 +30,7 @@ const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
+  { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },

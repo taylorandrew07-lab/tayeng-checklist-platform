@@ -5,6 +5,8 @@ import type { Voyage, ReadingType } from '../types'
 import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, type Period, type Camera } from '../types'
 import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { PERIODS } from '../types'
+import { buildChartModel } from '../charts'
+import { CargoChart } from './CargoChart'
 
 /** A photo already compressed to a data URL, ready to embed. */
 export interface PreparedPhoto {
@@ -193,6 +195,12 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
   const hasReadings = pdfTypes.length > 0
   const hasPhotos = photos.length > 0
 
+  // Trend charts: one per reading type marked "include in charts" that has data.
+  const chartModels = (voyage.readingTypes ?? [])
+    .filter(rt => rt.includeInCharts)
+    .map(rt => buildChartModel(voyage, rt))
+    .filter(m => m.hasData)
+
   return (
     <Document title={`Cargo Hold Monitoring Report — ${voyage.vesselName}`} author={COMPANY.name} subject="Cargo Hold Monitoring Report">
       <CoverPage voyage={voyage} logoDataUrl={logoDataUrl} />
@@ -207,6 +215,20 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
               {PERIODS.map(period => (
                 <ReadingsTable key={period} voyage={voyage} dateISO={dateISO} period={period} pdfTypes={pdfTypes} />
               ))}
+            </View>
+          ))}
+          <Footer voyage={voyage} />
+        </Page>
+      )}
+
+      {/* Trend charts */}
+      {chartModels.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Trend Charts</Text></View>
+          {chartModels.map(m => (
+            <View key={m.readingType.id} wrap={false} style={{ marginBottom: 12 }}>
+              <Text style={styles.periodHeading}>{m.readingType.name}{m.readingType.unit ? ` (${m.readingType.unit})` : ''}</Text>
+              <CargoChart model={m} />
             </View>
           ))}
           <Footer voyage={voyage} />

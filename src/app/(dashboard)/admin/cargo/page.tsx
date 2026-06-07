@@ -1,5 +1,5 @@
 import CargoListView from '@/components/cargo/CargoListView'
 
-export default function SurveyorCargoListPage() {
+export default function AdminCargoListPage() {
   return <CargoListView />
 }

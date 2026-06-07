@@ -1,5 +1,5 @@
 import VoyageWorkspace from '@/components/cargo/VoyageWorkspace'
 
-export default function SurveyorVoyageWorkspacePage() {
+export default function AdminVoyageWorkspacePage() {
   return <VoyageWorkspace />
 }

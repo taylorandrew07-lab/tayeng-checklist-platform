@@ -1,5 +1,5 @@
 import NewVoyageView from '@/components/cargo/NewVoyageView'
 
-export default function SurveyorNewVoyagePage() {
+export default function AdminNewVoyagePage() {
   return <NewVoyageView />
 }
