@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.cargo_templates (
 DROP TRIGGER IF EXISTS update_cargo_templates_updated_at ON public.cargo_templates;
 CREATE TRIGGER update_cargo_templates_updated_at
   BEFORE UPDATE ON public.cargo_templates
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 -- ------------------------------------------------------------
 -- RLS
@@ -45,11 +45,11 @@ ALTER TABLE public.cargo_templates ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admins full access to cargo_templates" ON public.cargo_templates;
 CREATE POLICY "Admins full access to cargo_templates"
   ON public.cargo_templates FOR ALL
-  USING (is_admin())
-  WITH CHECK (is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 -- Surveyors can read active templates (to start voyages; cached for offline use).
 DROP POLICY IF EXISTS "Surveyors can view active cargo_templates" ON public.cargo_templates;
 CREATE POLICY "Surveyors can view active cargo_templates"
   ON public.cargo_templates FOR SELECT
-  USING (get_my_role() = 'surveyor' AND status = 'active');
+  USING (public.get_my_role() = 'surveyor' AND status = 'active');
