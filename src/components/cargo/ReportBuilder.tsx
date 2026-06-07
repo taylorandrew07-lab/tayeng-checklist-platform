@@ -96,6 +96,12 @@ export default function ReportBuilder({ voyage, onChange }: Props) {
           </div>
         </div>
 
+        {assignedCount > 200 && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+            This report has {assignedCount} photos. Generating it compresses each one in the browser and may take a while or use a lot of memory — close other heavy tabs, and prefer Standard quality for very large voyages.
+          </div>
+        )}
+
         {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
 
         <button onClick={handleGenerate} disabled={generating} className="btn-primary w-full justify-center">

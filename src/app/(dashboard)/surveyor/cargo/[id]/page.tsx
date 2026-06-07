@@ -50,11 +50,28 @@ export default function CargoWorkspacePage() {
     load()
     return () => {
       active = false
-      // Flush any pending change on unmount so nothing is lost.
-      if (timer.current) clearTimeout(timer.current)
-      if (latest.current) void putVoyage(latest.current)
+      saveNow() // flush any pending change on unmount so nothing is lost
     }
   }, [id])
+
+  // Flush the latest pending change immediately (cancels the debounce). Safe to
+  // call repeatedly; only uses refs so it never goes stale.
+  function saveNow() {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    if (latest.current) void putVoyage(latest.current)
+  }
+
+  // Also flush when the tab is hidden or the page is being torn down — a browser
+  // kill or mobile app-switch can happen inside the debounce window otherwise.
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') saveNow() }
+    window.addEventListener('pagehide', saveNow)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', saveNow)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [])
 
   // Persist a change (debounced). State updates immediately; IndexedDB write follows.
   function update(next: Voyage) {

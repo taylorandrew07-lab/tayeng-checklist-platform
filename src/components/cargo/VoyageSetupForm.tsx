@@ -5,8 +5,8 @@ import { Loader2, Save } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import {
-  type Voyage, type CargoTemplate, type ReadingType,
-  defaultReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
+  type Voyage, type CargoTemplate,
+  defaultReadingTypes, cloneReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
 } from '@/lib/cargo/types'
 
 interface Props {
@@ -16,11 +16,6 @@ interface Props {
   seedTemplate?: CargoTemplate | null
   onSaved: (voyage: Voyage) => void
   submitLabel?: string
-}
-
-/** Deep-copy reading types so a voyage snapshot never aliases the template's array. */
-function cloneReadingTypes(types: ReadingType[]): ReadingType[] {
-  return types.map(rt => ({ ...rt, appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo] }))
 }
 
 export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitLabel }: Props) {

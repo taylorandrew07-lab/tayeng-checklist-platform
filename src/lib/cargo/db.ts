@@ -1,6 +1,9 @@
 // IndexedDB layer for the Cargo Monitoring module. Mirrors the structure of
 // src/lib/offline/db.ts but in its own database (`tayeng-cargo`) so the checklist
-// offline path is never touched. All records are scoped by `userId`.
+// offline path is never touched. Voyages and photos are scoped by `userId`. The
+// `templates` store is intentionally a GLOBAL cache of admin-published active
+// templates (not user-private data) — it just mirrors what the server already
+// exposes to any staff user, for offline voyage creation.
 
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb'
 import type { Voyage, CargoPhoto, CargoTemplate } from './types'
@@ -100,6 +103,15 @@ export async function deleteVoyage(userId: string, id: string): Promise<void> {
 // --- Photos ---
 export async function putPhoto(photo: CargoPhoto): Promise<void> {
   await (await getDB()).put('cargoPhotos', photo)
+}
+
+/** Write several photo records in a single transaction (all-or-nothing). */
+export async function putPhotos(photos: CargoPhoto[]): Promise<void> {
+  if (!photos.length) return
+  const db = await getDB()
+  const tx = db.transaction('cargoPhotos', 'readwrite')
+  for (const p of photos) tx.store.put(p)
+  await tx.done
 }
 
 export async function getPhotosForVoyage(userId: string, voyageId: string): Promise<CargoPhoto[]> {

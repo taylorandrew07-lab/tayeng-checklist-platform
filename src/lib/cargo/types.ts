@@ -137,3 +137,11 @@ export function defaultReadingTypes(): ReadingType[] {
 export function readingTypeAppliesToHold(rt: ReadingType, holdNumber: number): boolean {
   return rt.appliesTo === 'all' || rt.appliesTo.includes(holdNumber)
 }
+
+/**
+ * Deep-copy reading types for a voyage snapshot so it never aliases the source
+ * template's array (later template edits must not mutate existing voyages).
+ */
+export function cloneReadingTypes(types: ReadingType[]): ReadingType[] {
+  return types.map(rt => ({ ...rt, appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo] }))
+}

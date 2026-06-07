@@ -31,9 +31,11 @@ export default function CargoTemplatesPanel() {
   async function handleDelete(t: CargoTemplate) {
     if (!confirm(`Permanently delete "${t.name}"? Existing voyages keep their own copy of the readings; this only removes the template.`)) return
     setDeleting(t.id)
+    setError(null)
     const supabase = createClient()
-    await supabase.from('cargo_templates').delete().eq('id', t.id)
+    const { error } = await supabase.from('cargo_templates').delete().eq('id', t.id)
     setDeleting(null)
+    if (error) { setError(`Could not delete "${t.name}": ${error.message}`); return }
     load()
   }
 

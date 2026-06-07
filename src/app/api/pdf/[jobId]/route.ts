@@ -15,9 +15,15 @@ export async function GET(
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, is_active')
     .eq('id', user.id)
     .single()
+
+  // Fail closed: a deactivated account keeps a valid session but must not be able
+  // to pull full reports via the service-role render path below.
+  if (!profile || profile.is_active !== true) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const { jobId } = await params
 

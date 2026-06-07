@@ -10,7 +10,7 @@ import {
 } from '@/lib/cargo/types'
 import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { autoAssign } from '@/lib/cargo/assign'
-import { getPhotosForVoyage, putPhoto, deletePhoto, newId } from '@/lib/cargo/db'
+import { getPhotosForVoyage, putPhotos, deletePhoto, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 
 interface Props {
@@ -65,6 +65,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
   const [date, setDate] = useState(dates[0] ?? '')
   const [period, setPeriod] = useState<Period>('0600')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<CargoPhoto | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
@@ -94,16 +95,39 @@ export default function PhotoManager({ voyage, onChange }: Props) {
   const confirmed = !!voyage.periodMeta?.[date]?.[period]?.photosConfirmed
   const nextOrder = () => (photos.reduce((m, p) => Math.max(m, p.order), 0) + 1)
 
-  async function persist(updated: CargoPhoto[]) {
-    for (const p of updated) await putPhoto(p)
-    if (userId) await reload(userId)
+  // Write a batch of photo records atomically and refresh. Returns false (and
+  // surfaces the error) if the IndexedDB write fails, so callers don't proceed as
+  // if the slot state changed.
+  async function persist(updated: CargoPhoto[]): Promise<boolean> {
+    try {
+      setError(null)
+      await putPhotos(updated)
+      if (userId) await reload(userId)
+      return true
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not save photos to local storage (it may be full).')
+      return false
+    }
+  }
+
+  // Any change to the current period's photos invalidates a prior "confirmed" review.
+  function markUnconfirmed() {
+    if (voyage.periodMeta?.[date]?.[period]?.photosConfirmed) {
+      onChange(setPhotosConfirmed(voyage, date, period, false))
+    }
   }
 
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length || !userId || !date) return
+    const all = Array.from(files)
+    const images = all.filter(f => f.type.startsWith('image/'))
+    const skipped = all.length - images.length
+    if (uploadRef.current) uploadRef.current.value = ''
+    if (!images.length) { setError('Those files aren’t images — nothing was added.'); return }
+
     setBusy(true)
     try {
-      const results = await autoAssign(Array.from(files), voyage.holdCount)
+      const results = await autoAssign(images, voyage.holdCount)
       const toSave: CargoPhoto[] = []
       let order = nextOrder()
       // Track slots taken in THIS batch so two photos don't claim the same slot.
@@ -122,41 +146,49 @@ export default function PhotoManager({ voyage, onChange }: Props) {
           filename: r.file.name, blob: r.file, assigned, order: order++, createdAt: Date.now(),
         })
       }
-      await persist(toSave)
-      // Newly uploaded set needs review again.
-      onChange(setPhotosConfirmed(voyage, date, period, false))
+      const ok = await persist(toSave)
+      if (ok) {
+        markUnconfirmed() // newly uploaded set needs review again
+        if (skipped > 0) setError(`${skipped} non-image file${skipped > 1 ? 's were' : ' was'} skipped.`)
+      }
     } finally {
       setBusy(false)
-      if (uploadRef.current) uploadRef.current.value = ''
     }
   }
 
   async function handleReplace(files: FileList | null) {
     const target = replaceTarget.current
     if (!files || !files.length || !userId || !target) return
+    const file = files[0]
+    if (replaceRef.current) replaceRef.current.value = ''
+    replaceTarget.current = null
+    if (!file.type.startsWith('image/')) { setError('Please choose an image file.'); return }
+
     setBusy(true)
     try {
-      const file = files[0]
       const existing = slotPhoto(target.hold, target.camera)
-      if (existing) {
-        await persist([{ ...existing, blob: file, filename: file.name }])
-      } else {
-        await persist([{
-          localId: newId('photo'), voyageId: voyage.id, userId,
-          dateISO: date, period, holdNumber: target.hold, camera: target.camera, actualTime: null,
-          filename: file.name, blob: file, assigned: true, order: nextOrder(), createdAt: Date.now(),
-        }])
-      }
+      const ok = existing
+        ? await persist([{ ...existing, blob: file, filename: file.name }])
+        : await persist([{
+            localId: newId('photo'), voyageId: voyage.id, userId,
+            dateISO: date, period, holdNumber: target.hold, camera: target.camera, actualTime: null,
+            filename: file.name, blob: file, assigned: true, order: nextOrder(), createdAt: Date.now(),
+          }])
+      if (ok) markUnconfirmed()
     } finally {
       setBusy(false)
-      replaceTarget.current = null
-      if (replaceRef.current) replaceRef.current.value = ''
     }
   }
 
   async function handleDelete(photo: CargoPhoto) {
-    await deletePhoto(photo.localId)
-    if (userId) await reload(userId)
+    try {
+      setError(null)
+      await deletePhoto(photo.localId)
+      if (userId) await reload(userId)
+      markUnconfirmed()
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not delete the photo.')
+    }
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -168,7 +200,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
 
     if (overId === 'bin:unassigned') {
       if (!photo.assigned) return
-      await persist([{ ...photo, holdNumber: null, camera: null, assigned: false }])
+      if (await persist([{ ...photo, holdNumber: null, camera: null, assigned: false }])) markUnconfirmed()
       return
     }
     const m = overId.match(/^slot:(\d+):(fwd|aft)$/)
@@ -183,7 +215,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
       updates.push({ ...occupant, holdNumber: null, camera: null, assigned: false }) // bump current occupant out
     }
     updates.push({ ...photo, holdNumber: hold, camera, assigned: true })
-    await persist(updates)
+    if (await persist(updates)) markUnconfirmed()
   }
 
   function openReplace(hold: number, camera: Camera) {
@@ -224,6 +256,8 @@ export default function PhotoManager({ voyage, onChange }: Props) {
         Upload all photos for {PERIOD_LABELS[period]} on {formatVoyageDate(date)} at once — the app assigns them by filename
         (e.g. <code className="text-gray-700">H1_FWD.jpg</code>) and EXIF time. Drag any photo to correct its slot. Auto-assignment never replaces your review.
       </p>
+
+      {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         {/* Hold slots */}
