@@ -106,6 +106,8 @@ const styles = StyleSheet.create({
 
   footer: { position: 'absolute', bottom: 14, left: 30, right: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 0.5, borderTopColor: '#e2e8f0', paddingTop: 4 },
   footerText: { fontSize: 6.5, color: '#94a3b8' },
+  draftBanner: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#fee2e2', paddingVertical: 3, alignItems: 'center' },
+  draftText: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#991b1b', letterSpacing: 0.5 },
 })
 
 function withMvPrefix(name: string | null | undefined): string {
@@ -115,12 +117,20 @@ function withMvPrefix(name: string | null | undefined): string {
 }
 
 function Footer({ voyage }: { voyage: Voyage }) {
+  const draft = (voyage.status ?? 'in_progress') !== 'finalized'
   return (
-    <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>{COMPANY.name} — Confidential</Text>
-      <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-      <Text style={styles.footerText}>{voyage.voyageNumber || 'Voyage'}</Text>
-    </View>
+    <>
+      {draft && (
+        <View style={styles.draftBanner} fixed>
+          <Text style={styles.draftText}>PRELIMINARY — NOT FINALISED · current as of last sync</Text>
+        </View>
+      )}
+      <View style={styles.footer} fixed>
+        <Text style={styles.footerText}>{COMPANY.name} — Confidential</Text>
+        <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+        <Text style={styles.footerText}>{voyage.voyageNumber || 'Voyage'}</Text>
+      </View>
+    </>
   )
 }
 

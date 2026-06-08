@@ -7,6 +7,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
 import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
+import CargoSyncManager from '@/components/cargo/CargoSyncManager'
 import { fetchMyOfficePermissions } from '@/lib/office/permissions'
 import type { Profile } from '@/lib/types/database'
 
@@ -171,6 +172,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           offline submit) once back online, independent of the checklist editor. */}
       <ServiceWorkerRegister enabled={profile.role === 'admin' || profile.role === 'surveyor'} />
       {(profile.role === 'admin' || profile.role === 'surveyor') && <OfflineSyncManager />}
+      {(profile.role === 'admin' || profile.role === 'surveyor') && <CargoSyncManager />}
       <Sidebar
         profile={profile}
         open={sidebarOpen}

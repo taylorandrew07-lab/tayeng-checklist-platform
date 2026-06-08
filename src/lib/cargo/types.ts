@@ -15,6 +15,8 @@ export const PERIOD_LABELS: Record<Period, string> = {
 export type Camera = 'fwd' | 'aft'
 export const CAMERA_LABELS: Record<Camera, string> = { fwd: 'Forward', aft: 'Aft' }
 
+export type VoyageStatus = 'in_progress' | 'finalized'
+
 /** Point id used for single-value reading types (gases etc.) and legacy data. */
 export const SINGLE_POINT_ID = 'main'
 
@@ -115,6 +117,10 @@ export interface Voyage {
   remarks?: string
   /** Master toggle for temperature colour coding (default on). */
   showColors?: boolean
+  /** Publish state. Until 'finalized', views/PDFs are marked NOT FINALISED. */
+  status?: VoyageStatus
+  /** Epoch ms of the last successful push to Supabase (undefined = never). */
+  lastSyncedAt?: number
 
   // --- Config ---
   readingTypes: ReadingType[]
@@ -149,6 +155,9 @@ export interface CargoPhoto {
   /** Stable ordering within its slot / the unassigned bin. */
   order: number
   createdAt: number
+  /** Sync state: true once the blob is uploaded to Storage. */
+  uploaded?: boolean
+  storagePath?: string | null
 }
 
 export const HOLD_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const

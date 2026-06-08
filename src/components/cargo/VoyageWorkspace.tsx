@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart } from 'lucide-react'
+import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { getVoyage, putVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
+import { createClient } from '@/lib/supabase/client'
+import { syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import VoyageSetupForm from '@/components/cargo/VoyageSetupForm'
 import ReadingTypeManager from '@/components/cargo/ReadingTypeManager'
 import ReadingsGrid from '@/components/cargo/ReadingsGrid'
@@ -35,6 +37,7 @@ export default function VoyageWorkspace() {
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab] = useState<Tab>('setup')
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   const latest = useRef<Voyage | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -78,6 +81,21 @@ export default function VoyageWorkspace() {
     }
   }, [])
 
+  async function syncNow() {
+    saveNow()
+    setSyncing(true)
+    try {
+      const uid = await currentUserId()
+      if (uid) {
+        await syncAllCargo(createClient(), uid)
+        const fresh = await getVoyage(uid, id)
+        if (fresh) { setVoyage(fresh); latest.current = fresh }
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   // Persist a change (debounced). State updates immediately; IndexedDB write follows.
   function update(next: Voyage) {
     setVoyage(next)
@@ -113,6 +131,39 @@ export default function VoyageWorkspace() {
             {savedAt && <span className="text-green-600"> · saved</span>}
           </p>
         </div>
+      </div>
+
+      {/* Status + sync bar */}
+      <div className="card p-3 flex flex-wrap items-center gap-3">
+        {(() => {
+          const finalized = voyage.status === 'finalized'
+          const dirty = voyageDirty(voyage)
+          return (
+            <>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${finalized ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                {finalized ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+                {finalized ? 'Finalised' : 'In progress'}
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                {dirty ? <CloudOff className="h-3.5 w-3.5 text-amber-500" /> : <Cloud className="h-3.5 w-3.5 text-green-500" />}
+                {dirty ? 'Changes not yet synced' : voyage.lastSyncedAt ? 'Synced to cloud' : 'Not synced yet'}
+              </span>
+
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={syncNow} disabled={syncing} className="btn-secondary text-xs py-1.5 px-3">
+                  {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  {syncing ? 'Syncing…' : 'Sync now'}
+                </button>
+                <button
+                  onClick={() => update({ ...voyage, status: finalized ? 'in_progress' : 'finalized' })}
+                  className={finalized ? 'btn-secondary text-xs py-1.5 px-3' : 'btn-primary text-xs py-1.5 px-3'}
+                >
+                  {finalized ? 'Mark as in progress' : 'Finalise report'}
+                </button>
+              </div>
+            </>
+          )
+        })()}
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">

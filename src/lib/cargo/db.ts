@@ -101,6 +101,15 @@ export async function putVoyage(voyage: Voyage): Promise<void> {
   await (await getDB()).put('voyages', { ...voyage, updatedAt: Date.now() })
 }
 
+/** Advance a voyage's lastSyncedAt to the revision we pushed, without clobbering
+ *  edits made during the sync (re-reads the current record first). */
+export async function markVoyageSynced(userId: string, id: string, pushedUpdatedAt: number): Promise<void> {
+  const db = await getDB()
+  const cur = await db.get('voyages', id)
+  if (!cur || cur.userId !== userId) return
+  await db.put('voyages', { ...cur, lastSyncedAt: Math.max(cur.lastSyncedAt ?? 0, pushedUpdatedAt) })
+}
+
 export async function deleteVoyage(userId: string, id: string): Promise<void> {
   const db = await getDB()
   const voyage = await db.get('voyages', id)

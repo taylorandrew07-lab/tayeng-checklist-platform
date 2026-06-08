@@ -50,6 +50,7 @@ const surveyorNav: NavItem[] = [
 
 const clientNav: NavItem[] = [
   { label: 'My Jobs', href: '/client', icon: ClipboardList },
+  { label: 'Cargo Reports', href: '/client/cargo', icon: Ship },
 ]
 
 // Office nav. Dashboard + Jobs Monitor are always present; Invoicing is added
