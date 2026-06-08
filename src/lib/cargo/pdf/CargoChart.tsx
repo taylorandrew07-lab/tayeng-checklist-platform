@@ -1,5 +1,5 @@
 import React from 'react'
-import { Svg, Line, Polyline, Text as SvgText, View, Text } from '@react-pdf/renderer'
+import { Svg, Line, Polyline, Circle, Text as SvgText, View, Text } from '@react-pdf/renderer'
 import { layoutChart, formatTick, type ChartModel } from '../charts'
 
 /** A single trend chart rendered with react-pdf SVG primitives (vector, offline). */
@@ -23,7 +23,7 @@ export function CargoChart({ model, width = 552, height = 180 }: { model: ChartM
           <SvgText key={`x${i}`} x={t.x} y={height - 16} style={{ fontSize: 6 }} fill="#94a3b8" textAnchor="middle">{t.label}</SvgText>
         ))}
 
-        {/* one polyline per contiguous (non-gap) run, per hold */}
+        {/* one polyline per contiguous (non-gap) run */}
         {L.series.map(s => s.segments.map((seg, si) => (
           <Polyline
             key={`${s.key}-${si}`}
@@ -32,6 +32,10 @@ export function CargoChart({ model, width = 552, height = 180 }: { model: ChartM
             strokeWidth={1}
             fill="none"
           />
+        )))}
+        {/* a dot at every reading so single/isolated values are always visible */}
+        {L.series.map(s => s.segments.flat().map((p, i) => (
+          <Circle key={`${s.key}-d${i}`} cx={p.x} cy={p.y} r={1.6} fill={s.color} />
         )))}
       </Svg>
 
