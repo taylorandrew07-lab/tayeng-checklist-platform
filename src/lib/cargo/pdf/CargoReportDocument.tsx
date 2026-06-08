@@ -35,10 +35,20 @@ export interface PreparedPhoto {
   actualTime: string | null
 }
 
+/** Which sections to include — drives the report-type options. Cover is always in. */
+export interface ReportInclude {
+  readings: boolean
+  charts: boolean
+  photos: boolean
+  observations: boolean
+}
+export const FULL_REPORT: ReportInclude = { readings: true, charts: true, photos: true, observations: true }
+
 export interface CargoReportData {
   voyage: Voyage
   logoDataUrl: string | null
   photos: PreparedPhoto[]
+  include?: ReportInclude
 }
 
 const styles = StyleSheet.create({
@@ -82,12 +92,10 @@ const styles = StyleSheet.create({
   rdActualVal: { flex: 1, paddingVertical: 2, paddingHorizontal: 1, fontSize: 6, color: '#64748b', textAlign: 'center', borderLeftWidth: 0.5, borderLeftColor: '#e2e8f0' },
 
   // Photo pages
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  photoCell: { width: '48.5%', marginBottom: 8 },
-  photoImg: { width: '100%', height: 150, objectFit: 'contain', backgroundColor: '#f8fafc', borderWidth: 0.5, borderColor: '#e2e8f0' },
+  photoRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  photoCell: { width: '49%' },
+  photoImg: { width: '100%', objectFit: 'contain', backgroundColor: '#f8fafc', borderWidth: 0.5, borderColor: '#e2e8f0' },
   photoLabel: { fontSize: 7.5, color: '#334155', marginTop: 2, textAlign: 'center' },
-  photoMissing: { width: '100%', height: 150, backgroundColor: '#f8fafc', borderWidth: 0.5, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
-  photoMissingText: { fontSize: 8, color: '#94a3b8' },
 
   smallHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', paddingBottom: 3 },
   smallHeaderText: { fontSize: 8, color: '#64748b' },
@@ -232,44 +240,86 @@ function HoldReadings({ voyage, hold, pdfTypes }: { voyage: Voyage; hold: number
   )
 }
 
-function PhotoCell({ photo, holdNumber, camera }: { photo: PreparedPhoto | undefined; holdNumber: number; camera: Camera }) {
-  const label = `Hold ${holdNumber} – ${CAMERA_LABELS[camera]}${photo?.actualTime ? ` – Actual Time ${photo.actualTime} hrs` : ''}`
+function PhotoCell({ photo, imgH }: { photo: PreparedPhoto; imgH: number }) {
+  const label = `Hold ${photo.holdNumber} – ${CAMERA_LABELS[photo.camera]}${photo.actualTime ? ` – Actual Time ${photo.actualTime} hrs` : ''}`
   return (
     <View style={styles.photoCell} wrap={false}>
-      {photo ? (
-        // eslint-disable-next-line jsx-a11y/alt-text
-        <Image src={photo.dataUrl} style={styles.photoImg} />
-      ) : (
-        <View style={styles.photoMissing}><Text style={styles.photoMissingText}>No photo</Text></View>
-      )}
+      {/* eslint-disable-next-line jsx-a11y/alt-text */}
+      <Image src={photo.dataUrl} style={[styles.photoImg, { height: imgH }]} />
       <Text style={styles.photoLabel}>{label}</Text>
     </View>
   )
 }
 
-export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReportData) {
-  const dates = monitoringDates(voyage.startDate, voyage.endDate)
+/** A single photo page: only the photos that exist, packed 2/row and sized to fit. */
+function PhotoPage({ voyage, dateISO, period, holdRange, photos }: {
+  voyage: Voyage; dateISO: string; period: Period; holdRange?: string; photos: PreparedPhoto[]
+}) {
+  const rows = chunk(photos, 2)
+  // Usable height below the small header; size rows so they always fit on one A4
+  // page (cap so a 1–2 photo page isn't absurdly large). Conservative so a 5-hold
+  // period (10 photos = 5 rows) never spills onto a second page.
+  const AVAIL = 660
+  const rowH = Math.min(232, Math.floor(AVAIL / rows.length))
+  const imgH = rowH - 16
+  return (
+    <Page size="A4" style={styles.page}>
+      <SmallHeader voyage={voyage} dateISO={dateISO} period={period} holdRange={holdRange} />
+      {rows.map((row, ri) => (
+        <View key={ri} style={[styles.photoRow, { marginBottom: 6 }]} wrap={false}>
+          {row.map(p => <PhotoCell key={`${p.holdNumber}-${p.camera}`} photo={p} imgH={imgH} />)}
+        </View>
+      ))}
+      <Footer voyage={voyage} />
+    </Page>
+  )
+}
+
+export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: CargoReportData) {
+  const inc = include ?? FULL_REPORT
   const pdfTypes = (voyage.readingTypes ?? []).filter(rt => rt.includeInPdf)
   const pages = holdsToPages(voyage.holdCount)
 
-  const photoAt = (dateISO: string, period: Period, hold: number, camera: Camera) =>
-    photos.find(p => p.dateISO === dateISO && p.period === period && p.holdNumber === hold && p.camera === camera)
+  const cmp = (a: PreparedPhoto, b: PreparedPhoto) =>
+    a.holdNumber - b.holdNumber || (a.camera === b.camera ? 0 : a.camera === 'fwd' ? -1 : 1)
 
-  const hasReadings = pdfTypes.length > 0
-  const hasPhotos = photos.length > 0
+  // Photo pages: only photos that ACTUALLY exist. Skip missing slots and any
+  // (date, period, hold-group) that has no photos — never render blank spots.
+  const photoPages: { dateISO: string; period: Period; holdRange?: string; photos: PreparedPhoto[] }[] = []
+  if (inc.photos) {
+    for (const dateISO of monitoringDates(voyage.startDate, voyage.endDate)) {
+      for (const period of PERIODS) {
+        const here = photos.filter(p => p.dateISO === dateISO && p.period === period)
+        if (!here.length) continue
+        for (const group of pages) {
+          const grp = here.filter(p => group.includes(p.holdNumber)).sort(cmp)
+          if (!grp.length) continue
+          photoPages.push({
+            dateISO, period,
+            holdRange: pages.length > 1 ? `Holds ${group[0]}–${group[group.length - 1]}` : undefined,
+            photos: grp,
+          })
+        }
+      }
+    }
+  }
+
+  const hasReadings = inc.readings && pdfTypes.length > 0
 
   // Trend charts (only reading types marked "include in charts"):
   //  - single-value types → one chart, a line per hold;
   //  - multi-point types → one chart per hold, a line per point (all points).
   const chartModels: ChartModel[] = []
-  for (const rt of (voyage.readingTypes ?? []).filter(r => r.includeInCharts)) {
-    if (isSinglePoint(rt)) {
-      const m = buildHoldSeries(voyage, rt, rt.points[0])
-      if (m.hasData) chartModels.push(m)
-    } else {
-      for (const h of holdNumbers(voyage.holdCount).filter(hh => readingTypeAppliesToHold(rt, hh))) {
-        const m = buildPointSeries(voyage, rt, h, 'all')
+  if (inc.charts) {
+    for (const rt of (voyage.readingTypes ?? []).filter(r => r.includeInCharts)) {
+      if (isSinglePoint(rt)) {
+        const m = buildHoldSeries(voyage, rt, rt.points[0])
         if (m.hasData) chartModels.push(m)
+      } else {
+        for (const h of holdNumbers(voyage.holdCount).filter(hh => readingTypeAppliesToHold(rt, hh))) {
+          const m = buildPointSeries(voyage, rt, h, 'all')
+          if (m.hasData) chartModels.push(m)
+        }
       }
     }
   }
@@ -305,29 +355,13 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos }: CargoReport
         </Page>
       )}
 
-      {/* Photo pages: one page per date+period (1–6 holds) or split for 7–10 holds */}
-      {hasPhotos && dates.flatMap(dateISO =>
-        PERIODS.flatMap(period =>
-          pages.map((holdsOnPage, pageIdx) => {
-            const range = pages.length > 1 ? `Holds ${holdsOnPage[0]}–${holdsOnPage[holdsOnPage.length - 1]}` : undefined
-            return (
-              <Page key={`${dateISO}-${period}-${pageIdx}`} size="A4" style={styles.page}>
-                <SmallHeader voyage={voyage} dateISO={dateISO} period={period} holdRange={range} />
-                <View style={styles.photoGrid}>
-                  {holdsOnPage.flatMap(hold => ([
-                    <PhotoCell key={`${hold}-fwd`} photo={photoAt(dateISO, period, hold, 'fwd')} holdNumber={hold} camera="fwd" />,
-                    <PhotoCell key={`${hold}-aft`} photo={photoAt(dateISO, period, hold, 'aft')} holdNumber={hold} camera="aft" />,
-                  ]))}
-                </View>
-                <Footer voyage={voyage} />
-              </Page>
-            )
-          })
-        )
-      )}
+      {/* Photo pages — existing photos only, sized to fit (10 per page for 5 holds) */}
+      {photoPages.map((pp, i) => (
+        <PhotoPage key={i} voyage={voyage} dateISO={pp.dateISO} period={pp.period} holdRange={pp.holdRange} photos={pp.photos} />
+      ))}
 
       {/* Observations / Remarks */}
-      {(voyage.observations || voyage.remarks) && (
+      {inc.observations && (voyage.observations || voyage.remarks) && (
         <Page size="A4" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Observations &amp; Remarks</Text></View>
           {voyage.observations ? (

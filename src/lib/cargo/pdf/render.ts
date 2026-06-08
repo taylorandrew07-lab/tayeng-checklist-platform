@@ -6,7 +6,7 @@
 import React from 'react'
 import type { Voyage, CargoPhoto, Camera, Period } from '../types'
 import { compressForPdf, type Quality } from '../photo'
-import { CargoReportDocument, type PreparedPhoto } from './CargoReportDocument'
+import { CargoReportDocument, FULL_REPORT, type PreparedPhoto, type ReportInclude } from './CargoReportDocument'
 
 async function loadLogoDataUrl(): Promise<string | null> {
   try {
@@ -26,6 +26,8 @@ async function loadLogoDataUrl(): Promise<string | null> {
 
 export interface GenerateOptions {
   quality: Quality
+  /** Which sections to include (defaults to the full report). */
+  include?: ReportInclude
   /** Optional progress callback: (done, total) compressed photos. */
   onProgress?: (done: number, total: number) => void
 }
@@ -36,28 +38,32 @@ export async function generateCargoReport(
   photos: CargoPhoto[],
   opts: GenerateOptions
 ): Promise<Blob> {
-  const assigned = photos.filter(p => p.assigned && p.holdNumber != null && p.camera != null)
+  const include = opts.include ?? FULL_REPORT
 
+  // Only compress photos when the report actually includes them.
   const prepared: PreparedPhoto[] = []
-  for (let i = 0; i < assigned.length; i++) {
-    const p = assigned[i]
-    const { dataUrl } = await compressForPdf(p.blob, opts.quality)
-    prepared.push({
-      dataUrl,
-      dateISO: p.dateISO,
-      period: p.period as Period,
-      holdNumber: p.holdNumber as number,
-      camera: p.camera as Camera,
-      actualTime: p.actualTime,
-    })
-    opts.onProgress?.(i + 1, assigned.length)
+  if (include.photos) {
+    const assigned = photos.filter(p => p.assigned && p.holdNumber != null && p.camera != null)
+    for (let i = 0; i < assigned.length; i++) {
+      const p = assigned[i]
+      const { dataUrl } = await compressForPdf(p.blob, opts.quality)
+      prepared.push({
+        dataUrl,
+        dateISO: p.dateISO,
+        period: p.period as Period,
+        holdNumber: p.holdNumber as number,
+        camera: p.camera as Camera,
+        actualTime: p.actualTime,
+      })
+      opts.onProgress?.(i + 1, assigned.length)
+    }
   }
 
   const logoDataUrl = await loadLogoDataUrl()
 
   // Dynamic import keeps @react-pdf/renderer out of the SSR bundle.
   const { pdf } = await import('@react-pdf/renderer')
-  const element = React.createElement(CargoReportDocument, { voyage, logoDataUrl, photos: prepared })
+  const element = React.createElement(CargoReportDocument, { voyage, logoDataUrl, photos: prepared, include })
   return await pdf(element as unknown as Parameters<typeof pdf>[0]).toBlob()
 }
 
