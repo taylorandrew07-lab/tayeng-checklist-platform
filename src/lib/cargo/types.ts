@@ -154,29 +154,37 @@ export interface CargoPhoto {
 export const HOLD_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 export const DEFAULT_HOLD_COUNT = 5
 
-/** Default reading set seeded into every new voyage/template; fully editable. */
+/** Default reading set seeded into every new voyage/template; fully editable.
+ *  Temperature/gas colour rules reflect DRI defaults (all directions: higher = worse). */
 export function defaultReadingTypes(): ReadingType[] {
   const single = (): ReadingPoint[] => [{ id: SINGLE_POINT_ID, name: '' }]
+  const temp: ColorRules = { amber: 60, red: 65, rateDeltaC: 10, gradient: true }
   return [
     {
       id: 'rt_thermocouple', name: 'Thermocouple Temperature', unit: '°C', appliesTo: 'all',
       includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
-      points: [{ id: 'tc_1', name: 'TC 1' }],
+      points: [{ id: 'tc_1', name: 'TC 1' }], colorRules: { ...temp },
     },
     {
       id: 'rt_ir_camera', name: 'Infrared Camera', unit: '°C', appliesTo: 'all',
       includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
-      points: Array.from({ length: 9 }, (_, i) => ({ id: `zone_${i + 1}`, name: `Zone ${i + 1}` })),
+      points: Array.from({ length: 9 }, (_, i) => ({ id: `zone_${i + 1}`, name: `Zone ${i + 1}` })), colorRules: { ...temp },
     },
     {
       id: 'rt_ir_gun', name: 'Infrared Gun', unit: '°C', appliesTo: 'all',
       includeInTables: true, includeInCharts: false, includeInPdf: true, builtIn: true,
-      points: [{ id: 'ir_fwd', name: 'Fwd' }, { id: 'ir_mid', name: 'Mid' }, { id: 'ir_aft', name: 'Aft' }],
+      points: [{ id: 'ir_fwd', name: 'Fwd' }, { id: 'ir_mid', name: 'Mid' }, { id: 'ir_aft', name: 'Aft' }], colorRules: { ...temp },
     },
-    { id: 'rt_oxygen', name: 'Oxygen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
+    {
+      id: 'rt_oxygen', name: 'Oxygen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true,
+      points: single(), colorRules: { amber: 4, red: 5, rateDeltaC: 2, gradient: true },
+    },
     { id: 'rt_co', name: 'Carbon Monoxide', unit: 'ppm', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
     { id: 'rt_hydrogen', name: 'Hydrogen', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
-    { id: 'rt_lel', name: 'H₂ LEL', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true, points: single() },
+    {
+      id: 'rt_lel', name: 'H₂ LEL', unit: '%', appliesTo: 'all', includeInTables: true, includeInCharts: true, includeInPdf: true, builtIn: true,
+      points: single(), colorRules: { amber: 20, red: 25, rateDeltaC: 5, gradient: true },
+    },
   ]
 }
 
