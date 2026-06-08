@@ -6,6 +6,7 @@ import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, 
 import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { PERIODS } from '../types'
 import { buildHoldSeries, buildPointSeries, type ChartModel } from '../charts'
+import { readingCellColor } from '../colors'
 import { CargoChart } from './CargoChart'
 import { parseISO, format, isValid } from 'date-fns'
 
@@ -212,9 +213,14 @@ function HoldReadings({ voyage, hold, pdfTypes }: { voyage: Voyage; hold: number
               return (
                 <View key={rt.id} style={styles.rdRow}>
                   <View style={styles.rdLabelCell}><Text style={styles.rdLabelText}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text></View>
-                  {slice.map((tp, i) => (
-                    <Text key={i} style={styles.rdValueCell}>{getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}</Text>
-                  ))}
+                  {slice.map((tp, i) => {
+                    const col = readingCellColor(voyage, rt, hold, tp.dateISO, tp.period, pt.id)
+                    return (
+                      <Text key={i} style={[styles.rdValueCell, col ? { backgroundColor: col.bg, color: col.fg } : {}]}>
+                        {getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}
+                      </Text>
+                    )
+                  })}
                 </View>
               )
             }
@@ -226,9 +232,14 @@ function HoldReadings({ voyage, hold, pdfTypes }: { voyage: Voyage; hold: number
                     <View style={styles.rdLabelCell}>
                       <Text style={styles.rdLabelText}>{pt.name || '—'}{pt.group ? <Text style={styles.rdGroupText}>  {pt.group}</Text> : null}</Text>
                     </View>
-                    {slice.map((tp, i) => (
-                      <Text key={i} style={styles.rdValueCell}>{getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}</Text>
-                    ))}
+                    {slice.map((tp, i) => {
+                      const col = readingCellColor(voyage, rt, hold, tp.dateISO, tp.period, pt.id)
+                      return (
+                        <Text key={i} style={[styles.rdValueCell, col ? { backgroundColor: col.bg, color: col.fg } : {}]}>
+                          {getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}
+                        </Text>
+                      )
+                    })}
                   </View>
                 ))}
               </View>

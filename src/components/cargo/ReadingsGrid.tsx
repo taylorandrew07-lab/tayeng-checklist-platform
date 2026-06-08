@@ -5,7 +5,9 @@ import {
   type Voyage, type Period, PERIODS, PERIOD_LABELS,
   readingTypeAppliesToHold, isSinglePoint, getReadingValue, setReadingValue,
 } from '@/lib/cargo/types'
+import { readingCellColor, type CellColor } from '@/lib/cargo/colors'
 import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { Palette } from 'lucide-react'
 
 interface Props {
   voyage: Voyage
@@ -29,6 +31,9 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
   const [hold, setHold] = useState(holds[0] ?? 1)
   const [date, setDate] = useState(dates[0] ?? '')
   const inputsRef = useRef<Map<string, HTMLInputElement>>(new Map())
+
+  const colorsOn = voyage.showColors !== false
+  const hasColorRules = voyage.readingTypes.some(rt => rt.colorRules)
 
   // Reading types shown for this hold, in order, with their points.
   const types = voyage.readingTypes.filter(rt => rt.includeInTables && readingTypeAppliesToHold(rt, hold))
@@ -103,6 +108,15 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
             {dates.map(d => <option key={d} value={d}>{formatVoyageDate(d)}</option>)}
           </select>
         </div>
+        {hasColorRules && (
+          <button
+            onClick={() => onChange({ ...voyage, showColors: !colorsOn })}
+            className={`btn-secondary ${colorsOn ? 'text-brand-700 border-brand-300' : 'text-gray-500'}`}
+            title="Toggle temperature colour coding"
+          >
+            <Palette className="h-4 w-4" />Colours: {colorsOn ? 'On' : 'Off'}
+          </button>
+        )}
       </div>
 
       <div className="card p-0 overflow-x-auto">
@@ -140,6 +154,7 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
                     </td>
                     {PERIODS.map((p, c) => (
                       <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id),
+                        color: readingCellColor(voyage, rt, hold, date, p, rt.points[0].id),
                         onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id, val)),
                         onKeyDown: handleKeyDown, onPaste: handlePaste }} />
                     ))}
@@ -158,6 +173,7 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
                         </td>
                         {PERIODS.map((p, c) => (
                           <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, pt.id),
+                            color: readingCellColor(voyage, rt, hold, date, p, pt.id),
                             onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, pt.id, val)),
                             onKeyDown: handleKeyDown, onPaste: handlePaste }} />
                         ))}
@@ -206,10 +222,11 @@ function RowsForType({ rt, children }: { rt: { name: string; unit: string }; chi
 }
 
 function CellInput({
-  inputsRef, r, c, value, onValue, onKeyDown, onPaste,
+  inputsRef, r, c, value, color, onValue, onKeyDown, onPaste,
 }: {
   inputsRef: React.MutableRefObject<Map<string, HTMLInputElement>>
   r: number; c: number; value: string
+  color?: CellColor | null
   onValue: (v: string) => void
   onKeyDown: (e: React.KeyboardEvent, r: number, c: number) => void
   onPaste: (e: React.ClipboardEvent, r: number, c: number) => void
@@ -224,6 +241,7 @@ function CellInput({
         onKeyDown={e => onKeyDown(e, r, c)}
         onPaste={e => onPaste(e, r, c)}
         inputMode="decimal"
+        style={color ? { backgroundColor: color.bg, color: color.fg, borderColor: color.bg } : undefined}
         className="w-full text-center px-2 py-1 rounded border border-gray-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
       />
     </td>

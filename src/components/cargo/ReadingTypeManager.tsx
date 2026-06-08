@@ -10,6 +10,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, Trash2, ChevronDown, ChevronUp, Copy, GripVertical } from 'lucide-react'
 import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/cargo/types'
+import { defaultColorRules } from '@/lib/cargo/colors'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
 
@@ -207,7 +208,55 @@ function SortableTypeCard({ rt, holds, isOpen, onToggleOpen, onPatch, onRemove, 
               </label>
             ))}
           </div>
+
+          <ColorRulesEditor rt={rt} onPatch={onPatch} />
         </div>
+      )}
+    </div>
+  )
+}
+
+function ColorRulesEditor({ rt, onPatch }: { rt: ReadingType; onPatch: (id: string, p: Partial<ReadingType>) => void }) {
+  const r = rt.colorRules
+  const num = (v: string, fallback: number) => { const n = parseFloat(v); return Number.isFinite(n) ? n : fallback }
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+      <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+        <input
+          type="checkbox"
+          checked={!!r}
+          onChange={e => onPatch(rt.id, { colorRules: e.target.checked ? defaultColorRules() : undefined })}
+        />
+        Colour-code values by temperature rules
+      </label>
+
+      {r && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="text-[11px] text-gray-500 block">Amber at ≥ (°)</label>
+              <input type="number" className="input-base py-1 text-sm" value={r.amber}
+                onChange={e => onPatch(rt.id, { colorRules: { ...r, amber: num(e.target.value, r.amber) } })} />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-500 block">Red at ≥ (°)</label>
+              <input type="number" className="input-base py-1 text-sm" value={r.red}
+                onChange={e => onPatch(rt.id, { colorRules: { ...r, red: num(e.target.value, r.red) } })} />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-500 block">Daily rise → amber (°/24h)</label>
+              <input type="number" className="input-base py-1 text-sm" value={r.rateDeltaC ?? 0}
+                onChange={e => onPatch(rt.id, { colorRules: { ...r, rateDeltaC: num(e.target.value, 0) || undefined } })} />
+            </div>
+            <label className="flex items-end gap-2 text-sm text-gray-700 pb-1">
+              <input type="checkbox" checked={!!r.gradient} onChange={e => onPatch(rt.id, { colorRules: { ...r, gradient: e.target.checked } })} />
+              Gradient
+            </label>
+          </div>
+          <p className="text-[11px] text-gray-400">
+            Solid amber at ≥{r.amber}°, solid red at ≥{r.red}°. A rise of ≥{r.rateDeltaC ?? '—'}° vs the same period the day before turns the cell amber. Gradient blends green→amber for smaller daily rises.
+          </p>
+        </>
       )}
     </div>
   )

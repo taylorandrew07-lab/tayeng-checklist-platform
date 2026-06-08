@@ -27,6 +27,19 @@ export interface ReadingPoint {
   group?: string
 }
 
+/** Threshold rules that colour a reading value green/amber/red. Presence on a
+ *  reading type enables colouring for it; the voyage-level toggle can hide it. */
+export interface ColorRules {
+  /** value ≥ amber → at least amber (solid). e.g. 60 */
+  amber: number
+  /** value ≥ red → red (solid). e.g. 65 */
+  red: number
+  /** A rise ≥ this vs the same period 24 h earlier → amber. e.g. 10 */
+  rateDeltaC?: number
+  /** Blend green→amber for sub-threshold daily rises (absolute bands stay solid). */
+  gradient?: boolean
+}
+
 /** A configurable reading (temperature/gas/custom). New types need no code change.
  *  A type owns one or more named points; single-value types have one point. */
 export interface ReadingType {
@@ -43,6 +56,8 @@ export interface ReadingType {
   builtIn?: boolean
   /** One or more measurement channels. Always length >= 1 after normalization. */
   points: ReadingPoint[]
+  /** When set, values are colour-coded by these thresholds (e.g. temperatures). */
+  colorRules?: ColorRules
 }
 
 /**
@@ -98,6 +113,8 @@ export interface Voyage {
   clientId?: string | null
   clientName?: string
   remarks?: string
+  /** Master toggle for temperature colour coding (default on). */
+  showColors?: boolean
 
   // --- Config ---
   readingTypes: ReadingType[]
@@ -190,6 +207,7 @@ export function cloneReadingTypes(types: ReadingType[]): ReadingType[] {
     ...rt,
     appliesTo: rt.appliesTo === 'all' ? 'all' : [...rt.appliesTo],
     points: (rt.points && rt.points.length ? rt.points : [{ id: SINGLE_POINT_ID, name: '' }]).map(p => ({ ...p })),
+    colorRules: rt.colorRules ? { ...rt.colorRules } : undefined,
   }))
 }
 
