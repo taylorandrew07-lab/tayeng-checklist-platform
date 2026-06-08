@@ -322,7 +322,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
       author={COMPANY.name}
       subject="Survey Checklist Report"
     >
-      <Page size="A4" style={styles.page}>
+      <Page size="LETTER" style={styles.page}>
 
         {/* Report title only — no company block */}
         <View style={styles.reportTitleBlock}>

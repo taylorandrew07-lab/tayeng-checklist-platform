@@ -3,7 +3,7 @@ import { Svg, Line, Polyline, Text as SvgText, View, Text } from '@react-pdf/ren
 import { layoutChart, formatTick, type ChartModel } from '../charts'
 
 /** A single trend chart rendered with react-pdf SVG primitives (vector, offline). */
-export function CargoChart({ model, width = 535, height = 180 }: { model: ChartModel; width?: number; height?: number }) {
+export function CargoChart({ model, width = 552, height = 180 }: { model: ChartModel; width?: number; height?: number }) {
   const L = layoutChart(model, width, height)
 
   return (

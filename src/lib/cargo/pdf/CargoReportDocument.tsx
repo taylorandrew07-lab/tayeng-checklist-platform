@@ -149,7 +149,7 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
   if (voyage.clientName) rows.push(['Client', voyage.clientName])
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="LETTER" style={styles.page}>
       <View style={styles.coverWrap}>
         {/* eslint-disable-next-line jsx-a11y/alt-text */}
         {logoDataUrl ? <Image src={logoDataUrl} style={styles.coverLogo} /> : null}
@@ -256,14 +256,14 @@ function PhotoPage({ voyage, dateISO, period, holdRange, photos }: {
   voyage: Voyage; dateISO: string; period: Period; holdRange?: string; photos: PreparedPhoto[]
 }) {
   const rows = chunk(photos, 2)
-  // Usable height below the small header; size rows so they always fit on one A4
-  // page (cap so a 1–2 photo page isn't absurdly large). Conservative so a 5-hold
-  // period (10 photos = 5 rows) never spills onto a second page.
-  const AVAIL = 660
+  // Usable height below the small header; size rows so they always fit on one US
+  // Letter page (cap so a 1–2 photo page isn't absurdly large). Conservative so a
+  // 5-hold period (10 photos = 5 rows) never spills onto a second page.
+  const AVAIL = 640
   const rowH = Math.min(232, Math.floor(AVAIL / rows.length))
   const imgH = rowH - 16
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="LETTER" style={styles.page}>
       <SmallHeader voyage={voyage} dateISO={dateISO} period={period} holdRange={holdRange} />
       {rows.map((row, ri) => (
         <View key={ri} style={[styles.photoRow, { marginBottom: 6 }]} wrap={false}>
@@ -330,7 +330,7 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: Ca
 
       {/* Readings tables — one per hold, rows = points, columns = timepoints */}
       {hasReadings && (
-        <Page size="A4" style={styles.page}>
+        <Page size="LETTER" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Monitoring Readings</Text></View>
           {holdNumbers(voyage.holdCount).map(h => (
             <HoldReadings key={h} voyage={voyage} hold={h} pdfTypes={pdfTypes} />
@@ -341,7 +341,7 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: Ca
 
       {/* Trend charts */}
       {chartModels.length > 0 && (
-        <Page size="A4" style={styles.page}>
+        <Page size="LETTER" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Trend Charts</Text></View>
           {chartModels.map((m, idx) => (
             <View key={`${m.readingType.id}-${idx}`} wrap={false} style={{ marginBottom: 12 }}>
@@ -362,7 +362,7 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: Ca
 
       {/* Observations / Remarks */}
       {inc.observations && (voyage.observations || voyage.remarks) && (
-        <Page size="A4" style={styles.page}>
+        <Page size="LETTER" style={styles.page}>
           <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Observations &amp; Remarks</Text></View>
           {voyage.observations ? (
             <>
