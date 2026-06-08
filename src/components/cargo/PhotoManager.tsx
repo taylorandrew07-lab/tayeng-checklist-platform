@@ -168,7 +168,8 @@ export default function PhotoManager({ voyage, onChange }: Props) {
     try {
       const existing = slotPhoto(target.hold, target.camera)
       const ok = existing
-        ? await persist([{ ...existing, blob: file, filename: file.name }])
+        // Clear sync flags so the replacement re-uploads (else the cloud keeps the old image).
+        ? await persist([{ ...existing, blob: file, filename: file.name, uploaded: false, storagePath: null }])
         : await persist([{
             localId: newId('photo'), voyageId: voyage.id, userId,
             dateISO: date, period, holdNumber: target.hold, camera: target.camera, actualTime: null,

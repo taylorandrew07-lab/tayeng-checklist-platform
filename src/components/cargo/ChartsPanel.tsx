@@ -109,6 +109,7 @@ export default function ChartsPanel({ voyage }: Props) {
   function togglePeriod(p: Period) {
     setPeriods(prev => {
       const next = prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+      if (next.length === 0) return prev // keep at least one period selected
       return PERIODS.filter(x => next.includes(x))
     })
   }

@@ -16,37 +16,8 @@ export async function pushVoyage(supabase: SupabaseClient, voyage: Voyage, photo
   const rev = voyage.updatedAt ?? 0
   const assigned = photos.filter(p => p.assigned && p.holdNumber != null && p.camera != null)
 
-  // 1. Upload blobs that aren't in Storage yet.
-  for (const p of assigned) {
-    if (p.uploaded && p.storagePath) continue
-    const path = `${voyage.id}/${p.localId}.jpg`
-    const { error } = await supabase.storage.from('cargo-photos')
-      .upload(path, p.blob, { contentType: p.blob.type || 'image/jpeg', upsert: true })
-    if (error) throw error
-    p.storagePath = path
-    p.uploaded = true
-    await putPhoto(p)
-  }
-
-  // 2. Upsert photo metadata rows.
-  const rows = assigned.map(p => ({
-    id: p.localId, voyage_id: voyage.id, owner_id: voyage.userId, storage_path: p.storagePath,
-    date_iso: p.dateISO, period: p.period, hold_number: p.holdNumber, camera: p.camera,
-    actual_time: p.actualTime, filename: p.filename, ordinal: p.order,
-  }))
-  if (rows.length) {
-    const { error } = await supabase.from('cargo_voyage_photos').upsert(rows)
-    if (error) throw error
-  }
-
-  // 3. Remove server rows for photos deleted/unassigned locally.
-  const ids = assigned.map(p => p.localId)
-  let del = supabase.from('cargo_voyage_photos').delete().eq('voyage_id', voyage.id)
-  if (ids.length) del = del.not('id', 'in', `(${ids.map(i => `"${i}"`).join(',')})`)
-  const { error: delErr } = await del
-  if (delErr) throw delErr
-
-  // 4. Upsert the voyage document.
+  // 1. Upsert the voyage document FIRST — it's the FK target for photo rows and
+  //    the row the storage RLS checks (ownership) when photos upload.
   const { error: vErr } = await supabase.from('cargo_voyages').upsert({
     id: voyage.id,
     owner_id: voyage.userId,
@@ -58,7 +29,48 @@ export async function pushVoyage(supabase: SupabaseClient, voyage: Voyage, photo
   })
   if (vErr) throw vErr
 
+  // 2. Upload blobs that aren't in Storage yet.
+  for (const p of assigned) {
+    if (p.uploaded && p.storagePath) continue
+    const path = `${voyage.id}/${p.localId}.jpg`
+    const { error } = await supabase.storage.from('cargo-photos')
+      .upload(path, p.blob, { contentType: p.blob.type || 'image/jpeg', upsert: true })
+    if (error) throw error
+    p.storagePath = path
+    p.uploaded = true
+    await putPhoto(p)
+  }
+
+  // 3. Upsert photo metadata rows.
+  const rows = assigned.map(p => ({
+    id: p.localId, voyage_id: voyage.id, owner_id: voyage.userId, storage_path: p.storagePath,
+    date_iso: p.dateISO, period: p.period, hold_number: p.holdNumber, camera: p.camera,
+    actual_time: p.actualTime, filename: p.filename, ordinal: p.order,
+  }))
+  if (rows.length) {
+    const { error } = await supabase.from('cargo_voyage_photos').upsert(rows)
+    if (error) throw error
+  }
+
+  // 4. Remove server rows for photos deleted/unassigned locally.
+  const ids = assigned.map(p => p.localId)
+  let del = supabase.from('cargo_voyage_photos').delete().eq('voyage_id', voyage.id)
+  if (ids.length) del = del.not('id', 'in', `(${ids.map(i => `"${i}"`).join(',')})`)
+  const { error: delErr } = await del
+  if (delErr) throw delErr
+
   await markVoyageSynced(voyage.userId, voyage.id, rev)
+}
+
+/** Remove a voyage from the cloud (storage blobs + row, which cascades photo
+ *  rows). Used when a synced voyage is deleted so clients lose access. Throws if
+ *  the row delete fails (e.g. offline) so callers can keep the local copy. */
+export async function deleteRemoteVoyage(supabase: SupabaseClient, id: string): Promise<void> {
+  const { data: prows } = await supabase.from('cargo_voyage_photos').select('storage_path').eq('voyage_id', id)
+  const paths = (prows ?? []).map((r: { storage_path: string }) => r.storage_path).filter(Boolean)
+  if (paths.length) await supabase.storage.from('cargo-photos').remove(paths).catch(() => { /* row delete still revokes access */ })
+  const { error } = await supabase.from('cargo_voyages').delete().eq('id', id)
+  if (error) throw error
 }
 
 export interface CargoSyncResult { pushed: number; failed: number }
