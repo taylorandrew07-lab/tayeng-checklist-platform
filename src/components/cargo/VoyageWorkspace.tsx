@@ -8,7 +8,7 @@ import { type Voyage } from '@/lib/cargo/types'
 import { getVoyage, putVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { createClient } from '@/lib/supabase/client'
-import { syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
+import { syncVoyage, voyageDirty } from '@/lib/cargo/sync'
 import VoyageSetupForm from '@/components/cargo/VoyageSetupForm'
 import ReadingTypeManager from '@/components/cargo/ReadingTypeManager'
 import ReadingsGrid from '@/components/cargo/ReadingsGrid'
@@ -38,6 +38,7 @@ export default function VoyageWorkspace() {
   const [tab, setTab] = useState<Tab>('setup')
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const latest = useRef<Voyage | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -84,13 +85,34 @@ export default function VoyageWorkspace() {
   async function syncNow() {
     saveNow()
     setSyncing(true)
+    setSyncMsg(null)
     try {
       const uid = await currentUserId()
-      if (uid) {
-        await syncAllCargo(createClient(), uid)
-        const fresh = await getVoyage(uid, id)
-        if (fresh) { setVoyage(fresh); latest.current = fresh }
-      }
+      if (!uid) throw new Error('You appear to be signed out.')
+      await syncVoyage(createClient(), uid, id)
+      const fresh = await getVoyage(uid, id)
+      if (fresh) { setVoyage(fresh); latest.current = fresh }
+      setSyncMsg({ ok: true, text: 'Synced to cloud.' })
+    } catch (err: any) {
+      setSyncMsg({ ok: false, text: err?.message ?? 'Sync failed — try again when online.' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function toggleFinalise() {
+    if (!voyage) return
+    const next = { ...voyage, status: (voyage.status === 'finalized' ? 'in_progress' : 'finalized') as Voyage['status'] }
+    update(next)
+    // Push immediately so the client sees the new state without waiting for bg sync.
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const uid = await currentUserId()
+      if (uid) { saveNow(); await syncVoyage(createClient(), uid, id); const fresh = await getVoyage(uid, id); if (fresh) { setVoyage(fresh); latest.current = fresh } }
+      setSyncMsg({ ok: true, text: next.status === 'finalized' ? 'Finalised and synced.' : 'Reopened and synced.' })
+    } catch (err: any) {
+      setSyncMsg({ ok: false, text: 'Saved locally, but cloud sync failed — use Sync now when online.' })
     } finally {
       setSyncing(false)
     }
@@ -155,7 +177,8 @@ export default function VoyageWorkspace() {
                   {syncing ? 'Syncing…' : 'Sync now'}
                 </button>
                 <button
-                  onClick={() => update({ ...voyage, status: finalized ? 'in_progress' : 'finalized' })}
+                  onClick={toggleFinalise}
+                  disabled={syncing}
                   className={finalized ? 'btn-secondary text-xs py-1.5 px-3' : 'btn-primary text-xs py-1.5 px-3'}
                 >
                   {finalized ? 'Mark as in progress' : 'Finalise report'}
@@ -164,6 +187,9 @@ export default function VoyageWorkspace() {
             </>
           )
         })()}
+        {syncMsg && (
+          <p className={`w-full text-xs ${syncMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{syncMsg.text}</p>
+        )}
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">

@@ -3,7 +3,7 @@
 // Runs whenever the staff user is online. Idempotent and retry-safe.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { listVoyages, getPhotosForVoyage, putPhoto, markVoyageSynced } from './db'
+import { listVoyages, getVoyage, getPhotosForVoyage, putPhoto, markVoyageSynced } from './db'
 import type { Voyage, CargoPhoto } from './types'
 
 export function voyageDirty(v: Voyage): boolean {
@@ -71,6 +71,16 @@ export async function deleteRemoteVoyage(supabase: SupabaseClient, id: string): 
   if (paths.length) await supabase.storage.from('cargo-photos').remove(paths).catch(() => { /* row delete still revokes access */ })
   const { error } = await supabase.from('cargo_voyages').delete().eq('id', id)
   if (error) throw error
+}
+
+/** Push a single voyage and throw on failure — used for explicit "Sync now" so
+ *  the surveyor sees the real error instead of a silent background retry. */
+export async function syncVoyage(supabase: SupabaseClient, userId: string, id: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('You are offline — connect to the internet to sync.')
+  const voyage = await getVoyage(userId, id)
+  if (!voyage) return
+  const photos = await getPhotosForVoyage(userId, id)
+  await pushVoyage(supabase, voyage, photos)
 }
 
 export interface CargoSyncResult { pushed: number; failed: number }

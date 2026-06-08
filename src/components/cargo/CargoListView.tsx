@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Plus, Ship, Trash2, Loader2, ChevronRight } from 'lucide-react'
+import { Plus, Ship, Trash2, Loader2, ChevronRight, RefreshCw, Cloud, CloudOff } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { listVoyages, deleteVoyage, requestPersistentStorage, cargoAvailable } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageDate } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
-import { deleteRemoteVoyage } from '@/lib/cargo/sync'
+import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 
 /** Cargo voyage list. Works under both /surveyor/cargo and /admin/cargo. */
 export default function CargoListView() {
@@ -20,6 +20,10 @@ export default function CargoListView() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  const pendingCount = voyages.filter(voyageDirty).length
 
   useEffect(() => {
     let active = true
@@ -35,6 +39,19 @@ export default function CargoListView() {
     load()
     return () => { active = false }
   }, [])
+
+  async function handleSyncAll() {
+    if (!userId) return
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const r = await syncAllCargo(createClient(), userId)
+      setVoyages(await listVoyages(userId))
+      setSyncMsg(r.failed > 0 ? `Synced ${r.pushed}; ${r.failed} failed (try again when online).` : r.pushed > 0 ? `Synced ${r.pushed} voyage${r.pushed !== 1 ? 's' : ''}.` : 'Everything is already up to date.')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   async function handleDelete(v: Voyage) {
     if (!userId) return
@@ -69,8 +86,15 @@ export default function CargoListView() {
           <h1 className="page-title">Cargo Monitoring</h1>
           <p className="text-gray-500 mt-0.5">Offline cargo hold monitoring voyages stored on this device.</p>
         </div>
-        <Link href={`${base}/new`} className="btn-primary"><Plus className="h-4 w-4" />New Voyage</Link>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSyncAll} disabled={syncing || voyages.length === 0} className="btn-secondary">
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Sync all{pendingCount > 0 ? ` (${pendingCount})` : ''}
+          </button>
+          <Link href={`${base}/new`} className="btn-primary"><Plus className="h-4 w-4" />New Voyage</Link>
+        </div>
       </div>
+      {syncMsg && <p className="text-xs text-gray-500 -mt-3">{syncMsg}</p>}
 
       {loading ? (
         <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
@@ -94,7 +118,11 @@ export default function CargoListView() {
                     {v.cargoType || 'Cargo'} · {v.holdCount} holds · {formatVoyageDate(v.startDate)} – {formatVoyageDate(v.endDate)}
                   </p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-gray-300 ml-auto flex-shrink-0" />
+                <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${voyageDirty(v) ? 'bg-amber-100 text-amber-700' : v.lastSyncedAt ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {voyageDirty(v) ? <CloudOff className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
+                  {voyageDirty(v) ? 'Pending' : v.lastSyncedAt ? 'Synced' : 'Local'}
+                </span>
+                <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
               </Link>
               <button onClick={() => handleDelete(v)} disabled={deleting === v.id} className="p-4 text-gray-300 hover:text-red-500">
                 {deleting === v.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
