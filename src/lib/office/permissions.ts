@@ -15,6 +15,7 @@ export const OFFICE_PERMISSIONS = {
   INVOICING_MANAGE: 'invoicing.manage',
   PERSONAL_DOCS_VIEW: 'personal_docs.view',
   PERSONAL_DOCS_EXPIRY_NOTIFY: 'personal_docs.expiry.notify',
+  CALENDAR_VIEW: 'calendar.view',
 } as const satisfies Record<string, OfficePermissionKey>
 
 /**

@@ -17,7 +17,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, Mail,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays,
 } from 'lucide-react'
 
 interface NavItem {
@@ -35,6 +35,7 @@ const adminNav: NavItem[] = [
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
   { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
@@ -49,6 +50,7 @@ const surveyorNav: NavItem[] = [
   { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
   { label: 'My Documents', href: '/profile', icon: FileText },
+  { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
@@ -72,6 +74,9 @@ function officeNav(officePermissions: string[]): NavItem[] {
   const granted = new Set(officePermissions)
   if (granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) {
     nav.push({ label: 'Surveyor Documents', href: '/office/documents', icon: FileText })
+  }
+  if (granted.has(OFFICE_PERMISSIONS.CALENDAR_VIEW)) {
+    nav.push({ label: 'Calendar', href: '/calendar', icon: CalendarDays })
   }
   if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
     nav.push({ label: 'Invoicing', href: '/office/invoicing', icon: Receipt })

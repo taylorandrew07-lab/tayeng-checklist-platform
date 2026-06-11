@@ -14,6 +14,7 @@ export type OfficePermissionKey =
   | 'invoicing.manage'
   | 'personal_docs.view'
   | 'personal_docs.expiry.notify'
+  | 'calendar.view'
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 export type FieldType =
   | 'text'
@@ -109,6 +110,45 @@ export interface MessageRecipient {
   read_at: string | null
   archived_at: string | null
   created_at: string
+}
+
+export type CalendarEventType = 'leave' | 'general'
+export type CalendarVisibility = 'private' | 'everyone' | 'roles' | 'users'
+export type CalendarStatus = 'pending' | 'approved' | 'rejected'
+
+/** Shared calendar event (migration 038). Leave = owner+admins only; general
+ *  events follow `visibility`. Jobs are NOT stored here (read via get_calendar_jobs). */
+export interface CalendarEvent {
+  id: string
+  event_type: CalendarEventType
+  title: string
+  description: string | null
+  start_date: string
+  end_date: string
+  owner_id: string | null
+  created_by: string | null
+  status: CalendarStatus
+  visibility: CalendarVisibility
+  visible_roles: UserRole[]
+  visible_user_ids: string[]
+  color: string | null
+  reviewer_id: string | null
+  review_comment: string | null
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** A job as surfaced on the calendar (safe scheduling fields only). */
+export interface CalendarJob {
+  id: string
+  title: string
+  job_number: string | null
+  status: string
+  scheduled_date: string
+  vessel_name: string | null
+  surveyor_name: string | null
+  client_name: string | null
 }
 
 export interface Client {
