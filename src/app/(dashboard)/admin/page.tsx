@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FileText, Briefcase, Users, Building2, X, RefreshCw } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
-import ExpiringDocsWidget from '@/components/personal-docs/ExpiringDocsWidget'
+import AttentionCard from '@/components/dashboard/AttentionCard'
+import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
@@ -24,6 +25,8 @@ export default function AdminDashboard() {
   const [recentChecklists, setRecentChecklists] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [clearedAt, setClearedAt] = useState<string | null>(null)
+  // Expiring/expired documents across all surveyors (admin-wide; RLS-gated).
+  const docAttention = useDocumentAttention({ context: 'admin' })
 
   useEffect(() => {
     setClearedAt(localStorage.getItem(CLEARED_AT_KEY))
@@ -114,8 +117,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Expiring surveyor documents (across all surveyors) */}
-      <ExpiringDocsWidget />
+      {/* Needs your attention — expiring/expired surveyor documents (RLS-gated) */}
+      <AttentionCard items={docAttention} />
 
       {/* Main stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

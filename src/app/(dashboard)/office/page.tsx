@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Briefcase, Clock, CheckCircle2, FileCheck2, Lock } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
+import AttentionCard from '@/components/dashboard/AttentionCard'
+import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 import type { JobStatus } from '@/lib/types/database'
 
 interface MonitorJob {
@@ -26,7 +28,10 @@ const ONGOING: JobStatus[] = ['draft', 'assigned', 'in_progress', 'submitted']
 export default function OfficeDashboard() {
   const [jobs, setJobs] = useState<MonitorJob[]>([])
   const [canView, setCanView] = useState(true)
+  const [docsView, setDocsView] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Expiring surveyor documents — only when this office user can view them.
+  const docAttention = useDocumentAttention({ context: 'office', enabled: docsView })
 
   useEffect(() => {
     async function load() {
@@ -36,6 +41,7 @@ export default function OfficeDashboard() {
         granted.has(OFFICE_PERMISSIONS.JOBS_MONITOR_VIEW) ||
         granted.has(OFFICE_PERMISSIONS.JOBS_DETAIL_VIEW)
       setCanView(allowed)
+      setDocsView(granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW))
 
       if (allowed) {
         const { data } = await supabase
@@ -73,6 +79,8 @@ export default function OfficeDashboard() {
         <h1 className="page-title">Office Dashboard</h1>
         <p className="text-gray-500 mt-1">Read-only overview of job activity</p>
       </div>
+
+      <AttentionCard items={docAttention} />
 
       {!loading && !canView ? (
         <div className="card p-8 text-center space-y-2">

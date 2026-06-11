@@ -116,6 +116,10 @@ export default function ClientPortal() {
         </div>
       </div>
 
+      {/* "Needs your attention" placeholder — clients have no attention items yet.
+          When they do (e.g. new reports to acknowledge), build the AttentionItem[]
+          here and render <AttentionCard items={...} /> as on the staff dashboards. */}
+
       {visibleJobs.length === 0 ? (
         <div className="card p-12 text-center">
           <ClipboardList className="h-10 w-10 mx-auto text-gray-300 mb-3" />

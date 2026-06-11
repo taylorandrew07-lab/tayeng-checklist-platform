@@ -9,7 +9,8 @@ import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
-import ExpiringDocsWidget from '@/components/personal-docs/ExpiringDocsWidget'
+import AttentionCard from '@/components/dashboard/AttentionCard'
+import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
@@ -17,6 +18,8 @@ export default function SurveyorDashboard() {
   const [localJobs, setLocalJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const tick = useRealtimeRefresh('jobs')
+  // Your own documents expired or expiring soon.
+  const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
 
   useEffect(() => {
     async function load() {
@@ -91,7 +94,7 @@ export default function SurveyorDashboard() {
             </div>
           </div>
 
-          {profile?.id && <ExpiringDocsWidget profileId={profile.id} />}
+          <AttentionCard items={docAttention} />
 
           {localJobs.length > 0 && (
             <div>
