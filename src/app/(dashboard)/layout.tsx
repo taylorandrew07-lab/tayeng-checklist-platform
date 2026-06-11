@@ -10,6 +10,8 @@ import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
 import CargoSyncManager from '@/components/cargo/CargoSyncManager'
 import BackGuard from '@/components/auth/BackGuard'
 import { fetchMyOfficePermissions } from '@/lib/office/permissions'
+import { useRealtimeRefresh } from '@/lib/realtime'
+import { unreadCount } from '@/lib/messages/api'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
@@ -28,9 +30,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [profile, setProfile] = useState<Profile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [officePermissions, setOfficePermissions] = useState<string[]>([])
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
+  const msgTick = useRealtimeRefresh('message_recipients')
 
   useEffect(() => {
     async function loadProfile() {
@@ -96,6 +100,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     loadProfile()
   }, [router, pathname])
+
+  // Live unread-message count for the Inbox nav badge. Safe before migration 037
+  // (unreadCount returns 0 on error).
+  useEffect(() => {
+    if (!profile) return
+    unreadCount().then(setUnreadMessages).catch(() => {})
+  }, [profile, msgTick])
 
   // Inactivity auto-logout — only when the user did NOT choose to stay signed in.
   // Eviction-safe: a missing "te_remember" flag is treated as "remembered" (no
@@ -183,6 +194,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         pendingCount={pendingCount}
+        unreadMessages={unreadMessages}
         officePermissions={officePermissions}
       />
       <div className="flex flex-col min-h-screen lg:pl-64">

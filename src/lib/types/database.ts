@@ -92,6 +92,25 @@ export interface PersonalDocument {
 
 export type CredentialKey = 'drivers_permit' | 'id_card' | 'passport' | 'insurance' | 'coc'
 
+/** Internal messaging (migration 037). One messages row fans out to N
+ *  message_recipients rows (one per recipient). */
+export interface Message {
+  id: string
+  sender_id: string | null
+  subject: string
+  body: string
+  parent_id: string | null
+  created_at: string
+}
+export interface MessageRecipient {
+  id: string
+  message_id: string
+  recipient_id: string
+  read_at: string | null
+  archived_at: string | null
+  created_at: string
+}
+
 export interface Client {
   id: string
   name: string

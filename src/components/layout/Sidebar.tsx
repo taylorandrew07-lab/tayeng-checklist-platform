@@ -17,7 +17,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, ShieldCheck,
+  Receipt, Ship, FolderOpen, ShieldCheck, Mail,
 } from 'lucide-react'
 
 interface NavItem {
@@ -36,6 +36,7 @@ const adminNav: NavItem[] = [
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Approvals', href: '/admin/profile-requests', icon: ShieldCheck },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
 // Settings is pinned to the bottom and is never reorderable.
@@ -49,12 +50,14 @@ const surveyorNav: NavItem[] = [
   { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
   { label: 'My Documents', href: '/profile', icon: FileText },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
 const clientNav: NavItem[] = [
   { label: 'My Jobs', href: '/client', icon: ClipboardList },
   { label: 'Cargo Reports', href: '/client/cargo', icon: Ship },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
 // Office nav. Dashboard + Jobs Monitor are always present; Invoicing is added
@@ -62,6 +65,7 @@ const clientNav: NavItem[] = [
 const officeBaseNav: NavItem[] = [
   { label: 'Dashboard', href: '/office', icon: LayoutDashboard },
   { label: 'Jobs Monitor', href: '/office/jobs', icon: Briefcase },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
 function officeNav(officePermissions: string[]): NavItem[] {
@@ -102,11 +106,13 @@ interface SidebarProps {
   open?: boolean
   onClose?: () => void
   pendingCount?: number
+  /** Unread message count; badges the Inbox nav item. */
+  unreadMessages?: number
   /** Granted office permission keys; drives which office nav items appear. */
   officePermissions?: string[]
 }
 
-export default function Sidebar({ profile, open = true, onClose, pendingCount = 0, officePermissions = [] }: SidebarProps) {
+export default function Sidebar({ profile, open = true, onClose, pendingCount = 0, unreadMessages = 0, officePermissions = [] }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -241,12 +247,15 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
                 >
                   <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
                   {item.label}
-                  {item.href === '/admin/users' && pendingCount > 0 && (
+                  {item.href === '/admin/users' && pendingCount > 0 ? (
                     <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                       {pendingCount}
                     </span>
-                  )}
-                  {isActive && pendingCount === 0 && <ChevronRight className="h-4 w-4 ml-auto" />}
+                  ) : item.href === '/inbox' && unreadMessages > 0 ? (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {unreadMessages}
+                    </span>
+                  ) : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
                 </button>
               )
             })
