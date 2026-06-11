@@ -1,7 +1,7 @@
 /* Minimal service worker for offline app-shell + previously-visited pages.
    Never caches Supabase (cross-origin) or same-origin /api responses, so
    private API/auth/storage data is never stored. */
-const VERSION = 'v2'
+const VERSION = 'v3'
 const STATIC_CACHE = `tayeng-static-${VERSION}`
 const PAGE_CACHE = `tayeng-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
@@ -55,16 +55,18 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Page navigations: network-first, fall back to cached page, then offline page.
-  // Only CACHE the offline-relevant staff routes (/surveyor, /admin); client
-  // pages are never stored on the device.
+  // Page navigations: ONLY manage the offline-relevant staff routes
+  // (/surveyor, /admin). Every other route — /inbox, /office, /client, /profile,
+  // etc. — is left to the browser to fetch natively, so the SW can never turn a
+  // normal online navigation into a "couldn't load" error. For the staff routes:
+  // network-first, fall back to the cached page, then the offline page.
   if (request.mode === 'navigate') {
-    const cacheable = url.pathname === OFFLINE_URL ||
-      url.pathname.startsWith('/surveyor') || url.pathname.startsWith('/admin')
+    const cacheable = url.pathname.startsWith('/surveyor') || url.pathname.startsWith('/admin')
+    if (!cacheable) return // native browser handling for all non-offline routes
     event.respondWith(
       fetch(request)
         .then((res) => {
-          if (cacheable && res.ok) {
+          if (res.ok) {
             const copy = res.clone()
             caches.open(PAGE_CACHE).then((c) => c.put(request, copy))
           }
