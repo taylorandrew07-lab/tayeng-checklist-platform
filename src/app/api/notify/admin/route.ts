@@ -29,6 +29,20 @@ type NotifyPayload = {
   requestedName?: string
 }
 
+// Best-effort per-user rate limit (in-memory; resets on cold start). Caps
+// notification spam to the admin inbox without an external store.
+const RL_WINDOW_MS = 10 * 60 * 1000
+const RL_MAX = 8
+const rlMap = new Map<string, { count: number; resetAt: number }>()
+function rateLimited(key: string): boolean {
+  const now = Date.now()
+  const e = rlMap.get(key)
+  if (!e || now > e.resetAt) { rlMap.set(key, { count: 1, resetAt: now + RL_WINDOW_MS }); return false }
+  if (e.count >= RL_MAX) return true
+  e.count++
+  return false
+}
+
 async function sendEmail(subject: string, html: string) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -62,6 +76,10 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  if (rateLimited(user.id)) {
+    return NextResponse.json({ error: 'Too many requests — please try again shortly.' }, { status: 429 })
+  }
 
   const payload: NotifyPayload = await request.json()
   const { type, name, email, role, requestedName } = payload
