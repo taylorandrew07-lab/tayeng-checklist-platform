@@ -78,9 +78,19 @@ export interface PersonalDocument {
   reminder_lead_days: number
   last_reminded_at: string | null
   uploaded_by: string | null
+  // Structured-credential fields (migration 036). credential_key NULL = a
+  // free-form "other" document; otherwise a known credential carrying its
+  // number/expiry/file in one row.
+  credential_key: CredentialKey | null
+  doc_number: string | null
+  insurance_company: string | null
+  insurance_type: string | null
+  coc_stage: 'receipt' | 'full' | null
   created_at: string
   updated_at: string
 }
+
+export type CredentialKey = 'drivers_permit' | 'id_card' | 'passport' | 'insurance' | 'coc'
 
 export interface Client {
   id: string

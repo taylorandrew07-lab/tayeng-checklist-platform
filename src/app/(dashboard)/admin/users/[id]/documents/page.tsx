@@ -4,35 +4,20 @@ import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, ArrowLeft, User } from 'lucide-react'
-import PersonalDocsManager from '@/components/personal-docs/PersonalDocsManager'
+import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 
-interface Surveyor {
-  id: string; full_name: string; role: string
-  vehicle_number: string | null; drivers_permit_number: string | null
-  id_card_number: string | null; passport_number: string | null; employee_number: string | null
-}
-
-const PASS_FIELDS: [keyof Surveyor, string][] = [
-  ['employee_number', 'Employee #'],
-  ['vehicle_number', 'Vehicle #'],
-  ['drivers_permit_number', "Driver's permit #"],
-  ['id_card_number', 'ID card #'],
-  ['passport_number', 'Passport #'],
-]
+interface Person { id: string; full_name: string; role: string }
 
 export default function AdminUserDocumentsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const [person, setPerson] = useState<Surveyor | null>(null)
+  const [person, setPerson] = useState<Person | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, vehicle_number, drivers_permit_number, id_card_number, passport_number, employee_number')
-        .eq('id', id).single()
-      setPerson((data as Surveyor) ?? null)
+      const { data } = await createClient()
+        .from('profiles').select('id, full_name, role').eq('id', id).single()
+      setPerson((data as Person) ?? null)
       setLoading(false)
     }
     load()
@@ -52,25 +37,10 @@ export default function AdminUserDocumentsPage({ params }: { params: Promise<{ i
         <>
           <div>
             <h1 className="page-title">{person.full_name}</h1>
-            <p className="text-gray-500 mt-0.5">Employee details &amp; credential documents.</p>
+            <p className="text-gray-500 mt-0.5">Credentials &amp; documents — view, edit and upload on this person&apos;s behalf.</p>
           </div>
-
           <div className="card p-5">
-            <p className="text-xs font-medium text-gray-500 mb-3">Employee details</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
-              {PASS_FIELDS.map(([k, label]) => (
-                <div key={k as string}>
-                  <p className="text-[11px] text-gray-400">{label}</p>
-                  <p className="text-sm text-gray-900">{person[k] || '—'}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-gray-400 mt-3">Edit these fields from the user&apos;s Edit dialog on the Users page.</p>
-          </div>
-
-          <div className="card p-5">
-            <p className="text-xs font-medium text-gray-500 mb-3">Documents</p>
-            <PersonalDocsManager profileId={person.id} canManage />
+            <CredentialsManager profileId={person.id} canManage ownerName={person.full_name} showCopy />
           </div>
         </>
       )}

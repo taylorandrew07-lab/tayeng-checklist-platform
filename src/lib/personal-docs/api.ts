@@ -4,12 +4,31 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { differenceInCalendarDays, parseISO, isValid } from 'date-fns'
-import type { PersonalDocument } from '@/lib/types/database'
+import type { PersonalDocument, CredentialKey } from '@/lib/types/database'
 
 export const DOC_TYPES = [
-  'Port Pass', "Driver's License", 'Passport', 'Certificate of Good Character (COC)',
-  'Medical', 'Safety Training', 'Other',
+  'Port Pass', 'Medical', 'Safety Training', 'Reference', 'Other',
 ]
+
+/** Known credentials — each is ONE personal_documents row (number + expiry +
+ *  file together). Insurance adds company/type; CoC has a receipt→full stage. */
+export interface CredentialDef {
+  key: CredentialKey
+  label: string
+  numberLabel: string
+  insurance?: boolean
+  coc?: boolean
+}
+export const CREDENTIALS: CredentialDef[] = [
+  { key: 'drivers_permit', label: "Driver's permit", numberLabel: 'Permit number' },
+  { key: 'id_card',        label: 'ID card',          numberLabel: 'ID card number' },
+  { key: 'passport',       label: 'Passport',         numberLabel: 'Passport number' },
+  { key: 'insurance',      label: 'Insurance',        numberLabel: 'Policy number', insurance: true },
+  { key: 'coc',            label: 'Certificate of Character (CoC)', numberLabel: 'CoC number', coc: true },
+]
+export function credentialDef(key: CredentialKey): CredentialDef {
+  return CREDENTIALS.find(c => c.key === key)!
+}
 
 const BUCKET = 'personal-documents'
 
@@ -46,11 +65,103 @@ export interface DocInput {
   notes?: string | null
 }
 
+/** Free-form "other" documents only (known credentials are managed separately). */
 export async function listDocuments(profileId: string): Promise<PersonalDocument[]> {
   const { data } = await createClient()
     .from('personal_documents').select('*').eq('profile_id', profileId)
+    .is('credential_key', null)
     .order('expiry_date', { ascending: true, nullsFirst: false })
   return (data ?? []) as PersonalDocument[]
+}
+
+/** Every known-credential row for a person (driver's permit, ID, passport, etc.). */
+export async function listCredentialRows(profileId: string): Promise<PersonalDocument[]> {
+  const { data } = await createClient()
+    .from('personal_documents').select('*').eq('profile_id', profileId)
+    .not('credential_key', 'is', null)
+  return (data ?? []) as PersonalDocument[]
+}
+
+export interface CredentialInput {
+  doc_number?: string | null
+  issue_date?: string | null
+  expiry_date?: string | null
+  reminder_lead_days?: number
+  notes?: string | null
+  insurance_company?: string | null
+  insurance_type?: string | null
+}
+
+/** Upsert a known credential (one row per person+credential[+CoC stage]). A new
+ *  file replaces the previous one. Saving the CoC "full" certificate auto-removes
+ *  the receipt. Pass `file = null` to keep the existing file (or none). */
+export async function saveCredential(
+  profileId: string, def: CredentialDef, input: CredentialInput,
+  file: File | null, stage?: 'receipt' | 'full',
+): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  let q = supabase.from('personal_documents').select('*')
+    .eq('profile_id', profileId).eq('credential_key', def.key)
+  q = def.coc ? q.eq('coc_stage', stage ?? 'full') : q.is('coc_stage', null)
+  const { data: rows } = await q
+  const existing = (rows ?? [])[0] as PersonalDocument | undefined
+
+  const docName = def.coc
+    ? (stage === 'receipt' ? 'CoC receipt' : 'Certificate of Character')
+    : def.label
+
+  let storage_path = existing?.storage_path ?? null
+  let content_type = existing?.content_type ?? null
+  let size_bytes = existing?.size_bytes ?? null
+  let oldPath: string | null = null
+  if (file) {
+    const newPath = `${profileId}/${crypto.randomUUID()}_${safeName(file.name)}`
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type || 'application/octet-stream', upsert: false })
+    if (upErr) return { error: upErr.message }
+    oldPath = existing?.storage_path ?? null
+    storage_path = newPath
+    content_type = file.type || null
+    size_bytes = file.size
+  }
+
+  const row: Record<string, any> = {
+    profile_id: profileId,
+    credential_key: def.key,
+    coc_stage: def.coc ? (stage ?? 'full') : null,
+    doc_name: docName,
+    doc_type: def.label,
+    doc_number: input.doc_number || null,
+    issue_date: input.issue_date || null,
+    expiry_date: input.expiry_date || null,
+    reminder_lead_days: input.reminder_lead_days ?? existing?.reminder_lead_days ?? 60,
+    notes: input.notes || null,
+    insurance_company: def.insurance ? (input.insurance_company || null) : null,
+    insurance_type: def.insurance ? (input.insurance_type || null) : null,
+    storage_path, content_type, size_bytes,
+    uploaded_by: user?.id ?? null,
+  }
+
+  const { error } = existing
+    ? await supabase.from('personal_documents').update(row).eq('id', existing.id)
+    : await supabase.from('personal_documents').insert(row)
+  if (error) {
+    if (file && storage_path) await supabase.storage.from(BUCKET).remove([storage_path]).catch(() => {})
+    return { error: error.message }
+  }
+  if (oldPath) await supabase.storage.from(BUCKET).remove([oldPath]).catch(() => {})
+
+  // CoC: the full certificate supersedes (and removes) the receipt.
+  if (def.coc && stage === 'full') {
+    const { data: receipts } = await supabase.from('personal_documents').select('id, storage_path')
+      .eq('profile_id', profileId).eq('credential_key', 'coc').eq('coc_stage', 'receipt')
+    for (const r of (receipts ?? []) as any[]) {
+      if (r.storage_path) await supabase.storage.from(BUCKET).remove([r.storage_path]).catch(() => {})
+      await supabase.from('personal_documents').delete().eq('id', r.id)
+    }
+  }
+  return {}
 }
 
 export async function addDocument(profileId: string, meta: DocInput, file: File | null): Promise<{ error?: string }> {

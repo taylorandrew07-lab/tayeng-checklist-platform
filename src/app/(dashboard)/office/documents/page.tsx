@@ -2,29 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Loader2, Lock, Copy, Check, User } from 'lucide-react'
+import { Loader2, Lock, User } from 'lucide-react'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
-import PersonalDocsManager from '@/components/personal-docs/PersonalDocsManager'
+import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 
-interface Surveyor {
-  id: string; full_name: string
-  vehicle_number: string | null; drivers_permit_number: string | null
-  id_card_number: string | null; passport_number: string | null; employee_number: string | null
-}
-
-const PASS_FIELDS: [keyof Surveyor, string][] = [
-  ['vehicle_number', 'Vehicle #'],
-  ['drivers_permit_number', "Driver's permit #"],
-  ['id_card_number', 'ID card #'],
-  ['passport_number', 'Passport #'],
-  ['employee_number', 'Employee #'],
-]
+interface Surveyor { id: string; full_name: string }
 
 export default function OfficeDocumentsPage() {
   const [allowed, setAllowed] = useState(true)
   const [surveyors, setSurveyors] = useState<Surveyor[]>([])
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -32,19 +19,13 @@ export default function OfficeDocumentsPage() {
       const granted = await fetchMyOfficePermissions(supabase)
       if (!granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) { setAllowed(false); setLoading(false); return }
       const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, vehicle_number, drivers_permit_number, id_card_number, passport_number, employee_number')
+        .from('profiles').select('id, full_name')
         .eq('role', 'surveyor').eq('is_active', true).order('full_name')
       setSurveyors((data as Surveyor[]) ?? [])
       setLoading(false)
     }
     load()
   }, [])
-
-  function copyDetails(s: Surveyor) {
-    const text = [`Name: ${s.full_name}`, ...PASS_FIELDS.map(([k, label]) => `${label}: ${s[k] || '—'}`)].join('\n')
-    navigator.clipboard?.writeText(text).then(() => { setCopied(s.id); setTimeout(() => setCopied(null), 1500) }).catch(() => {})
-  }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
   if (!allowed) {
@@ -67,26 +48,9 @@ export default function OfficeDocumentsPage() {
       {surveyors.length === 0 ? (
         <div className="card p-12 text-center text-gray-400"><User className="h-10 w-10 text-gray-300 mx-auto mb-3" />No active surveyors.</div>
       ) : surveyors.map(s => (
-        <div key={s.id} className="card p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold text-gray-900">{s.full_name}</h2>
-            <button onClick={() => copyDetails(s)} className="btn-secondary text-sm">
-              {copied === s.id ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-              {copied === s.id ? 'Copied' : 'Copy details'}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
-            {PASS_FIELDS.map(([k, label]) => (
-              <div key={k as string}>
-                <p className="text-[11px] text-gray-400">{label}</p>
-                <p className="text-sm text-gray-900">{s[k] || '—'}</p>
-              </div>
-            ))}
-          </div>
-          <div className="pt-2 border-t border-gray-100">
-            <p className="text-xs font-medium text-gray-500 mb-2">Documents</p>
-            <PersonalDocsManager profileId={s.id} canManage={false} />
-          </div>
+        <div key={s.id} className="card p-5">
+          <h2 className="font-semibold text-gray-900 mb-3">{s.full_name}</h2>
+          <CredentialsManager profileId={s.id} canManage={false} ownerName={s.full_name} showCopy />
         </div>
       ))}
     </div>

@@ -32,9 +32,6 @@ export default function UsersPage() {
     password: '',
     client_id: '',
     vehicle_number: '',
-    drivers_permit_number: '',
-    id_card_number: '',
-    passport_number: '',
     employee_number: '',
   })
 
@@ -88,7 +85,7 @@ export default function UsersPage() {
 
   function openCreate() {
     setEditUser(null)
-    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', drivers_permit_number: '', id_card_number: '', passport_number: '', employee_number: '' })
+    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', employee_number: '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -96,7 +93,7 @@ export default function UsersPage() {
 
   function openEdit(user: Profile) {
     setEditUser(user)
-    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '', vehicle_number: (user as any).vehicle_number ?? '', drivers_permit_number: (user as any).drivers_permit_number ?? '', id_card_number: (user as any).id_card_number ?? '', passport_number: (user as any).passport_number ?? '', employee_number: (user as any).employee_number ?? '' })
+    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '', vehicle_number: (user as any).vehicle_number ?? '', employee_number: (user as any).employee_number ?? '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -163,12 +160,11 @@ export default function UsersPage() {
 
     if (editUser) {
       const patch: any = { full_name: form.full_name, role: form.role, phone: form.phone || null }
-      // Employee / pass fields apply to staff (surveyor / admin) only.
+      // Simple identifiers apply to staff (surveyor / admin) only. The richer
+      // credentials (permit / ID / passport / insurance / CoC) are managed on
+      // the per-user Documents page.
       if (form.role === 'surveyor' || form.role === 'admin') {
         patch.vehicle_number = form.vehicle_number || null
-        patch.drivers_permit_number = form.drivers_permit_number || null
-        patch.id_card_number = form.id_card_number || null
-        patch.passport_number = form.passport_number || null
         patch.employee_number = form.employee_number || null
       }
       if (!isSuperAdmin && form.role === 'admin') {
@@ -650,12 +646,12 @@ export default function UsersPage() {
             <input type="tel" value={form.phone} onChange={(e) => setForm(p => ({ ...p, phone: e.target.value }))} className="input-base" placeholder="+1 555 000 0000" />
           </div>
 
-          {/* Employee / pass details — staff only (used to produce port passes). */}
+          {/* Identifiers — staff only. Richer credentials live on the Documents page. */}
           {(form.role === 'surveyor' || form.role === 'admin') && (
             <div className="border-t border-gray-100 pt-4 space-y-3">
               <div>
                 <p className="text-sm font-medium text-gray-900">Employee details</p>
-                <p className="text-xs text-gray-400">Optional identifiers used by the office to prepare port passes.</p>
+                <p className="text-xs text-gray-400">Vehicle &amp; employee numbers. Permit, ID, passport, insurance and CoC are managed under Documents.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -666,22 +662,10 @@ export default function UsersPage() {
                   <label className="label-base">Vehicle #</label>
                   <input type="text" value={form.vehicle_number} onChange={(e) => setForm(p => ({ ...p, vehicle_number: e.target.value }))} className="input-base" />
                 </div>
-                <div>
-                  <label className="label-base">Driver&apos;s permit #</label>
-                  <input type="text" value={form.drivers_permit_number} onChange={(e) => setForm(p => ({ ...p, drivers_permit_number: e.target.value }))} className="input-base" />
-                </div>
-                <div>
-                  <label className="label-base">ID card #</label>
-                  <input type="text" value={form.id_card_number} onChange={(e) => setForm(p => ({ ...p, id_card_number: e.target.value }))} className="input-base" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="label-base">Passport #</label>
-                  <input type="text" value={form.passport_number} onChange={(e) => setForm(p => ({ ...p, passport_number: e.target.value }))} className="input-base" />
-                </div>
               </div>
               {editUser && (
                 <a href={`/admin/users/${editUser.id}/documents`} className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-800 font-medium">
-                  <FileText className="h-4 w-4" />Manage documents
+                  <FileText className="h-4 w-4" />Manage credentials &amp; documents
                 </a>
               )}
             </div>

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Pencil, KeyRound, Clock, X, ShieldCheck, WifiOff } from 'lucide-react'
-import ProfileExtras from '@/components/personal-docs/ProfileExtras'
+import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 
 interface ProfileRow { id: string; full_name: string; email: string; phone: string | null; role: string; is_super_admin?: boolean }
 interface PendingReq { id: string; requested_changes: Record<string, any>; created_at: string }
@@ -187,7 +187,11 @@ export default function ProfilePage() {
       <p className="text-xs text-gray-400">Changes to your name, email or phone require administrator approval. Your password is changed instantly and never requires approval.</p>
 
       {(profile.role === 'surveyor' || profile.role === 'admin' || profile.is_super_admin) && (
-        <ProfileExtras userId={profile.id} />
+        <div className="card p-6">
+          <h2 className="section-title mb-1">Credentials &amp; documents</h2>
+          <p className="text-xs text-gray-400 mb-4">Your permit, ID, passport, insurance, CoC and other documents — used by the office to produce port passes. Fill the details and/or upload the file in one place; add an expiry date and you&apos;ll be reminded before it lapses. No approval needed.</p>
+          <CredentialsManager profileId={profile.id} canManage />
+        </div>
       )}
     </div>
   )
