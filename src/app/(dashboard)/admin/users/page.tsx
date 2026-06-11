@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Check, X, Pencil, ShieldCheck } from 'lucide-react'
+import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate } from '@/lib/utils'
 import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName, OfficePermissionCatalogRow } from '@/lib/types/database'
@@ -31,6 +31,11 @@ export default function UsersPage() {
     phone: '',
     password: '',
     client_id: '',
+    vehicle_number: '',
+    drivers_permit_number: '',
+    id_card_number: '',
+    passport_number: '',
+    employee_number: '',
   })
 
   // Approval state: when approving a client-role user, we need a client link
@@ -83,7 +88,7 @@ export default function UsersPage() {
 
   function openCreate() {
     setEditUser(null)
-    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '' })
+    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', drivers_permit_number: '', id_card_number: '', passport_number: '', employee_number: '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -91,7 +96,7 @@ export default function UsersPage() {
 
   function openEdit(user: Profile) {
     setEditUser(user)
-    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '' })
+    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '', vehicle_number: (user as any).vehicle_number ?? '', drivers_permit_number: (user as any).drivers_permit_number ?? '', id_card_number: (user as any).id_card_number ?? '', passport_number: (user as any).passport_number ?? '', employee_number: (user as any).employee_number ?? '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -158,6 +163,14 @@ export default function UsersPage() {
 
     if (editUser) {
       const patch: any = { full_name: form.full_name, role: form.role, phone: form.phone || null }
+      // Employee / pass fields apply to staff (surveyor / admin) only.
+      if (form.role === 'surveyor' || form.role === 'admin') {
+        patch.vehicle_number = form.vehicle_number || null
+        patch.drivers_permit_number = form.drivers_permit_number || null
+        patch.id_card_number = form.id_card_number || null
+        patch.passport_number = form.passport_number || null
+        patch.employee_number = form.employee_number || null
+      }
       if (!isSuperAdmin && form.role === 'admin') {
         setError('Only the Super Admin can assign the Admin role.')
         setSaving(false)
@@ -548,6 +561,11 @@ export default function UsersPage() {
                         <Pencil className="h-3.5 w-3.5" />Edit
                       </button>
                     )}
+                    {(user.role === 'surveyor' || user.role === 'admin') && (
+                      <a href={`/admin/users/${user.id}/documents`} className="text-xs btn-ghost py-1 px-2">
+                        <FileText className="h-3.5 w-3.5" />Docs
+                      </a>
+                    )}
                     {(isSuperAdmin || !(user as any).is_super_admin) && (
                       <button
                         onClick={() => toggleActive(user)}
@@ -631,6 +649,43 @@ export default function UsersPage() {
             <label className="label-base">Phone</label>
             <input type="tel" value={form.phone} onChange={(e) => setForm(p => ({ ...p, phone: e.target.value }))} className="input-base" placeholder="+1 555 000 0000" />
           </div>
+
+          {/* Employee / pass details — staff only (used to produce port passes). */}
+          {(form.role === 'surveyor' || form.role === 'admin') && (
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Employee details</p>
+                <p className="text-xs text-gray-400">Optional identifiers used by the office to prepare port passes.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label-base">Employee #</label>
+                  <input type="text" value={form.employee_number} onChange={(e) => setForm(p => ({ ...p, employee_number: e.target.value }))} className="input-base" />
+                </div>
+                <div>
+                  <label className="label-base">Vehicle #</label>
+                  <input type="text" value={form.vehicle_number} onChange={(e) => setForm(p => ({ ...p, vehicle_number: e.target.value }))} className="input-base" />
+                </div>
+                <div>
+                  <label className="label-base">Driver&apos;s permit #</label>
+                  <input type="text" value={form.drivers_permit_number} onChange={(e) => setForm(p => ({ ...p, drivers_permit_number: e.target.value }))} className="input-base" />
+                </div>
+                <div>
+                  <label className="label-base">ID card #</label>
+                  <input type="text" value={form.id_card_number} onChange={(e) => setForm(p => ({ ...p, id_card_number: e.target.value }))} className="input-base" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label-base">Passport #</label>
+                  <input type="text" value={form.passport_number} onChange={(e) => setForm(p => ({ ...p, passport_number: e.target.value }))} className="input-base" />
+                </div>
+              </div>
+              {editUser && (
+                <a href={`/admin/users/${editUser.id}/documents`} className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-800 font-medium">
+                  <FileText className="h-4 w-4" />Manage documents
+                </a>
+              )}
+            </div>
+          )}
 
           {/* Office permissions — only when editing an existing office user.
               New office users start with everything denied; grant access here. */}

@@ -12,6 +12,8 @@ export type OfficePermissionKey =
   | 'clients.view'
   | 'invoicing.view'
   | 'invoicing.manage'
+  | 'personal_docs.view'
+  | 'personal_docs.expiry.notify'
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 export type FieldType =
   | 'text'
@@ -51,6 +53,31 @@ export interface Profile {
   is_active: boolean
   is_super_admin: boolean
   ui_prefs?: UiPrefs | null
+  // Employee / pass fields (self-editable by the owner; admins edit anyone).
+  vehicle_number?: string | null
+  drivers_permit_number?: string | null
+  id_card_number?: string | null
+  passport_number?: string | null
+  employee_number?: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** A surveyor's own credential document (port pass, licence, passport, COC…). */
+export interface PersonalDocument {
+  id: string
+  profile_id: string
+  doc_name: string
+  doc_type: string | null
+  issue_date: string | null
+  expiry_date: string | null
+  storage_path: string | null
+  content_type: string | null
+  size_bytes: number | null
+  notes: string | null
+  reminder_lead_days: number
+  last_reminded_at: string | null
+  uploaded_by: string | null
   created_at: string
   updated_at: string
 }

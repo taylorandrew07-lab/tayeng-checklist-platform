@@ -1,25 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendEmail, escapeHtml, safeSubject } from '@/lib/email/send'
 
 const ADMIN_EMAIL = 'andrew.taylor@tayeng.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tayeng-checklist-platform.vercel.app'
 const VALID_TYPES = ['signup', 'surveyor_request', 'client_request']
-
-/** Escape user-supplied values before interpolating into the notification HTML. */
-function escapeHtml(value: string | undefined): string {
-  if (!value) return '—'
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-/** Single-line, header-safe text for email subjects. */
-function safeSubject(value: string | undefined): string {
-  return (value ?? '').replace(/[\r\n]+/g, ' ').trim()
-}
 
 type NotifyPayload = {
   type: 'signup' | 'surveyor_request' | 'client_request'
@@ -43,32 +28,9 @@ function rateLimited(key: string): boolean {
   return false
 }
 
-async function sendEmail(subject: string, html: string) {
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
-    // Gracefully skip if not configured — admin must set up Resend
-    console.log('[notify] RESEND_API_KEY not set, skipping email:', subject)
-    return
-  }
-
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'Tayeng App <noreply@tayeng.com>',
-      to: [ADMIN_EMAIL],
-      subject,
-      html,
-    }),
-  })
-
-  if (!res.ok) {
-    const err = await res.text()
-    console.error('[notify] Resend error:', err)
-  }
+/** Email the single configured admin recipient. */
+function notifyAdmin(subject: string, html: string) {
+  return sendEmail({ to: [ADMIN_EMAIL], subject, html })
 }
 
 export async function POST(request: Request) {
@@ -110,7 +72,7 @@ export async function POST(request: Request) {
 
   switch (type) {
     case 'signup': {
-      await sendEmail(
+      await notifyAdmin(
         safeSubject(`New account request — ${name ?? email ?? ''}`),
         `
           <p>A new user has requested an account on the Tayeng App.</p>
@@ -125,7 +87,7 @@ export async function POST(request: Request) {
       break
     }
     case 'surveyor_request': {
-      await sendEmail(
+      await notifyAdmin(
         safeSubject(`New surveyor name request — ${requestedName ?? ''}`),
         `
           <p>A surveyor has requested a new surveyor name to be added to the system.</p>
@@ -139,7 +101,7 @@ export async function POST(request: Request) {
       break
     }
     case 'client_request': {
-      await sendEmail(
+      await notifyAdmin(
         safeSubject(`New client company request — ${requestedName ?? ''}`),
         `
           <p>A surveyor has requested a new client company to be added to the system.</p>

@@ -9,6 +9,7 @@ import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
+import ExpiringDocsWidget from '@/components/personal-docs/ExpiringDocsWidget'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
@@ -89,6 +90,8 @@ export default function SurveyorDashboard() {
               <p className="text-sm text-gray-500 mt-1">Total</p>
             </div>
           </div>
+
+          {profile?.id && <ExpiringDocsWidget profileId={profile.id} />}
 
           {localJobs.length > 0 && (
             <div>

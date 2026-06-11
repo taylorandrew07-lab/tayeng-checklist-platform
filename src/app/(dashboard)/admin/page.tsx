@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FileText, Briefcase, Users, Building2, X, RefreshCw } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import ExpiringDocsWidget from '@/components/personal-docs/ExpiringDocsWidget'
 
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
@@ -112,6 +113,9 @@ export default function AdminDashboard() {
           </Link>
         </div>
       )}
+
+      {/* Expiring surveyor documents (across all surveyors) */}
+      <ExpiringDocsWidget />
 
       {/* Main stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

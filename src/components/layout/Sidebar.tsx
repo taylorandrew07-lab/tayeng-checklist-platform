@@ -48,6 +48,7 @@ const surveyorNav: NavItem[] = [
   { label: 'My Jobs', href: '/surveyor/jobs', icon: Briefcase },
   { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
+  { label: 'My Documents', href: '/profile', icon: FileText },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
@@ -66,6 +67,9 @@ const officeBaseNav: NavItem[] = [
 function officeNav(officePermissions: string[]): NavItem[] {
   const nav = [...officeBaseNav]
   const granted = new Set(officePermissions)
+  if (granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) {
+    nav.push({ label: 'Surveyor Documents', href: '/office/documents', icon: FileText })
+  }
   if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
     nav.push({ label: 'Invoicing', href: '/office/invoicing', icon: Receipt })
   }
