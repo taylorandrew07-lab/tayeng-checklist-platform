@@ -62,7 +62,7 @@ CREATE POLICY "Read calendar events by visibility" ON public.calendar_events
     OR owner_id = auth.uid()
     OR (event_type = 'general' AND (
          visibility = 'everyone'
-         OR (visibility = 'roles' AND public.get_my_role() = ANY(visible_roles))
+         OR (visibility = 'roles' AND public.get_my_role()::text = ANY(visible_roles))
          OR (visibility = 'users' AND auth.uid() = ANY(visible_user_ids))
        ))
   );
