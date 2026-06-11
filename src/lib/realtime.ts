@@ -1,12 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-
-// Per-hook-instance counter so two components subscribing to the SAME table
-// (e.g. the dashboard layout + the inbox page both watch message_recipients) get
-// distinct channel names. Identical channel topics collide in supabase-realtime.
-let channelSeq = 0
 
 /**
  * Live-refresh signal for dashboards. Subscribes to Supabase Realtime
@@ -24,8 +19,10 @@ let channelSeq = 0
  */
 export function useRealtimeRefresh(table: string): number {
   const [tick, setTick] = useState(0)
-  const idRef = useRef<number>(0)
-  if (idRef.current === 0) idRef.current = ++channelSeq
+  // Unique per-hook-instance id so two components watching the SAME table (e.g.
+  // the dashboard layout + the inbox page both watch message_recipients) get
+  // distinct channel names — identical topics collide in supabase-realtime.
+  const channelId = useId()
 
   useEffect(() => {
     const supabase = createClient()
@@ -37,7 +34,7 @@ export function useRealtimeRefresh(table: string): number {
 
     let realtimeOk = false
     const channel = supabase
-      .channel(`rt-${table}-${idRef.current}`)
+      .channel(`rt-${table}-${channelId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table }, bump)
       .subscribe(status => { if (status === 'SUBSCRIBED') realtimeOk = true })
 
@@ -58,7 +55,7 @@ export function useRealtimeRefresh(table: string): number {
       window.removeEventListener('online', bump)
       supabase.removeChannel(channel)
     }
-  }, [table])
+  }, [table, channelId])
 
   return tick
 }

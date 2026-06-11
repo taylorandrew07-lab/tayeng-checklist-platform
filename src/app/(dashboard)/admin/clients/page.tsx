@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
+import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
 import type { Client } from '@/lib/types/database'
 
@@ -166,6 +167,7 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      <PeopleTabs />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Clients</h1>

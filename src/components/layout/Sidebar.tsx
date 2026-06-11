@@ -15,9 +15,9 @@ import { dirtyState } from '@/lib/dirty-state'
 import type { Profile } from '@/lib/types/database'
 import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
-  LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
+  LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, ShieldCheck, Mail,
+  Receipt, Ship, FolderOpen, Mail,
 } from 'lucide-react'
 
 interface NavItem {
@@ -33,9 +33,8 @@ const adminNav: NavItem[] = [
   { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
+  // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
   { label: 'Users', href: '/admin/users', icon: Users },
-  { label: 'Approvals', href: '/admin/profile-requests', icon: ShieldCheck },
-  { label: 'Clients', href: '/admin/clients', icon: Building2 },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 

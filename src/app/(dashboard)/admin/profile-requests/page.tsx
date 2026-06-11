@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, X, ShieldCheck } from 'lucide-react'
+import PeopleTabs from '@/components/admin/PeopleTabs'
 
 interface Req {
   id: string
@@ -54,6 +55,7 @@ export default function ProfileRequestsPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <PeopleTabs />
       <div>
         <h1 className="page-title">Profile Change Requests</h1>
         <p className="text-gray-500 mt-0.5">Review and approve changes users have requested to their profile.</p>

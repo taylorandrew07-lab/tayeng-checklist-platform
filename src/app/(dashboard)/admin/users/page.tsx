@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
+import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
 import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName, OfficePermissionCatalogRow } from '@/lib/types/database'
 
@@ -332,6 +333,7 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      <PeopleTabs />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Users</h1>
