@@ -31,6 +31,8 @@ export default function LoginPage() {
     } else if (err === 'auth_callback_failed') {
       setError('Authentication failed. Please try again or contact your administrator.')
     }
+    // Prefill the last-used email (fallback for weak iOS standalone-PWA autofill).
+    try { const last = localStorage.getItem('te_last_email'); if (last) setEmail(last) } catch { /* storage unavailable */ }
   }, [])
 
   async function handleLogin(e: React.FormEvent) {
@@ -59,6 +61,21 @@ export default function LoginPage() {
     // sign a user out. No passwords or tokens are stored here.
     localStorage.setItem('te_remember', rememberMe ? '1' : '0')
     localStorage.setItem('te_last_activity', String(Date.now()))
+
+    // Remember the email for prefill on the next visit (no password stored here).
+    try {
+      if (rememberMe) localStorage.setItem('te_last_email', email)
+      else localStorage.removeItem('te_last_email')
+    } catch { /* storage unavailable */ }
+
+    // Progressive enhancement: let Chrome/Android offer to save the credential even
+    // where the submit heuristic is weak. Feature-detected; never blocks login.
+    try {
+      if (typeof window !== 'undefined' && 'PasswordCredential' in window && navigator.credentials?.store) {
+        const cred = new (window as any).PasswordCredential({ id: email, password, name: email })
+        await navigator.credentials.store(cred)
+      }
+    } catch { /* non-fatal */ }
 
     // Fetch profile to determine where to route the user
     const { data: { user } } = await supabase.auth.getUser()
@@ -92,8 +109,13 @@ export default function LoginPage() {
             </label>
             <input
               id="email"
+              name="email"
               type="email"
-              autoComplete="email"
+              autoComplete="username"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -110,8 +132,10 @@ export default function LoginPage() {
             <div className="relative">
               <input
                 id="password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
+                enterKeyHint="go"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
