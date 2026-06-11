@@ -23,6 +23,9 @@ export interface OfflineDraft {
   serverSignatures: Record<string, string>
   /** True once the surveyor has hit Submit offline — applied to the server on sync. */
   pendingSubmit: boolean
+  /** True when the job row only exists locally (started offline) and must be
+   *  INSERTed server-side on the next sync. Cleared once the row is created. */
+  pendingCreate?: boolean
   dirty: boolean
   /** True ONLY for changes made offline that must be pushed to the server. Online
    *  local-cache autosaves are `dirty` but NOT `needsSync`, so background sync

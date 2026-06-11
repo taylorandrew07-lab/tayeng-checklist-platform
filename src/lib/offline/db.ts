@@ -1,9 +1,18 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb'
 import { draftKey, type OfflineDraft, type QueuedPhoto } from './types'
 
+/** Cached data needed to START a new job fully offline (one row, key 'data'). */
+export interface CachedNewJobData {
+  templates: any[] // active, surveyor-startable templates incl. sections + fields
+  clients: any[]
+  surveyors: any[]
+  cachedAt: number
+}
+
 interface OfflineSchema extends DBSchema {
   drafts: { key: string; value: OfflineDraft }
   photos: { key: string; value: QueuedPhoto; indexes: { 'by-job': string } }
+  newjobcache: { key: string; value: CachedNewJobData }
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineSchema>> | null = null
@@ -15,19 +24,43 @@ export function offlineAvailable(): boolean {
 function getDB(): Promise<IDBPDatabase<OfflineSchema>> {
   if (!offlineAvailable()) return Promise.reject(new Error('Offline storage is not available on this device.'))
   if (!dbPromise) {
-    dbPromise = openDB<OfflineSchema>('tayeng-offline', 2, {
-      upgrade(db) {
-        // v2: drafts keyed by `${userId}::${jobId}` so users on one device can't collide.
-        if (db.objectStoreNames.contains('drafts')) db.deleteObjectStore('drafts')
-        db.createObjectStore('drafts', { keyPath: 'key' })
+    dbPromise = openDB<OfflineSchema>('tayeng-offline', 3, {
+      // Version-aware so later upgrades never wipe existing drafts/photos.
+      upgrade(db, oldVersion) {
+        // v2 reshaped draft keys to `${userId}::${jobId}` — only rebuild when
+        // coming from v1, otherwise keep the user's pending drafts intact.
+        if (oldVersion > 0 && oldVersion < 2 && db.objectStoreNames.contains('drafts')) {
+          db.deleteObjectStore('drafts')
+        }
+        if (!db.objectStoreNames.contains('drafts')) {
+          db.createObjectStore('drafts', { keyPath: 'key' })
+        }
         if (!db.objectStoreNames.contains('photos')) {
           const store = db.createObjectStore('photos', { keyPath: 'localId' })
           store.createIndex('by-job', 'jobId')
+        }
+        // v3: cache for starting new jobs offline.
+        if (!db.objectStoreNames.contains('newjobcache')) {
+          db.createObjectStore('newjobcache')
         }
       },
     })
   }
   return dbPromise
+}
+
+// --- New-job cache (templates + clients + surveyors for offline creation) ---
+export async function cacheNewJobData(data: CachedNewJobData): Promise<void> {
+  await (await getDB()).put('newjobcache', data, 'data')
+}
+export async function getCachedNewJobData(): Promise<CachedNewJobData | undefined> {
+  return (await getDB()).get('newjobcache', 'data')
+}
+
+/** Drafts for jobs started locally that aren't on the server yet (this user). */
+export async function getLocalCreateDrafts(userId: string): Promise<OfflineDraft[]> {
+  const all = await (await getDB()).getAll('drafts')
+  return all.filter(d => d.userId === userId && d.pendingCreate)
 }
 
 /** Ask the browser not to evict our data under storage pressure. Best-effort. */

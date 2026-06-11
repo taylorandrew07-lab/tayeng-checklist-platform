@@ -28,51 +28,85 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, reason: 'no-user', message: 'You are signed out.' }
 
-  const draft = await getDraft(user.id, jobId)
+  let draft = await getDraft(user.id, jobId)
   if (!draft) return { ok: true, submitted: false, nothing: true }
   if (draft.userId !== user.id) return { ok: false, reason: 'wrong-user', message: 'This draft belongs to a different user.' }
   // An online-only local-cache draft has nothing to push — never publish it.
-  if (!draft.needsSync && !draft.pendingSubmit) return { ok: true, submitted: false, nothing: true }
+  if (!draft.needsSync && !draft.pendingSubmit && !draft.pendingCreate) return { ok: true, submitted: false, nothing: true }
 
   const rev = draft.updatedAt
+  const wasPendingCreate = !!draft.pendingCreate
 
-  // Status-lock conflict.
-  const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, status').eq('id', jobId).single()
-  if (jobErr || !serverJob) {
-    const message = jobErr?.message ?? 'Job not found on the server.'
-    await putDraft({ ...draft, syncError: message })
-    return { ok: false, reason: 'error', message }
-  }
-  if (LOCKED.includes(serverJob.status) && (draft.needsSync || draft.pendingSubmit)) {
-    const message = `This job is now "${serverJob.status}" on the server — your local changes were kept and not sent.`
-    await putDraft({ ...draft, syncError: message })
-    return { ok: false, reason: 'conflict', message }
-  }
-
-  // Concurrent-edit conflict: did the server answers change since we cached them?
-  if (draft.needsSync || draft.pendingSubmit) {
-    const [valsRes, sigsRes] = await Promise.all([
-      supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
-      supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
-    ])
-    if (valsRes.error || sigsRes.error) {
-      // Don't compare against an empty/failed read — that would false-conflict
-      // or, worse, false-pass. Treat a failed check as a retryable error.
-      const message = (valsRes.error || sigsRes.error)?.message ?? 'Could not verify the server state — will retry.'
+  if (wasPendingCreate) {
+    // Job started offline: create the server row first. Idempotent on the client
+    // UUID, so a retried/interrupted flush never duplicates it. RLS requires the
+    // template's allow_surveyor_start — same as the online create path.
+    const j: any = draft.job ?? {}
+    const { error: createErr } = await supabase.from('jobs').upsert({
+      id: jobId,
+      title: j.title,
+      template_id: j.template_id,
+      vessel_name: j.vessel_name ?? null,
+      surveyor_name: j.surveyor_name ?? null,
+      client_id: j.client_id ?? null,
+      created_by: user.id,
+      assigned_to: user.id,
+      status: 'in_progress',
+      started_at: j.started_at ?? new Date().toISOString(),
+    }, { onConflict: 'id' })
+    if (createErr) {
+      await putDraft({ ...draft, syncError: createErr.message })
+      return { ok: false, reason: 'error', message: createErr.message }
+    }
+    // Mirror the online create: give the linked client visibility of their job.
+    if (j.client_id) {
+      await supabase.from('client_job_permissions').upsert(
+        { client_id: j.client_id, job_id: jobId, can_view_status: true, can_view_pdf: false, can_view_checklist_details: false },
+        { onConflict: 'client_id,job_id' }
+      )
+    }
+    // The row now exists — clear the flag so later syncs treat it as a normal job.
+    draft = { ...draft, pendingCreate: false }
+    await putDraft(draft)
+  } else {
+    // Status-lock conflict.
+    const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, status').eq('id', jobId).single()
+    if (jobErr || !serverJob) {
+      const message = jobErr?.message ?? 'Job not found on the server.'
       await putDraft({ ...draft, syncError: message })
       return { ok: false, reason: 'error', message }
     }
-    const svVals = valsRes.data
-    const svSigs = sigsRes.data
-    const nowVals: Record<string, string> = {}
-    const nowArr: Record<string, string[]> = {}
-    for (const v of (svVals ?? [])) { if (v.value_array) nowArr[v.field_id] = v.value_array; else nowVals[v.field_id] = v.value ?? '' }
-    const nowSigs: Record<string, string> = {}
-    for (const s of (svSigs ?? [])) nowSigs[s.field_id] = s.signature_data
-    if (canon(nowVals, nowArr, nowSigs) !== canon(draft.serverValues, draft.serverArrayValues, draft.serverSignatures)) {
-      const message = 'This checklist was changed on the server since you went offline. Your local changes were kept and not sent — reload to merge.'
+    if (LOCKED.includes(serverJob.status) && (draft.needsSync || draft.pendingSubmit)) {
+      const message = `This job is now "${serverJob.status}" on the server — your local changes were kept and not sent.`
       await putDraft({ ...draft, syncError: message })
       return { ok: false, reason: 'conflict', message }
+    }
+
+    // Concurrent-edit conflict: did the server answers change since we cached them?
+    if (draft.needsSync || draft.pendingSubmit) {
+      const [valsRes, sigsRes] = await Promise.all([
+        supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
+        supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
+      ])
+      if (valsRes.error || sigsRes.error) {
+        // Don't compare against an empty/failed read — that would false-conflict
+        // or, worse, false-pass. Treat a failed check as a retryable error.
+        const message = (valsRes.error || sigsRes.error)?.message ?? 'Could not verify the server state — will retry.'
+        await putDraft({ ...draft, syncError: message })
+        return { ok: false, reason: 'error', message }
+      }
+      const svVals = valsRes.data
+      const svSigs = sigsRes.data
+      const nowVals: Record<string, string> = {}
+      const nowArr: Record<string, string[]> = {}
+      for (const v of (svVals ?? [])) { if (v.value_array) nowArr[v.field_id] = v.value_array; else nowVals[v.field_id] = v.value ?? '' }
+      const nowSigs: Record<string, string> = {}
+      for (const s of (svSigs ?? [])) nowSigs[s.field_id] = s.signature_data
+      if (canon(nowVals, nowArr, nowSigs) !== canon(draft.serverValues, draft.serverArrayValues, draft.serverSignatures)) {
+        const message = 'This checklist was changed on the server since you went offline. Your local changes were kept and not sent — reload to merge.'
+        await putDraft({ ...draft, syncError: message })
+        return { ok: false, reason: 'conflict', message }
+      }
     }
   }
 

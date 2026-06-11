@@ -4,12 +4,16 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { CloudOff } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
+import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
+import { loadNewJobData } from '@/lib/offline/newJobData'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
   const [jobs, setJobs] = useState<any[]>([])
+  const [localJobs, setLocalJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const tick = useRealtimeRefresh('jobs')
 
@@ -33,10 +37,22 @@ export default function SurveyorDashboard() {
 
       setProfile(p)
       setJobs(j ?? [])
+
+      // Jobs started offline live only on this device until they sync — surface
+      // them so the surveyor can reopen them (server list won't include them yet).
+      if (offlineAvailable()) {
+        const serverIds = new Set((j ?? []).map((x: any) => x.id))
+        const drafts = await getLocalCreateDrafts(session.user.id).catch(() => [])
+        setLocalJobs(drafts.filter(d => !serverIds.has(d.jobId)).map(d => d.job))
+      }
       setLoading(false)
     }
     load()
   }, [tick])
+
+  // Keep the startable templates + clients + surveyors cached so a new job can be
+  // started later with no signal. Refreshes once per dashboard open (when online).
+  useEffect(() => { void loadNewJobData().catch(() => {}) }, [])
 
   const active = jobs.filter(j => ['draft', 'in_progress', 'assigned'].includes(j.status))
   const submitted = jobs.filter(j => ['submitted', 'completed', 'client_visible'].includes(j.status))
@@ -73,6 +89,25 @@ export default function SurveyorDashboard() {
               <p className="text-sm text-gray-500 mt-1">Total</p>
             </div>
           </div>
+
+          {localJobs.length > 0 && (
+            <div>
+              <h2 className="section-title mb-3">Saved on this device — not yet synced</h2>
+              <div className="space-y-3">
+                {localJobs.map(job => (
+                  <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow border-amber-200">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{job.title}</p>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">{job.template?.name} · {job.client?.name ?? 'No client'}</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 bg-amber-100 text-amber-700">
+                      <CloudOff className="h-3 w-3" />Will sync
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           {active.length > 0 && (
             <div>

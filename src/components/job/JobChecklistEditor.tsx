@@ -177,10 +177,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         serverArrayValues: serverBaselineRef.current.arrayValues,
         serverSignatures: serverBaselineRef.current.signatures,
         pendingSubmit: pendingSubmit || existing?.pendingSubmit || false,
+        // Preserve "started offline, not yet on the server" across edits.
+        pendingCreate: existing?.pendingCreate || false,
         dirty: true,
         // Only mark for server sync when the change was made offline (or queued
-        // submit). Online autosaves are a local safety cache, not a push.
-        needsSync: offlineNow || pendingSubmit || existing?.needsSync || false,
+        // submit). Online autosaves are a local safety cache, not a push — except
+        // a job that only exists locally, which must always sync to create itself.
+        needsSync: offlineNow || pendingSubmit || existing?.pendingCreate || existing?.needsSync || false,
         updatedAt: Date.now(),
         lastSyncedAt: existing?.lastSyncedAt ?? null, syncError: existing?.syncError ?? null,
       })
@@ -215,7 +218,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     async function syncNow() {
       if (!offlineAvailable() || typeof navigator === 'undefined' || !navigator.onLine || !currentUserId) return
       const existing = await getDraft(currentUserId, jobId).catch(() => null)
-      if (!existing || (!existing.needsSync && !existing.pendingSubmit)) return
+      if (!existing || (!existing.needsSync && !existing.pendingSubmit && !existing.pendingCreate)) return
       setSyncStatus('syncing'); setSyncMessage(null)
       const result = await syncDraft(createClient(), jobId)
       if (result.ok) {
@@ -257,6 +260,19 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       if (!userId) { router.push('/login'); return }
       setCurrentUserId(userId)
+
+      // A job started offline lives only in the local draft until it syncs — the
+      // server row may not exist yet, so load it from the draft regardless of
+      // connectivity. Once synced, pendingCreate is cleared and normal load runs.
+      const localCreate = await getDraft(userId, jobId).catch(() => undefined)
+      if (localCreate && localCreate.userId === userId && localCreate.pendingCreate) {
+        hydrateFromDraft(localCreate)
+        setOnline(typeof navigator === 'undefined' ? true : navigator.onLine)
+        draftLoadedRef.current = true
+        setSyncStatus('pending')
+        setLoading(false)
+        return
+      }
 
       // Offline: load from a saved local draft for this user if we have one.
       if (isOffline) {
