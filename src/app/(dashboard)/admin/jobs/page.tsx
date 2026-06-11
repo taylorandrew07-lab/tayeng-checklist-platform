@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import { useRealtimeRefresh } from '@/lib/realtime'
 
 export default function AdminChecklistsPage() {
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const tick = useRealtimeRefresh('jobs')
 
   useEffect(() => {
     async function load() {
@@ -25,7 +27,7 @@ export default function AdminChecklistsPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [tick])
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">

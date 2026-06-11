@@ -6,6 +6,7 @@ import { Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
+import { useRealtimeRefresh } from '@/lib/realtime'
 import type { JobStatus } from '@/lib/types/database'
 
 interface MonitorJob {
@@ -27,6 +28,7 @@ export default function OfficeJobsMonitor() {
   const [canView, setCanView] = useState(true)
   const [canOpenDetail, setCanOpenDetail] = useState(false)
   const [loading, setLoading] = useState(true)
+  const tick = useRealtimeRefresh('jobs')
 
   useEffect(() => {
     async function load() {
@@ -53,7 +55,7 @@ export default function OfficeJobsMonitor() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [tick])
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

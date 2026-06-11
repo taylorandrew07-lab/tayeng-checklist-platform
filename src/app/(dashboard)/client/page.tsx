@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, ClipboardList } from 'lucide-react'
 import { getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
+import { useRealtimeRefresh } from '@/lib/realtime'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
 
@@ -30,6 +31,7 @@ export default function ClientPortal() {
   const [jobs, setJobs] = useState<PermittedJob[]>([])
   const [loading, setLoading] = useState(true)
   const [noClient, setNoClient] = useState(false)
+  const tick = useRealtimeRefresh('jobs')
 
   useEffect(() => {
     async function load() {
@@ -78,7 +80,7 @@ export default function ClientPortal() {
       setLoading(false)
     }
     load()
-  }, [router])
+  }, [router, tick])
 
   if (loading) {
     return (

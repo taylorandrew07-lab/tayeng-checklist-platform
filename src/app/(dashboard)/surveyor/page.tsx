@@ -5,11 +5,13 @@ import Link from 'next/link'
 import { Plus, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import { useRealtimeRefresh } from '@/lib/realtime'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const tick = useRealtimeRefresh('jobs')
 
   useEffect(() => {
     async function load() {
@@ -34,7 +36,7 @@ export default function SurveyorDashboard() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [tick])
 
   const active = jobs.filter(j => ['draft', 'in_progress', 'assigned'].includes(j.status))
   const submitted = jobs.filter(j => ['submitted', 'completed', 'client_visible'].includes(j.status))
