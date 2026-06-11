@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Menu } from 'lucide-react'
 import type { Profile } from '@/lib/types/database'
 
@@ -26,7 +27,7 @@ export default function Header({ profile, title, onMenuClick }: HeaderProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-3 flex-shrink-0">
+      <Link href="/profile" className="flex items-center gap-3 flex-shrink-0 rounded-lg hover:bg-gray-100 px-1.5 py-1 -mr-1.5" title="My profile">
         <div className="text-right hidden sm:block">
           <p className="text-sm font-medium text-gray-900 leading-tight">{profile.full_name}</p>
           <p className="text-xs text-gray-500 capitalize">{profile.role}</p>
@@ -34,7 +35,7 @@ export default function Header({ profile, title, onMenuClick }: HeaderProps) {
         <div className="w-9 h-9 rounded-full bg-brand-700 flex items-center justify-center text-white font-medium text-sm flex-shrink-0">
           {profile.full_name.charAt(0).toUpperCase()}
         </div>
-      </div>
+      </Link>
     </header>
   )
 }

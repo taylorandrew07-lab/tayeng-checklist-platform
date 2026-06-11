@@ -17,7 +17,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, Building2, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen,
+  Receipt, Ship, FolderOpen, ShieldCheck,
 } from 'lucide-react'
 
 interface NavItem {
@@ -34,6 +34,7 @@ const adminNav: NavItem[] = [
   { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Approvals', href: '/admin/profile-requests', icon: ShieldCheck },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
 ]
 
@@ -157,6 +158,8 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
   async function handleSignOut() {
     if (dirtyState.isDirty) {
       if (!window.confirm('You have unsaved changes. Sign out anyway?')) return
+    } else if (!window.confirm('Log out of Taylor Engineering?')) {
+      return
     }
     const supabase = createClient()
     await supabase.auth.signOut()

@@ -8,6 +8,7 @@ import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
 import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
 import CargoSyncManager from '@/components/cargo/CargoSyncManager'
+import BackGuard from '@/components/auth/BackGuard'
 import { fetchMyOfficePermissions } from '@/lib/office/permissions'
 import type { Profile } from '@/lib/types/database'
 
@@ -69,9 +70,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       try { localStorage.setItem('te_profile', JSON.stringify(data)) } catch { /* storage may be unavailable */ }
       setProfile(data)
 
-      // Role-based path guard: redirect users who landed on the wrong dashboard
+      // Role-based path guard: redirect users who landed on the wrong dashboard.
+      // Shared routes (e.g. the profile screen) are available to every role.
+      const SHARED_ROUTES = ['/profile']
       const expectedPrefix = ROLE_HOME[data.role]
-      if (expectedPrefix && !pathname.startsWith(expectedPrefix)) {
+      const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
+      if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {
         router.replace(expectedPrefix)
         return
       }
@@ -173,6 +177,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <ServiceWorkerRegister enabled={profile.role === 'admin' || profile.role === 'surveyor'} />
       {(profile.role === 'admin' || profile.role === 'surveyor') && <OfflineSyncManager />}
       {(profile.role === 'admin' || profile.role === 'surveyor') && <CargoSyncManager />}
+      <BackGuard />
       <Sidebar
         profile={profile}
         open={sidebarOpen}

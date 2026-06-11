@@ -33,6 +33,16 @@ export default function LoginPage() {
     }
     // Prefill the last-used email (fallback for weak iOS standalone-PWA autofill).
     try { const last = localStorage.getItem('te_last_email'); if (last) setEmail(last) } catch { /* storage unavailable */ }
+
+    // If already signed in (e.g. landed here via the phone back button), bounce
+    // straight back into the app — the session is still valid, so /login should
+    // never strand an authenticated user on the login screen.
+    const supabase = createClient()
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
+    }).catch(() => { /* stay on login */ })
   }, [])
 
   async function handleLogin(e: React.FormEvent) {
