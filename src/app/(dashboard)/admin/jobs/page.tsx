@@ -137,7 +137,16 @@ export default function AdminChecklistsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
+                [0, 1, 2, 3, 4].map(i => (
+                  <tr key={i}>
+                    <td className="px-4 py-3"><div className="skeleton h-4 w-40" /><div className="skeleton h-3 w-24 mt-1.5" /></td>
+                    <td className="px-4 py-3"><div className="skeleton h-3.5 w-20" /></td>
+                    <td className="px-4 py-3"><div className="skeleton h-3.5 w-28" /></td>
+                    <td className="px-4 py-3"><div className="skeleton h-3.5 w-24" /></td>
+                    <td className="px-4 py-3"><div className="skeleton h-5 w-16 rounded-full" /></td>
+                    <td className="px-4 py-3"><div className="skeleton h-5 w-5 rounded-full mx-auto" /></td>
+                  </tr>
+                ))
               ) : sorted.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
               ) : sorted.map((job) => (
@@ -192,7 +201,18 @@ export default function AdminChecklistsPage() {
           </div>
         )}
         {loading ? (
-          <div className="card p-8 text-center text-gray-400">Loading…</div>
+          [0, 1, 2].map(i => (
+            <div key={i} className="card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="skeleton h-4 w-32" />
+                <div className="skeleton h-5 w-16 rounded-full" />
+              </div>
+              <div className="skeleton h-3 w-40" />
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="skeleton h-3 w-20" /><div className="skeleton h-3 w-24" />
+              </div>
+            </div>
+          ))
         ) : sorted.length === 0 ? (
           <div className="card p-8 text-center text-gray-400">No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></div>
         ) : sorted.map((job) => (

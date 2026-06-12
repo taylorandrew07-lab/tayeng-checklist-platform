@@ -43,7 +43,9 @@ function StatTile({ def, value, loading }: { def: TileDef; value: number; loadin
     <div className="flex items-center justify-between">
       <div>
         <p className="text-sm text-gray-500">{def.label}</p>
-        <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : value}</p>
+        {loading
+          ? <div className="skeleton h-8 w-14 mt-1.5" />
+          : <p className="text-3xl font-bold text-gray-900 mt-1 tnum">{value}</p>}
         {def.sub && <p className="text-xs text-gray-400 mt-0.5">{def.sub}</p>}
       </div>
       <div className={`w-12 h-12 rounded-xl ${def.color} flex items-center justify-center`}>
@@ -304,7 +306,17 @@ export default function AdminDashboard() {
           </div>
         </div>
         {loading ? (
-          <div className="px-6 py-10 text-center text-gray-400">Loading…</div>
+          <div className="divide-y divide-gray-100">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="flex items-center gap-4 px-6 py-4">
+                <div className="flex-1 space-y-2">
+                  <div className="skeleton h-4 w-1/3" />
+                  <div className="skeleton h-3 w-1/2" />
+                </div>
+                <div className="skeleton h-5 w-16 rounded-full" />
+              </div>
+            ))}
+          </div>
         ) : visibleChecklists.length === 0 ? (
           <div className="px-6 py-10 text-center">
             <p className="text-gray-400 text-sm">No recent checklists to display.</p>
