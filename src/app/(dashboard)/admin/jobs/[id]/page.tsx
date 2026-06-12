@@ -28,6 +28,7 @@ export default function AdminChecklistDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [showPermModal, setShowPermModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [changingStatus, setChangingStatus] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
@@ -117,6 +118,14 @@ export default function AdminChecklistDetailPage() {
       await supabase.from('client_job_permissions').insert({ ...perms, job_id: jobId, client_id: job.client_id })
     }
     setShowPermModal(false)
+    load()
+  }
+
+  async function changeStatus(newStatus: JobStatus) {
+    setChangingStatus(true); setError(null)
+    const { error: err } = await createClient().from('jobs').update({ status: newStatus }).eq('id', jobId)
+    setChangingStatus(false)
+    if (err) { setError(err.message); return }
     load()
   }
 
@@ -286,6 +295,31 @@ export default function AdminChecklistDetailPage() {
           <div className="card p-5">
             <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
             <div className="space-y-2">
+              {/* Status transitions — one-click moves through the workflow. */}
+              {job.status === 'submitted' && (
+                <button onClick={() => changeStatus('completed')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-green-700 hover:bg-green-50">
+                  {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Mark as completed
+                </button>
+              )}
+              {job.status === 'completed' && (
+                <>
+                  <button onClick={() => changeStatus('client_visible')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-brand-700 hover:bg-brand-50">
+                    {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                    Make visible to client
+                  </button>
+                  <button onClick={() => changeStatus('submitted')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-gray-600">
+                    <ArrowLeft className="h-4 w-4" />
+                    Reopen to submitted
+                  </button>
+                </>
+              )}
+              {job.status === 'client_visible' && (
+                <button onClick={() => changeStatus('completed')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-gray-600">
+                  {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <EyeOff className="h-4 w-4" />}
+                  Hide from client (set completed)
+                </button>
+              )}
               <button
                 onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)}
                 className="btn-ghost w-full justify-start text-sm"
