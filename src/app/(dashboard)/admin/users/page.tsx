@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
 import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName, OfficePermissionCatalogRow } from '@/lib/types/database'
@@ -266,15 +268,16 @@ export default function UsersPage() {
   }
 
   async function rejectUser(user: Profile) {
-    if (!confirm(`Reject and delete account for ${user.full_name}?`)) return
+    if (!(await confirmDialog({ title: 'Reject account', message: `Reject and delete the account for ${user.full_name}?`, danger: true, confirmLabel: 'Reject & delete' }))) return
     const supabase = createClient()
     await supabase.from('profiles').delete().eq('id', user.id)
+    toast.success('Account rejected')
     load()
   }
 
   async function toggleActive(user: Profile) {
     if ((user as any).is_super_admin && !isSuperAdmin) {
-      alert('Only the Super Admin can deactivate the Super Admin account.')
+      toast.error('Only the Super Admin can deactivate the Super Admin account.')
       return
     }
     const supabase = createClient()

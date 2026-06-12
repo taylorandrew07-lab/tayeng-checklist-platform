@@ -14,6 +14,7 @@ import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog } from '@/components/ui/confirm'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature } from '@/lib/types/database'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
@@ -234,9 +235,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     async function discardDraft() {
-      if (typeof window !== 'undefined' && !window.confirm(
-        'Discard the changes saved on this device and reload from the server? Anything not yet synced will be lost.'
-      )) return
+      if (!(await confirmDialog({
+        title: 'Discard local changes',
+        message: 'Discard the changes saved on this device and reload from the server? Anything not yet synced will be lost.',
+        danger: true, confirmLabel: 'Discard',
+      }))) return
       if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
       draftLoadedRef.current = false
       setSyncStatus('idle'); setSyncMessage(null)

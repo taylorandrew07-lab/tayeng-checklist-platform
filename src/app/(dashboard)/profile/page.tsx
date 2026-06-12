@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Pencil, KeyRound, Clock, X, ShieldCheck, WifiOff } from 'lucide-react'
 import CredentialsManager from '@/components/personal-docs/CredentialsManager'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 
 interface ProfileRow { id: string; full_name: string; email: string; phone: string | null; role: string; is_super_admin?: boolean }
 interface PendingReq { id: string; requested_changes: Record<string, any>; created_at: string }
@@ -100,6 +102,7 @@ export default function ProfilePage() {
       })
       if (error) throw error
       setEditing(false)
+      toast.success('Change request submitted for approval')
       await load()
     } catch (err: any) {
       setError(err?.message ?? 'Could not submit your request.')
@@ -110,9 +113,10 @@ export default function ProfilePage() {
 
   async function cancelPending() {
     if (!pending) return
-    if (!window.confirm('Cancel your pending change request?')) return
+    if (!(await confirmDialog({ message: 'Cancel your pending change request?', confirmLabel: 'Cancel request' }))) return
     const supabase = createClient()
     await supabase.from('profile_change_requests').delete().eq('id', pending.id)
+    toast.success('Request cancelled')
     await load()
   }
 

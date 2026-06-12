@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { Toaster } from '@/components/ui/toast'
+import { ConfirmHost } from '@/components/ui/confirm'
 
 export const metadata: Metadata = {
   title: {
@@ -42,7 +44,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+        <ConfirmHost />
+      </body>
     </html>
   )
 }

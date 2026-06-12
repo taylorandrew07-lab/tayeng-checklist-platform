@@ -10,6 +10,8 @@ import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageDate } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
 import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 
 /** Cargo voyage list. Works under both /surveyor/cargo and /admin/cargo. */
 export default function CargoListView() {
@@ -55,20 +57,20 @@ export default function CargoListView() {
 
   async function handleDelete(v: Voyage) {
     if (!userId) return
-    if (!window.confirm(`Delete the voyage "${v.vesselName} — ${v.voyageNumber}" and all its photos? This cannot be undone.`)) return
+    if (!(await confirmDialog({ title: 'Delete voyage', message: `Delete the voyage "${v.vesselName} — ${v.voyageNumber}" and all its photos? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     setDeleting(v.id)
     try {
       // If it was ever synced, remove the cloud copy first so the client loses
       // access. Requires connectivity — otherwise keep the local copy intact.
       if (v.lastSyncedAt) {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          window.alert('This voyage is in the cloud. Connect to the internet to delete it, so the client copy is removed too.')
+          toast.error('This voyage is in the cloud. Connect to the internet to delete it, so the client copy is removed too.')
           return
         }
         try {
           await deleteRemoteVoyage(createClient(), v.id)
         } catch {
-          window.alert('Could not delete the cloud copy — the voyage was NOT deleted (the client can still see it). Please try again when online.')
+          toast.error('Could not delete the cloud copy — the voyage was NOT deleted (the client can still see it). Please try again when online.')
           return
         }
       }

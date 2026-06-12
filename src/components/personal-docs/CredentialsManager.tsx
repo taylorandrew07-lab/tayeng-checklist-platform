@@ -9,6 +9,7 @@ import {
   listCredentialRows, saveCredential, deleteDocument, signedUrl, formatBytes, expiryStatus,
 } from '@/lib/personal-docs/api'
 import PersonalDocsManager from './PersonalDocsManager'
+import { confirmDialog } from '@/components/ui/confirm'
 
 function StatusChip({ expiry, lead }: { expiry: string | null; lead: number }) {
   const { status, days } = expiryStatus(expiry, lead)
@@ -57,7 +58,7 @@ function CredentialCard({ profileId, def, stage, row, canManage, label, hint, on
   }
   async function remove() {
     if (!row) return
-    if (!window.confirm(`Remove ${label}? This deletes the details and any uploaded file.`)) return
+    if (!(await confirmDialog({ message: `Remove ${label}? This deletes the details and any uploaded file.`, danger: true, confirmLabel: 'Remove' }))) return
     await deleteDocument(row); onChanged()
   }
 

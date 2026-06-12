@@ -7,6 +7,7 @@ import {
   getVessel, listDocuments, uploadDocument, deleteDocument, renameVessel, deleteVessel,
   signedUrl, formatBytes, DOC_CATEGORIES, type Vessel, type VesselDocument,
 } from '@/lib/documents/api'
+import { confirmDialog } from '@/components/ui/confirm'
 
 export default function VesselFolderView({ id, basePath }: { id: string; basePath: string }) {
   const [vessel, setVessel] = useState<Vessel | null>(null)
@@ -55,7 +56,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
   }
 
   async function removeDoc(doc: VesselDocument) {
-    if (!window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) return
+    if (!(await confirmDialog({ message: `Delete "${doc.name}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     await deleteDocument(doc)
     await reload()
   }
@@ -68,7 +69,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
   }
 
   async function removeFolder() {
-    if (!window.confirm(`Delete the vessel folder "${vessel?.name}" and ALL its documents? This cannot be undone.`)) return
+    if (!(await confirmDialog({ title: 'Delete vessel folder', message: `Delete the vessel folder "${vessel?.name}" and ALL its documents? This cannot be undone.`, danger: true, confirmLabel: 'Delete folder' }))) return
     await deleteVessel(id)
     window.location.href = basePath
   }

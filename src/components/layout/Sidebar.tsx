@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import type { Profile } from '@/lib/types/database'
 import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
+import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
@@ -172,8 +173,8 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
 
   async function handleSignOut() {
     if (dirtyState.isDirty) {
-      if (!window.confirm('You have unsaved changes. Sign out anyway?')) return
-    } else if (!window.confirm('Log out of Taylor Engineering?')) {
+      if (!(await confirmDialog({ title: 'Unsaved changes', message: 'You have unsaved changes. Sign out anyway?', danger: true, confirmLabel: 'Sign out' }))) return
+    } else if (!(await confirmDialog({ title: 'Sign out', message: 'Log out of Taylor Engineering?', confirmLabel: 'Sign out' }))) {
       return
     }
     const supabase = createClient()

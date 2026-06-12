@@ -10,6 +10,8 @@ import {
 import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Client, SurveyorName } from '@/lib/types/database'
 import { Modal } from '@/components/ui/Modal'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 
 export default function AdminChecklistDetailPage() {
@@ -110,6 +112,7 @@ export default function AdminChecklistDetailPage() {
 
     setEditMode(false)
     setSaving(false)
+    toast.success('Job saved')
     load()
   }
 
@@ -128,12 +131,13 @@ export default function AdminChecklistDetailPage() {
     setChangingStatus(true); setError(null)
     const { error: err } = await createClient().from('jobs').update({ status: newStatus }).eq('id', jobId)
     setChangingStatus(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(err.message); toast.error('Could not update status'); return }
+    toast.success(`Marked as ${getJobStatusLabel(newStatus)}`)
     load()
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete "${job.title}"? This cannot be undone.`)) return
+    if (!(await confirmDialog({ message: `Delete "${job.title}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     setDeleting(true)
     const supabase = createClient()
     const { error: err } = await supabase.from('jobs').delete().eq('id', jobId)

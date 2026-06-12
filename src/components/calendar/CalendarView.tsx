@@ -17,6 +17,7 @@ import {
   type CalendarEventRow,
 } from '@/lib/calendar/api'
 import type { CalendarJob, CalendarVisibility, UserRole } from '@/lib/types/database'
+import { confirmDialog } from '@/components/ui/confirm'
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 const JOB_COLOR = '#3b82f6'
@@ -193,7 +194,7 @@ function DayModal({ dayStr, jobs, events, isAdmin, onClose, onEditEvent, onChang
   onClose: () => void; onEditEvent: (e: CalendarEventRow) => void; onChanged: () => void
 }) {
   async function removeEvent(id: string) {
-    if (!window.confirm('Delete this event?')) return
+    if (!(await confirmDialog({ message: 'Delete this event?', danger: true, confirmLabel: 'Delete' }))) return
     await deleteEvent(id); onChanged(); onClose()
   }
   return (

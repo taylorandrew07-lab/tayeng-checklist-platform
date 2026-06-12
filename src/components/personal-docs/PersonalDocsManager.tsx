@@ -7,6 +7,7 @@ import {
   listDocuments, addDocument, updateDocument, deleteDocument, signedUrl,
   formatBytes, expiryStatus, DOC_TYPES, type DocInput,
 } from '@/lib/personal-docs/api'
+import { confirmDialog } from '@/components/ui/confirm'
 
 function StatusChip({ expiry, lead }: { expiry: string | null; lead: number }) {
   const { status, days } = expiryStatus(expiry, lead)
@@ -51,7 +52,7 @@ export default function PersonalDocsManager({ profileId, canManage }: { profileI
   }
 
   async function remove(d: PersonalDocument) {
-    if (!window.confirm(`Delete "${d.doc_name}"? This cannot be undone.`)) return
+    if (!(await confirmDialog({ message: `Delete "${d.doc_name}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     await deleteDocument(d)
     await reload()
   }

@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Plus, FileText, Copy, Edit, Loader2, Archive, RotateCcw, Trash2, Eye, ClipboardList, Ship } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatDateTime } from '@/lib/utils'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 import CargoTemplatesPanel from '@/components/cargo/CargoTemplatesPanel'
 
 const statusColor: Record<string, string> = {
@@ -51,7 +53,7 @@ export default function TemplatesPage() {
   const isSuperAdmin = profile?.is_super_admin === true
 
   async function handleCopy(template: any) {
-    if (!confirm(`Copy "${template.name}"? A duplicate will be created as a draft.`)) return
+    if (!(await confirmDialog({ message: `Copy "${template.name}"? A duplicate will be created as a draft.`, confirmLabel: 'Copy' }))) return
 
     setCopying(template.id)
     const supabase = createClient()
@@ -72,7 +74,7 @@ export default function TemplatesPage() {
       .select()
       .single()
 
-    if (tErr || !newTemplate) { alert('Copy failed: ' + tErr?.message); setCopying(null); return }
+    if (tErr || !newTemplate) { toast.error('Copy failed: ' + (tErr?.message ?? 'unknown error')); setCopying(null); return }
 
     const { data: sections } = await supabase
       .from('template_sections')
@@ -158,7 +160,7 @@ export default function TemplatesPage() {
   }
 
   async function handleArchive(template: any) {
-    if (!confirm(`Archive "${template.name}"?\n\nArchived templates will not appear in the New Job dropdown for surveyors. You can restore it later.`)) return
+    if (!(await confirmDialog({ title: 'Archive template', message: `Archive "${template.name}"? Archived templates won't appear in the New Job dropdown for surveyors. You can restore it later.`, confirmLabel: 'Archive' }))) return
 
     setArchiving(template.id)
     const supabase = createClient()
@@ -178,7 +180,7 @@ export default function TemplatesPage() {
   }
 
   async function handleRestore(template: any) {
-    if (!confirm(`Restore "${template.name}"? It will be set back to Draft status.`)) return
+    if (!(await confirmDialog({ title: 'Restore template', message: `Restore "${template.name}"? It will be set back to Draft status.`, confirmLabel: 'Restore' }))) return
 
     setRestoring(template.id)
     const supabase = createClient()
@@ -198,7 +200,7 @@ export default function TemplatesPage() {
   }
 
   async function handleDelete(template: any) {
-    if (!confirm(`Permanently delete "${template.name}"?\n\nThis cannot be undone.`)) return
+    if (!(await confirmDialog({ title: 'Delete template', message: `Permanently delete "${template.name}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
 
     setDeleting(template.id)
     const supabase = createClient()

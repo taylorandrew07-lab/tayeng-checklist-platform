@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Plus, Ship, Edit, Trash2, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { type CargoTemplate } from '@/lib/cargo/types'
+import { confirmDialog } from '@/components/ui/confirm'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -29,7 +30,7 @@ export default function CargoTemplatesPanel() {
   useEffect(() => { load() }, [])
 
   async function handleDelete(t: CargoTemplate) {
-    if (!confirm(`Permanently delete "${t.name}"? Existing voyages keep their own copy of the readings; this only removes the template.`)) return
+    if (!(await confirmDialog({ title: 'Delete template', message: `Permanently delete "${t.name}"? Existing voyages keep their own copy of the readings; this only removes the template.`, danger: true, confirmLabel: 'Delete' }))) return
     setDeleting(t.id)
     setError(null)
     const supabase = createClient()
