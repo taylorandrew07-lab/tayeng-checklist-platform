@@ -17,7 +17,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, Mail, CalendarDays,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard,
 } from 'lucide-react'
 
 interface NavItem {
@@ -35,6 +35,7 @@ const adminNav: NavItem[] = [
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
   { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Personnel', href: '/personnel', icon: IdCard },
   { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
@@ -73,7 +74,7 @@ function officeNav(officePermissions: string[]): NavItem[] {
   const nav = [...officeBaseNav]
   const granted = new Set(officePermissions)
   if (granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) {
-    nav.push({ label: 'Surveyor Documents', href: '/office/documents', icon: FileText })
+    nav.push({ label: 'Personnel', href: '/personnel', icon: IdCard })
   }
   if (granted.has(OFFICE_PERMISSIONS.CALENDAR_VIEW)) {
     nav.push({ label: 'Calendar', href: '/calendar', icon: CalendarDays })

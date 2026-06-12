@@ -76,7 +76,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       // Role-based path guard: redirect users who landed on the wrong dashboard.
       // Shared routes (e.g. the profile screen) are available to every role.
-      const SHARED_ROUTES = ['/profile', '/inbox', '/calendar']
+      const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel']
       const expectedPrefix = ROLE_HOME[data.role]
       const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
       if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {
