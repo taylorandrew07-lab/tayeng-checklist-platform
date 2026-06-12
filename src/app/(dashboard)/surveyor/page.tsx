@@ -81,15 +81,15 @@ export default function SurveyorDashboard() {
         <>
           <div className="grid grid-cols-3 gap-4">
             <div className="card p-4 text-center">
-              <p className="text-3xl font-bold text-yellow-600">{active.length}</p>
+              <p className="text-3xl font-bold text-yellow-600 tnum">{active.length}</p>
               <p className="text-sm text-gray-500 mt-1">Active</p>
             </div>
             <div className="card p-4 text-center">
-              <p className="text-3xl font-bold text-purple-600">{submitted.length}</p>
+              <p className="text-3xl font-bold text-purple-600 tnum">{submitted.length}</p>
               <p className="text-sm text-gray-500 mt-1">Submitted</p>
             </div>
             <div className="card p-4 text-center">
-              <p className="text-3xl font-bold text-gray-600">{jobs.length}</p>
+              <p className="text-3xl font-bold text-gray-600 tnum">{jobs.length}</p>
               <p className="text-sm text-gray-500 mt-1">Total</p>
             </div>
           </div>

@@ -96,7 +96,9 @@ export default function OfficeDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-500">{c.label}</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : c.value}</p>
+                    {loading
+                      ? <div className="skeleton h-8 w-14 mt-1.5" />
+                      : <p className="text-3xl font-bold text-gray-900 mt-1 tnum">{c.value}</p>}
                   </div>
                   <div className={`w-12 h-12 rounded-xl ${c.color} flex items-center justify-center`}>
                     <c.icon className="h-6 w-6 text-white" />
