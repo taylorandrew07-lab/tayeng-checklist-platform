@@ -21,6 +21,28 @@ import type { CalendarJob, CalendarVisibility, UserRole } from '@/lib/types/data
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 const JOB_COLOR = '#3b82f6'
 const LEAVE_COLOR = '#f59e0b'
+const EVENT_COLOR = '#6366f1' // indigo — distinct from jobs
+
+// Jobs are coloured by status so the calendar reads at a glance.
+const JOB_STATUS_COLOR: Record<string, string> = {
+  draft: '#94a3b8',          // slate
+  assigned: '#3b82f6',       // blue
+  in_progress: '#3b82f6',    // blue
+  submitted: '#8b5cf6',      // violet
+  completed: '#22c55e',      // green
+  client_visible: '#14b8a6', // teal
+  archived: '#94a3b8',
+}
+const jobColor = (status: string) => JOB_STATUS_COLOR[status] ?? JOB_COLOR
+
+const LEGEND: { color: string; label: string }[] = [
+  { color: '#3b82f6', label: 'Job — active' },
+  { color: '#8b5cf6', label: 'Job — submitted' },
+  { color: '#22c55e', label: 'Job — completed' },
+  { color: '#14b8a6', label: 'Job — client visible' },
+  { color: LEAVE_COLOR, label: 'Leave' },
+  { color: EVENT_COLOR, label: 'Event' },
+]
 
 const ROLE_OPTIONS: { role: UserRole; label: string }[] = [
   { role: 'surveyor', label: 'Surveyors' }, { role: 'admin', label: 'Admins' },
@@ -126,8 +148,8 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
                       className={`min-h-[84px] text-left p-1.5 rounded-lg border align-top transition-colors ${inMonth ? 'bg-white border-gray-100 hover:border-brand-200' : 'bg-gray-50/60 border-transparent'}`}>
                       <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-xs ${isToday(day) ? 'bg-brand-600 text-white font-semibold' : inMonth ? 'text-gray-700' : 'text-gray-300'}`}>{format(day, 'd')}</span>
                       <div className="mt-1 space-y-0.5">
-                        {dayEvents.slice(0, 2).map(e => <Chip key={e.id} color={e.color ?? (e.event_type === 'leave' ? LEAVE_COLOR : '#3b82f6')} label={e.event_type === 'leave' ? (isAdmin ? `Leave: ${e.owner_name ?? ''}` : 'Leave') + (e.status === 'pending' ? ' (pending)' : '') : e.title} />)}
-                        {dayJobs.slice(0, Math.max(0, 3 - Math.min(dayEvents.length, 2))).map(j => <Chip key={j.id} color={JOB_COLOR} label={j.surveyor_name ? `${j.vessel_name ?? j.title} · ${j.surveyor_name}` : (j.vessel_name ?? j.title)} />)}
+                        {dayEvents.slice(0, 2).map(e => <Chip key={e.id} color={e.event_type === 'leave' ? LEAVE_COLOR : (e.color ?? EVENT_COLOR)} label={e.event_type === 'leave' ? (isAdmin ? `Leave: ${e.owner_name ?? ''}` : 'Leave') + (e.status === 'pending' ? ' (pending)' : '') : e.title} />)}
+                        {dayJobs.slice(0, Math.max(0, 3 - Math.min(dayEvents.length, 2))).map(j => <Chip key={j.id} color={jobColor(j.status)} label={j.surveyor_name ? `${j.vessel_name ?? j.title} · ${j.surveyor_name}` : (j.vessel_name ?? j.title)} />)}
                         {total > 3 && <p className="text-[10px] text-gray-400 pl-0.5">+{total - 3} more</p>}
                       </div>
                     </button>
@@ -138,10 +160,10 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
           </div>
         )}
 
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: JOB_COLOR }} />Jobs</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: LEAVE_COLOR }} />Leave</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />Events</span>
+        <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+          {LEGEND.map(l => (
+            <span key={l.label} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.color }} />{l.label}</span>
+          ))}
         </div>
       </div>
 
@@ -198,8 +220,8 @@ function DayModal({ dayStr, jobs, events, isAdmin, onClose, onEditEvent, onChang
         ))}
 
         {jobs.map(j => (
-          <div key={j.id} className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
-            <p className="font-medium text-gray-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-500" />{j.vessel_name ?? j.title}<span className="text-xs text-gray-400">{j.job_number}</span></p>
+          <div key={j.id} className="rounded-lg border border-gray-200 p-3" style={{ borderLeftWidth: 3, borderLeftColor: jobColor(j.status) }}>
+            <p className="font-medium text-gray-900 flex items-center gap-2"><Briefcase className="h-4 w-4" style={{ color: jobColor(j.status) }} />{j.vessel_name ?? j.title}<span className="text-xs text-gray-400">{j.job_number}</span></p>
             <p className="text-xs text-gray-500 mt-0.5">{j.surveyor_name ?? 'No surveyor'} · {j.client_name ?? 'No client'} · {j.status}</p>
           </div>
         ))}
@@ -248,7 +270,7 @@ function EventModal({ editing, onClose, onSaved }: { editing: CalendarEventRow |
   const [desc, setDesc] = useState(e?.description ?? '')
   const [start, setStart] = useState(e?.start_date ?? '')
   const [end, setEnd] = useState(e?.end_date ?? '')
-  const [color, setColor] = useState(e?.color ?? '#3b82f6')
+  const [color, setColor] = useState(e?.color ?? EVENT_COLOR)
   const [visibility, setVisibility] = useState<CalendarVisibility>(e && e.visibility !== 'private' ? e.visibility : 'everyone')
   const [roles, setRoles] = useState<Set<UserRole>>(new Set(e?.visible_roles ?? []))
   const [picked, setPicked] = useState<PickedUser[]>([])

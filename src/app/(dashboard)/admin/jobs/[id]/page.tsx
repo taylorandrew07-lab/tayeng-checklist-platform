@@ -35,6 +35,7 @@ export default function AdminChecklistDetailPage() {
     surveyor_name: '',
     client_id: '',
     status: '' as JobStatus,
+    scheduled_date: '',
   })
 
   useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -70,6 +71,7 @@ export default function AdminChecklistDetailPage() {
       surveyor_name: jobData.surveyor_name ?? '',
       client_id: jobData.client_id ?? '',
       status: jobData.status,
+      scheduled_date: jobData.scheduled_date ?? '',
     })
     setLoading(false)
   }
@@ -85,6 +87,7 @@ export default function AdminChecklistDetailPage() {
         surveyor_name: editForm.surveyor_name || null,
         client_id: editForm.client_id || null,
         status: editForm.status,
+        scheduled_date: editForm.scheduled_date || null,
       })
       .eq('id', jobId)
 
@@ -227,11 +230,18 @@ export default function AdminChecklistDetailPage() {
                     </select>
                   </div>
                 </div>
-                <div>
-                  <label className="label-base">Status</label>
-                  <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">
-                    {statusFlow.map(s => <option key={s} value={s}>{getJobStatusLabel(s)}</option>)}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label-base">Status</label>
+                    <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">
+                      {statusFlow.map(s => <option key={s} value={s}>{getJobStatusLabel(s)}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-base">Scheduled date</label>
+                    <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
+                    <p className="text-[11px] text-gray-400 mt-1">Sets where the job sits on the calendar.</p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -263,6 +273,10 @@ export default function AdminChecklistDetailPage() {
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Created by</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.creator?.full_name}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Scheduled</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Started</dt>
