@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
+import { Plus, PlusCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -29,10 +29,31 @@ function SortHeader({ label, col, sort, onSort }: {
   )
 }
 
+/** Inline complete toggle: a + on submitted jobs that becomes a green tick once
+ *  completed (click again to reopen). Pre-submitted jobs show nothing. */
+function CompleteToggle({ job, busy, onToggle }: {
+  job: any; busy: boolean; onToggle: (job: any, e: MouseEvent) => void
+}) {
+  if (busy) return <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+  const done = job.status === 'completed' || job.status === 'client_visible'
+  if (done) return (
+    <button onClick={e => onToggle(job, e)} title="Completed — click to reopen" aria-label="Completed" className="text-green-600 hover:text-green-700">
+      <CheckCircle2 className="h-5 w-5" />
+    </button>
+  )
+  if (job.status === 'submitted') return (
+    <button onClick={e => onToggle(job, e)} title="Mark as completed" aria-label="Mark as completed" className="text-gray-300 hover:text-green-600 transition-colors">
+      <PlusCircle className="h-5 w-5" />
+    </button>
+  )
+  return <span className="block h-5 w-5" aria-hidden />
+}
+
 export default function AdminChecklistsPage() {
   const router = useRouter()
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'date', dir: 'desc' })
   const tick = useRealtimeRefresh('jobs')
 
@@ -80,6 +101,16 @@ export default function AdminChecklistsPage() {
 
   const open = (id: string) => router.push(`/admin/jobs/${id}`)
 
+  // Toggle a job between submitted and completed from the list (no navigation).
+  async function toggleComplete(job: any, e: MouseEvent) {
+    e.stopPropagation()
+    const next = (job.status === 'completed' || job.status === 'client_visible') ? 'submitted' : 'completed'
+    setBusyId(job.id)
+    const { error } = await createClient().from('jobs').update({ status: next }).eq('id', job.id)
+    if (!error) setJobs(js => js.map(j => j.id === job.id ? { ...j, status: next } : j))
+    setBusyId(null)
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
@@ -101,13 +132,14 @@ export default function AdminChecklistsPage() {
                 <SortHeader label="Client" col="client" sort={sort} onSort={handleSort} />
                 <SortHeader label="Surveyor" col="surveyor" sort={sort} onSort={handleSort} />
                 <SortHeader label="Status" col="status" sort={sort} onSort={handleSort} />
+                <th className="px-4 py-3 w-12 text-center font-medium text-gray-700" title="Mark completed">Done</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
               ) : sorted.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
               ) : sorted.map((job) => (
                 <tr key={job.id} onClick={() => open(job.id)} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-4 py-3">
@@ -121,6 +153,11 @@ export default function AdminChecklistsPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
                       {getJobStatusLabel(job.status)}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-center">
+                      <CompleteToggle job={job} busy={busyId === job.id} onToggle={toggleComplete} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,9 +199,12 @@ export default function AdminChecklistsPage() {
           <div key={job.id} onClick={() => open(job.id)} className="card p-4 cursor-pointer hover:shadow-md transition-shadow space-y-2">
             <div className="flex items-start justify-between gap-2">
               <p className="font-medium text-gray-900">{job.vessel_name ?? job.title ?? 'Untitled'}</p>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
-                {getJobStatusLabel(job.status)}
-              </span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
+                  {getJobStatusLabel(job.status)}
+                </span>
+                <CompleteToggle job={job} busy={busyId === job.id} onToggle={toggleComplete} />
+              </div>
             </div>
             <p className="text-xs text-gray-400">{job.job_number}{job.title ? ` · ${job.title}` : ''}</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm pt-1">
