@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
@@ -24,6 +25,7 @@ interface MonitorJob {
 }
 
 export default function OfficeJobsMonitor() {
+  const router = useRouter()
   const [jobs, setJobs] = useState<MonitorJob[]>([])
   const [canView, setCanView] = useState(true)
   const [canOpenDetail, setCanOpenDetail] = useState(false)
@@ -93,7 +95,11 @@ export default function OfficeJobsMonitor() {
                 ) : jobs.length === 0 ? (
                   <tr><td colSpan={canOpenDetail ? 9 : 8} className="px-4 py-10 text-center text-gray-400">No jobs to display.</td></tr>
                 ) : jobs.map(job => (
-                  <tr key={job.id} className="hover:bg-gray-50">
+                  <tr
+                    key={job.id}
+                    onClick={canOpenDetail ? () => router.push(`/office/jobs/${job.id}`) : undefined}
+                    className={`hover:bg-gray-50 ${canOpenDetail ? 'cursor-pointer' : ''}`}
+                  >
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{job.title}</p>
                       <p className="text-xs text-gray-400">{job.job_number ?? '—'}</p>

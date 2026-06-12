@@ -3,30 +3,78 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { FileText, Briefcase, Users, Building2, X, RefreshCw } from 'lucide-react'
+import {
+  FileText, Briefcase, Users, Building2, X, RefreshCw,
+  SlidersHorizontal, ArrowUp, ArrowDown, Plus, Check, Clock,
+} from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
+import type { UiPrefs } from '@/lib/types/database'
 
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
+// ── Dashboard tile catalog ────────────────────────────────────────────────
+type TileKey =
+  | 'activeTemplates' | 'draftTemplates' | 'archivedTemplates'
+  | 'totalJobs' | 'jobsInProgress' | 'jobsSubmitted' | 'jobsCompleted'
+  | 'users' | 'clients' | 'pendingApprovals'
+
+interface TileDef { label: string; sub?: string; href?: string; icon: typeof FileText; color: string }
+
+const TILE_DEFS: Record<TileKey, TileDef> = {
+  activeTemplates:   { label: 'Templates',        sub: 'active',   href: '/admin/templates', icon: FileText,  color: 'bg-blue-500' },
+  draftTemplates:    { label: 'Draft templates',  sub: 'draft',    href: '/admin/templates', icon: FileText,  color: 'bg-gray-400' },
+  archivedTemplates: { label: 'Archived templates', sub: 'archived', href: '/admin/templates', icon: FileText, color: 'bg-red-400' },
+  totalJobs:         { label: 'Jobs',             sub: 'total',    href: '/admin/jobs',      icon: Briefcase, color: 'bg-indigo-500' },
+  jobsInProgress:    { label: 'Jobs in progress', sub: 'open',     href: '/admin/jobs',      icon: Briefcase, color: 'bg-amber-500' },
+  jobsSubmitted:     { label: 'Jobs submitted',   sub: 'awaiting', href: '/admin/jobs',      icon: Briefcase, color: 'bg-purple-500' },
+  jobsCompleted:     { label: 'Jobs completed',   sub: 'done',     href: '/admin/jobs',      icon: Briefcase, color: 'bg-green-500' },
+  users:             { label: 'Users',            href: '/admin/users',   icon: Users,     color: 'bg-purple-500' },
+  clients:           { label: 'Clients',          href: '/admin/clients', icon: Building2,  color: 'bg-pink-500' },
+  pendingApprovals:  { label: 'Pending approvals', href: '/admin/users',  icon: Clock,     color: 'bg-yellow-500' },
+}
+const ALL_TILE_KEYS = Object.keys(TILE_DEFS) as TileKey[]
+const DEFAULT_TILES: TileKey[] = ['activeTemplates', 'totalJobs', 'users', 'clients']
+
+/** A single metric tile. Module-level so it isn't re-created each render. */
+function StatTile({ def, value, loading }: { def: TileDef; value: number; loading: boolean }) {
+  const inner = (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-500">{def.label}</p>
+        <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : value}</p>
+        {def.sub && <p className="text-xs text-gray-400 mt-0.5">{def.sub}</p>}
+      </div>
+      <div className={`w-12 h-12 rounded-xl ${def.color} flex items-center justify-center`}>
+        <def.icon className="h-6 w-6 text-white" />
+      </div>
+    </div>
+  )
+  return def.href
+    ? <Link href={def.href} className="card p-5 hover:shadow-md transition-shadow">{inner}</Link>
+    : <div className="card p-5">{inner}</div>
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
-    activeTemplates: 0,
-    draftTemplates: 0,
-    archivedTemplates: 0,
-    checklists: 0,
-    users: 0,
-    clients: 0,
-    pendingUsers: 0,
-    pendingClients: 0,
-    pendingSurveyors: 0,
+    activeTemplates: 0, draftTemplates: 0, archivedTemplates: 0,
+    checklists: 0, jobsInProgress: 0, jobsSubmitted: 0, jobsCompleted: 0,
+    users: 0, clients: 0,
+    pendingUsers: 0, pendingClients: 0, pendingSurveyors: 0,
   })
   const [recentChecklists, setRecentChecklists] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [clearedAt, setClearedAt] = useState<string | null>(null)
   // Expiring/expired documents across all surveyors (admin-wide; RLS-gated).
   const docAttention = useDocumentAttention({ context: 'admin' })
+
+  // Customizable tiles, persisted to profiles.ui_prefs.dashboard_tiles.
+  const [userId, setUserId] = useState<string | null>(null)
+  const [uiPrefs, setUiPrefs] = useState<UiPrefs | null>(null)
+  const [tiles, setTiles] = useState<TileKey[]>(DEFAULT_TILES)
+  const [editMode, setEditMode] = useState(false)
+  const [savingTiles, setSavingTiles] = useState(false)
 
   useEffect(() => {
     setClearedAt(localStorage.getItem(CLEARED_AT_KEY))
@@ -35,18 +83,22 @@ export default function AdminDashboard() {
 
   async function loadData() {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     const [
       { data: templates },
       { count: jobCount },
+      { data: jobStatuses },
       { count: userCount },
       { count: clientCount },
       { count: pendingUserCount },
       { count: pendingClientCount },
       { count: pendingSurveyorCount },
       { data: jobs },
+      profileRes,
     ] = await Promise.all([
       supabase.from('checklist_templates').select('status'),
       supabase.from('jobs').select('id', { count: 'exact', head: true }),
+      supabase.from('jobs').select('status'),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('clients').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
@@ -57,14 +109,19 @@ export default function AdminDashboard() {
         template:checklist_templates(name),
         client:clients(name)
       `).order('created_at', { ascending: false }).limit(20),
+      user ? supabase.from('profiles').select('ui_prefs').eq('id', user.id).single() : Promise.resolve({ data: null }),
     ])
 
     const tmpl = templates ?? []
+    const js = (jobStatuses ?? []) as { status: string }[]
     setStats({
       activeTemplates: tmpl.filter(t => t.status === 'active').length,
       draftTemplates: tmpl.filter(t => t.status === 'draft').length,
       archivedTemplates: tmpl.filter(t => t.status === 'archived').length,
       checklists: jobCount ?? 0,
+      jobsInProgress: js.filter(j => j.status === 'in_progress' || j.status === 'assigned').length,
+      jobsSubmitted: js.filter(j => j.status === 'submitted').length,
+      jobsCompleted: js.filter(j => j.status === 'completed' || j.status === 'client_visible').length,
       users: userCount ?? 0,
       clients: clientCount ?? 0,
       pendingUsers: pendingUserCount ?? 0,
@@ -72,6 +129,14 @@ export default function AdminDashboard() {
       pendingSurveyors: pendingSurveyorCount ?? 0,
     })
     setRecentChecklists(jobs ?? [])
+
+    if (user) {
+      setUserId(user.id)
+      const prefs = (profileRes?.data as { ui_prefs?: UiPrefs } | null)?.ui_prefs ?? null
+      setUiPrefs(prefs)
+      const saved = prefs?.dashboard_tiles?.filter((k): k is TileKey => (ALL_TILE_KEYS as string[]).includes(k))
+      if (saved && saved.length) setTiles(saved)
+    }
     setLoading(false)
   }
 
@@ -80,23 +145,77 @@ export default function AdminDashboard() {
     localStorage.setItem(CLEARED_AT_KEY, now)
     setClearedAt(now)
   }
-
   function handleUnclear() {
     localStorage.removeItem(CLEARED_AT_KEY)
     setClearedAt(null)
   }
 
+  // ── Tile customization ──────────────────────────────────────────────────
+  function toggleTile(key: TileKey) {
+    setTiles(t => t.includes(key) ? t.filter(k => k !== key) : [...t, key])
+  }
+  function moveTile(idx: number, dir: -1 | 1) {
+    setTiles(t => {
+      const a = [...t]; const j = idx + dir
+      if (j < 0 || j >= a.length) return a
+      ;[a[idx], a[j]] = [a[j], a[idx]]
+      return a
+    })
+  }
+  async function saveTiles() {
+    if (!userId) { setEditMode(false); return }
+    setSavingTiles(true)
+    const ui_prefs = { ...(uiPrefs ?? {}), dashboard_tiles: tiles }
+    const { error } = await createClient().from('profiles').update({ ui_prefs }).eq('id', userId)
+    setSavingTiles(false)
+    if (!error) { setUiPrefs(ui_prefs); setEditMode(false) }
+  }
+  function cancelEdit() {
+    const saved = uiPrefs?.dashboard_tiles?.filter((k): k is TileKey => (ALL_TILE_KEYS as string[]).includes(k))
+    setTiles(saved && saved.length ? saved : DEFAULT_TILES)
+    setEditMode(false)
+  }
+
   const visibleChecklists = clearedAt
     ? recentChecklists.filter(j => j.created_at > clearedAt).slice(0, 6)
     : recentChecklists.slice(0, 6)
-
   const totalPending = stats.pendingUsers + stats.pendingClients + stats.pendingSurveyors
+
+  const tileValue = (k: TileKey): number => {
+    switch (k) {
+      case 'activeTemplates': return stats.activeTemplates
+      case 'draftTemplates': return stats.draftTemplates
+      case 'archivedTemplates': return stats.archivedTemplates
+      case 'totalJobs': return stats.checklists
+      case 'jobsInProgress': return stats.jobsInProgress
+      case 'jobsSubmitted': return stats.jobsSubmitted
+      case 'jobsCompleted': return stats.jobsCompleted
+      case 'users': return stats.users
+      case 'clients': return stats.clients
+      case 'pendingApprovals': return totalPending
+    }
+  }
+  const available = ALL_TILE_KEYS.filter(k => !tiles.includes(k))
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="page-title">Admin Dashboard</h1>
-        <p className="text-gray-500 mt-1">Overview of all activity</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="page-title">Admin Dashboard</h1>
+          <p className="text-gray-500 mt-1">Overview of all activity</p>
+        </div>
+        {!editMode ? (
+          <button onClick={() => setEditMode(true)} className="btn-secondary text-sm flex-shrink-0">
+            <SlidersHorizontal className="h-4 w-4" />Customize
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={cancelEdit} className="btn-secondary text-sm">Cancel</button>
+            <button onClick={saveTiles} disabled={savingTiles} className="btn-primary text-sm">
+              <Check className="h-4 w-4" />{savingTiles ? 'Saving…' : 'Done'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Pending approvals banner */}
@@ -120,85 +239,49 @@ export default function AdminDashboard() {
       {/* Needs your attention — expiring/expired surveyor documents (RLS-gated) */}
       <AttentionCard items={docAttention} />
 
-      {/* Main stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link href="/admin/templates" className="card p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Templates</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : stats.activeTemplates}</p>
-              <p className="text-xs text-gray-400 mt-0.5">active</p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center">
-              <FileText className="h-6 w-6 text-white" />
-            </div>
+      {/* Customize panel */}
+      {editMode && (
+        <div className="card p-5 space-y-4">
+          <div>
+            <h2 className="section-title">Customize your tiles</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Choose which metrics appear and the order they show in. Saved to your account.</p>
           </div>
-        </Link>
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2">Shown on your dashboard</p>
+            {tiles.length === 0 ? (
+              <p className="text-sm text-gray-400">No tiles selected — add some below.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {tiles.map((k, i) => (
+                  <div key={k} className="flex items-center gap-2 p-2 rounded-lg border border-gray-200 bg-gray-50">
+                    <span className="flex-1 text-sm font-medium text-gray-800">{TILE_DEFS[k].label}{TILE_DEFS[k].sub ? ` (${TILE_DEFS[k].sub})` : ''}</span>
+                    <button onClick={() => moveTile(i, -1)} disabled={i === 0} className="btn-ghost p-1 disabled:opacity-30" aria-label="Move up"><ArrowUp className="h-4 w-4" /></button>
+                    <button onClick={() => moveTile(i, 1)} disabled={i === tiles.length - 1} className="btn-ghost p-1 disabled:opacity-30" aria-label="Move down"><ArrowDown className="h-4 w-4" /></button>
+                    <button onClick={() => toggleTile(k)} className="btn-ghost p-1 text-red-600 hover:bg-red-50" aria-label="Remove"><X className="h-4 w-4" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {available.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Available to add</p>
+              <div className="flex flex-wrap gap-2">
+                {available.map(k => (
+                  <button key={k} onClick={() => toggleTile(k)} className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
+                    <Plus className="h-3.5 w-3.5 text-brand-600" />{TILE_DEFS[k].label}{TILE_DEFS[k].sub ? ` (${TILE_DEFS[k].sub})` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-        <Link href="/admin/jobs" className="card p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Jobs</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : stats.checklists}</p>
-              <p className="text-xs text-gray-400 mt-0.5">total</p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center">
-              <Briefcase className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </Link>
-
-        <Link href="/admin/users" className="card p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Users</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : stats.users}</p>
-              {stats.pendingUsers > 0 && <p className="text-xs text-yellow-600 mt-0.5 font-medium">{stats.pendingUsers} pending</p>}
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-purple-500 flex items-center justify-center">
-              <Users className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </Link>
-
-        <Link href="/admin/clients" className="card p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Clients</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{loading ? '—' : stats.clients}</p>
-              {stats.pendingClients > 0 && <p className="text-xs text-yellow-600 mt-0.5 font-medium">{stats.pendingClients} pending</p>}
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-pink-500 flex items-center justify-center">
-              <Building2 className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </Link>
-      </div>
-
-      {/* Template breakdown */}
-      {!loading && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="card p-4 flex items-center gap-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.activeTemplates}</p>
-              <p className="text-sm text-gray-500">Active templates</p>
-            </div>
-          </div>
-          <div className="card p-4 flex items-center gap-4">
-            <div className="w-3 h-3 rounded-full bg-gray-400 flex-shrink-0" />
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.draftTemplates}</p>
-              <p className="text-sm text-gray-500">Draft templates</p>
-            </div>
-          </div>
-          <div className="card p-4 flex items-center gap-4">
-            <div className="w-3 h-3 rounded-full bg-red-400 flex-shrink-0" />
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.archivedTemplates}</p>
-              <p className="text-sm text-gray-500">Archived templates</p>
-            </div>
-          </div>
+      {/* Tile grid */}
+      {tiles.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {tiles.map(k => <StatTile key={k} def={TILE_DEFS[k]} value={tileValue(k)} loading={loading} />)}
         </div>
       )}
 
@@ -208,23 +291,13 @@ export default function AdminDashboard() {
           <h2 className="section-title">Recent Jobs</h2>
           <div className="flex items-center gap-2">
             {clearedAt && (
-              <button
-                onClick={handleUnclear}
-                className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium"
-                title="Show all recent checklists"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Restore
+              <button onClick={handleUnclear} className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-800 font-medium" title="Show all recent checklists">
+                <RefreshCw className="h-3.5 w-3.5" />Restore
               </button>
             )}
             {visibleChecklists.length > 0 && (
-              <button
-                onClick={handleClear}
-                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium"
-                title="Clear recent checklists from dashboard (does not delete records)"
-              >
-                <X className="h-3.5 w-3.5" />
-                Clear
+              <button onClick={handleClear} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium" title="Clear recent checklists from dashboard (does not delete records)">
+                <X className="h-3.5 w-3.5" />Clear
               </button>
             )}
             <Link href="/admin/jobs" className="text-sm text-brand-600 hover:text-brand-800 font-medium">View all →</Link>

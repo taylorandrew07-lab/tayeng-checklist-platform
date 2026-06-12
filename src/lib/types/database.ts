@@ -43,6 +43,8 @@ export type JobStatus =
 export interface UiPrefs {
   /** Ordered list of nav item hrefs for this user's sidebar. */
   nav_order?: string[]
+  /** Ordered list of dashboard tile keys the user has chosen to show. */
+  dashboard_tiles?: string[]
 }
 
 export interface Profile {

@@ -142,8 +142,13 @@ export default function ClientPortal() {
             <tbody className="divide-y divide-gray-100">
               {visibleJobs.map((perm) => {
                 const job = perm.job!
+                const canOpen = perm.can_view_pdf || perm.can_view_checklist_details
                 return (
-                  <tr key={job.id} className="hover:bg-gray-50">
+                  <tr
+                    key={job.id}
+                    onClick={canOpen ? () => router.push(`/client/jobs/${job.id}`) : undefined}
+                    className={`hover:bg-gray-50 ${canOpen ? 'cursor-pointer' : ''}`}
+                  >
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-medium text-gray-900">{job.title}</p>
