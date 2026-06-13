@@ -7,7 +7,8 @@ import {
   FileText, Briefcase, Users, Building2, X, RefreshCw,
   SlidersHorizontal, ArrowUp, ArrowDown, Plus, Check, Clock,
 } from 'lucide-react'
-import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 import type { UiPrefs } from '@/lib/types/database'
@@ -107,7 +108,7 @@ export default function AdminDashboard() {
       supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('jobs').select(`
-        id, title, job_number, status, created_at, vessel_name, surveyor_name,
+        id, title, job_number, status, workflow_status, created_at, vessel_name, surveyor_name,
         template:checklist_templates(name),
         client:clients(name)
       `).order('created_at', { ascending: false }).limit(20),
@@ -338,9 +339,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
-                    {getJobStatusLabel(job.status)}
-                  </span>
+                  <WorkflowPill status={job.workflow_status} />
                   <span className="text-xs text-gray-400">{formatDate(job.created_at)}</span>
                 </div>
               </Link>

@@ -5,16 +5,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
-import type { JobStatus } from '@/lib/types/database'
+import type { JobStatus, WorkflowStatus } from '@/lib/types/database'
 
 interface MonitorJob {
   id: string
   title: string
   job_number: string | null
   status: JobStatus
+  workflow_status: WorkflowStatus
   created_at: string
   scheduled_date: string | null
   submitted_at: string | null
@@ -46,7 +48,7 @@ export default function OfficeJobsMonitor() {
         const { data } = await supabase
           .from('jobs')
           .select(`
-            id, title, job_number, status, created_at, scheduled_date, submitted_at,
+            id, title, job_number, status, workflow_status, created_at, scheduled_date, submitted_at,
             vessel_name, surveyor_name,
             template:checklist_templates(name),
             client:clients(name)
@@ -109,9 +111,7 @@ export default function OfficeJobsMonitor() {
                     <td className="px-4 py-3 text-gray-600">{job.vessel_name ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{job.surveyor_name ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
-                        {getJobStatusLabel(job.status)}
-                      </span>
+                      <WorkflowPill status={job.workflow_status} />
                     </td>
                     <td className="px-4 py-3 text-gray-500">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</td>
                     <td className="px-4 py-3 text-gray-500">{formatDate(job.created_at)}</td>
@@ -142,9 +142,7 @@ export default function OfficeJobsMonitor() {
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium text-gray-900">{job.title}</p>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
-                  {getJobStatusLabel(job.status)}
-                </span>
+                <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
               </div>
               <p className="text-xs text-gray-400">{job.job_number ?? '—'}</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm pt-1">

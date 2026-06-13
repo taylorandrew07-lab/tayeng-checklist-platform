@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { Plus, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { CloudOff } from 'lucide-react'
-import { getJobStatusColor, getJobStatusLabel, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
@@ -31,7 +32,7 @@ export default function SurveyorDashboard() {
         supabase.from('profiles').select('*').eq('id', session.user.id).single(),
         supabase.from('jobs')
           .select(`
-            id, title, job_number, status, created_at, vessel_name, surveyor_name,
+            id, title, job_number, status, workflow_status, created_at, vessel_name, surveyor_name,
             template:checklist_templates(name),
             client:clients(name)
           `)
@@ -130,9 +131,7 @@ export default function SurveyorDashboard() {
                         {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
                       </p>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
-                      {getJobStatusLabel(job.status)}
-                    </span>
+                    <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>
                 ))}
               </div>
@@ -154,9 +153,7 @@ export default function SurveyorDashboard() {
                         {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
                       </p>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
-                      {getJobStatusLabel(job.status)}
-                    </span>
+                    <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>
                 ))}
               </div>
