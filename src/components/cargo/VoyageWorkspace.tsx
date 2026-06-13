@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen } from 'lucide-react'
+import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { ensureDri, type DriReport } from '@/lib/cargo/dri'
 import { getVoyage, putVoyage } from '@/lib/cargo/db'
@@ -17,8 +17,9 @@ import PhotoManager from '@/components/cargo/PhotoManager'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
 import ReportBuilder from '@/components/cargo/ReportBuilder'
 import { PrepTab, LoadingTab, VoyageLogTab, DischargeTab } from '@/components/cargo/DriWizard'
+import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 
-type Tab = 'setup' | 'prep' | 'loading' | 'voyage' | 'discharge' | 'readings' | 'photos' | 'charts' | 'report'
+type Tab = 'setup' | 'prep' | 'loading' | 'voyage' | 'discharge' | 'readings' | 'photos' | 'charts' | 'report' | 'dri_report'
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'setup', label: 'Setup', icon: Settings },
   { id: 'prep', label: 'Prep', icon: ClipboardList },
@@ -28,7 +29,8 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'readings', label: 'Readings', icon: Table },
   { id: 'photos', label: 'Photos', icon: Images },
   { id: 'charts', label: 'Charts', icon: LineChart },
-  { id: 'report', label: 'Report', icon: FileDown },
+  { id: 'report', label: 'Sensor PDF', icon: FileDown },
+  { id: 'dri_report', label: 'DRI Report', icon: FileText },
 ]
 
 /** Cargo voyage workspace. Works under both /surveyor/cargo and /admin/cargo. */
@@ -241,6 +243,7 @@ export default function VoyageWorkspace() {
       {tab === 'photos' && <PhotoManager voyage={voyage} onChange={update} />}
       {tab === 'charts' && <ChartsPanel voyage={voyage} onChange={update} />}
       {tab === 'report' && <ReportBuilder voyage={voyage} onChange={update} />}
+      {tab === 'dri_report' && <DriReportBuilder voyage={voyage} onChange={update} />}
     </div>
   )
 }
