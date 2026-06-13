@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff } from 'lucide-react'
+import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
+import { ensureDri, type DriReport } from '@/lib/cargo/dri'
 import { getVoyage, putVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { createClient } from '@/lib/supabase/client'
@@ -15,10 +16,15 @@ import ReadingsGrid from '@/components/cargo/ReadingsGrid'
 import PhotoManager from '@/components/cargo/PhotoManager'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
 import ReportBuilder from '@/components/cargo/ReportBuilder'
+import { PrepTab, LoadingTab, VoyageLogTab, DischargeTab } from '@/components/cargo/DriWizard'
 
-type Tab = 'setup' | 'readings' | 'photos' | 'charts' | 'report'
+type Tab = 'setup' | 'prep' | 'loading' | 'voyage' | 'discharge' | 'readings' | 'photos' | 'charts' | 'report'
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'setup', label: 'Setup', icon: Settings },
+  { id: 'prep', label: 'Prep', icon: ClipboardList },
+  { id: 'loading', label: 'Loading', icon: Anchor },
+  { id: 'voyage', label: 'Voyage', icon: Navigation },
+  { id: 'discharge', label: 'Discharge', icon: PackageOpen },
   { id: 'readings', label: 'Readings', icon: Table },
   { id: 'photos', label: 'Photos', icon: Images },
   { id: 'charts', label: 'Charts', icon: LineChart },
@@ -222,6 +228,15 @@ export default function VoyageWorkspace() {
           </div>
         </div>
       )}
+      {(tab === 'prep' || tab === 'loading' || tab === 'voyage' || tab === 'discharge') && (() => {
+        const dri = ensureDri(voyage.dri, voyage.holdCount)
+        const setDri = (d: DriReport) => update({ ...voyage, dri: d })
+        const readOnly = voyage.status === 'finalized'
+        if (tab === 'prep') return <PrepTab dri={dri} holdCount={voyage.holdCount} onChange={setDri} readOnly={readOnly} />
+        if (tab === 'loading') return <LoadingTab dri={dri} defaultDate={voyage.startDate} onChange={setDri} readOnly={readOnly} />
+        if (tab === 'voyage') return <VoyageLogTab dri={dri} onChange={setDri} readOnly={readOnly} />
+        return <DischargeTab dri={dri} defaultDate={voyage.endDate} onChange={setDri} readOnly={readOnly} />
+      })()}
       {tab === 'readings' && <ReadingsGrid voyage={voyage} onChange={update} />}
       {tab === 'photos' && <PhotoManager voyage={voyage} onChange={update} />}
       {tab === 'charts' && <ChartsPanel voyage={voyage} onChange={update} />}
