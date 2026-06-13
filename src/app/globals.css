@@ -5,6 +5,9 @@
 @layer base {
   :root {
     --brand: 29 78 216;
+    /* Stronger-than-default easing curves (built-in CSS easings lack punch). */
+    --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
   }
 
   html {
@@ -81,6 +84,24 @@
   /* Skeleton placeholder block for loading states. */
   .skeleton {
     @apply animate-pulse rounded-md bg-gray-200;
+  }
+}
+
+@layer utilities {
+  /* Restrained content entrance: opacity + a small rise, never from scale(0).
+     Add inline animation-delay for a short stagger. GPU-friendly. */
+  .animate-rise {
+    animation: rise 360ms var(--ease-out-strong) both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Motion sensitivity: drop movement, keep content visible. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-rise { animation: none; }
+    html { scroll-behavior: auto; }
   }
 }
 

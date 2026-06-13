@@ -95,7 +95,7 @@ export default function ResetPasswordPage() {
   if (readyState === 'expired') {
     return (
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center space-y-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center space-y-4 animate-rise">
           <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto">
             <svg className="h-7 w-7 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -118,11 +118,11 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="text-center mb-8">
+      <div className="text-center mb-8 animate-rise">
         <img src="/logo-full.png" alt="Taylor Engineering" className="w-full mx-auto mb-4" />
       </div>
 
-      <div className="bg-white rounded-2xl shadow-2xl p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 animate-rise" style={{ animationDelay: '80ms' }}>
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Set new password</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">

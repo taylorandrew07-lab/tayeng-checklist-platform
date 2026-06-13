@@ -200,7 +200,7 @@ export default function AdminDashboard() {
   const available = ALL_TILE_KEYS.filter(k => !tiles.includes(k))
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="page-title">Admin Dashboard</h1>

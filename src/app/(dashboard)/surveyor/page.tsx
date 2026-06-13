@@ -62,7 +62,7 @@ export default function SurveyorDashboard() {
   const submitted = jobs.filter(j => ['submitted', 'completed', 'client_visible'].includes(j.status))
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto animate-rise">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">My Jobs</h1>

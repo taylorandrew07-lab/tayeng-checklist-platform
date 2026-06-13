@@ -42,7 +42,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
   return (
     <div
       role="status"
-      className={`card p-3 pr-2 flex items-start gap-2.5 shadow-lg transition-all duration-200 ${shown ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}
+      className={`card p-3 pr-2 flex items-start gap-2.5 shadow-lg transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${shown ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}
     >
       <Icon className={`h-5 w-5 flex-shrink-0 mt-0.5 ${color}`} />
       <p className="text-sm text-gray-700 flex-1 leading-snug">{item.message}</p>

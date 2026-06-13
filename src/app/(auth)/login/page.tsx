@@ -103,13 +103,13 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-md">
       {/* Logo / Brand */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-8 animate-rise">
         <Image src={logoFull} alt="Taylor Engineering Agencies Limited" className="w-full mx-auto mb-4 h-auto" unoptimized />
         <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 
       {/* Login Card */}
-      <div className="bg-white rounded-2xl shadow-2xl p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 animate-rise" style={{ animationDelay: '80ms' }}>
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign in to your account</h2>
 
         <form onSubmit={handleLogin} className="space-y-5">
@@ -156,7 +156,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -184,7 +184,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 animate-rise">
               {error}
             </div>
           )}
@@ -215,7 +215,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <p className="mt-6 text-center text-xs text-brand-300">
+      <p className="mt-6 text-center text-xs text-brand-300 animate-rise" style={{ animationDelay: '140ms' }}>
         Taylor Engineering Agencies Limited — Private Internal App
       </p>
     </div>

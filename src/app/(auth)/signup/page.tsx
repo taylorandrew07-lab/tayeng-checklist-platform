@@ -57,7 +57,7 @@ export default function SignUpPage() {
   if (done) {
     return (
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center space-y-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center space-y-4 animate-rise">
           <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
             <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -75,12 +75,12 @@ export default function SignUpPage() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="text-center mb-8">
+      <div className="text-center mb-8 animate-rise">
         <img src="/logo-full.png" alt="Taylor Engineering" className="w-full mx-auto mb-4" />
         <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-2xl p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 animate-rise" style={{ animationDelay: '80ms' }}>
         <Link href="/login" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-5">
           <ArrowLeft className="h-4 w-4" /> Back to sign in
         </Link>
