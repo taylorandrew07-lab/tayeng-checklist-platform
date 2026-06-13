@@ -22,6 +22,7 @@ export default function UsersPage() {
   const [officePerms, setOfficePerms] = useState<Record<string, boolean>>({})
   const [officePermsLoading, setOfficePermsLoading] = useState(false)
   const [linkingId, setLinkingId] = useState<string | null>(null)
+  const [addingId, setAddingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState<Profile | null>(null)
@@ -83,6 +84,25 @@ export default function UsersPage() {
       .eq('id', surveyorNameId)
     setLinkingId(null)
     if (err) { setError('Failed to update link: ' + err.message); return }
+    load()
+  }
+
+  // Add a surveyor account to the assignable surveyor-name list (creates a
+  // surveyor_names row already linked to that profile). Used for accounts that
+  // self-signed up and therefore have no registry entry yet.
+  async function addSurveyorNameFromAccount(u: Profile) {
+    setAddingId(u.id)
+    const supabase = createClient()
+    const { error: err } = await supabase.from('surveyor_names').insert({
+      name: u.full_name,
+      profile_id: u.id,
+      is_active: true,
+      approved_by: currentProfile?.id ?? null,
+      approved_at: new Date().toISOString(),
+    })
+    setAddingId(null)
+    if (err) { toast.error('Could not add: ' + err.message); return }
+    toast.success(`${u.full_name} added to the surveyor list`)
     load()
   }
 
@@ -466,6 +486,32 @@ export default function UsersPage() {
             Link a surveyor display name to a real login account. Jobs created with a linked name are assigned to that user, so they can edit/submit even when logged in as admin.
           </p>
         </div>
+
+        {/* Surveyor accounts that aren't in the assignable list yet (e.g. self-signups). */}
+        {(() => {
+          const unlinked = users.filter(u => u.is_active && u.role === 'surveyor' && !surveyorNames.some(sn => sn.profile_id === u.id))
+          return unlinked.length === 0 ? null : (
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
+              <p className="text-xs font-medium text-amber-800 mb-2">
+                These surveyor accounts aren&apos;t in the list yet — add them so they can be assigned to jobs:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {unlinked.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => addSurveyorNameFromAccount(u)}
+                    disabled={addingId === u.id}
+                    className="btn-secondary text-xs py-1 px-2.5"
+                  >
+                    {addingId === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    {u.full_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {surveyorNames.length === 0 ? (
           <p className="px-4 py-6 text-sm text-gray-400 text-center">No active surveyor names yet.</p>
         ) : (
