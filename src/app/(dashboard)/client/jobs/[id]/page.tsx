@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Download, Lock } from 'lucide-react'
-import { getJobStatusColor, getJobStatusLabel, formatDate, checkConditionalLogic } from '@/lib/utils'
+import { formatDate, checkConditionalLogic } from '@/lib/utils'
+import { CLIENT_STATUS, clientStatusFor } from '@/lib/jobs/tracker'
 
 // Resolve {uuid} tokens in a label to the selected dropdown option label (or the
 // live value of a deferred "Other" text field). Mirrors the editor/PDF resolvers.
@@ -119,9 +120,9 @@ export default async function ClientJobDetailPage({ params }: { params: Promise<
             <div>
               <dt className="text-xs font-medium text-gray-500">Status</dt>
               <dd className="mt-1">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
-                  {getJobStatusLabel(job.status)}
-                </span>
+                {(() => { const cs = CLIENT_STATUS[clientStatusFor(job.workflow_status)]; return (
+                  <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${cs.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${cs.dot}`} />{cs.label}</span>
+                ) })()}
               </dd>
             </div>
           )}

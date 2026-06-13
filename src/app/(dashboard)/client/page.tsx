@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, ClipboardList } from 'lucide-react'
-import { getJobStatusLabel, getJobStatusColor } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
+import { CLIENT_STATUS, clientStatusFor } from '@/lib/jobs/tracker'
+import type { WorkflowStatus } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
 
@@ -19,6 +20,7 @@ type PermittedJob = {
     job_number: string
     title: string
     status: string
+    workflow_status: WorkflowStatus
     scheduled_date: string | null
     template: { name: string } | null
   } | null
@@ -58,7 +60,7 @@ export default function ClientPortal() {
         .select(`
           can_view_status, can_view_pdf, can_view_checklist_details,
           job:jobs(
-            id, job_number, title, status, scheduled_date,
+            id, job_number, title, status, workflow_status, scheduled_date,
             template:checklist_templates(name)
           )
         `)
@@ -157,11 +159,10 @@ export default function ClientPortal() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{job.template?.name ?? '—'}</td>
                     <td className="px-4 py-3">
-                      {perm.can_view_status ? (
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status as any)}`}>
-                          {getJobStatusLabel(job.status as any)}
-                        </span>
-                      ) : (
+                      {perm.can_view_status ? (() => {
+                        const cs = CLIENT_STATUS[clientStatusFor(job.workflow_status)]
+                        return <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${cs.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${cs.dot}`} />{cs.label}</span>
+                      })() : (
                         <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>

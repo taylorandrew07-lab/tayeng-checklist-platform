@@ -16,6 +16,7 @@ import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDialog } from '@/components/ui/confirm'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature } from '@/lib/types/database'
+import { advanceWorkflowTo } from '@/lib/jobs/tracker'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import type { OfflineDraft } from '@/lib/offline/types'
@@ -371,6 +372,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
       if (jobData.status === 'assigned') {
         await supabase.from('jobs').update({ status: 'in_progress', started_at: new Date().toISOString() }).eq('id', jobId)
+        // Keep the unified workflow status in step with fieldwork starting.
+        await advanceWorkflowTo(jobId, 'in_progress')
       }
 
       // Conflict baseline = what the server currently holds.
@@ -579,6 +582,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           return
         }
 
+        // Submitting the checklist means the report is ready for review.
+        await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
         setShowSubmitDialog(false)
         if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
         router.push(backHref)

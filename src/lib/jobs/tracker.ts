@@ -77,6 +77,34 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
   return {}
 }
 
+/** Advance a job to `target` only if it hasn't already reached/passed it — used
+ *  to sync the workflow from checklist activity without ever pulling it back. */
+export async function advanceWorkflowTo(jobId: string, target: WorkflowStatus): Promise<void> {
+  const supabase = createClient()
+  const { data } = await supabase.from('jobs').select('workflow_status').eq('id', jobId).single()
+  if (!data) return
+  if (WORKFLOW_ORDER.indexOf(data.workflow_status as WorkflowStatus) >= WORKFLOW_ORDER.indexOf(target)) return
+  await supabase.from('jobs').update({ workflow_status: target }).eq('id', jobId)
+  await logActivity('job', jobId, `workflow:${target}`)
+}
+
+// ── Client-facing status (simplified — hides billing internals) ─────────────
+export type ClientStatus = 'in_progress' | 'report_ready' | 'completed' | 'closed'
+export const CLIENT_STATUS: Record<ClientStatus, { label: string; pill: string; dot: string }> = {
+  in_progress:  { label: 'In progress',  pill: 'bg-sky-100 text-sky-700',       dot: 'bg-sky-500' },
+  report_ready: { label: 'Report ready', pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
+  completed:    { label: 'Completed',    pill: 'bg-green-100 text-green-700',   dot: 'bg-green-500' },
+  closed:       { label: 'Closed',       pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
+}
+export function clientStatusFor(ws: WorkflowStatus): ClientStatus {
+  switch (ws) {
+    case 'report_ready': return 'report_ready'
+    case 'approved': case 'invoiced': case 'sent': case 'paid': return 'completed'
+    case 'closed': return 'closed'
+    default: return 'in_progress' // new / assigned / in_progress
+  }
+}
+
 // ── Pick lists ──────────────────────────────────────────────────────────────
 export async function listJobTypes(): Promise<JobType[]> {
   const { data } = await createClient().from('job_types').select('*').eq('is_active', true).order('name')
