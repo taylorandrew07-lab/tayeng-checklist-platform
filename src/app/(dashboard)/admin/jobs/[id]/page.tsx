@@ -171,11 +171,11 @@ export default function AdminChecklistDetailPage() {
           <h1 className="page-title truncate">{job.title}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{job.job_number} · {job.template?.name}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {['submitted', 'completed', 'client_visible'].includes(job.status) && (
-            <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-secondary">
+            <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-secondary" title="Download PDF">
               <Download className="h-4 w-4" />
-              Download PDF
+              <span className="hidden sm:inline">Download PDF</span>
             </button>
           )}
           <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-secondary' : 'btn-secondary'}>
@@ -215,7 +215,7 @@ export default function AdminChecklistDetailPage() {
                   <label className="label-base">Vessel Name</label>
                   <input type="text" value={editForm.vessel_name} onChange={(e) => setEditForm(p => ({ ...p, vessel_name: e.target.value }))} className="input-base" placeholder="e.g. Atlantic Spirit" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label-base">Surveyor</label>
                     <select value={editForm.surveyor_name} onChange={(e) => setEditForm(p => ({ ...p, surveyor_name: e.target.value }))} className="input-base">
@@ -234,7 +234,7 @@ export default function AdminChecklistDetailPage() {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label-base">Status</label>
                     <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">

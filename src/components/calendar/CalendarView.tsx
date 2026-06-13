@@ -151,7 +151,7 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
                   const total = dayJobs.length + dayEvents.length
                   return (
                     <button key={dayStr} onClick={() => setDayDetail(dayStr)}
-                      className={`min-h-[84px] text-left p-1.5 rounded-lg border align-top transition-colors ${inMonth ? 'bg-white border-gray-100 hover:border-brand-200' : 'bg-gray-50/60 border-transparent'}`}>
+                      className={`min-h-[60px] sm:min-h-[84px] text-left p-1 sm:p-1.5 rounded-md sm:rounded-lg border align-top transition-colors ${inMonth ? 'bg-white border-gray-100 hover:border-brand-200' : 'bg-gray-50/60 border-transparent'}`}>
                       <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-xs ${isToday(day) ? 'bg-brand-600 text-white font-semibold' : inMonth ? 'text-gray-700' : 'text-gray-300'}`}>{format(day, 'd')}</span>
                       <div className="mt-1 space-y-0.5">
                         {dayEvents.slice(0, 2).map(e => <Chip key={e.id} color={e.event_type === 'leave' ? LEAVE_COLOR : (e.color ?? EVENT_COLOR)} label={e.event_type === 'leave' ? (isAdmin ? `Leave: ${e.owner_name ?? ''}` : 'Leave') + (e.status === 'pending' ? ' (pending)' : '') : e.title} />)}
