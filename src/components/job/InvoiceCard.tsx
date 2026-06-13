@@ -6,7 +6,7 @@
 // in step. The "PDF" button renders the printable tax invoice.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, X, Loader2, Receipt, Send, CheckCircle2, FileText } from 'lucide-react'
+import { Plus, X, Loader2, Receipt, Send, CheckCircle2, FileText, Mail } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { money, CURRENCIES, setWorkflowStatus, WORKFLOW_ORDER } from '@/lib/jobs/tracker'
@@ -26,6 +26,7 @@ const STATUS_PILL: Record<Invoice['status'], string> = {
 export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: () => void }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [emailing, setEmailing] = useState(false)
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [status, setStatus] = useState<Invoice['status']>('draft')
   const [invNumber, setInvNumber] = useState('')
@@ -101,6 +102,24 @@ export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: (
     setSaving(false)
     toast.success('Invoice saved')
     onChanged()
+  }
+
+  async function createDraft() {
+    if (!invoiceId) return
+    setEmailing(true)
+    try {
+      const res = await fetch(`/api/invoice-email/${invoiceId}`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error || 'Could not create the draft'); return }
+      toast.success(json.noRecipient
+        ? `Draft created in ${json.mailbox} — no client email on file, add a recipient in Outlook`
+        : `Draft created in ${json.mailbox} for ${json.sentTo}`)
+      if (json.webLink) window.open(json.webLink, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.error('Could not reach the email service')
+    } finally {
+      setEmailing(false)
+    }
   }
 
   async function advance(next: 'sent' | 'paid') {
@@ -217,6 +236,7 @@ export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: (
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2 mt-4">
         <button onClick={save} disabled={saving} className="btn-primary py-1.5 px-3 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{invoiceId ? 'Save invoice' : 'Create invoice'}</button>
+        {invoiceId && <button onClick={createDraft} disabled={emailing} className="btn-secondary py-1.5 px-3 text-sm">{emailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Email draft</button>}
         {invoiceId && status === 'draft' && <button onClick={() => advance('sent')} disabled={saving} className="btn-secondary py-1.5 px-3 text-sm"><Send className="h-4 w-4" /> Mark sent</button>}
         {invoiceId && (status === 'sent' || status === 'overdue') && <button onClick={() => advance('paid')} disabled={saving} className="btn-secondary py-1.5 px-3 text-sm"><CheckCircle2 className="h-4 w-4" /> Mark paid</button>}
       </div>

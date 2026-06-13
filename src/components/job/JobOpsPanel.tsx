@@ -20,6 +20,8 @@ function activityText(a: ActivityLogRow): string {
   if (act === 'surveyor:add') return 'Surveyor added'
   if (act === 'surveyor:remove') return 'Surveyor removed'
   if (act === 'attachment:delete') return 'Attachment removed'
+  if (act === 'invoice:save') return 'Invoice saved'
+  if (act === 'invoice:email_draft') return 'Invoice email draft created'
   if (act.startsWith('workflow:')) { const s = act.slice(9) as WorkflowStatus; return `Status → ${WORKFLOW[s]?.label ?? s}` }
   if (act.startsWith('attachment:')) { const k = act.slice(11) as JobAttachmentKind; return `Uploaded ${attachmentLabel(k).toLowerCase()}` }
   return act
