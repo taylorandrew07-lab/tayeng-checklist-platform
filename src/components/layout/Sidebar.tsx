@@ -18,7 +18,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, BarChart3,
 } from 'lucide-react'
 
 interface NavItem {
@@ -30,6 +30,7 @@ interface NavItem {
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs Tracker', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
   { label: 'Invoicing', href: '/admin/invoicing', icon: Receipt },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
