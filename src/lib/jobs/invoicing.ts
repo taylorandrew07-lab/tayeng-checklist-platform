@@ -15,7 +15,7 @@ export async function getAppSettings(): Promise<AppSettings | null> {
   const { data } = await createClient().from('app_settings').select('*').eq('id', true).maybeSingle()
   return (data as AppSettings) ?? null
 }
-export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'overdue_days'>>): Promise<{ error?: string }> {
+export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'overdue_days' | 'bank_details_default'>>): Promise<{ error?: string }> {
   const { error } = await createClient().from('app_settings').update(patch).eq('id', true)
   return { error: error?.message }
 }
@@ -78,7 +78,9 @@ export async function getJobInvoice(jobId: string): Promise<JobInvoice | null> {
 
 /** Create or replace the job's invoice (header + line items + taxes), recomputing totals. */
 export async function saveJobInvoice(job: Job, data: {
+  invoice_number?: string | null
   currency: Currency; due_date: string | null; notes: string | null
+  description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   lines: LineDraft[]; taxes: TaxDraft[]
 }): Promise<{ error?: string; invoiceId?: string }> {
   const supabase = createClient()
@@ -87,6 +89,8 @@ export async function saveJobInvoice(job: Job, data: {
   const header = {
     client_id: job.client_id, currency: data.currency,
     due_date: data.due_date || null, notes: data.notes || null,
+    description: data.description || null, reference: data.reference || null,
+    attention: data.attention || null, bank_details: data.bank_details || null,
     subtotal, tax_total, total,
   }
 
@@ -94,12 +98,16 @@ export async function saveJobInvoice(job: Job, data: {
   let invoiceId: string
   if (existing) {
     invoiceId = existing.id
-    const { error } = await supabase.from('invoices').update(header).eq('id', invoiceId)
+    // Only overwrite the number when one was explicitly supplied (keeps the
+    // auto-assigned number unless an admin edits it).
+    const patch = data.invoice_number != null ? { ...header, invoice_number: data.invoice_number || null } : header
+    const { error } = await supabase.from('invoices').update(patch).eq('id', invoiceId)
     if (error) return { error: error.message }
   } else {
-    const { data: ins, error } = await supabase.from('invoices')
-      .insert({ job_id: job.id, status: 'draft', created_by: user?.id ?? null, ...header })
-      .select('id').single()
+    // On insert, a blank number lets the DB trigger assign YY-MM-NNN.
+    const insert: Record<string, unknown> = { job_id: job.id, status: 'draft', created_by: user?.id ?? null, ...header }
+    if (data.invoice_number) insert.invoice_number = data.invoice_number
+    const { data: ins, error } = await supabase.from('invoices').insert(insert).select('id').single()
     if (error) return { error: error.message }
     invoiceId = ins.id
   }

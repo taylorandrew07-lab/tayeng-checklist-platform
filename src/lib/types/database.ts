@@ -335,12 +335,14 @@ export interface Invoice {
   currency: Currency; status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
   issue_date: string; due_date: string | null
   subtotal: number; tax_total: number; total: number; notes: string | null
+  // Document fields for the printable PDF (migration 044)
+  description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   created_by: string | null; sent_at: string | null; paid_at: string | null
   created_at: string; updated_at: string
 }
 export interface InvoiceLineItem { id: string; invoice_id: string; description: string; qty: number; unit_price: number; amount: number; sort: number }
 export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
-export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number }
+export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null }
 
 export type JobAttachmentKind = 'preliminary' | 'final' | 'vos' | 'time_page' | 'other'
 export interface JobAttachment {

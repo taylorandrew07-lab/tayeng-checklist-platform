@@ -300,18 +300,19 @@ function SettingsTab() {
   const [taxName, setTaxName] = useState('')
   const [taxRate, setTaxRate] = useState('')
   const [overdue, setOverdue] = useState('')
+  const [bank, setBank] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     getAppSettings().then(s => {
       setSettings(s)
-      if (s) { setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days)) }
+      if (s) { setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days)); setBank(s.bank_details_default ?? '') }
     })
   }, [])
 
   async function save() {
     setSaving(true)
-    const res = await updateAppSettings({ default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0 })
+    const res = await updateAppSettings({ default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0, bank_details_default: bank || null })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     toast.success('Settings saved')
@@ -339,6 +340,10 @@ function SettingsTab() {
         <label className="label-base">Overdue after (days)</label>
         <input type="number" min={0} value={overdue} onChange={e => setOverdue(e.target.value)} className="input-base" />
         <p className="text-[11px] text-gray-400 mt-1">A sent invoice is flagged overdue this many days past its due date.</p>
+      </div>
+      <div>
+        <label className="label-base">Default bank details</label>
+        <textarea value={bank} onChange={e => setBank(e.target.value)} rows={5} placeholder={'Pre-fills the bank block on new invoices (e.g. for foreign payments).\nBank name, branch, SWIFT/BIC, account name + number…'} className="input-base text-sm resize-y" />
       </div>
       <button onClick={save} disabled={saving} className="btn-primary py-2 px-4 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save settings</button>
     </div>
