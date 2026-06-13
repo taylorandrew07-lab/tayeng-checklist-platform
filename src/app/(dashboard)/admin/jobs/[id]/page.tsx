@@ -292,7 +292,7 @@ export default function AdminChecklistDetailPage() {
             ) : (
               <dl className="grid grid-cols-2 gap-4">
                 <div>
-                  <dt className="text-xs font-medium text-gray-500">Status</dt>
+                  <dt className="text-xs font-medium text-gray-500">Checklist progress</dt>
                   <dd className="mt-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
                       {getJobStatusLabel(job.status)}

@@ -70,6 +70,16 @@ export default function ClientsPage() {
 
   useEffect(() => { load() }, [])
 
+  // Deep link from the Jobs Tracker (?focus=<clientId>) opens that client.
+  const focusHandled = useRef(false)
+  useEffect(() => {
+    if (focusHandled.current || clients.length === 0) return
+    const focus = new URLSearchParams(window.location.search).get('focus')
+    if (!focus) return
+    const c = clients.find(x => x.id === focus)
+    if (c) { focusHandled.current = true; openEdit(c) }
+  }, [clients])
+
   function openCreate() {
     setEditClient(null)
     setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '', logo_path: '' })

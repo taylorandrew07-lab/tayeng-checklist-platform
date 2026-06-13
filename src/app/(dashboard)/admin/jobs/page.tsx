@@ -2,10 +2,10 @@
 
 // Jobs Tracker — an Airtable-style grid over every job. Most cells edit inline
 // (report #, job type, vessel, status, date) so you rarely need to open a job;
-// hours, invoice and surveyors are summarised per row; the client links out to
-// client management; and report numbers can be filled down the date order.
+// hours, invoice and surveyors are summarised per row; the client links to its
+// record; and report numbers can be filled down the date order.
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -31,6 +31,10 @@ const INV_PILL: Record<string, string> = {
   paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700', void: 'bg-slate-200 text-slate-500',
 }
 
+// Shared look for an editable cell's resting (button) state.
+const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'
+const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-200'
+
 // ── Inline-edit cells ────────────────────────────────────────────────────────
 function EditableText({ value, onSave, mono, placeholder }: { value: string | null; onSave: (v: string | null) => void; mono?: boolean; placeholder?: string }) {
   const [editing, setEditing] = useState(false)
@@ -40,10 +44,10 @@ function EditableText({ value, onSave, mono, placeholder }: { value: string | nu
   if (editing) return (
     <input autoFocus value={v} placeholder={placeholder} onChange={e => setV(e.target.value)} onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') { setV(value ?? ''); setEditing(false) } }}
-      className={`w-full rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-1 ring-brand-300 ${mono ? 'tnum' : ''}`} />
+      className={`${cellInput} ${mono ? 'tnum' : ''}`} />
   )
   return (
-    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors ${mono ? 'tnum' : ''} ${value ? 'text-gray-900' : 'text-gray-300'}`}>
+    <button onClick={() => setEditing(true)} className={`${cellBtn} ${mono ? 'tnum' : ''} ${value ? 'text-gray-900' : 'text-gray-400'}`}>
       {value || placeholder || '—'}
     </button>
   )
@@ -57,10 +61,10 @@ function EditableCombo({ value, listId, onSave }: { value: string | null; listId
   if (editing) return (
     <input autoFocus list={listId} value={v} onChange={e => setV(e.target.value)} onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') { setV(value ?? ''); setEditing(false) } }}
-      className="w-full rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-1 ring-brand-300" />
+      className={cellInput} />
   )
   return (
-    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors ${value ? 'text-gray-700' : 'text-gray-300'}`}>
+    <button onClick={() => setEditing(true)} className={`${cellBtn} ${value ? 'text-gray-700' : 'text-gray-400'}`}>
       {value || 'Set type'}
     </button>
   )
@@ -70,13 +74,12 @@ function EditableDate({ value, fallback, onSave }: { value: string | null; fallb
   const [editing, setEditing] = useState(false)
   if (editing) return (
     <input type="date" autoFocus defaultValue={value ?? (fallback ? fallback.slice(0, 10) : '')} onBlur={e => { setEditing(false); const nv = e.target.value || null; if (nv !== (value || null)) onSave(nv) }}
-      className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-sm outline-none ring-1 ring-brand-300" />
+      className={cellInput} />
   )
-  // Show the scheduled date if set, otherwise fall back to the job's own date
-  // (created), shown muted, so the column is never blank.
+  // Scheduled date if set, otherwise the job's own date (muted) so it's never blank.
   return (
     <button onClick={() => setEditing(true)} title={value ? 'Scheduled date' : 'No scheduled date — showing the job date. Click to set.'}
-      className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors whitespace-nowrap ${value ? 'text-gray-600' : fallback ? 'text-gray-400 italic' : 'text-gray-300'}`}>
+      className={`${cellBtn} whitespace-nowrap ${value ? 'text-gray-600' : fallback ? 'text-gray-400 italic' : 'text-gray-400'}`}>
       {value ? formatDate(value) : fallback ? formatDate(fallback) : 'Set date'}
     </button>
   )
@@ -87,24 +90,27 @@ function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s
   if (editing) return (
     <select autoFocus defaultValue={status} onBlur={() => setEditing(false)}
       onChange={e => { onChange(e.target.value as WorkflowStatus); setEditing(false) }}
-      className="rounded border border-brand-400 bg-white px-1.5 py-1 text-xs outline-none ring-1 ring-brand-300">
+      className="rounded-md border border-brand-400 bg-white px-1.5 py-1 text-xs outline-none ring-2 ring-brand-200">
       {WORKFLOW_ORDER.map(s => <option key={s} value={s}>{WORKFLOW[s].label}</option>)}
     </select>
   )
   const w = WORKFLOW[status] ?? WORKFLOW.new
   return (
-    <button onClick={() => setEditing(true)} title="Change status">
+    <button onClick={() => setEditing(true)} title="Change status" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
       <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>
     </button>
   )
 }
 
 function Th({ label, col, sort, onSort, className }: { label: string; col?: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; className?: string }) {
-  if (!col) return <th className={`text-left px-3 py-2.5 font-medium text-gray-500 text-xs ${className ?? ''}`}>{label}</th>
+  const base = 'sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-xs font-medium'
+  if (!col) return <th className={`${base} text-gray-500 ${className ?? ''}`}>{label}</th>
   const active = sort.key === col
   return (
-    <th onClick={() => onSort(col)} className={`text-left px-3 py-2.5 font-medium text-xs cursor-pointer select-none hover:text-gray-900 ${active ? 'text-brand-700' : 'text-gray-500'} ${className ?? ''}`}>
-      <span className="inline-flex items-center gap-1">{label}{active ? <span className="text-[10px]">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30" />}</span>
+    <th className={`${base} ${className ?? ''}`} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button onClick={() => onSort(col)} className={`inline-flex items-center gap-1 select-none rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${active ? 'text-brand-700' : 'text-gray-500'}`}>
+        {label}{active ? <span className="text-[10px]">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+      </button>
     </th>
   )
 }
@@ -118,27 +124,35 @@ export default function JobsTrackerPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
   const [numberOpen, setNumberOpen] = useState(false)
   const tick = useRealtimeRefresh('jobs')
+  // Suppress the realtime reload briefly after our own writes so inline edits
+  // don't trigger a full-grid refresh (flicker / scroll jump) on every save.
+  const suppressUntil = useRef(0)
+  const firstTick = useRef(true)
 
   const load = useCallback(async () => {
     const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
     setRows(r); setJobTypes(jt.map(t => t.name)); setLoading(false)
   }, [])
-  useEffect(() => { load() }, [load, tick])
 
-  // Optimistic local patch + persist.
-  const patchRow = useCallback(async (id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) => {
+  useEffect(() => { load() }, [load]) // initial
+  useEffect(() => { // realtime — skip the first run and any reload right after our own write
+    if (firstTick.current) { firstTick.current = false; return }
+    if (Date.now() < suppressUntil.current) return
+    load()
+  }, [tick, load])
+
+  const mutate = useCallback(async (id: string, patch: Partial<TrackerRow>, persist: () => Promise<{ error?: string }>) => {
     const prev = rows
+    suppressUntil.current = Date.now() + 2500
     setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
-    const res = await updateJobField(id, dbPatch)
+    const res = await persist()
     if (res.error) { setRows(prev); toast.error(res.error) }
   }, [rows])
 
-  const changeStatus = useCallback(async (id: string, status: WorkflowStatus) => {
-    const prev = rows
-    setRows(rs => rs.map(r => r.id === id ? { ...r, workflow_status: status } : r))
-    const res = await setWorkflowStatus(id, status)
-    if (res.error) { setRows(prev); toast.error(res.error) }
-  }, [rows])
+  const patchRow = useCallback((id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) =>
+    mutate(id, patch, () => updateJobField(id, dbPatch)), [mutate])
+  const changeStatus = useCallback((id: string, status: WorkflowStatus) =>
+    mutate(id, { workflow_status: status }, () => setWorkflowStatus(id, status)), [mutate])
 
   function handleSort(key: SortKey) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })
@@ -170,7 +184,6 @@ export default function JobsTrackerPage() {
   }, [rows, filter, q, sort])
 
   const missingCount = rows.filter(r => !r.report_number).length
-  // Suggestions = configured job types + any type already used on a job.
   const typeOptions = useMemo(
     () => Array.from(new Set([...jobTypes, ...rows.map(r => r.job_type).filter(Boolean) as string[]])).sort(),
     [jobTypes, rows],
@@ -197,11 +210,11 @@ export default function JobsTrackerPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search vessel, report #, client, surveyor…" className="input-base pl-9" />
+          <input value={q} onChange={e => setQ(e.target.value)} aria-label="Search jobs" placeholder="Search vessel, report #, client, surveyor…" className="input-base pl-9" />
         </div>
         <div className="flex flex-wrap gap-2">
           {FILTERS.map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
+            <button key={f.key} onClick={() => setFilter(f.key)} aria-pressed={filter === f.key}
               className={`text-sm px-3 py-1 rounded-full border transition-colors ${filter === f.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
               {f.label}
             </button>
@@ -209,19 +222,19 @@ export default function JobsTrackerPage() {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Grid — own scroll region with a frozen header */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[calc(100vh-15rem)]">
           <table className="w-full text-sm min-w-[1180px]">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="w-9 px-2 py-2.5" />
+              <tr>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 w-9 px-2 py-2.5" />
                 <Th label="Report #" col="report" sort={sort} onSort={handleSort} />
                 <Th label="Type" col="type" sort={sort} onSort={handleSort} />
                 <Th label="Vessel" col="vessel" sort={sort} onSort={handleSort} />
                 <Th label="Client" col="client" sort={sort} onSort={handleSort} />
                 <Th label="Surveyors" sort={sort} onSort={handleSort} />
-                <Th label="Hours" col="hours" sort={sort} onSort={handleSort} className="text-right" />
+                <Th label="Hours" col="hours" sort={sort} onSort={handleSort} className="!text-right" />
                 <Th label="Invoice" sort={sort} onSort={handleSort} />
                 <Th label="Status" col="status" sort={sort} onSort={handleSort} />
                 <Th label="Date" col="date" sort={sort} onSort={handleSort} />
@@ -233,18 +246,18 @@ export default function JobsTrackerPage() {
                   <tr key={i}>{Array.from({ length: 10 }).map((_, k) => <td key={k} className="px-3 py-2.5"><div className="skeleton h-3.5 w-16" /></td>)}</tr>
                 ))
               ) : visible.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">No jobs. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
               ) : visible.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50/70 align-middle">
                   <td className="px-2 py-1.5">
-                    <Link href={`/admin/jobs/${r.id}`} title="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50"><ExternalLink className="h-4 w-4" /></Link>
+                    <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
                   <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
                   <td className="py-1.5 pr-2 min-w-[120px]"><EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} /></td>
                   <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => patchRow(r.id, { vessel_name: v }, { vessel_name: v })} /></td>
                   <td className="px-3 py-1.5">
                     {r.client_name
-                      ? <Link href="/admin/clients" className="text-brand-700 hover:underline">{r.client_name}</Link>
+                      ? <Link href={`/admin/clients?focus=${r.client_id}`} className="text-brand-700 hover:underline">{r.client_name}</Link>
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5 text-gray-600">
@@ -259,7 +272,7 @@ export default function JobsTrackerPage() {
                   </td>
                   <td className="px-3 py-1.5">
                     {r.invoice_number ? (
-                      <Link href={`/admin/jobs/${r.id}`} className="inline-flex items-center gap-1.5">
+                      <Link href={`/admin/jobs/${r.id}`} className="inline-flex items-center gap-1.5 hover:underline">
                         <span className="tnum text-gray-700">{r.invoice_number}</span>
                         {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
                       </Link>
