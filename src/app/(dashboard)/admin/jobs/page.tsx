@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown } from 'lucide-react'
+import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
@@ -120,6 +120,9 @@ export default function JobsTrackerPage() {
   const [jobTypes, setJobTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('open')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [surveyorFilter, setSurveyorFilter] = useState('')
+  const [otOnly, setOtOnly] = useState(false)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
   const [numberOpen, setNumberOpen] = useState(false)
@@ -164,6 +167,9 @@ export default function JobsTrackerPage() {
       const ws = r.workflow_status
       const pass = filter === 'all' ? true : filter === 'paid' ? ws === 'paid' : filter === 'closed' ? ws === 'closed' : (ws !== 'paid' && ws !== 'closed')
       if (!pass) return false
+      if (typeFilter && (r.job_type ?? '') !== typeFilter) return false
+      if (otOnly && !r.is_overtime) return false
+      if (surveyorFilter && !r.surveyors.includes(surveyorFilter)) return false
       if (!term) return true
       return [r.report_number, r.vessel_name, r.client_name, r.job_type, r.title, r.invoice_number, ...r.surveyors]
         .some(v => (v ?? '').toString().toLowerCase().includes(term))
@@ -181,13 +187,19 @@ export default function JobsTrackerPage() {
     }
     const dir = sort.dir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
-  }, [rows, filter, q, sort])
+  }, [rows, filter, typeFilter, surveyorFilter, otOnly, q, sort])
 
   const missingCount = rows.filter(r => !r.report_number).length
   const typeOptions = useMemo(
     () => Array.from(new Set([...jobTypes, ...rows.map(r => r.job_type).filter(Boolean) as string[]])).sort(),
     [jobTypes, rows],
   )
+  const surveyorOptions = useMemo(
+    () => Array.from(new Set(rows.flatMap(r => r.surveyors))).sort(),
+    [rows],
+  )
+  const otCount = rows.filter(r => r.is_overtime).length
+  const filtersActive = !!typeFilter || !!surveyorFilter || otOnly
 
   return (
     <div className="space-y-5 animate-rise">
@@ -220,6 +232,29 @@ export default function JobsTrackerPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Secondary filters: type · surveyor · overtime */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Filter by job type"
+          className={`text-sm rounded-lg border px-2.5 py-1.5 transition-colors ${typeFilter ? 'border-brand-400 text-brand-700 bg-brand-50' : 'border-gray-300 text-gray-600 bg-white'}`}>
+          <option value="">All types</option>
+          {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={surveyorFilter} onChange={e => setSurveyorFilter(e.target.value)} aria-label="Filter by surveyor"
+          className={`text-sm rounded-lg border px-2.5 py-1.5 transition-colors ${surveyorFilter ? 'border-brand-400 text-brand-700 bg-brand-50' : 'border-gray-300 text-gray-600 bg-white'}`}>
+          <option value="">All surveyors</option>
+          {surveyorOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {otCount > 0 && (
+          <button onClick={() => setOtOnly(v => !v)} aria-pressed={otOnly}
+            className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${otOnly ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+            <Clock className="h-3.5 w-3.5" />Overtime only
+          </button>
+        )}
+        {filtersActive && (
+          <button onClick={() => { setTypeFilter(''); setSurveyorFilter(''); setOtOnly(false) }} className="text-sm text-gray-500 hover:text-gray-800 px-2 py-1.5">Clear</button>
+        )}
       </div>
 
       {/* Grid — own scroll region with a frozen header */}
