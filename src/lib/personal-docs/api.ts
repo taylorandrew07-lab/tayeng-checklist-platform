@@ -45,6 +45,12 @@ function safeName(name: string): string {
 
 export type ExpiryStatus = 'expired' | 'expiring' | 'ok' | 'none'
 
+/** A positive reminder lead in days, falling back to 60 (guards against a blank
+ *  input becoming Number('')===0, which would silently disable reminders). */
+function leadDaysOr(value: number | null | undefined, fallback = 60): number {
+  return value && value > 0 ? value : fallback
+}
+
 /** Days until expiry (negative = past) + a status banded by the reminder lead. */
 export function expiryStatus(expiry: string | null, leadDays: number): { status: ExpiryStatus; days: number | null } {
   if (!expiry) return { status: 'none', days: null }
@@ -135,7 +141,7 @@ export async function saveCredential(
     doc_number: input.doc_number || null,
     issue_date: input.issue_date || null,
     expiry_date: input.expiry_date || null,
-    reminder_lead_days: input.reminder_lead_days ?? existing?.reminder_lead_days ?? 60,
+    reminder_lead_days: leadDaysOr(input.reminder_lead_days, existing?.reminder_lead_days ?? 60),
     notes: input.notes || null,
     insurance_company: def.insurance ? (input.insurance_company || null) : null,
     insurance_type: def.insurance ? (input.insurance_type || null) : null,
@@ -185,7 +191,7 @@ export async function addDocument(profileId: string, meta: DocInput, file: File 
     doc_type: meta.doc_type || null,
     issue_date: meta.issue_date || null,
     expiry_date: meta.expiry_date || null,
-    reminder_lead_days: meta.reminder_lead_days ?? 60,
+    reminder_lead_days: leadDaysOr(meta.reminder_lead_days),
     notes: meta.notes || null,
     storage_path, content_type, size_bytes,
     uploaded_by: user?.id ?? null,
@@ -204,7 +210,7 @@ export async function updateDocument(doc: PersonalDocument, meta: DocInput, file
     doc_type: meta.doc_type || null,
     issue_date: meta.issue_date || null,
     expiry_date: meta.expiry_date || null,
-    reminder_lead_days: meta.reminder_lead_days ?? doc.reminder_lead_days,
+    reminder_lead_days: leadDaysOr(meta.reminder_lead_days, doc.reminder_lead_days),
     notes: meta.notes || null,
   }
   let oldPath: string | null = null

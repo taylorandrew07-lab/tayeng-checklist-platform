@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
   addMonths, subMonths, format, isSameMonth, isToday,
@@ -60,19 +60,24 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [eventEdit, setEventEdit] = useState<CalendarEventRow | 'new' | null>(null)
   const tick = useRealtimeRefresh('calendar_events')
+  const loadedOnce = useRef(false)
 
   const days = useMemo(() => eachDayOfInterval({
     start: startOfWeek(startOfMonth(cursor)), end: endOfWeek(endOfMonth(cursor)),
   }), [cursor])
 
   async function reload() {
-    setLoading(true)
+    // Only show the full-grid spinner on the very first load — realtime ticks
+    // and month changes refresh the data in place so the calendar never blanks.
+    if (!loadedOnce.current) setLoading(true)
     const gridStart = iso(days[0]), gridEnd = iso(days[days.length - 1])
     const [{ jobs, events }, pend] = await Promise.all([
       listCalendar(gridStart, gridEnd),
       isAdmin ? listPendingLeave() : Promise.resolve([] as CalendarEventRow[]),
     ])
-    setJobs(jobs); setEvents(events); setPending(pend); setLoading(false)
+    setJobs(jobs); setEvents(events); setPending(pend)
+    loadedOnce.current = true
+    setLoading(false)
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void reload() }, [cursor, tick, isAdmin])
