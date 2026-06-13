@@ -63,7 +63,7 @@ export default function AdminDashboard() {
     activeTemplates: 0, draftTemplates: 0, archivedTemplates: 0,
     checklists: 0, jobsInProgress: 0, jobsSubmitted: 0, jobsCompleted: 0,
     users: 0, clients: 0,
-    pendingUsers: 0, pendingClients: 0, pendingSurveyors: 0,
+    pendingUsers: 0, pendingClients: 0, pendingSurveyors: 0, pendingChanges: 0,
   })
   const [recentChecklists, setRecentChecklists] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +95,7 @@ export default function AdminDashboard() {
       { count: pendingUserCount },
       { count: pendingClientCount },
       { count: pendingSurveyorCount },
+      { count: pendingChangeCount },
       { data: jobs },
       profileRes,
     ] = await Promise.all([
@@ -106,6 +107,7 @@ export default function AdminDashboard() {
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
       supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('surveyor_name_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('jobs').select(`
         id, title, job_number, status, created_at, vessel_name, surveyor_name,
         template:checklist_templates(name),
@@ -129,6 +131,7 @@ export default function AdminDashboard() {
       pendingUsers: pendingUserCount ?? 0,
       pendingClients: pendingClientCount ?? 0,
       pendingSurveyors: pendingSurveyorCount ?? 0,
+      pendingChanges: pendingChangeCount ?? 0,
     })
     setRecentChecklists(jobs ?? [])
 
@@ -181,7 +184,7 @@ export default function AdminDashboard() {
   const visibleChecklists = clearedAt
     ? recentChecklists.filter(j => j.created_at > clearedAt).slice(0, 6)
     : recentChecklists.slice(0, 6)
-  const totalPending = stats.pendingUsers + stats.pendingClients + stats.pendingSurveyors
+  const totalPending = stats.pendingUsers + stats.pendingClients + stats.pendingSurveyors + stats.pendingChanges
 
   const tileValue = (k: TileKey): number => {
     switch (k) {
@@ -230,9 +233,10 @@ export default function AdminDashboard() {
               {stats.pendingUsers > 0 && <span className="ml-2 text-yellow-700">{stats.pendingUsers} user{stats.pendingUsers > 1 ? 's' : ''}</span>}
               {stats.pendingClients > 0 && <span className="ml-2 text-yellow-700">{stats.pendingClients} new client{stats.pendingClients > 1 ? 's' : ''}</span>}
               {stats.pendingSurveyors > 0 && <span className="ml-2 text-yellow-700">{stats.pendingSurveyors} new surveyor name{stats.pendingSurveyors > 1 ? 's' : ''}</span>}
+              {stats.pendingChanges > 0 && <span className="ml-2 text-yellow-700">{stats.pendingChanges} profile change{stats.pendingChanges > 1 ? 's' : ''}</span>}
             </div>
           </div>
-          <Link href="/admin/users" className="text-xs font-medium text-yellow-800 hover:text-yellow-900 border border-yellow-300 px-3 py-1.5 rounded-lg hover:bg-yellow-100 transition-colors flex-shrink-0">
+          <Link href={(stats.pendingUsers + stats.pendingClients + stats.pendingSurveyors) > 0 ? '/admin/users' : '/admin/profile-requests'} className="text-xs font-medium text-yellow-800 hover:text-yellow-900 border border-yellow-300 px-3 py-1.5 rounded-lg hover:bg-yellow-100 transition-colors flex-shrink-0">
             Review →
           </Link>
         </div>
