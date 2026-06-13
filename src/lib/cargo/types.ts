@@ -2,6 +2,8 @@
 // Everything here is browser-local (the slice has no Supabase voyage tables yet);
 // cloud sync is a later phase. All voyage/photo records are scoped by `userId`.
 
+import type { DriReport } from './dri'
+
 /** The three nominal monitoring periods. Actual reading times may differ and are
  *  captured separately (periodMeta.actualTime + per-photo actualTime). */
 export type Period = '0600' | '1200' | '1800'
@@ -131,6 +133,11 @@ export interface Voyage {
   /** periodMeta[dateISO][period] = { actualTime, remarks } */
   periodMeta: Record<string, Record<string, PeriodMeta>>
   observations?: string
+
+  // --- DRI Production Report (offline, layered onto this voyage doc) ---
+  /** All structured report sections (SOF, voyage log, inerting, wires, barges,
+   *  hold openings, etc.). Sensor readings stay in `readings` above, not here. */
+  dri?: DriReport
 
   createdAt: number
   updatedAt: number
