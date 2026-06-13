@@ -66,15 +66,18 @@ function EditableCombo({ value, listId, onSave }: { value: string | null; listId
   )
 }
 
-function EditableDate({ value, onSave }: { value: string | null; onSave: (v: string | null) => void }) {
+function EditableDate({ value, fallback, onSave }: { value: string | null; fallback?: string | null; onSave: (v: string | null) => void }) {
   const [editing, setEditing] = useState(false)
   if (editing) return (
-    <input type="date" autoFocus defaultValue={value ?? ''} onBlur={e => { setEditing(false); const nv = e.target.value || null; if (nv !== (value || null)) onSave(nv) }}
+    <input type="date" autoFocus defaultValue={value ?? (fallback ? fallback.slice(0, 10) : '')} onBlur={e => { setEditing(false); const nv = e.target.value || null; if (nv !== (value || null)) onSave(nv) }}
       className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-sm outline-none ring-1 ring-brand-300" />
   )
+  // Show the scheduled date if set, otherwise fall back to the job's own date
+  // (created), shown muted, so the column is never blank.
   return (
-    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors whitespace-nowrap ${value ? 'text-gray-600' : 'text-gray-300'}`}>
-      {value ? formatDate(value) : 'Set date'}
+    <button onClick={() => setEditing(true)} title={value ? 'Scheduled date' : 'No scheduled date — showing the job date. Click to set.'}
+      className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors whitespace-nowrap ${value ? 'text-gray-600' : fallback ? 'text-gray-400 italic' : 'text-gray-300'}`}>
+      {value ? formatDate(value) : fallback ? formatDate(fallback) : 'Set date'}
     </button>
   )
 }
@@ -167,10 +170,15 @@ export default function JobsTrackerPage() {
   }, [rows, filter, q, sort])
 
   const missingCount = rows.filter(r => !r.report_number).length
+  // Suggestions = configured job types + any type already used on a job.
+  const typeOptions = useMemo(
+    () => Array.from(new Set([...jobTypes, ...rows.map(r => r.job_type).filter(Boolean) as string[]])).sort(),
+    [jobTypes, rows],
+  )
 
   return (
     <div className="space-y-5 animate-rise">
-      <datalist id="jobTypeOptions">{jobTypes.map(t => <option key={t} value={t} />)}</datalist>
+      <datalist id="jobTypeOptions">{typeOptions.map(t => <option key={t} value={t} />)}</datalist>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -258,7 +266,7 @@ export default function JobsTrackerPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></td>
-                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableDate value={r.scheduled_date} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} /></td>
                 </tr>
               ))}
             </tbody>
