@@ -180,3 +180,105 @@ export async function jobFileUrl(path: string | null): Promise<string | null> {
   const { data } = await createClient().storage.from(FILES_BUCKET).createSignedUrl(path, 3600)
   return data?.signedUrl ?? null
 }
+
+// ── Jobs Tracker table (Airtable-style grid) ────────────────────────────────
+export interface TrackerRow {
+  id: string
+  report_number: string | null
+  job_type: string | null
+  vessel_name: string | null
+  title: string
+  client_id: string | null
+  client_name: string | null
+  workflow_status: WorkflowStatus
+  status: string
+  scheduled_date: string | null
+  created_at: string
+  surveyors: string[]
+  regular_hours: number
+  overtime_hours: number
+  invoice_number: string | null
+  invoice_status: string | null
+  invoice_total: number | null
+  invoice_currency: string | null
+}
+
+/** One row per job with surveyor names + hours and any invoice, joined in JS. */
+export async function listJobTrackerRows(): Promise<TrackerRow[]> {
+  const supabase = createClient()
+  const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
+    supabase.from('jobs')
+      .select('id, report_number, job_type, vessel_name, title, client_id, workflow_status, status, scheduled_date, created_at, client:clients(name)')
+      .order('created_at', { ascending: false }),
+    supabase.from('job_surveyors')
+      .select('job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
+    supabase.from('invoices').select('job_id, invoice_number, status, total, currency'),
+  ])
+
+  const sMap = new Map<string, { names: string[]; reg: number; ot: number }>()
+  for (const r of (js ?? []) as any[]) {
+    let e = sMap.get(r.job_id); if (!e) { e = { names: [], reg: 0, ot: 0 }; sMap.set(r.job_id, e) }
+    const n = r.surveyor?.display_title ?? r.surveyor?.full_name; if (n) e.names.push(n)
+    e.reg += Number(r.regular_hours ?? 0); e.ot += Number(r.overtime_hours ?? 0)
+  }
+  const iMap = new Map<string, any>()
+  for (const inv of (invs ?? []) as any[]) if (inv.job_id && !iMap.has(inv.job_id)) iMap.set(inv.job_id, inv)
+
+  return ((jobs ?? []) as any[]).map(j => {
+    const s = sMap.get(j.id); const inv = iMap.get(j.id)
+    return {
+      id: j.id, report_number: j.report_number, job_type: j.job_type, vessel_name: j.vessel_name, title: j.title,
+      client_id: j.client_id, client_name: j.client?.name ?? null,
+      workflow_status: j.workflow_status, status: j.status, scheduled_date: j.scheduled_date, created_at: j.created_at,
+      surveyors: s?.names ?? [], regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0,
+      invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
+      invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
+    }
+  })
+}
+
+/** Inline edit of a single job field from the tracker grid. */
+export async function updateJobField(jobId: string, patch: Record<string, any>): Promise<{ error?: string }> {
+  const { error } = await createClient().from('jobs').update(patch).eq('id', jobId)
+  return { error: error?.message }
+}
+
+/** Report number `YY-MM-NNN` from a date + running sequence (matches the real docs). */
+export function formatReportNumber(dateISO: string, seq: number): string {
+  const d = new Date(dateISO)
+  const yy = String(d.getFullYear()).slice(-2)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${yy}-${mm}-${String(seq).padStart(3, '0')}`
+}
+
+/** Highest NNN seen across existing report numbers (any format), 0 if none. */
+export function highestReportSeq(rows: { report_number: string | null }[]): number {
+  let max = 0
+  for (const r of rows) {
+    const m = (r.report_number ?? '').match(/(\d+)\s*$/)
+    if (m) max = Math.max(max, parseInt(m[1], 10))
+  }
+  return max
+}
+
+/** Assign report numbers (date order) to jobs missing one, from a starting seq. */
+export async function fillReportNumbers(
+  rows: { id: string; scheduled_date: string | null; created_at: string; report_number: string | null }[],
+  startSeq: number,
+): Promise<{ error?: string; count: number }> {
+  const supabase = createClient()
+  const missing = rows
+    .filter(r => !r.report_number)
+    .sort((a, b) => {
+      const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at
+      return da < db ? -1 : da > db ? 1 : 0
+    })
+  let seq = startSeq, count = 0
+  for (const r of missing) {
+    const rn = formatReportNumber(r.scheduled_date ?? r.created_at, seq)
+    const { error } = await supabase.from('jobs').update({ report_number: rn }).eq('id', r.id)
+    if (error) return { error: error.message, count }
+    seq++; count++
+  }
+  return { count }
+}

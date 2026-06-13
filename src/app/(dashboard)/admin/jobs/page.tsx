@@ -1,159 +1,264 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+// Jobs Tracker — an Airtable-style grid over every job. Most cells edit inline
+// (report #, job type, vessel, status, date) so you rarely need to open a job;
+// hours, invoice and surveyors are summarised per row; the client links out to
+// client management; and report numbers can be filled down the date order.
+
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { formatDate } from '@/lib/utils'
+import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
-import { WORKFLOW } from '@/lib/jobs/tracker'
+import { formatDate } from '@/lib/utils'
+import { Modal } from '@/components/ui/Modal'
+import { toast } from '@/components/ui/toast'
+import {
+  WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus,
+  listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
+  type TrackerRow,
+} from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
-type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'date'
-type SortDir = 'asc' | 'desc'
+type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'status' | 'date'
 type Filter = 'open' | 'paid' | 'closed' | 'all'
 
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'open', label: 'Open' },
-  { key: 'paid', label: 'Paid' },
-  { key: 'closed', label: 'Closed' },
-  { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open' }, { key: 'paid', label: 'Paid' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
 
-function StatusPill({ status }: { status: WorkflowStatus }) {
-  const w = WORKFLOW[status] ?? WORKFLOW.new
-  return <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>
+const INV_PILL: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-600', sent: 'bg-cyan-100 text-cyan-700',
+  paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700', void: 'bg-slate-200 text-slate-500',
 }
 
-function SortHeader({ label, col, sort, onSort }: {
-  label: string; col: SortKey; sort: { key: SortKey; dir: SortDir }; onSort: (k: SortKey) => void
-}) {
+// ── Inline-edit cells ────────────────────────────────────────────────────────
+function EditableText({ value, onSave, mono, placeholder }: { value: string | null; onSave: (v: string | null) => void; mono?: boolean; placeholder?: string }) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(value ?? '')
+  useEffect(() => { if (!editing) setV(value ?? '') }, [value, editing])
+  function commit() { setEditing(false); const nv = v.trim() || null; if (nv !== (value || null)) onSave(nv) }
+  if (editing) return (
+    <input autoFocus value={v} placeholder={placeholder} onChange={e => setV(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') { setV(value ?? ''); setEditing(false) } }}
+      className={`w-full rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-1 ring-brand-300 ${mono ? 'tnum' : ''}`} />
+  )
+  return (
+    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors ${mono ? 'tnum' : ''} ${value ? 'text-gray-900' : 'text-gray-300'}`}>
+      {value || placeholder || '—'}
+    </button>
+  )
+}
+
+function EditableCombo({ value, listId, onSave }: { value: string | null; listId: string; onSave: (v: string | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(value ?? '')
+  useEffect(() => { if (!editing) setV(value ?? '') }, [value, editing])
+  function commit() { setEditing(false); const nv = v.trim() || null; if (nv !== (value || null)) onSave(nv) }
+  if (editing) return (
+    <input autoFocus list={listId} value={v} onChange={e => setV(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') { setV(value ?? ''); setEditing(false) } }}
+      className="w-full rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-1 ring-brand-300" />
+  )
+  return (
+    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors ${value ? 'text-gray-700' : 'text-gray-300'}`}>
+      {value || 'Set type'}
+    </button>
+  )
+}
+
+function EditableDate({ value, onSave }: { value: string | null; onSave: (v: string | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  if (editing) return (
+    <input type="date" autoFocus defaultValue={value ?? ''} onBlur={e => { setEditing(false); const nv = e.target.value || null; if (nv !== (value || null)) onSave(nv) }}
+      className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-sm outline-none ring-1 ring-brand-300" />
+  )
+  return (
+    <button onClick={() => setEditing(true)} className={`w-full text-left px-2 py-1 rounded hover:bg-brand-50 transition-colors whitespace-nowrap ${value ? 'text-gray-600' : 'text-gray-300'}`}>
+      {value ? formatDate(value) : 'Set date'}
+    </button>
+  )
+}
+
+function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s: WorkflowStatus) => void }) {
+  const [editing, setEditing] = useState(false)
+  if (editing) return (
+    <select autoFocus defaultValue={status} onBlur={() => setEditing(false)}
+      onChange={e => { onChange(e.target.value as WorkflowStatus); setEditing(false) }}
+      className="rounded border border-brand-400 bg-white px-1.5 py-1 text-xs outline-none ring-1 ring-brand-300">
+      {WORKFLOW_ORDER.map(s => <option key={s} value={s}>{WORKFLOW[s].label}</option>)}
+    </select>
+  )
+  const w = WORKFLOW[status] ?? WORKFLOW.new
+  return (
+    <button onClick={() => setEditing(true)} title="Change status">
+      <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>
+    </button>
+  )
+}
+
+function Th({ label, col, sort, onSort, className }: { label: string; col?: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; className?: string }) {
+  if (!col) return <th className={`text-left px-3 py-2.5 font-medium text-gray-500 text-xs ${className ?? ''}`}>{label}</th>
   const active = sort.key === col
   return (
-    <th onClick={() => onSort(col)} className="text-left px-4 py-3 font-medium text-gray-700 cursor-pointer select-none hover:text-gray-900">
-      <span className="inline-flex items-center gap-1">{label}<span className={`text-brand-600 ${active ? '' : 'opacity-0'}`}>{sort.dir === 'asc' ? '▲' : '▼'}</span></span>
+    <th onClick={() => onSort(col)} className={`text-left px-3 py-2.5 font-medium text-xs cursor-pointer select-none hover:text-gray-900 ${active ? 'text-brand-700' : 'text-gray-500'} ${className ?? ''}`}>
+      <span className="inline-flex items-center gap-1">{label}{active ? <span className="text-[10px]">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30" />}</span>
     </th>
   )
 }
 
 export default function JobsTrackerPage() {
-  const router = useRouter()
-  const [jobs, setJobs] = useState<any[]>([])
-  const [surveyorsByJob, setSurveyorsByJob] = useState<Record<string, string[]>>({})
+  const [rows, setRows] = useState<TrackerRow[]>([])
+  const [jobTypes, setJobTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('open')
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'date', dir: 'desc' })
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
+  const [numberOpen, setNumberOpen] = useState(false)
   const tick = useRealtimeRefresh('jobs')
 
-  useEffect(() => {
-    async function load() {
-      const supabase = createClient()
-      const [{ data: j }, { data: js }] = await Promise.all([
-        supabase.from('jobs').select(`
-          id, title, job_number, report_number, job_type, status, workflow_status,
-          created_at, vessel_name, surveyor_name, client:clients(name)
-        `).order('created_at', { ascending: false }),
-        supabase.from('job_surveyors').select('job_id, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
-      ])
-      setJobs(j ?? [])
-      const map: Record<string, string[]> = {}
-      for (const r of (js ?? []) as any[]) {
-        const name = r.surveyor?.display_title ?? r.surveyor?.full_name
-        if (name) (map[r.job_id] ??= []).push(name)
-      }
-      setSurveyorsByJob(map)
-      setLoading(false)
-    }
-    load()
-  }, [tick])
+  const load = useCallback(async () => {
+    const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
+    setRows(r); setJobTypes(jt.map(t => t.name)); setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load, tick])
+
+  // Optimistic local patch + persist.
+  const patchRow = useCallback(async (id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) => {
+    const prev = rows
+    setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
+    const res = await updateJobField(id, dbPatch)
+    if (res.error) { setRows(prev); toast.error(res.error) }
+  }, [rows])
+
+  const changeStatus = useCallback(async (id: string, status: WorkflowStatus) => {
+    const prev = rows
+    setRows(rs => rs.map(r => r.id === id ? { ...r, workflow_status: status } : r))
+    const res = await setWorkflowStatus(id, status)
+    if (res.error) { setRows(prev); toast.error(res.error) }
+  }, [rows])
 
   function handleSort(key: SortKey) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })
   }
 
-  function surveyorLabel(job: any): string {
-    const names = surveyorsByJob[job.id] ?? (job.surveyor_name ? [job.surveyor_name] : [])
-    if (names.length === 0) return '—'
-    return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`
-  }
-
   const visible = useMemo(() => {
-    const byFilter = jobs.filter(j => {
-      const ws = j.workflow_status as WorkflowStatus
-      if (filter === 'all') return true
-      if (filter === 'paid') return ws === 'paid'
-      if (filter === 'closed') return ws === 'closed'
-      return ws !== 'paid' && ws !== 'closed' // open
+    const term = q.trim().toLowerCase()
+    const filtered = rows.filter(r => {
+      const ws = r.workflow_status
+      const pass = filter === 'all' ? true : filter === 'paid' ? ws === 'paid' : filter === 'closed' ? ws === 'closed' : (ws !== 'paid' && ws !== 'closed')
+      if (!pass) return false
+      if (!term) return true
+      return [r.report_number, r.vessel_name, r.client_name, r.job_type, r.title, r.invoice_number, ...r.surveyors]
+        .some(v => (v ?? '').toString().toLowerCase().includes(term))
     })
-    const val = (j: any): string => {
+    const val = (r: TrackerRow): string | number => {
       switch (sort.key) {
-        case 'report': return j.report_number ?? ''
-        case 'vessel': return (j.vessel_name ?? '').toLowerCase()
-        case 'type': return (j.job_type ?? '').toLowerCase()
-        case 'client': return (j.client?.name ?? '').toLowerCase()
-        case 'date': default: return j.created_at ?? ''
+        case 'report': return r.report_number ?? ''
+        case 'vessel': return (r.vessel_name ?? '').toLowerCase()
+        case 'type': return (r.job_type ?? '').toLowerCase()
+        case 'client': return (r.client_name ?? '').toLowerCase()
+        case 'hours': return r.regular_hours + r.overtime_hours
+        case 'status': return WORKFLOW_ORDER.indexOf(r.workflow_status)
+        case 'date': default: return r.scheduled_date ?? r.created_at
       }
     }
     const dir = sort.dir === 'asc' ? 1 : -1
-    return byFilter.sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
-  }, [jobs, filter, sort, surveyorsByJob]) // eslint-disable-line react-hooks/exhaustive-deps
+    return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
+  }, [rows, filter, q, sort])
 
-  const open = (id: string) => router.push(`/admin/jobs/${id}`)
+  const missingCount = rows.filter(r => !r.report_number).length
 
   return (
-    <div className="space-y-5 max-w-6xl mx-auto animate-rise">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-5 animate-rise">
+      <datalist id="jobTypeOptions">{jobTypes.map(t => <option key={t} value={t} />)}</datalist>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="page-title">Jobs Tracker</h1>
-          <p className="text-gray-500 mt-1">{loading ? '…' : `${visible.length} ${filter === 'all' ? '' : filter} job${visible.length !== 1 ? 's' : ''}`.replace('  ', ' ')}</p>
+          <p className="text-gray-500 mt-1 text-sm">{loading ? '…' : `${visible.length} job${visible.length !== 1 ? 's' : ''}`}{missingCount > 0 && !loading ? ` · ${missingCount} missing report #` : ''}</p>
         </div>
-        <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
+        <div className="flex items-center gap-2">
+          {missingCount > 0 && (
+            <button onClick={() => setNumberOpen(true)} className="btn-secondary"><Hash className="h-4 w-4" /><span className="hidden sm:inline">Number reports</span></button>
+          )}
+          <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
+        </div>
       </div>
 
-      {/* Filter chips */}
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)}
-            className={`text-sm px-3 py-1 rounded-full border transition-colors ${filter === f.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-            {f.label}
-          </button>
-        ))}
+      {/* Toolbar: search + filters */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search vessel, report #, client, surveyor…" className="input-base pl-9" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              className={`text-sm px-3 py-1 rounded-full border transition-colors ${filter === f.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Table — wider screens / landscape */}
-      <div className="card overflow-hidden hidden sm:block landscape:block">
+      {/* Grid */}
+      <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[1180px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <SortHeader label="Report #" col="report" sort={sort} onSort={handleSort} />
-                <SortHeader label="Vessel" col="vessel" sort={sort} onSort={handleSort} />
-                <SortHeader label="Type" col="type" sort={sort} onSort={handleSort} />
-                <SortHeader label="Client" col="client" sort={sort} onSort={handleSort} />
-                <th className="text-left px-4 py-3 font-medium text-gray-700">Surveyor</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
-                <SortHeader label="Date" col="date" sort={sort} onSort={handleSort} />
+                <th className="w-9 px-2 py-2.5" />
+                <Th label="Report #" col="report" sort={sort} onSort={handleSort} />
+                <Th label="Type" col="type" sort={sort} onSort={handleSort} />
+                <Th label="Vessel" col="vessel" sort={sort} onSort={handleSort} />
+                <Th label="Client" col="client" sort={sort} onSort={handleSort} />
+                <Th label="Surveyors" sort={sort} onSort={handleSort} />
+                <Th label="Hours" col="hours" sort={sort} onSort={handleSort} className="text-right" />
+                <Th label="Invoice" sort={sort} onSort={handleSort} />
+                <Th label="Status" col="status" sort={sort} onSort={handleSort} />
+                <Th label="Date" col="date" sort={sort} onSort={handleSort} />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                [0, 1, 2, 3, 4].map(i => (
-                  <tr key={i}>
-                    {Array.from({ length: 7 }).map((_, k) => <td key={k} className="px-4 py-3"><div className="skeleton h-3.5 w-20" /></td>)}
-                  </tr>
+                [0, 1, 2, 3, 4, 5].map(i => (
+                  <tr key={i}>{Array.from({ length: 10 }).map((_, k) => <td key={k} className="px-3 py-2.5"><div className="skeleton h-3.5 w-16" /></td>)}</tr>
                 ))
               ) : visible.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">No {filter === 'all' ? '' : filter} jobs. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
-              ) : visible.map(job => (
-                <tr key={job.id} onClick={() => open(job.id)} className="hover:bg-gray-50 cursor-pointer">
-                  <td className="px-4 py-3 font-medium text-gray-900 tnum whitespace-nowrap">{job.report_number ?? <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-900">{job.vessel_name ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-600">{job.job_type ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{job.client?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{surveyorLabel(job)}</td>
-                  <td className="px-4 py-3"><StatusPill status={job.workflow_status} /></td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(job.created_at)}</td>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">No jobs. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></td></tr>
+              ) : visible.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50/70 align-middle">
+                  <td className="px-2 py-1.5">
+                    <Link href={`/admin/jobs/${r.id}`} title="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50"><ExternalLink className="h-4 w-4" /></Link>
+                  </td>
+                  <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => patchRow(r.id, { vessel_name: v }, { vessel_name: v })} /></td>
+                  <td className="px-3 py-1.5">
+                    {r.client_name
+                      ? <Link href="/admin/clients" className="text-brand-700 hover:underline">{r.client_name}</Link>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-gray-600">
+                    {r.surveyors.length === 0 ? <span className="text-gray-300">—</span>
+                      : r.surveyors.length === 1 ? r.surveyors[0]
+                      : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap tnum">
+                    {r.regular_hours + r.overtime_hours === 0 ? <span className="text-gray-300">—</span> : (
+                      <span className="text-gray-700">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {r.invoice_number ? (
+                      <Link href={`/admin/jobs/${r.id}`} className="inline-flex items-center gap-1.5">
+                        <span className="tnum text-gray-700">{r.invoice_number}</span>
+                        {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
+                      </Link>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></td>
+                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableDate value={r.scheduled_date} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} /></td>
                 </tr>
               ))}
             </tbody>
@@ -161,29 +266,51 @@ export default function JobsTrackerPage() {
         </div>
       </div>
 
-      {/* Stacked cards — portrait / narrow */}
-      <div className="space-y-3 sm:hidden landscape:hidden">
-        {loading ? (
-          [0, 1, 2].map(i => <div key={i} className="card p-4 space-y-2"><div className="skeleton h-4 w-28" /><div className="skeleton h-3 w-40" /></div>)
-        ) : visible.length === 0 ? (
-          <div className="card p-8 text-center text-gray-400">No {filter === 'all' ? '' : filter} jobs. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></div>
-        ) : visible.map(job => (
-          <div key={job.id} onClick={() => open(job.id)} className="card p-4 cursor-pointer hover:shadow-md transition-shadow space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-medium text-gray-900">{job.vessel_name ?? job.title ?? 'Untitled'}</p>
-                <p className="text-xs text-gray-400 tnum">{job.report_number ?? '—'}{job.job_type ? ` · ${job.job_type}` : ''}</p>
-              </div>
-              <StatusPill status={job.workflow_status} />
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm pt-1">
-              <div><p className="text-[11px] text-gray-400">Client</p><p className="text-gray-700">{job.client?.name ?? '—'}</p></div>
-              <div><p className="text-[11px] text-gray-400">Surveyor</p><p className="text-gray-700">{surveyorLabel(job)}</p></div>
-              <div><p className="text-[11px] text-gray-400">Date</p><p className="text-gray-700">{formatDate(job.created_at)}</p></div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <NumberReportsModal open={numberOpen} onClose={() => setNumberOpen(false)} rows={rows} onDone={load} />
     </div>
+  )
+}
+
+function NumberReportsModal({ open, onClose, rows, onDone }: { open: boolean; onClose: () => void; rows: TrackerRow[]; onDone: () => void }) {
+  const missing = rows.filter(r => !r.report_number)
+    .sort((a, b) => { const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at; return da < db ? -1 : da > db ? 1 : 0 })
+  const [start, setStart] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (open) setStart(String(highestReportSeq(rows) + 1)) }, [open, rows])
+
+  const startSeq = parseInt(start, 10) || 1
+  const preview = missing.slice(0, 3).map((r, i) => formatReportNumber(r.scheduled_date ?? r.created_at, startSeq + i))
+
+  async function run() {
+    setBusy(true)
+    const res = await fillReportNumbers(rows, startSeq)
+    setBusy(false)
+    if (res.error) { toast.error(`${res.error} (assigned ${res.count})`); onDone(); onClose(); return }
+    toast.success(`Numbered ${res.count} job${res.count !== 1 ? 's' : ''}`); onDone(); onClose()
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Number reports" size="sm"
+      footer={<>
+        <button onClick={onClose} className="btn-secondary">Cancel</button>
+        <button onClick={run} disabled={busy || missing.length === 0} className="btn-primary">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hash className="h-4 w-4" />}Assign {missing.length}</button>
+      </>}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Assigns report numbers to the <strong>{missing.length}</strong> job{missing.length !== 1 ? 's' : ''} that don&apos;t have one, in date order, as <span className="tnum">YY-MM-NNN</span> using each job&apos;s date.
+        </p>
+        <div>
+          <label className="label-base">Start at number</label>
+          <input type="number" min={1} value={start} onChange={e => setStart(e.target.value)} className="input-base w-32 tnum" />
+          <p className="text-[11px] text-gray-400 mt-1">The running NNN. Defaults to one past the highest existing number.</p>
+        </div>
+        {preview.length > 0 && (
+          <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-sm">
+            <p className="text-[11px] text-gray-400 mb-1">Preview</p>
+            <p className="tnum text-gray-700">{preview.join(', ')}{missing.length > 3 ? ' …' : ''}</p>
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
