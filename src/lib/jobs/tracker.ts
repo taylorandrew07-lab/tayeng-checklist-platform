@@ -40,6 +40,11 @@ export function formatBytes(n: number | null | undefined): string {
 }
 const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, '_')
 
+export const CURRENCIES = ['USD', 'TTD', 'EUR', 'GBP'] as const
+export function money(n: number, currency = 'USD'): string {
+  return `${currency} ${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 // ── Activity trail ──────────────────────────────────────────────────────────
 export async function logActivity(entity: string, entityId: string, action: string, meta?: Record<string, unknown>) {
   const supabase = createClient()
@@ -86,16 +91,42 @@ export async function listSurveyorAccounts(): Promise<SurveyorAccount[]> {
 }
 
 // ── Multi-surveyor assignment ───────────────────────────────────────────────
-export interface JobSurveyorRow { id: string; surveyor_id: string; full_name: string; role: string; display_title: string | null }
+export interface JobSurveyorRow {
+  id: string; surveyor_id: string; full_name: string; role: string; display_title: string | null
+  regular_hours: number; overtime_hours: number
+  pay_rate: number | null; overtime_rate: number | null; pay_currency: string
+  regular_pay: number; overtime_pay: number
+}
 export async function listJobSurveyors(jobId: string): Promise<JobSurveyorRow[]> {
   const { data } = await createClient()
     .from('job_surveyors')
-    .select('id, surveyor_id, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, role, display_title)')
+    .select('id, surveyor_id, regular_hours, overtime_hours, pay_rate, overtime_rate, pay_currency, regular_pay, overtime_pay, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, role, display_title)')
     .eq('job_id', jobId)
   return ((data ?? []) as any[]).map(r => ({
     id: r.id, surveyor_id: r.surveyor_id,
     full_name: r.surveyor?.full_name ?? '', role: r.surveyor?.role ?? '', display_title: r.surveyor?.display_title ?? null,
+    regular_hours: Number(r.regular_hours ?? 0), overtime_hours: Number(r.overtime_hours ?? 0),
+    pay_rate: r.pay_rate, overtime_rate: r.overtime_rate, pay_currency: r.pay_currency ?? 'TTD',
+    regular_pay: Number(r.regular_pay ?? 0), overtime_pay: Number(r.overtime_pay ?? 0),
   }))
+}
+
+/** Surveyor-or-admin: update the hours on a job↔surveyor line. */
+export async function updateJobSurveyorHours(rowId: string, jobId: string, hours: { regular_hours: number; overtime_hours: number }): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_surveyors')
+    .update({ regular_hours: hours.regular_hours, overtime_hours: hours.overtime_hours }).eq('id', rowId)
+  if (error) return { error: error.message }
+  await logActivity('job', jobId, 'hours:update', hours)
+  return {}
+}
+
+/** Admin only (trigger-enforced): set a surveyor's pay rates on a job. */
+export async function updateJobSurveyorRates(rowId: string, jobId: string, rates: { pay_rate: number | null; overtime_rate: number | null; pay_currency: string }): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_surveyors')
+    .update({ pay_rate: rates.pay_rate, overtime_rate: rates.overtime_rate, pay_currency: rates.pay_currency }).eq('id', rowId)
+  if (error) return { error: error.message }
+  await logActivity('job', jobId, 'rates:update')
+  return {}
 }
 
 export async function addJobSurveyor(jobId: string, surveyorId: string): Promise<{ error?: string }> {

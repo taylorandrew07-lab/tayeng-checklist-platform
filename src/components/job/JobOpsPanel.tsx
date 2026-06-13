@@ -6,8 +6,9 @@ import { formatDateTime } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes,
+  WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
+  updateJobSurveyorHours, updateJobSurveyorRates,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount,
 } from '@/lib/jobs/tracker'
@@ -22,6 +23,51 @@ function activityText(a: ActivityLogRow): string {
   if (act.startsWith('workflow:')) { const s = act.slice(9) as WorkflowStatus; return `Status → ${WORKFLOW[s]?.label ?? s}` }
   if (act.startsWith('attachment:')) { const k = act.slice(11) as JobAttachmentKind; return `Uploaded ${attachmentLabel(k).toLowerCase()}` }
   return act
+}
+
+function SurveyorRow({ row, jobId, isAdmin, onRemove, onSaved }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; onRemove: () => void; onSaved: () => void
+}) {
+  const [reg, setReg] = useState(String(row.regular_hours ?? 0))
+  const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
+  const [payRate, setPayRate] = useState(row.pay_rate != null ? String(row.pay_rate) : '')
+  const [otRate, setOtRate] = useState(row.overtime_rate != null ? String(row.overtime_rate) : '')
+  const [cur, setCur] = useState(row.pay_currency || 'TTD')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: Number(reg) || 0, overtime_hours: Number(ot) || 0 })
+    let err = h.error
+    if (!err && isAdmin) {
+      const r = await updateJobSurveyorRates(row.id, jobId, { pay_rate: payRate === '' ? null : Number(payRate), overtime_rate: otRate === '' ? null : Number(otRate), pay_currency: cur })
+      err = r.error
+    }
+    setSaving(false)
+    if (err) { toast.error(err); return }
+    toast.success('Hours saved'); onSaved()
+  }
+
+  const numCls = 'input-base py-1 text-sm'
+  return (
+    <div className="rounded-lg border border-gray-200 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-sm font-medium text-gray-800">{row.display_title ?? row.full_name}{row.role === 'admin' ? ' (admin)' : ''}</span>
+        {isAdmin && <button onClick={onRemove} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div><label className="text-[11px] text-gray-400">Regular hrs</label><input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} /></div>
+        <div><label className="text-[11px] text-gray-400">Overtime hrs</label><input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={numCls} /></div>
+        {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-2">
+        <p className="text-xs text-gray-500">OT pay: <span className="font-medium text-gray-700 tnum">{money(row.overtime_pay, row.pay_currency)}</span>{isAdmin && row.regular_pay > 0 ? ` · reg ${money(row.regular_pay, row.pay_currency)}` : ''}</p>
+        <button onClick={save} disabled={saving} className="btn-secondary py-1 px-2.5 text-xs">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save</button>
+      </div>
+    </div>
+  )
 }
 
 export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isAdmin: boolean; onChanged: () => void }) {
@@ -124,18 +170,15 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
         )}
       </div>
 
-      {/* Surveyors */}
+      {/* Surveyors & hours */}
       <div className="card p-5">
-        <h3 className="font-medium text-gray-900 mb-3">Surveyors</h3>
+        <h3 className="font-medium text-gray-900 mb-3">Surveyors &amp; hours</h3>
         {surveyors.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
         ) : (
-          <div className="space-y-1.5 mb-3">
+          <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <div key={s.id} className="flex items-center justify-between gap-2 text-sm">
-                <span className="text-gray-800">{s.display_title ?? s.full_name}{s.role === 'admin' ? ' (admin)' : ''}</span>
-                {isAdmin && <button onClick={() => remove(s)} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
-              </div>
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
             ))}
           </div>
         )}

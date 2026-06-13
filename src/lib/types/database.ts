@@ -313,10 +313,34 @@ export interface Job {
 
 export interface JobType { id: string; name: string; is_active: boolean; created_at: string }
 
+export type Currency = 'USD' | 'TTD' | 'EUR' | 'GBP'
+
 export interface JobSurveyor {
   id: string; job_id: string; surveyor_id: string
   created_by: string | null; created_at: string
+  // Labour ledger (migration 043)
+  regular_hours: number; overtime_hours: number
+  pay_rate: number | null; overtime_rate: number | null; pay_currency: Currency
+  regular_pay: number; overtime_pay: number
 }
+
+export interface ClientRate {
+  id: string; client_id: string; job_type: string | null
+  rate_type: 'fixed' | 'hourly' | 'per_unit'; rate: number
+  unit_label: string | null; currency: Currency; is_active: boolean; created_at: string
+}
+
+export interface Invoice {
+  id: string; job_id: string | null; invoice_number: string | null; client_id: string | null
+  currency: Currency; status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
+  issue_date: string; due_date: string | null
+  subtotal: number; tax_total: number; total: number; notes: string | null
+  created_by: string | null; sent_at: string | null; paid_at: string | null
+  created_at: string; updated_at: string
+}
+export interface InvoiceLineItem { id: string; invoice_id: string; description: string; qty: number; unit_price: number; amount: number; sort: number }
+export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
+export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number }
 
 export type JobAttachmentKind = 'preliminary' | 'final' | 'vos' | 'time_page' | 'other'
 export interface JobAttachment {
