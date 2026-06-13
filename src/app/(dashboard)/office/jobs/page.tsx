@@ -73,7 +73,8 @@ export default function OfficeJobsMonitor() {
           <p className="text-sm text-gray-500">An administrator needs to grant you job-monitoring permission.</p>
         </div>
       ) : (
-        <div className="card overflow-hidden">
+        <>
+        <div className="card overflow-hidden hidden sm:block landscape:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -126,6 +127,37 @@ export default function OfficeJobsMonitor() {
             </table>
           </div>
         </div>
+
+        {/* Stacked cards — portrait / narrow phones. */}
+        <div className="space-y-3 sm:hidden landscape:hidden">
+          {loading ? (
+            <div className="card p-8 text-center text-gray-400">Loading…</div>
+          ) : jobs.length === 0 ? (
+            <div className="card p-8 text-center text-gray-400">No jobs to display.</div>
+          ) : jobs.map(job => (
+            <div
+              key={job.id}
+              onClick={canOpenDetail ? () => router.push(`/office/jobs/${job.id}`) : undefined}
+              className={`card p-4 space-y-2 ${canOpenDetail ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium text-gray-900">{job.title}</p>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getJobStatusColor(job.status)}`}>
+                  {getJobStatusLabel(job.status)}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400">{job.job_number ?? '—'}</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm pt-1">
+                <div><p className="text-[11px] text-gray-400">Client</p><p className="text-gray-700">{job.client?.name ?? '—'}</p></div>
+                <div><p className="text-[11px] text-gray-400">Vessel</p><p className="text-gray-700">{job.vessel_name ?? '—'}</p></div>
+                <div><p className="text-[11px] text-gray-400">Surveyor</p><p className="text-gray-700">{job.surveyor_name ?? '—'}</p></div>
+                <div><p className="text-[11px] text-gray-400">Scheduled</p><p className="text-gray-700">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</p></div>
+                <div><p className="text-[11px] text-gray-400">Submitted</p><p className="text-gray-700">{job.submitted_at ? formatDate(job.submitted_at) : '—'}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        </>
       )}
     </div>
   )
