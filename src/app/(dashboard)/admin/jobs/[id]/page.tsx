@@ -15,6 +15,8 @@ import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
+import JobOpsPanel from '@/components/job/JobOpsPanel'
+import { WORKFLOW } from '@/lib/jobs/tracker'
 
 export default function AdminChecklistDetailPage() {
   const params = useParams()
@@ -190,8 +192,20 @@ export default function AdminChecklistDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="page-title truncate">{job.title}</h1>
-          <p className="text-gray-500 mt-0.5 text-sm">{job.job_number} · {job.template?.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="page-title truncate">{job.title}</h1>
+            {job.workflow_status && (
+              <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.pill ?? ''}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.dot ?? ''}`} />
+                {WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.label ?? job.workflow_status}
+              </span>
+            )}
+          </div>
+          <p className="text-gray-500 mt-0.5 text-sm">
+            {job.report_number && <span className="font-medium text-gray-700 tnum">{job.report_number}</span>}
+            {job.job_type ? `${job.report_number ? ' · ' : ''}${job.job_type}` : ''}
+            {job.template?.name ? ` · ${job.template.name}` : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {['submitted', 'completed', 'client_visible'].includes(job.status) && (
@@ -221,6 +235,9 @@ export default function AdminChecklistDetailPage() {
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
       )}
+
+      {/* Job tracker: workflow, surveyors, reports/files, activity */}
+      <JobOpsPanel job={job} isAdmin onChanged={load} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
