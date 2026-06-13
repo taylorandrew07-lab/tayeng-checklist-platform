@@ -115,11 +115,13 @@ interface SidebarProps {
   pendingCount?: number
   /** Unread message count; badges the Inbox nav item. */
   unreadMessages?: number
+  /** Billing-reconciliation flag count; badges the Invoicing nav item. */
+  reconcileCount?: number
   /** Granted office permission keys; drives which office nav items appear. */
   officePermissions?: string[]
 }
 
-export default function Sidebar({ profile, open = true, onClose, pendingCount = 0, unreadMessages = 0, officePermissions = [] }: SidebarProps) {
+export default function Sidebar({ profile, open = true, onClose, pendingCount = 0, unreadMessages = 0, reconcileCount = 0, officePermissions = [] }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -261,6 +263,10 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
                   ) : item.href === '/inbox' && unreadMessages > 0 ? (
                     <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                       {unreadMessages}
+                    </span>
+                  ) : item.href === '/admin/invoicing' && reconcileCount > 0 ? (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {reconcileCount}
                     </span>
                   ) : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
                 </button>

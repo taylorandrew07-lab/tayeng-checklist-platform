@@ -12,6 +12,7 @@ import BackGuard from '@/components/auth/BackGuard'
 import { fetchMyOfficePermissions } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { unreadCount } from '@/lib/messages/api'
+import { listReconciliation } from '@/lib/jobs/reconciliation'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
@@ -29,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [reconcileCount, setReconcileCount] = useState(0)
   const [officePermissions, setOfficePermissions] = useState<string[]>([])
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -94,6 +96,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         ])
         setPendingCount((u.count ?? 0) + (c.count ?? 0) + (p.count ?? 0))
+        // Billing-reconciliation flags (jobs done but not invoiced/closed).
+        listReconciliation().then(r => setReconcileCount(r.items.length)).catch(() => {})
       }
 
       // Load this office user's granted permission keys to drive their nav.
@@ -201,6 +205,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         onClose={() => setSidebarOpen(false)}
         pendingCount={pendingCount}
         unreadMessages={unreadMessages}
+        reconcileCount={reconcileCount}
         officePermissions={officePermissions}
       />
       <div className="flex flex-col min-h-screen lg:pl-64">
