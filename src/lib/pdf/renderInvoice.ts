@@ -31,7 +31,7 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
 
   let logoSrc: string | undefined
   try {
-    const res = await fetch(new URL('/logo-full.png', origin))
+    const res = await fetch(new URL('/logo-invoice.png', origin))
     if (res.ok) {
       const buf = Buffer.from(await res.arrayBuffer())
       logoSrc = `data:image/png;base64,${buf.toString('base64')}`
