@@ -134,6 +134,22 @@ export async function saveJobInvoice(job: Job, data: {
   return { invoiceId }
 }
 
+/** Delete a job's invoice (line items + taxes cascade) and revert the job out
+ *  of the billing stages back to "report approved". */
+export async function deleteJobInvoice(invoiceId: string, jobId: string | null): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
+  if (error) return { error: error.message }
+  if (jobId) {
+    await supabase.from('jobs')
+      .update({ workflow_status: 'report_approved', paid_at: null })
+      .eq('id', jobId)
+      .in('workflow_status', ['invoiced', 'sent', 'paid'])
+    await logActivity('job', jobId, 'invoice:delete', { invoice_id: invoiceId })
+  }
+  return {}
+}
+
 /** Move an invoice through sent / paid / void, stamping the matching timestamp.
  *  On "sent", default a due date (issue date + overdue window) so overdue
  *  tracking has something to measure against. */

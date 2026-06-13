@@ -6,12 +6,12 @@
 // in step. The "PDF" button renders the printable tax invoice.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, X, Loader2, Receipt, Send, CheckCircle2, FileText, Mail } from 'lucide-react'
+import { Plus, X, Loader2, Receipt, Send, CheckCircle2, FileText, Mail, Trash2 } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { money, CURRENCIES, setWorkflowStatus, WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import {
-  getJobInvoice, saveJobInvoice, setInvoiceStatus, getClientRate, getAppSettings,
+  getJobInvoice, saveJobInvoice, setInvoiceStatus, deleteJobInvoice, getClientRate, getAppSettings,
   computeTotals, type LineDraft, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import type { Job, Currency, Invoice } from '@/lib/types/database'
@@ -57,7 +57,9 @@ export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: (
       setLines(existing.lines.length ? existing.lines.map(l => ({ description: l.description, qty: Number(l.qty), unit_price: Number(l.unit_price) })) : [blankLine()])
       setTaxes(existing.taxes.map(t => ({ name: t.name, rate: Number(t.rate) })))
     } else {
-      // Seed a fresh invoice from the client's default rate + standard tax + bank block.
+      // No invoice — reset to a fresh "create" state, then seed defaults.
+      setInvoiceId(null); setStatus('draft'); setInvNumber('')
+      setDueDate(''); setReference(''); setAttention(''); setDescription(''); setNotes('')
       const [rate, settings] = await Promise.all([getClientRate(job.client_id, job.job_type), getAppSettings()])
       if (rate) {
         setCurrency(rate.currency)
@@ -120,6 +122,18 @@ export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: (
     } finally {
       setEmailing(false)
     }
+  }
+
+  async function remove() {
+    if (!invoiceId) return
+    if (!(await confirmDialog({ title: 'Delete invoice?', message: 'This permanently removes the invoice, its line items and taxes, and reverts the job to "report approved". This cannot be undone.', confirmLabel: 'Delete invoice', danger: true }))) return
+    setSaving(true)
+    const res = await deleteJobInvoice(invoiceId, job.id)
+    if (res.error) { setSaving(false); toast.error(res.error); return }
+    await load() // resets the card back to the create state
+    setSaving(false)
+    toast.success('Invoice deleted')
+    onChanged()
   }
 
   async function advance(next: 'sent' | 'paid') {
@@ -239,6 +253,7 @@ export default function InvoiceCard({ job, onChanged }: { job: Job; onChanged: (
         {invoiceId && <button onClick={createDraft} disabled={emailing} className="btn-secondary py-1.5 px-3 text-sm">{emailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Email draft</button>}
         {invoiceId && status === 'draft' && <button onClick={() => advance('sent')} disabled={saving} className="btn-secondary py-1.5 px-3 text-sm"><Send className="h-4 w-4" /> Mark sent</button>}
         {invoiceId && (status === 'sent' || status === 'overdue') && <button onClick={() => advance('paid')} disabled={saving} className="btn-secondary py-1.5 px-3 text-sm"><CheckCircle2 className="h-4 w-4" /> Mark paid</button>}
+        {invoiceId && <button onClick={remove} disabled={saving} className="btn-ghost py-1.5 px-3 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto"><Trash2 className="h-4 w-4" /> Delete</button>}
       </div>
     </div>
   )
