@@ -119,9 +119,10 @@ export default function SignUpPage() {
 
           <div>
             <label className="label-base">I am a&hellip;</label>
-            <div className="grid grid-cols-2 gap-3 mt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },
+                { value: 'office', label: 'Office', desc: 'Office / admin support staff' },
                 { value: 'client', label: 'Client', desc: 'View job reports and results' },
               ].map(opt => (
                 <label key={opt.value} className={`flex flex-col gap-1 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
