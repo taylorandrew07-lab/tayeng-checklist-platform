@@ -18,17 +18,17 @@
   }
 
   * {
-    @apply border-gray-200;
+    @apply border-gray-200 dark:border-gray-800;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
     font-feature-settings: 'cv11', 'ss01';
   }
 
   /* Branded text selection. */
   ::selection {
-    @apply bg-brand-100 text-brand-900;
+    @apply bg-brand-100 text-brand-900 dark:bg-brand-900 dark:text-brand-50;
   }
 
   /* Keyboard focus only — never show the ring on mouse clicks. */
@@ -44,7 +44,7 @@
   }
 
   .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50 hover:ring-gray-400 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-[color,background-color,box-shadow,transform] duration-150 ease-out;
+    @apply inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50 hover:ring-gray-400 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-[color,background-color,box-shadow,transform] duration-150 ease-out dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700 dark:hover:ring-gray-600 dark:focus-visible:ring-offset-gray-950;
   }
 
   .btn-danger {
@@ -52,28 +52,28 @@
   }
 
   .btn-ghost {
-    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-[color,background-color,transform] duration-150 ease-out;
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-[color,background-color,transform] duration-150 ease-out dark:text-gray-200 dark:hover:bg-gray-800 dark:focus-visible:ring-offset-gray-950;
   }
 
   .input-base {
-    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 shadow-sm hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500 transition-colors;
+    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 shadow-sm hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500 transition-colors dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500 dark:hover:border-gray-600 dark:disabled:bg-gray-800 dark:disabled:text-gray-500;
   }
 
   .label-base {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300;
   }
 
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm transition-shadow duration-150;
+    @apply bg-white rounded-xl border border-gray-200 shadow-sm transition-shadow duration-150 dark:bg-gray-900 dark:border-gray-800;
   }
 
   .page-title {
-    @apply text-2xl font-bold tracking-tight text-gray-900;
+    @apply text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50;
     text-wrap: balance;
   }
 
   .section-title {
-    @apply text-lg font-semibold tracking-tight text-gray-900;
+    @apply text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100;
   }
 
   /* Tabular figures for data/stat numbers. */
@@ -83,7 +83,7 @@
 
   /* Skeleton placeholder block for loading states. */
   .skeleton {
-    @apply animate-pulse rounded-md bg-gray-200;
+    @apply animate-pulse rounded-md bg-gray-200 dark:bg-gray-800;
   }
 }
 
