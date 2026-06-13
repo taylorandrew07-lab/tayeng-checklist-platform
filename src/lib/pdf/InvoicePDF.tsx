@@ -18,6 +18,8 @@ const s = StyleSheet.create({
 
   // Letterhead
   logo: { width: 188, alignSelf: 'center', marginBottom: 4 },
+  wordmark: { fontSize: 19, fontFamily: 'Helvetica-Bold', color: BRAND, textAlign: 'center', letterSpacing: 0.3 },
+  tagline: { fontSize: 7.5, color: MUTE, textAlign: 'center', letterSpacing: 1.4, marginTop: 2, marginBottom: 4 },
   headLine: { fontSize: 8, color: MUTE, textAlign: 'center' },
   rule: { borderBottomWidth: 1.5, borderBottomColor: BRAND, marginTop: 8, marginBottom: 12 },
   title: { fontSize: 14, fontFamily: 'Helvetica-Bold', letterSpacing: 1, textAlign: 'center', marginBottom: 12, color: INK },
@@ -91,7 +93,12 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
     <Document title={`Invoice ${invoice.invoice_number ?? ''}`.trim()} author={COMPANY.name} subject="Tax Invoice">
       <Page size="LETTER" style={s.page}>
         {/* Letterhead */}
-        {logoSrc ? <Image src={logoSrc} style={s.logo} /> : <Text style={[s.title, { color: BRAND }]}>{COMPANY.name}</Text>}
+        {logoSrc ? <Image src={logoSrc} style={s.logo} /> : (
+          <>
+            <Text style={s.wordmark}>{COMPANY.name}</Text>
+            <Text style={s.tagline}>{COMPANY.tagline}</Text>
+          </>
+        )}
         <Text style={s.headLine}>{COMPANY.address}</Text>
         <Text style={s.headLine}>T {COMPANY.phone}, {COMPANY.phoneAlt}   F {COMPANY.fax}   E {COMPANY.email}</Text>
         <View style={s.rule} />

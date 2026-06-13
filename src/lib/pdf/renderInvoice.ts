@@ -29,15 +29,6 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
     invoice.job_id ? db.from('jobs').select('report_number').eq('id', invoice.job_id).single() : Promise.resolve({ data: null }),
   ])
 
-  let logoSrc: string | undefined
-  try {
-    const res = await fetch(new URL('/logo-invoice.png', origin))
-    if (res.ok) {
-      const buf = Buffer.from(await res.arrayBuffer())
-      logoSrc = `data:image/png;base64,${buf.toString('base64')}`
-    }
-  } catch { /* fall back to the text wordmark */ }
-
   const buffer = await renderToBuffer(
     React.createElement(InvoicePDF, {
       invoice,
@@ -45,7 +36,6 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
       taxes: taxes ?? [],
       client: (client as any) ?? null,
       reportNumber: (job as any)?.report_number ?? null,
-      logoSrc,
     }) as any
   )
 
