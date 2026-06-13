@@ -6,25 +6,26 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight } from 'lucide-react'
+import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { cn } from '@/lib/utils'
-import { CURRENCIES, money, listJobTypes } from '@/lib/jobs/tracker'
+import { CURRENCIES, money, listJobTypes, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
   getAppSettings, updateAppSettings, type InvoiceListRow,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, RECON_META, RECON_ORDER, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
+import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import type { Client, ClientRate, Currency, AppSettings, Invoice } from '@/lib/types/database'
 
-type Tab = 'invoices' | 'reconcile' | 'rates' | 'settings'
+type Tab = 'overview' | 'invoices' | 'reconcile' | 'rates' | 'settings'
 type StatusFilter = 'open' | Invoice['status'] | 'all'
 
 export default function AdminInvoicingPage() {
-  const [tab, setTab] = useState<Tab>('invoices')
+  const [tab, setTab] = useState<Tab>('overview')
   const [flagCount, setFlagCount] = useState<number | null>(null)
 
   useEffect(() => { listReconciliation().then(r => setFlagCount(r.items.length)) }, [tab])
@@ -40,7 +41,7 @@ export default function AdminInvoicingPage() {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200">
-        {([['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
+        {([['overview', 'Overview'], ['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5',
               tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-800')}>
@@ -52,10 +53,129 @@ export default function AdminInvoicingPage() {
         ))}
       </div>
 
+      {tab === 'overview' && <OverviewTab />}
       {tab === 'invoices' && <InvoicesTab />}
       {tab === 'reconcile' && <ReconcileTab />}
       {tab === 'rates' && <RatesTab />}
       {tab === 'settings' && <SettingsTab />}
+    </div>
+  )
+}
+
+// ── Overview: cross-ledger dashboard ─────────────────────────────────────────
+function OverviewTab() {
+  const [data, setData] = useState<InvoicingDashboard | null>(null)
+  useEffect(() => { getInvoicingDashboard().then(setData) }, [])
+
+  if (!data) return <div className="space-y-3">{[0, 1].map(i => <div key={i} className="skeleton h-28 w-full" />)}</div>
+
+  const hasBilling = data.billing.length > 0
+  const maxJob = Math.max(1, ...data.jobsByWorkflow.map(j => j.count))
+
+  return (
+    <div className="space-y-6">
+      {/* Billing — outstanding / overdue / paid, per currency */}
+      <section>
+        <h2 className="section-title mb-3">Billing</h2>
+        {!hasBilling ? (
+          <div className="card p-8 text-center text-sm text-gray-400">No invoices yet.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.billing.map(b => (
+              <div key={b.currency} className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold tracking-wide text-gray-400">{b.currency}</span>
+                  <span className="text-[11px] text-gray-400">{b.count} invoice{b.count === 1 ? '' : 's'}</span>
+                </div>
+                <p className="text-2xl font-semibold text-gray-900 tnum">{money(b.outstanding, b.currency)}</p>
+                <p className="text-xs text-gray-400 mb-3">outstanding</p>
+                <div className="space-y-1 text-sm border-t border-gray-100 pt-3">
+                  {b.overdue > 0 && <div className="flex justify-between"><span className="text-red-600">Overdue</span><span className="tnum text-red-600 font-medium">{money(b.overdue, b.currency)}</span></div>}
+                  <div className="flex justify-between text-gray-500"><span>Paid</span><span className="tnum">{money(b.paid, b.currency)}</span></div>
+                  {b.draft > 0 && <div className="flex justify-between text-gray-400"><span>Draft</span><span className="tnum">{money(b.draft, b.currency)}</span></div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Jobs pipeline */}
+      <section>
+        <h2 className="section-title mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4 text-gray-400" /> Jobs pipeline <span className="text-xs font-normal text-gray-400">· {data.openJobs} open</span></h2>
+        <div className="card p-5 space-y-2">
+          {data.jobsByWorkflow.filter(j => j.count > 0).map(j => {
+            const meta = WORKFLOW[j.status]
+            return (
+              <div key={j.status} className="flex items-center gap-3">
+                <div className="w-32 flex items-center gap-1.5 shrink-0">
+                  <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                  <span className="text-sm text-gray-700">{meta.label}</span>
+                </div>
+                <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div className={`h-full ${meta.dot}`} style={{ width: `${(j.count / maxJob) * 100}%` }} />
+                </div>
+                <span className="w-8 text-right text-sm tnum text-gray-600">{j.count}</span>
+              </div>
+            )
+          })}
+          {data.jobsByWorkflow.every(j => j.count === 0) && <p className="text-sm text-gray-400">No jobs yet.</p>}
+        </div>
+      </section>
+
+      {/* Labour — hours & overtime per surveyor (for pay) */}
+      <section>
+        <h2 className="section-title mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime</h2>
+        {data.labour.length === 0 ? (
+          <div className="card p-8 text-center text-sm text-gray-400">No hours logged yet.</div>
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+                  <th className="font-medium px-4 py-2.5">Surveyor</th>
+                  <th className="font-medium px-4 py-2.5 text-right">Regular hrs</th>
+                  <th className="font-medium px-4 py-2.5 text-right">Overtime hrs</th>
+                  <th className="font-medium px-4 py-2.5 text-right">Pay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.labour.map(s => (
+                  <tr key={s.surveyor_id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-3 text-gray-900">{s.name}</td>
+                    <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                    <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                    <td className="px-4 py-3 text-right">
+                      {s.pay.length === 0 ? <span className="text-gray-300">—</span> : (
+                        <div className="flex flex-col items-end gap-0.5">
+                          {s.pay.map(p => <span key={p.currency} className="tnum text-gray-700">{money(p.total, p.currency)}</span>)}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Outstanding by client */}
+      {data.clients.length > 0 && (
+        <section>
+          <h2 className="section-title mb-3">Outstanding by client</h2>
+          <div className="card divide-y divide-gray-50">
+            {data.clients.slice(0, 8).map(c => (
+              <div key={c.client_id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm text-gray-900 truncate">{c.name}</span>
+                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                  {c.amounts.map(a => <span key={a.currency} className="tnum text-sm text-gray-700">{money(a.amount, a.currency)}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
