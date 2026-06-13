@@ -5,7 +5,8 @@
 // this page is the cross-job view + the rate/settings configuration.
 
 import { useEffect, useState } from 'react'
-import { Receipt, Plus, X, Loader2, Save } from 'lucide-react'
+import Link from 'next/link'
+import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -15,14 +16,19 @@ import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
   getAppSettings, updateAppSettings, type InvoiceListRow,
 } from '@/lib/jobs/invoicing'
+import { listReconciliation, RECON_META, RECON_ORDER, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import type { Client, ClientRate, Currency, AppSettings, Invoice } from '@/lib/types/database'
 
-type Tab = 'invoices' | 'rates' | 'settings'
+type Tab = 'invoices' | 'reconcile' | 'rates' | 'settings'
 type StatusFilter = 'open' | Invoice['status'] | 'all'
 
 export default function AdminInvoicingPage() {
   const [tab, setTab] = useState<Tab>('invoices')
+  const [flagCount, setFlagCount] = useState<number | null>(null)
+
+  useEffect(() => { listReconciliation().then(r => setFlagCount(r.items.length)) }, [tab])
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-rise">
       <div className="flex items-center gap-3">
@@ -34,16 +40,20 @@ export default function AdminInvoicingPage() {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200">
-        {([['invoices', 'Invoices'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
+        {([['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5',
               tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-800')}>
             {label}
+            {k === 'reconcile' && flagCount != null && flagCount > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold tnum">{flagCount}</span>
+            )}
           </button>
         ))}
       </div>
 
       {tab === 'invoices' && <InvoicesTab />}
+      {tab === 'reconcile' && <ReconcileTab />}
       {tab === 'rates' && <RatesTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
@@ -82,6 +92,62 @@ function InvoicesTab() {
       ) : (
         <InvoicesTable rows={filtered} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
       )}
+    </div>
+  )
+}
+
+// ── Reconciliation: work done but billing not closed out ─────────────────────
+function ReconcileTab() {
+  const [items, setItems] = useState<ReconItem[] | null>(null)
+  const [counts, setCounts] = useState<Record<ReconCategory, number> | null>(null)
+
+  useEffect(() => { listReconciliation().then(r => { setItems(r.items); setCounts(r.counts) }) }, [])
+
+  if (items === null) return <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
+
+  if (items.length === 0) {
+    return (
+      <div className="card p-10 text-center space-y-2">
+        <div className="w-12 h-12 rounded-2xl bg-green-100 flex items-center justify-center mx-auto"><Receipt className="h-6 w-6 text-green-600" /></div>
+        <p className="text-sm font-medium text-gray-700">Nothing to reconcile</p>
+        <p className="text-sm text-gray-500">Every job with completed work has been invoiced or closed.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-500" />
+        {items.length} job{items.length === 1 ? '' : 's'} need attention so billing isn&apos;t forgotten.
+      </p>
+      {RECON_ORDER.filter(c => (counts?.[c] ?? 0) > 0).map(cat => {
+        const meta = RECON_META[cat]
+        const group = items.filter(i => i.category === cat)
+        return (
+          <div key={cat} className="card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+              <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+              <span className="text-sm font-medium text-gray-800">{meta.label}</span>
+              <span className="text-xs text-gray-400">· {meta.blurb}</span>
+              <span className="ml-auto text-xs text-gray-400 tnum">{group.length}</span>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {group.map(i => (
+                <Link key={i.job_id} href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+                  <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
+                    {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
+                  </div>
+                  {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
+                  <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

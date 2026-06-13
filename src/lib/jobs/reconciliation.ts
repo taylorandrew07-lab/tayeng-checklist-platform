@@ -1,0 +1,88 @@
+// Reconciliation red-flag: surface jobs where work is done but billing would
+// otherwise be forgotten — report approved but never invoiced, a workflow that
+// advanced past "invoiced" with no actual invoice record, a billable job with
+// no client to invoice, an invoice left unsent, or one that has gone overdue.
+// All derived from job + invoice state (no extra tables).
+
+import { createClient } from '@/lib/supabase/client'
+import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
+import { isOverdue } from '@/lib/jobs/invoicing'
+import type { WorkflowStatus, Invoice, Currency } from '@/lib/types/database'
+
+export type ReconCategory =
+  | 'ready_to_invoice'        // report approved, no invoice yet — bill it
+  | 'missing_invoice_record'  // status says invoiced/sent/paid but no invoice exists
+  | 'missing_client'          // billable but no client set — can't invoice
+  | 'unsent_invoice'          // a draft invoice that hasn't been sent
+  | 'overdue_invoice'         // sent invoice past its due date
+
+export const RECON_META: Record<ReconCategory, { label: string; blurb: string; pill: string; dot: string }> = {
+  ready_to_invoice:       { label: 'Ready to invoice',   blurb: 'Report approved — no invoice raised yet.',         pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
+  missing_invoice_record: { label: 'Invoice missing',    blurb: 'Marked invoiced/sent/paid but no invoice exists.', pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
+  missing_client:         { label: 'No client',          blurb: 'Billable, but no client is set to invoice.',       pill: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
+  unsent_invoice:         { label: 'Draft — not sent',   blurb: 'An invoice is drafted but has not been sent.',      pill: 'bg-cyan-100 text-cyan-700',    dot: 'bg-cyan-500' },
+  overdue_invoice:        { label: 'Overdue',            blurb: 'A sent invoice is past its due date.',              pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
+}
+
+// Display order: most urgent / most-likely-forgotten first.
+export const RECON_ORDER: ReconCategory[] = ['ready_to_invoice', 'missing_invoice_record', 'missing_client', 'overdue_invoice', 'unsent_invoice']
+
+export interface ReconItem {
+  job_id: string
+  report_number: string | null
+  vessel_name: string | null
+  client_name: string | null
+  workflow_status: WorkflowStatus
+  category: ReconCategory
+  invoice_id: string | null
+  invoice_status: Invoice['status'] | null
+  invoice_total: number | null
+  currency: Currency | null
+  due_date: string | null
+}
+
+const idx = (s: WorkflowStatus) => WORKFLOW_ORDER.indexOf(s)
+
+function categorize(job: { workflow_status: WorkflowStatus; client_id: string | null }, inv: { status: Invoice['status']; due_date: string | null } | undefined): ReconCategory | null {
+  if (inv) {
+    if (isOverdue(inv)) return 'overdue_invoice'
+    if (inv.status === 'draft') return 'unsent_invoice'
+    return null // sent / paid with a record — fine
+  }
+  // No invoice on the job.
+  if (idx(job.workflow_status) >= idx('invoiced')) return 'missing_invoice_record'
+  if (job.workflow_status === 'report_approved') return job.client_id ? 'ready_to_invoice' : 'missing_client'
+  return null // still earlier in the workflow — not yet billable
+}
+
+export async function listReconciliation(): Promise<{ items: ReconItem[]; counts: Record<ReconCategory, number> }> {
+  const supabase = createClient()
+  const [{ data: jobs }, { data: invoices }] = await Promise.all([
+    supabase.from('jobs')
+      .select('id, report_number, vessel_name, client_id, workflow_status, client:clients(name)')
+      .neq('workflow_status', 'closed'),
+    supabase.from('invoices').select('id, job_id, status, due_date, total, currency'),
+  ])
+
+  const byJob = new Map<string, any>()
+  for (const inv of (invoices ?? []) as any[]) if (inv.job_id && !byJob.has(inv.job_id)) byJob.set(inv.job_id, inv)
+
+  const counts: Record<ReconCategory, number> = { ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, unsent_invoice: 0, overdue_invoice: 0 }
+  const items: ReconItem[] = []
+  for (const j of (jobs ?? []) as any[]) {
+    const inv = byJob.get(j.id)
+    const category = categorize(j, inv)
+    if (!category) continue
+    counts[category]++
+    items.push({
+      job_id: j.id, report_number: j.report_number, vessel_name: j.vessel_name,
+      client_name: j.client?.name ?? null, workflow_status: j.workflow_status, category,
+      invoice_id: inv?.id ?? null, invoice_status: inv?.status ?? null,
+      invoice_total: inv ? Number(inv.total ?? 0) : null, currency: inv?.currency ?? null,
+      due_date: inv?.due_date ?? null,
+    })
+  }
+
+  items.sort((a, b) => RECON_ORDER.indexOf(a.category) - RECON_ORDER.indexOf(b.category))
+  return { items, counts }
+}
