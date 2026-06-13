@@ -134,12 +134,31 @@ export async function saveJobInvoice(job: Job, data: {
   return { invoiceId }
 }
 
-/** Move an invoice through sent / paid / void, stamping the matching timestamp. */
+/** Move an invoice through sent / paid / void, stamping the matching timestamp.
+ *  On "sent", default a due date (issue date + overdue window) so overdue
+ *  tracking has something to measure against. */
 export async function setInvoiceStatus(invoiceId: string, status: Invoice['status']): Promise<{ error?: string }> {
+  const supabase = createClient()
   const patch: Record<string, unknown> = { status }
-  if (status === 'sent') patch.sent_at = new Date().toISOString()
   if (status === 'paid') patch.paid_at = new Date().toISOString()
-  const { error } = await createClient().from('invoices').update(patch).eq('id', invoiceId)
+  if (status === 'sent') {
+    patch.sent_at = new Date().toISOString()
+    const { data: inv } = await supabase.from('invoices').select('issue_date, due_date').eq('id', invoiceId).single()
+    if (inv && !inv.due_date) {
+      const settings = await getAppSettings()
+      const days = settings?.overdue_days ?? 30
+      const base = inv.issue_date ? new Date(`${inv.issue_date}T00:00:00`) : new Date()
+      base.setDate(base.getDate() + days)
+      patch.due_date = base.toISOString().slice(0, 10)
+    }
+  }
+  const { error } = await supabase.from('invoices').update(patch).eq('id', invoiceId)
+  return { error: error?.message }
+}
+
+/** Record that an (overdue) invoice was chased today. */
+export async function logInvoiceReminder(invoiceId: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('invoices').update({ last_reminded_at: new Date().toISOString() }).eq('id', invoiceId)
   return { error: error?.message }
 }
 

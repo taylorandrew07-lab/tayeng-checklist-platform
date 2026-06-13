@@ -10,11 +10,11 @@ import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { CURRENCIES, money, listJobTypes, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
-  getAppSettings, updateAppSettings, type InvoiceListRow,
+  getAppSettings, updateAppSettings, logInvoiceReminder, type InvoiceListRow,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, RECON_META, RECON_ORDER, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
@@ -221,7 +221,8 @@ function ReconcileTab() {
   const [items, setItems] = useState<ReconItem[] | null>(null)
   const [counts, setCounts] = useState<Record<ReconCategory, number> | null>(null)
 
-  useEffect(() => { listReconciliation().then(r => { setItems(r.items); setCounts(r.counts) }) }, [])
+  const load = () => listReconciliation().then(r => { setItems(r.items); setCounts(r.counts) })
+  useEffect(() => { load() }, [])
 
   if (items === null) return <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
 
@@ -253,21 +254,63 @@ function ReconcileTab() {
               <span className="ml-auto text-xs text-gray-400 tnum">{group.length}</span>
             </div>
             <div className="divide-y divide-gray-50">
-              {group.map(i => (
-                <Link key={i.job_id} href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
-                  <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
-                    {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
-                  </div>
-                  {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
-                  <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
-                </Link>
-              ))}
+              {group.map(i => cat === 'overdue_invoice'
+                ? <OverdueRow key={i.job_id} item={i} onReminded={load} />
+                : (
+                  <Link key={i.job_id} href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+                    <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
+                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
+                    </div>
+                    {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
+                    <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+                  </Link>
+                ))}
             </div>
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function daysOverdue(due: string | null): number {
+  if (!due) return 0
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const d = new Date(`${due}T00:00:00`)
+  return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86_400_000))
+}
+
+function OverdueRow({ item, onReminded }: { item: ReconItem; onReminded: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const days = daysOverdue(item.due_date)
+
+  async function remind() {
+    if (!item.invoice_id) return
+    setBusy(true)
+    const res = await logInvoiceReminder(item.invoice_id)
+    setBusy(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success('Reminder logged'); onReminded()
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Link href={`/admin/jobs/${item.job_id}`} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity">
+        <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{item.report_number ?? '—'}</span>
+        <div className="min-w-0">
+          <p className="text-sm text-gray-900 truncate">{item.client_name ?? 'No client'}</p>
+          <p className="text-xs text-gray-400">
+            <span className="text-red-600 font-medium">{days} day{days === 1 ? '' : 's'} overdue</span>
+            {' · '}{item.last_reminded_at ? `reminded ${formatDate(item.last_reminded_at)}` : 'not chased yet'}
+          </p>
+        </div>
+      </Link>
+      {item.invoice_total != null && <span className="tnum text-sm text-gray-600 shrink-0">{money(item.invoice_total, item.currency ?? 'USD')}</span>}
+      <button onClick={remind} disabled={busy} className="btn-secondary py-1 px-2.5 text-xs shrink-0">
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />} Log reminder
+      </button>
     </div>
   )
 }

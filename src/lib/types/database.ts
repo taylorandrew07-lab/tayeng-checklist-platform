@@ -338,6 +338,8 @@ export interface Invoice {
   // Document fields for the printable PDF (migration 044)
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   created_by: string | null; sent_at: string | null; paid_at: string | null
+  // Follow-up reminders (migration 045)
+  last_reminded_at: string | null
   created_at: string; updated_at: string
 }
 export interface InvoiceLineItem { id: string; invoice_id: string; description: string; qty: number; unit_price: number; amount: number; sort: number }

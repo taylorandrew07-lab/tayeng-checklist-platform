@@ -39,6 +39,7 @@ export interface ReconItem {
   invoice_total: number | null
   currency: Currency | null
   due_date: string | null
+  last_reminded_at: string | null
 }
 
 const idx = (s: WorkflowStatus) => WORKFLOW_ORDER.indexOf(s)
@@ -61,7 +62,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
     supabase.from('jobs')
       .select('id, report_number, vessel_name, client_id, workflow_status, client:clients(name)')
       .neq('workflow_status', 'closed'),
-    supabase.from('invoices').select('id, job_id, status, due_date, total, currency'),
+    supabase.from('invoices').select('id, job_id, status, due_date, total, currency, last_reminded_at'),
   ])
 
   const byJob = new Map<string, any>()
@@ -79,7 +80,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
       client_name: j.client?.name ?? null, workflow_status: j.workflow_status, category,
       invoice_id: inv?.id ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, currency: inv?.currency ?? null,
-      due_date: inv?.due_date ?? null,
+      due_date: inv?.due_date ?? null, last_reminded_at: inv?.last_reminded_at ?? null,
     })
   }
 
