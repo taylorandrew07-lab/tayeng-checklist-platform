@@ -16,6 +16,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
+import InvoiceCard from '@/components/job/InvoiceCard'
 import { WORKFLOW } from '@/lib/jobs/tracker'
 
 export default function AdminChecklistDetailPage() {
@@ -238,6 +239,9 @@ export default function AdminChecklistDetailPage() {
 
       {/* Job tracker: workflow, surveyors, reports/files, activity */}
       <JobOpsPanel job={job} isAdmin onChanged={load} />
+
+      {/* Billing: the client invoice for this job */}
+      <InvoiceCard job={job} onChanged={load} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">

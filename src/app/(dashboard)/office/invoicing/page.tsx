@@ -4,29 +4,47 @@ import { useState, useEffect } from 'react'
 import { Receipt, Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
+import { cn } from '@/lib/utils'
+import { listInvoices, isOverdue, type InvoiceListRow } from '@/lib/jobs/invoicing'
+import InvoicesTable from '@/components/invoicing/InvoicesTable'
+import type { Invoice } from '@/lib/types/database'
+
+type StatusFilter = 'open' | 'overdue' | 'paid' | 'all'
 
 export default function OfficeInvoicing() {
   const [canView, setCanView] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState<InvoiceListRow[] | null>(null)
+  const [filter, setFilter] = useState<StatusFilter>('open')
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
       const granted = await fetchMyOfficePermissions(supabase)
-      setCanView(
-        granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) ||
-        granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)
-      )
+      const allowed = granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)
+      setCanView(allowed)
+      if (allowed) setRows(await listInvoices())
       setLoading(false)
     }
     load()
   }, [])
 
+  const filtered = (rows ?? []).filter(r => {
+    if (filter === 'all') return true
+    if (filter === 'open') return r.status !== 'paid' && r.status !== 'void'
+    if (filter === 'overdue') return isOverdue(r)
+    return r.status === (filter as Invoice['status'])
+  })
+  const filters: [StatusFilter, string][] = [['open', 'Open'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All']]
+
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <div>
-        <h1 className="page-title">Invoicing</h1>
-        <p className="text-gray-500 mt-1">Office invoicing workspace</p>
+    <div className="space-y-6 max-w-5xl mx-auto animate-rise">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center"><Receipt className="h-5 w-5 text-brand-600" /></div>
+        <div>
+          <h1 className="page-title">Invoicing</h1>
+          <p className="text-gray-500 text-sm mt-0.5">Read-only view of client invoices.</p>
+        </div>
       </div>
 
       {loading ? (
@@ -38,15 +56,21 @@ export default function OfficeInvoicing() {
           <p className="text-sm text-gray-500">An administrator needs to grant you invoicing permission.</p>
         </div>
       ) : (
-        <div className="card p-10 text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center mx-auto">
-            <Receipt className="h-7 w-7 text-brand-600" />
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-1.5">
+            {filters.map(([k, label]) => (
+              <button key={k} onClick={() => setFilter(k)}
+                className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                  filter === k ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+                {label}
+              </button>
+            ))}
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Invoicing is coming soon</h2>
-          <p className="text-sm text-gray-500 max-w-md mx-auto">
-            This is where office staff will create and manage invoices for completed jobs.
-            The feature is being built — nothing to do here yet.
-          </p>
+          {rows === null ? (
+            <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
+          ) : (
+            <InvoicesTable rows={filtered} hrefFor={r => r.job_id ? `/office/jobs/${r.job_id}` : null} />
+          )}
         </div>
       )}
     </div>

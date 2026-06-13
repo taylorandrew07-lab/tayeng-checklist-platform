@@ -30,6 +30,7 @@ interface NavItem {
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Invoicing', href: '/admin/invoicing', icon: Receipt },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
