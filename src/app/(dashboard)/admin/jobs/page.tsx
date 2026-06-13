@@ -248,7 +248,7 @@ export default function JobsTrackerPage() {
               ) : visible.length === 0 ? (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
               ) : visible.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50/70 align-middle">
+                <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle">
                   <td className="px-2 py-1.5">
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
