@@ -221,6 +221,7 @@ export interface TrackerRow {
   client_name: string | null
   workflow_status: WorkflowStatus
   status: string
+  is_overtime: boolean
   scheduled_date: string | null
   created_at: string
   surveyors: string[]
@@ -237,7 +238,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, job_type, vessel_name, title, surveyor_name, client_id, workflow_status, status, scheduled_date, created_at, client:clients(name)')
+      .select('id, report_number, job_type, vessel_name, title, surveyor_name, client_id, workflow_status, status, is_overtime, scheduled_date, created_at, client:clients(name)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
@@ -261,7 +262,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
     return {
       id: j.id, report_number: j.report_number, job_type: j.job_type, vessel_name: j.vessel_name, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
-      workflow_status: j.workflow_status, status: j.status, scheduled_date: j.scheduled_date, created_at: j.created_at,
+      workflow_status: j.workflow_status, status: j.status, is_overtime: !!j.is_overtime, scheduled_date: j.scheduled_date, created_at: j.created_at,
       surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,

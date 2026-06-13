@@ -7,7 +7,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
   WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
-  setWorkflowStatus, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
+  setWorkflowStatus, updateJobField, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount,
@@ -32,8 +32,8 @@ function activityText(a: ActivityLogRow): string {
   return act
 }
 
-function SurveyorRow({ row, jobId, isAdmin, onRemove, onSaved }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; onRemove: () => void; onSaved: () => void
+function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; onRemove: () => void; onSaved: () => void
 }) {
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
@@ -63,8 +63,8 @@ function SurveyorRow({ row, jobId, isAdmin, onRemove, onSaved }: {
         {isAdmin && <button onClick={onRemove} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div><label className="text-[11px] text-gray-400">Regular hrs</label><input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} /></div>
-        <div><label className="text-[11px] text-gray-400">Overtime hrs</label><input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={numCls} /></div>
+        <div><label className="text-[11px] text-gray-400">Regular hrs <span className="text-gray-300">· client</span></label><input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} /></div>
+        <div><label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">· OT pay</span></label><input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} /></div>
         {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
@@ -85,7 +85,16 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
   const [busy, setBusy] = useState(false)
   const [addId, setAddId] = useState('')
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
+  const [isOT, setIsOT] = useState(!!job.is_overtime)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  async function toggleOvertime() {
+    const next = !isOT
+    setIsOT(next)
+    const res = await updateJobField(job.id, { is_overtime: next })
+    if (res.error) { setIsOT(!next); toast.error(res.error); return }
+    onChanged()
+  }
 
   async function reload() {
     const [s, at] = await Promise.all([listJobSurveyors(job.id), listJobAttachments(job.id)])
@@ -179,13 +188,24 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
 
       {/* Surveyors & hours */}
       <div className="card p-5">
-        <h3 className="font-medium text-gray-900 mb-3">Surveyors &amp; hours</h3>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h3 className="font-medium text-gray-900">Surveyors &amp; hours</h3>
+          {isAdmin ? (
+            <button onClick={toggleOvertime} title="Mark this as an overtime job"
+              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${isOT ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+              <Clock className="h-3.5 w-3.5" />Overtime job{isOT ? ' · on' : ''}
+            </button>
+          ) : isOT ? (
+            <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700"><Clock className="h-3.5 w-3.5" />Overtime job</span>
+          ) : null}
+        </div>
+        <p className="text-[11px] text-gray-400 mb-3">Regular hours are billed to the client · Overtime hours are paid to the surveyor as OT.</p>
         {surveyors.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
             ))}
           </div>
         )}

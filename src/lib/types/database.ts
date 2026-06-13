@@ -302,6 +302,8 @@ export interface Job {
   job_type: string | null
   report_number: string | null
   workflow_status: WorkflowStatus
+  // Overtime job flag (migration 048)
+  is_overtime: boolean
   report_approved_at: string | null
   report_approved_by: string | null
   paid_at: string | null

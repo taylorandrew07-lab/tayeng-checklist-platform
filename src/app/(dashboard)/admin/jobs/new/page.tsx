@@ -32,6 +32,7 @@ export default function NewJobPage() {
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [isOvertime, setIsOvertime] = useState(false)
 
   const today = formatDateDMY(new Date())
   const selectedTemplate = templates.find(t => t.id === templateId) ?? null
@@ -89,6 +90,7 @@ export default function NewJobPage() {
       assigned_to: primary?.id ?? null,
       status: templateId ? 'in_progress' : 'draft',
       workflow_status: ids.length ? 'assigned' : 'new',
+      is_overtime: isOvertime,
       started_at: new Date().toISOString(),
     }).select().single()
 
@@ -142,6 +144,11 @@ export default function NewJobPage() {
             <input type="text" value={vesselName} onChange={e => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
           </div>
         </div>
+
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={isOvertime} onChange={e => setIsOvertime(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+          <span className="text-sm text-gray-700">Overtime job <span className="text-gray-400">— surveyors&apos; hours count as overtime (OT pay)</span></span>
+        </label>
 
         {autoTitle && (
           <div className="rounded-lg bg-brand-50 border border-brand-200 px-4 py-3">

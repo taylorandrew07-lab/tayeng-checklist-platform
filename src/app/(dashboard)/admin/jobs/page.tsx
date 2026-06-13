@@ -265,10 +265,13 @@ export default function JobsTrackerPage() {
                       : r.surveyors.length === 1 ? r.surveyors[0]
                       : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
                   </td>
-                  <td className="px-3 py-1.5 text-right whitespace-nowrap tnum">
-                    {r.regular_hours + r.overtime_hours === 0 ? <span className="text-gray-300">—</span> : (
-                      <span className="text-gray-700">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>
-                    )}
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 justify-end">
+                      {r.is_overtime && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium" title="Overtime job">OT</span>}
+                      {r.regular_hours + r.overtime_hours === 0
+                        ? <span className="text-gray-300 tnum">—</span>
+                        : <span className="text-gray-700 tnum">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>}
+                    </span>
                   </td>
                   <td className="px-3 py-1.5">
                     {r.invoice_number ? (
