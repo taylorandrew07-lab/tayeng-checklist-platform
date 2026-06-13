@@ -23,7 +23,11 @@ function activityText(a: ActivityLogRow): string {
   if (act === 'invoice:save') return 'Invoice saved'
   if (act === 'invoice:delete') return 'Invoice deleted'
   if (act === 'invoice:email_draft') return 'Invoice email draft created'
-  if (act.startsWith('workflow:')) { const s = act.slice(9) as WorkflowStatus; return `Status → ${WORKFLOW[s]?.label ?? s}` }
+  if (act.startsWith('workflow:')) {
+    const raw = act.slice(9)
+    const s = (raw === 'report_uploaded' ? 'report_ready' : raw === 'report_approved' ? 'approved' : raw) as WorkflowStatus
+    return `Status → ${WORKFLOW[s]?.label ?? raw}`
+  }
   if (act.startsWith('attachment:')) { const k = act.slice(11) as JobAttachmentKind; return `Uploaded ${attachmentLabel(k).toLowerCase()}` }
   return act
 }
@@ -162,7 +166,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
             {next && (
               <button onClick={() => advance(next)} disabled={busy} className="btn-primary text-sm">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {next === 'report_approved' ? 'Approve report' : `Advance to ${WORKFLOW[next].label}`}
+                {next === 'approved' ? 'Approve report' : `Advance to ${WORKFLOW[next].label}`}
               </button>
             )}
             <select value="" onChange={e => { if (e.target.value) advance(e.target.value as WorkflowStatus) }} className="input-base text-sm py-1.5 w-auto" aria-label="Set status">

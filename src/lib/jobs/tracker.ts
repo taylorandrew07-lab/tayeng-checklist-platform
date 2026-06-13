@@ -9,18 +9,19 @@ const FILES_BUCKET = 'job-files'
 
 // ── Workflow lifecycle ──────────────────────────────────────────────────────
 export const WORKFLOW_ORDER: WorkflowStatus[] = [
-  'new', 'assigned', 'report_uploaded', 'report_approved', 'invoiced', 'sent', 'paid', 'closed',
+  'new', 'assigned', 'in_progress', 'report_ready', 'approved', 'invoiced', 'sent', 'paid', 'closed',
 ]
 
 export const WORKFLOW: Record<WorkflowStatus, { label: string; pill: string; dot: string }> = {
-  new:             { label: 'New',             pill: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400' },
-  assigned:        { label: 'Assigned',        pill: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500' },
-  report_uploaded: { label: 'Report uploaded', pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
-  report_approved: { label: 'Report approved', pill: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
-  invoiced:        { label: 'Invoiced',        pill: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500' },
-  sent:            { label: 'Sent',            pill: 'bg-cyan-100 text-cyan-700',     dot: 'bg-cyan-500' },
-  paid:            { label: 'Paid',            pill: 'bg-green-100 text-green-700',   dot: 'bg-green-500' },
-  closed:          { label: 'Closed',          pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
+  new:          { label: 'New',          pill: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400' },
+  assigned:     { label: 'Assigned',     pill: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500' },
+  in_progress:  { label: 'In progress',  pill: 'bg-sky-100 text-sky-700',       dot: 'bg-sky-500' },
+  report_ready: { label: 'Report ready', pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
+  approved:     { label: 'Approved',     pill: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  invoiced:     { label: 'Invoiced',     pill: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500' },
+  sent:         { label: 'Sent',         pill: 'bg-teal-100 text-teal-700',     dot: 'bg-teal-500' },
+  paid:         { label: 'Paid',         pill: 'bg-green-100 text-green-700',   dot: 'bg-green-500' },
+  closed:       { label: 'Closed',       pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
 }
 
 export const ATTACHMENT_KINDS: { kind: JobAttachmentKind; label: string }[] = [
@@ -67,7 +68,7 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const patch: Record<string, any> = { workflow_status: next }
-  if (next === 'report_approved') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
+  if (next === 'approved') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
   if (next === 'paid') patch.paid_at = new Date().toISOString()
   if (next === 'closed') { patch.closed_at = new Date().toISOString(); patch.closed_by = user?.id ?? null }
   const { error } = await supabase.from('jobs').update(patch).eq('id', jobId)

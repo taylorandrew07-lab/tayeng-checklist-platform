@@ -278,7 +278,7 @@ export interface TemplateField {
 
 /** Ops workflow lifecycle (separate from the checklist `status`). */
 export type WorkflowStatus =
-  | 'new' | 'assigned' | 'report_uploaded' | 'report_approved'
+  | 'new' | 'assigned' | 'in_progress' | 'report_ready' | 'approved'
   | 'invoiced' | 'sent' | 'paid' | 'closed'
 
 export interface Job {

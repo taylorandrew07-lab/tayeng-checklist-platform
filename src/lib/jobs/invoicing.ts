@@ -142,7 +142,7 @@ export async function deleteJobInvoice(invoiceId: string, jobId: string | null):
   if (error) return { error: error.message }
   if (jobId) {
     await supabase.from('jobs')
-      .update({ workflow_status: 'report_approved', paid_at: null })
+      .update({ workflow_status: 'approved', paid_at: null })
       .eq('id', jobId)
       .in('workflow_status', ['invoiced', 'sent', 'paid'])
     await logActivity('job', jobId, 'invoice:delete', { invoice_id: invoiceId })

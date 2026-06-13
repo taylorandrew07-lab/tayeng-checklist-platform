@@ -52,7 +52,7 @@ function categorize(job: { workflow_status: WorkflowStatus; client_id: string | 
   }
   // No invoice on the job.
   if (idx(job.workflow_status) >= idx('invoiced')) return 'missing_invoice_record'
-  if (job.workflow_status === 'report_approved') return job.client_id ? 'ready_to_invoice' : 'missing_client'
+  if (job.workflow_status === 'approved') return job.client_id ? 'ready_to_invoice' : 'missing_client'
   return null // still earlier in the workflow — not yet billable
 }
 
