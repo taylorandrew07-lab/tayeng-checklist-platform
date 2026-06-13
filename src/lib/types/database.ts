@@ -276,11 +276,16 @@ export interface TemplateField {
   updated_at: string
 }
 
+/** Ops workflow lifecycle (separate from the checklist `status`). */
+export type WorkflowStatus =
+  | 'new' | 'assigned' | 'report_uploaded' | 'report_approved'
+  | 'invoiced' | 'sent' | 'paid' | 'closed'
+
 export interface Job {
   id: string
   job_number: string | null
   title: string
-  template_id: string
+  template_id: string | null
   client_id: string | null
   assigned_to: string | null
   vessel_name: string | null
@@ -293,8 +298,37 @@ export interface Job {
   completed_at: string | null
   internal_notes: string | null
   pdf_storage_path: string | null
+  // Job tracker (migration 042)
+  job_type: string | null
+  report_number: string | null
+  workflow_status: WorkflowStatus
+  report_approved_at: string | null
+  report_approved_by: string | null
+  paid_at: string | null
+  closed_at: string | null
+  closed_by: string | null
   created_at: string
   updated_at: string
+}
+
+export interface JobType { id: string; name: string; is_active: boolean; created_at: string }
+
+export interface JobSurveyor {
+  id: string; job_id: string; surveyor_id: string
+  created_by: string | null; created_at: string
+}
+
+export type JobAttachmentKind = 'preliminary' | 'final' | 'vos' | 'time_page' | 'other'
+export interface JobAttachment {
+  id: string; job_id: string; kind: JobAttachmentKind
+  doc_name: string | null; storage_path: string | null
+  content_type: string | null; size_bytes: number | null
+  uploaded_by: string | null; created_at: string
+}
+
+export interface ActivityLogRow {
+  id: string; entity: string; entity_id: string | null; action: string
+  actor_id: string | null; meta: Record<string, unknown> | null; created_at: string
 }
 
 export interface JobFieldValue {
