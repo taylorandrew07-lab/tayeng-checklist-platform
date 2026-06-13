@@ -35,11 +35,12 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function reload() {
-    const [s, at, ac] = await Promise.all([listJobSurveyors(job.id), listJobAttachments(job.id), listJobActivity(job.id)])
-    setSurveyors(s); setAttachments(at); setActivity(ac)
+    const [s, at] = await Promise.all([listJobSurveyors(job.id), listJobAttachments(job.id)])
+    setSurveyors(s); setAttachments(at)
+    if (isAdmin) setActivity(await listJobActivity(job.id)) // activity_log is admin/office-only under RLS
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void reload(); listSurveyorAccounts().then(setAccounts) }, [job.id])
+  useEffect(() => { void reload(); if (isAdmin) listSurveyorAccounts().then(setAccounts) }, [job.id])
 
   const current = job.workflow_status
   const idx = WORKFLOW_ORDER.indexOf(current)
@@ -176,7 +177,8 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
         )}
       </div>
 
-      {/* Activity */}
+      {/* Activity (admin/office only) */}
+      {isAdmin && (
       <div className="card p-5">
         <h3 className="font-medium text-gray-900 mb-3">Activity</h3>
         {activity.length === 0 ? (
@@ -195,6 +197,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
           </ol>
         )}
       </div>
+      )}
     </div>
   )
 }
