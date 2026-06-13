@@ -8,7 +8,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
-import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, SurveyorName, OfficePermissionCatalogRow } from '@/lib/types/database'
+import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
 
 export default function UsersPage() {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
@@ -16,13 +16,10 @@ export default function UsersPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [surveyorRequests, setSurveyorRequests] = useState<SurveyorNameRequest[]>([])
   const [clientRequests, setClientRequests] = useState<ClientRequest[]>([])
-  const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
   const [officeCatalog, setOfficeCatalog] = useState<OfficePermissionCatalogRow[]>([])
   // Toggled office permission state for the user currently being edited.
   const [officePerms, setOfficePerms] = useState<Record<string, boolean>>({})
   const [officePermsLoading, setOfficePermsLoading] = useState(false)
-  const [linkingId, setLinkingId] = useState<string | null>(null)
-  const [addingId, setAddingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState<Profile | null>(null)
@@ -49,13 +46,12 @@ export default function UsersPage() {
   async function load() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: sn }, { data: oc }] = await Promise.all([
+    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: oc }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session?.user.id ?? '').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
       supabase.from('surveyor_name_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('client_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
       supabase.from('office_permission_catalog').select('*').order('category').order('label'),
     ])
     setCurrentProfile(me)
@@ -63,7 +59,6 @@ export default function UsersPage() {
     setClients(c ?? [])
     setSurveyorRequests(sr ?? [])
     setClientRequests(cr ?? [])
-    setSurveyorNames(sn ?? [])
     setOfficeCatalog(oc ?? [])
     setLoading(false)
   }
@@ -74,38 +69,6 @@ export default function UsersPage() {
 
   // Link (or unlink) a surveyor display name to a real login profile.
   // Generic: works for any admin/surveyor profile, no person hardcoded.
-  async function linkSurveyorName(surveyorNameId: string, profileId: string | null) {
-    setLinkingId(surveyorNameId)
-    setError(null)
-    const supabase = createClient()
-    const { error: err } = await supabase
-      .from('surveyor_names')
-      .update({ profile_id: profileId })
-      .eq('id', surveyorNameId)
-    setLinkingId(null)
-    if (err) { setError('Failed to update link: ' + err.message); return }
-    load()
-  }
-
-  // Add a surveyor account to the assignable surveyor-name list (creates a
-  // surveyor_names row already linked to that profile). Used for accounts that
-  // self-signed up and therefore have no registry entry yet.
-  async function addSurveyorNameFromAccount(u: Profile) {
-    setAddingId(u.id)
-    const supabase = createClient()
-    const { error: err } = await supabase.from('surveyor_names').insert({
-      name: u.full_name,
-      profile_id: u.id,
-      is_active: true,
-      approved_by: currentProfile?.id ?? null,
-      approved_at: new Date().toISOString(),
-    })
-    setAddingId(null)
-    if (err) { toast.error('Could not add: ' + err.message); return }
-    toast.success(`${u.full_name} added to the surveyor list`)
-    load()
-  }
-
   function openCreate() {
     setEditUser(null)
     setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', employee_number: '' })
@@ -477,79 +440,6 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-
-      {/* Surveyor name links — connect a display name to a real login profile */}
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900 text-sm">Surveyor Name Links</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Link a surveyor display name to a real login account. Jobs created with a linked name are assigned to that user, so they can edit/submit even when logged in as admin.
-          </p>
-        </div>
-
-        {/* Surveyor accounts that aren't in the assignable list yet (e.g. self-signups). */}
-        {(() => {
-          const unlinked = users.filter(u => u.is_active && u.role === 'surveyor' && !surveyorNames.some(sn => sn.profile_id === u.id))
-          return unlinked.length === 0 ? null : (
-            <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
-              <p className="text-xs font-medium text-amber-800 mb-2">
-                These surveyor accounts aren&apos;t in the list yet — add them so they can be assigned to jobs:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {unlinked.map(u => (
-                  <button
-                    key={u.id}
-                    onClick={() => addSurveyorNameFromAccount(u)}
-                    disabled={addingId === u.id}
-                    className="btn-secondary text-xs py-1 px-2.5"
-                  >
-                    {addingId === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                    {u.full_name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
-
-        {surveyorNames.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-gray-400 text-center">No active surveyor names yet.</p>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {surveyorNames.map(sn => {
-              const linked = users.find(u => u.id === sn.profile_id)
-              return (
-                <div key={sn.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{sn.name}</p>
-                    {linked ? (
-                      <p className="text-xs text-green-600">✓ Linked to {linked.full_name} ({linked.email})</p>
-                    ) : (
-                      <p className="text-xs text-gray-400">Not linked to a login account</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <select
-                      value={sn.profile_id ?? ''}
-                      disabled={linkingId === sn.id}
-                      onChange={(e) => linkSurveyorName(sn.id, e.target.value || null)}
-                      className="input-base text-sm py-1.5 max-w-[16rem]"
-                    >
-                      <option value="">— Not linked —</option>
-                      {users
-                        .filter(u => u.is_active && (u.role === 'surveyor' || u.role === 'admin'))
-                        .map(u => (
-                          <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
-                        ))}
-                    </select>
-                    {linkingId === sn.id && <Loader2 className="h-4 w-4 animate-spin text-brand-600" />}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       {/* Active users table */}
       <div className="card overflow-hidden">

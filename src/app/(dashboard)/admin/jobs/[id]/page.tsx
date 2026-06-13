@@ -8,7 +8,9 @@ import {
   CheckCircle2, Trash2
 } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
-import type { JobStatus, Client, SurveyorName } from '@/lib/types/database'
+import type { JobStatus, Client } from '@/lib/types/database'
+
+interface SurveyorAccount { id: string; full_name: string; role: string }
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
@@ -21,7 +23,7 @@ export default function AdminChecklistDetailPage() {
   const editorRef = useRef<JobChecklistEditorHandle>(null)
 
   const [job, setJob] = useState<any>(null)
-  const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
+  const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [permissions, setPermissions] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -34,7 +36,7 @@ export default function AdminChecklistDetailPage() {
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
-    surveyor_name: '',
+    surveyor_id: '',
     client_id: '',
     status: '' as JobStatus,
     scheduled_date: '',
@@ -56,21 +58,30 @@ export default function AdminChecklistDetailPage() {
         client:clients(name),
         creator:profiles!jobs_created_by_fkey(full_name)
       `).eq('id', jobId).single(),
-      supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, full_name, role').in('role', ['surveyor', 'admin']).eq('is_active', true).order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
       supabase.from('client_job_permissions').select('*').eq('job_id', jobId).single(),
     ])
 
     if (!jobData) { router.push('/admin/jobs'); return }
 
+    const accounts = (srvData as SurveyorAccount[]) ?? []
+    // Resolve the current surveyor to an account: prefer the assigned account,
+    // else match the stored name; if it's a legacy free-text name with no
+    // account, keep it as a "(current)" option so saving doesn't wipe it.
+    let surveyorId = ''
+    if (jobData.assigned_to && accounts.some(a => a.id === jobData.assigned_to)) surveyorId = jobData.assigned_to
+    else if (jobData.surveyor_name && accounts.some(a => a.full_name === jobData.surveyor_name)) surveyorId = accounts.find(a => a.full_name === jobData.surveyor_name)!.id
+    else if (jobData.surveyor_name) surveyorId = '__current__'
+
     setJob(jobData)
-    setSurveyorNames(srvData ?? [])
+    setSurveyors(accounts)
     setClients(cliData ?? [])
     setPermissions(permData)
     setEditForm({
       title: jobData.title,
       vessel_name: jobData.vessel_name ?? '',
-      surveyor_name: jobData.surveyor_name ?? '',
+      surveyor_id: surveyorId,
       client_id: jobData.client_id ?? '',
       status: jobData.status,
       scheduled_date: jobData.scheduled_date ?? '',
@@ -81,12 +92,23 @@ export default function AdminChecklistDetailPage() {
   async function handleSaveEdit() {
     setSaving(true)
     const supabase = createClient()
+
+    // Resolve the surveyor selection to a name + account assignment.
+    let surveyorNameVal: string | null = job.surveyor_name ?? null
+    let assignedToVal: string | null = job.assigned_to ?? null
+    if (editForm.surveyor_id === '') { surveyorNameVal = null; assignedToVal = null }
+    else if (editForm.surveyor_id !== '__current__') {
+      const a = surveyors.find(s => s.id === editForm.surveyor_id)
+      if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
+    }
+
     const { error: err } = await supabase
       .from('jobs')
       .update({
         title: editForm.title,
         vessel_name: editForm.vessel_name || null,
-        surveyor_name: editForm.surveyor_name || null,
+        surveyor_name: surveyorNameVal,
+        assigned_to: assignedToVal,
         client_id: editForm.client_id || null,
         status: editForm.status,
         scheduled_date: editForm.scheduled_date || null,
@@ -218,12 +240,10 @@ export default function AdminChecklistDetailPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label-base">Surveyor</label>
-                    <select value={editForm.surveyor_name} onChange={(e) => setEditForm(p => ({ ...p, surveyor_name: e.target.value }))} className="input-base">
+                    <select value={editForm.surveyor_id} onChange={(e) => setEditForm(p => ({ ...p, surveyor_id: e.target.value }))} className="input-base">
                       <option value="">— No surveyor —</option>
-                      {surveyorNames.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                      {editForm.surveyor_name && !surveyorNames.find(s => s.name === editForm.surveyor_name) && (
-                        <option value={editForm.surveyor_name}>{editForm.surveyor_name}</option>
-                      )}
+                      {editForm.surveyor_id === '__current__' && <option value="__current__">{job.surveyor_name} (current)</option>}
+                      {surveyors.map(s => <option key={s.id} value={s.id}>{s.full_name}{s.role === 'admin' ? ' (admin)' : ''}</option>)}
                     </select>
                   </div>
                   <div>

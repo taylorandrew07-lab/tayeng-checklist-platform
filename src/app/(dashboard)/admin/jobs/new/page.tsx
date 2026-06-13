@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Loader2, Save, Plus } from 'lucide-react'
+import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import Link from 'next/link'
-import type { ChecklistTemplate, Client, SurveyorName } from '@/lib/types/database'
+import type { ChecklistTemplate, Client } from '@/lib/types/database'
+
+interface SurveyorAccount { id: string; full_name: string; role: string }
 
 function formatDateDMY(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0')
@@ -18,7 +20,7 @@ export default function NewChecklistPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [surveyorNames, setSurveyorNames] = useState<SurveyorName[]>([])
+  const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,9 +31,7 @@ export default function NewChecklistPage() {
   const [clientId, setClientId] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
-  const [surveyorName, setSurveyorName] = useState('')
-  const [newSurveyorName, setNewSurveyorName] = useState('')
-  const [showNewSurveyor, setShowNewSurveyor] = useState(false)
+  const [surveyorId, setSurveyorId] = useState('')
 
   const today = formatDateDMY(new Date())
 
@@ -39,23 +39,18 @@ export default function NewChecklistPage() {
     ? `M.V. ${vesselName.trim()} - ${selectedTemplate.name} - ${today}`
     : ''
 
-  // The surveyor_names row matching the chosen display name (carries the optional profile link)
-  const selectedSurveyorObj = surveyorNames.find(s => s.name === surveyorName) ?? null
-  const linkedProfileId = selectedSurveyorObj?.profile_id ?? null
-  // Warn when an existing (non-new) surveyor name has no linked login profile
-  const surveyorUnlinked = !!surveyorName && !showNewSurveyor && !linkedProfileId
-
   useEffect(() => {
     async function loadData() {
       const supabase = createClient()
       const [{ data: tmpl }, { data: cls }, { data: srv }] = await Promise.all([
         supabase.from('checklist_templates').select('*').eq('status', 'active').order('name'),
         supabase.from('clients').select('*').eq('is_active', true).order('name'),
-        supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
+        // Surveyors are real accounts now — pick one and the job is assigned to them.
+        supabase.from('profiles').select('id, full_name, role').in('role', ['surveyor', 'admin']).eq('is_active', true).order('full_name'),
       ])
       setTemplates(tmpl ?? [])
       setClients(cls ?? [])
-      setSurveyorNames(srv ?? [])
+      setSurveyors((srv as SurveyorAccount[]) ?? [])
       setLoading(false)
     }
     loadData()
@@ -64,17 +59,6 @@ export default function NewChecklistPage() {
   function handleTemplateChange(id: string) {
     setTemplateId(id)
     setSelectedTemplate(templates.find(t => t.id === id) ?? null)
-  }
-
-  function handleSurveyorChange(val: string) {
-    if (val === '__new__') {
-      setShowNewSurveyor(true)
-      setSurveyorName('')
-    } else {
-      setShowNewSurveyor(false)
-      setNewSurveyorName('')
-      setSurveyorName(val)
-    }
   }
 
   function handleClientChange(val: string) {
@@ -92,8 +76,8 @@ export default function NewChecklistPage() {
     if (!templateId) { setError('Please select a template'); return }
     if (!vesselName.trim()) { setError('Vessel name is required'); return }
 
-    const finalSurveyor = showNewSurveyor ? newSurveyorName.trim() : surveyorName
-    if (!finalSurveyor) { setError('Surveyor name is required'); return }
+    const surveyor = surveyors.find(s => s.id === surveyorId)
+    if (!surveyor) { setError('Please select a surveyor'); return }
 
     setSaving(true)
     setError(null)
@@ -114,19 +98,7 @@ export default function NewChecklistPage() {
       finalClientId = null // No client ID yet — pending approval
     }
 
-    // Handle new surveyor name request
-    if (showNewSurveyor && newSurveyorName.trim()) {
-      await supabase.from('surveyor_name_requests').insert({
-        requested_name: newSurveyorName.trim(),
-        requested_by: user.id,
-      })
-    }
-
     const title = autoTitle || `M.V. ${vesselName.trim()} - ${selectedTemplate?.name ?? ''} - ${today}`
-
-    // Assign to the surveyor's linked login profile if the name is linked;
-    // otherwise leave unassigned (creator retains edit rights via the creator rule).
-    const assignedTo = linkedProfileId ?? null
 
     const { data: job, error: jobErr } = await supabase
       .from('jobs')
@@ -134,10 +106,11 @@ export default function NewChecklistPage() {
         title,
         template_id: templateId,
         vessel_name: vesselName.trim(),
-        surveyor_name: finalSurveyor,
+        // Surveyor is a real account — store their display name + assign the job to them.
+        surveyor_name: surveyor.full_name,
         client_id: finalClientId,
         created_by: user.id,
-        assigned_to: assignedTo,
+        assigned_to: surveyor.id,
         status: 'in_progress',
         started_at: new Date().toISOString(),
       })
@@ -249,41 +222,24 @@ export default function NewChecklistPage() {
           )}
         </div>
 
-        {/* Surveyor name */}
+        {/* Surveyor (a real account — the job is assigned to them) */}
         <div>
-          <label className="label-base">Surveyor Name *</label>
+          <label className="label-base">Surveyor *</label>
           <select
-            value={showNewSurveyor ? '__new__' : surveyorName}
-            onChange={(e) => handleSurveyorChange(e.target.value)}
+            value={surveyorId}
+            onChange={(e) => setSurveyorId(e.target.value)}
             className="input-base"
           >
             <option value="">Select surveyor…</option>
-            {surveyorNames.map(s => (
-              <option key={s.id} value={s.name}>{s.name}</option>
+            {surveyors.map(s => (
+              <option key={s.id} value={s.id}>{s.full_name}{s.role === 'admin' ? ' (admin)' : ''}</option>
             ))}
-            <option value="__new__">Request New - Insert Name</option>
           </select>
-          {showNewSurveyor && (
-            <div className="mt-2">
-              <input
-                type="text"
-                value={newSurveyorName}
-                onChange={(e) => setNewSurveyorName(e.target.value)}
-                className="input-base"
-                placeholder="Enter full name…"
-              />
-              <p className="text-xs text-amber-600 mt-1">This name will be submitted for Admin approval before being permanently added.</p>
-            </div>
+          {surveyors.length === 0 && (
+            <p className="text-xs text-amber-600 mt-1">No surveyor accounts yet. <Link href="/admin/users" className="underline">Approve a surveyor first.</Link></p>
           )}
-          {surveyorUnlinked && (
-            <p className="text-xs text-amber-600 mt-1">
-              ⚠ &ldquo;{surveyorName}&rdquo; is a display name with no linked login user. The checklist will show this surveyor name but will not be assigned to a real surveyor account. You (the creator) will retain edit access.
-            </p>
-          )}
-          {linkedProfileId && (
-            <p className="text-xs text-green-600 mt-1">
-              ✓ Linked to a login account — this checklist will be assigned to that user.
-            </p>
+          {surveyorId && (
+            <p className="text-xs text-green-600 mt-1">✓ The job will be assigned to this surveyor&apos;s account.</p>
           )}
         </div>
       </div>

@@ -19,7 +19,7 @@ export default function SurveyorNewChecklistPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
-  const [surveyorNames, setSurveyorNames] = useState<any[]>([])
+  const [myName, setMyName] = useState('')
   const [fromCache, setFromCache] = useState(false)
   const [online, setOnline] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -32,9 +32,6 @@ export default function SurveyorNewChecklistPage() {
   const [clientId, setClientId] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
-  const [surveyorName, setSurveyorName] = useState('')
-  const [newSurveyorName, setNewSurveyorName] = useState('')
-  const [showNewSurveyor, setShowNewSurveyor] = useState(false)
 
   const today = formatDateDMY(new Date())
   const autoTitle = vesselName.trim() && selectedTemplate
@@ -46,23 +43,32 @@ export default function SurveyorNewChecklistPage() {
     const onStatus = () => setOnline(navigator.onLine)
     window.addEventListener('online', onStatus)
     window.addEventListener('offline', onStatus)
-    loadNewJobData().then(d => {
+    async function load() {
+      // The surveyor IS the surveyor on their own jobs — use their own name,
+      // read offline-safely from the cached profile (falls back to a live fetch).
+      let name = ''
+      try { const c = localStorage.getItem('te_profile'); if (c) name = JSON.parse(c)?.full_name ?? '' } catch { /* storage unavailable */ }
+      if (!name && (typeof navigator === 'undefined' || navigator.onLine)) {
+        try {
+          const supabase = createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) { const { data: p } = await supabase.from('profiles').select('full_name').eq('id', user.id).single(); name = p?.full_name ?? '' }
+        } catch { /* offline / no session */ }
+      }
+      setMyName(name)
+      const d = await loadNewJobData()
       setTemplates(d.templates)
       setClients(d.clients)
-      setSurveyorNames(d.surveyors)
       setFromCache(d.fromCache)
       setLoading(false)
-    })
+    }
+    load()
     return () => { window.removeEventListener('online', onStatus); window.removeEventListener('offline', onStatus) }
   }, [])
 
   function handleTemplateChange(id: string) {
     setTemplateId(id)
     setSelectedTemplate(templates.find(t => t.id === id) ?? null)
-  }
-  function handleSurveyorChange(val: string) {
-    if (val === '__new__') { setShowNewSurveyor(true); setSurveyorName('') }
-    else { setShowNewSurveyor(false); setNewSurveyorName(''); setSurveyorName(val) }
   }
   function handleClientChange(val: string) {
     if (val === '__new__') { setShowNewClient(true); setClientId('') }
@@ -72,8 +78,8 @@ export default function SurveyorNewChecklistPage() {
   async function handleCreate() {
     if (!templateId || !selectedTemplate) return setError('Please select a template')
     if (!vesselName.trim()) return setError('Vessel name is required')
-    const finalSurveyor = showNewSurveyor ? newSurveyorName.trim() : surveyorName
-    if (!finalSurveyor) return setError('Please select or enter your surveyor name')
+    const finalSurveyor = myName.trim()
+    if (!finalSurveyor) return setError('Could not read your name — reconnect once so your profile loads.')
 
     setSaving(true)
     setError(null)
@@ -92,11 +98,6 @@ export default function SurveyorNewChecklistPage() {
         fetch('/api/notify/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'client_request', requestedName: newClientName.trim() }) }).catch(() => {})
         finalClientId = null
       }
-      if (online && showNewSurveyor && newSurveyorName.trim()) {
-        await supabase.from('surveyor_name_requests').insert({ requested_name: newSurveyorName.trim(), requested_by: userId })
-        fetch('/api/notify/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'surveyor_request', requestedName: newSurveyorName.trim() }) }).catch(() => {})
-      }
-
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
       const job = {
@@ -196,18 +197,9 @@ export default function SurveyorNewChecklistPage() {
         </div>
 
         <div>
-          <label className="label-base">Surveyor Name *</label>
-          <select value={showNewSurveyor ? '__new__' : surveyorName} onChange={(e) => handleSurveyorChange(e.target.value)} className="input-base">
-            <option value="">Select your name…</option>
-            {surveyorNames.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            {online && <option value="__new__">Request New - Insert Name</option>}
-          </select>
-          {showNewSurveyor && (
-            <div className="mt-2">
-              <input type="text" value={newSurveyorName} onChange={(e) => setNewSurveyorName(e.target.value)} className="input-base" placeholder="Your full name…" />
-              <p className="text-xs text-amber-600 mt-1">This will be submitted for admin approval.</p>
-            </div>
-          )}
+          <label className="label-base">Surveyor</label>
+          <div className="input-base bg-gray-50 text-gray-700 flex items-center">{myName || 'Your account'}</div>
+          <p className="text-xs text-gray-400 mt-1">This job is created under your account.</p>
         </div>
 
         {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
