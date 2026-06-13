@@ -22,15 +22,22 @@ export default function SignUpPage() {
 
     const supabase = createClient()
 
-    // Pass full_name and role in metadata so the handle_new_user trigger can use them.
-    // The trigger always sets is_active=false — no client-side profile upsert needed.
+    // Super-Cargo is a surveyor with a cosmetic job title — same role/permissions.
+    const isSuperCargo = form.role === 'super_cargo'
+    const role = isSuperCargo ? 'surveyor' : form.role
+    const displayTitle = isSuperCargo ? 'Super-Cargo' : null
+
+    // Pass full_name, role and optional display_title in metadata so the
+    // handle_new_user trigger can use them. The trigger always sets
+    // is_active=false — no client-side profile upsert needed.
     const { error: signUpErr } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
         data: {
           full_name: form.fullName,
-          role: form.role,
+          role,
+          display_title: displayTitle,
         },
       },
     })
@@ -45,7 +52,7 @@ export default function SignUpPage() {
     fetch('/api/notify/admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'signup', name: form.fullName, email: form.email, role: form.role }),
+      body: JSON.stringify({ type: 'signup', name: form.fullName, email: form.email, role: displayTitle ?? role }),
     }).catch(() => {})
 
     // Sign out immediately — account requires admin approval before access is granted
@@ -119,9 +126,10 @@ export default function SignUpPage() {
 
           <div>
             <label className="label-base">I am a&hellip;</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },
+                { value: 'super_cargo', label: 'Super-Cargo', desc: 'Same as surveyor (different title)' },
                 { value: 'office', label: 'Office', desc: 'Office / admin support staff' },
                 { value: 'client', label: 'Client', desc: 'View job reports and results' },
               ].map(opt => (

@@ -540,7 +540,7 @@ export default function UsersPage() {
                 <td className="px-4 py-3 text-gray-600">{user.email}</td>
                 <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColor[user.role]}`}>
-                    {user.role}
+                    {(user as any).display_title ?? user.role}
                   </span>
                 </td>
                 <td className="px-4 py-3">

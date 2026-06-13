@@ -55,6 +55,9 @@ export interface Profile {
   phone: string | null
   is_active: boolean
   is_super_admin: boolean
+  /** Optional cosmetic job title shown in place of the role (e.g. "Super-Cargo").
+   *  Grants no permissions — authorization is driven by `role` only. */
+  display_title?: string | null
   ui_prefs?: UiPrefs | null
   // Employee / pass fields (self-editable by the owner; admins edit anyone).
   vehicle_number?: string | null

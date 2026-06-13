@@ -9,7 +9,7 @@ import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 
-interface ProfileRow { id: string; full_name: string; email: string; phone: string | null; role: string; is_super_admin?: boolean }
+interface ProfileRow { id: string; full_name: string; email: string; phone: string | null; role: string; is_super_admin?: boolean; display_title?: string | null }
 interface PendingReq { id: string; requested_changes: Record<string, any>; created_at: string }
 
 type FieldName = 'full_name' | 'phone' | 'email'
@@ -62,7 +62,7 @@ export default function ProfilePage() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
-    const { data: p } = await supabase.from('profiles').select('id, full_name, email, phone, role, is_super_admin').eq('id', session.user.id).single()
+    const { data: p } = await supabase.from('profiles').select('id, full_name, email, phone, role, is_super_admin, display_title').eq('id', session.user.id).single()
     if (p) {
       setProfile(p)
       setForm({ full_name: p.full_name ?? '', phone: p.phone ?? '', email: p.email ?? '' })
@@ -165,7 +165,7 @@ export default function ProfilePage() {
         <ProfileField label="Phone" name="phone" type="tel" value={profile.phone ?? ''} editing={editing} pendingValue={pv('phone')} formValue={form.phone} onFormChange={v => setForm(f => ({ ...f, phone: v }))} />
         <div className="py-3 border-b border-gray-100">
           <label className="text-sm font-medium text-gray-500">Role</label>
-          <p className="text-gray-900 mt-0.5 capitalize">{profile.is_super_admin ? 'Super Admin' : profile.role}</p>
+          <p className="text-gray-900 mt-0.5 capitalize">{profile.is_super_admin ? 'Super Admin' : (profile.display_title ?? profile.role)}</p>
         </div>
         <div className="py-3 flex items-center justify-between">
           <div>
