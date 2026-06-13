@@ -14,7 +14,7 @@ const TABS = [
 
 /** Shared sub-nav for the People hub (Users / Clients / Approvals). Each tab
  *  shows a yellow count when something is waiting there: Team = pending signups
- *  + surveyor-name + client requests; Approvals = profile change requests. */
+ *  + client requests; Approvals = profile change requests. */
 export default function PeopleTabs() {
   const pathname = usePathname()
   const [counts, setCounts] = useState<{ team: number; approvals: number }>({ team: 0, approvals: 0 })
@@ -23,13 +23,12 @@ export default function PeopleTabs() {
     const supabase = createClient()
     let cancelled = false
     ;(async () => {
-      const [u, s, c, p] = await Promise.all([
+      const [u, c, p] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
-        supabase.from('surveyor_name_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       ])
-      if (!cancelled) setCounts({ team: (u.count ?? 0) + (s.count ?? 0) + (c.count ?? 0), approvals: p.count ?? 0 })
+      if (!cancelled) setCounts({ team: (u.count ?? 0) + (c.count ?? 0), approvals: p.count ?? 0 })
     })()
     return () => { cancelled = true }
   }, [pathname])

@@ -8,13 +8,12 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
-import type { Profile, Client, UserRole, SurveyorNameRequest, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
+import type { Profile, Client, UserRole, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
 
 export default function UsersPage() {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
   const [users, setUsers] = useState<Profile[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [surveyorRequests, setSurveyorRequests] = useState<SurveyorNameRequest[]>([])
   const [clientRequests, setClientRequests] = useState<ClientRequest[]>([])
   const [officeCatalog, setOfficeCatalog] = useState<OfficePermissionCatalogRow[]>([])
   // Toggled office permission state for the user currently being edited.
@@ -46,18 +45,16 @@ export default function UsersPage() {
   async function load() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const [{ data: me }, { data: u }, { data: c }, { data: sr }, { data: cr }, { data: oc }] = await Promise.all([
+    const [{ data: me }, { data: u }, { data: c }, { data: cr }, { data: oc }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session?.user.id ?? '').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
-      supabase.from('surveyor_name_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('client_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('office_permission_catalog').select('*').order('category').order('label'),
     ])
     setCurrentProfile(me)
     setUsers(u ?? [])
     setClients(c ?? [])
-    setSurveyorRequests(sr ?? [])
     setClientRequests(cr ?? [])
     setOfficeCatalog(oc ?? [])
     setLoading(false)
@@ -268,21 +265,6 @@ export default function UsersPage() {
     load()
   }
 
-  async function approveSurveyorRequest(req: SurveyorNameRequest) {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('surveyor_names').insert({ name: req.requested_name, is_active: true, approved_by: session?.user.id, approved_at: new Date().toISOString() })
-    await supabase.from('surveyor_name_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
-    load()
-  }
-
-  async function rejectSurveyorRequest(req: SurveyorNameRequest) {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('surveyor_name_requests').update({ status: 'rejected', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
-    load()
-  }
-
   async function approveClientRequest(req: ClientRequest) {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
@@ -315,7 +297,7 @@ export default function UsersPage() {
 
   const pending = users.filter(u => !u.is_active)
   const active = users.filter(u => u.is_active)
-  const totalPendingRequests = surveyorRequests.length + clientRequests.length
+  const totalPendingRequests = clientRequests.length
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -375,34 +357,6 @@ export default function UsersPage() {
                       <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
                         Reject
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </div>
-      )}
-
-      {/* Pending surveyor name requests */}
-      {surveyorRequests.length > 0 && (
-        <div className="card overflow-hidden border-blue-200 border-2">
-          <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-sm font-semibold text-blue-800">{surveyorRequests.length} surveyor name request{surveyorRequests.length > 1 ? 's' : ''}</span>
-          </div>
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-gray-100">
-              {surveyorRequests.map(req => (
-                <tr key={req.id} className="hover:bg-blue-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{req.requested_name}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(req.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => approveSurveyorRequest(req)} className="btn-primary py-1 px-3 text-xs">Approve</button>
-                      <button onClick={() => rejectSurveyorRequest(req)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:bg-red-50">Reject</button>
                     </div>
                   </td>
                 </tr>

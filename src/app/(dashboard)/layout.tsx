@@ -86,16 +86,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       // Load the admin "needs attention" count for the Users hub badge — every
       // kind of request that lands under People (Team / Clients / Approvals):
-      // pending signups, client requests, surveyor-name requests, and profile
-      // change requests (the last was previously uncounted, so it never flagged).
+      // pending signups, client requests, and profile change requests.
       if (data.role === 'admin') {
-        const [u, c, s, p] = await Promise.all([
+        const [u, c, p] = await Promise.all([
           supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
           supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-          supabase.from('surveyor_name_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
           supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         ])
-        setPendingCount((u.count ?? 0) + (c.count ?? 0) + (s.count ?? 0) + (p.count ?? 0))
+        setPendingCount((u.count ?? 0) + (c.count ?? 0) + (p.count ?? 0))
       }
 
       // Load this office user's granted permission keys to drive their nav.

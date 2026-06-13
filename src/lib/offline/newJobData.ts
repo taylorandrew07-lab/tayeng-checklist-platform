@@ -17,12 +17,11 @@ export async function loadNewJobData(): Promise<NewJobData> {
   try {
     if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('offline')
     const supabase = createClient()
-    const [{ data: tmpl, error: tErr }, { data: cls }, { data: srv }] = await Promise.all([
+    const [{ data: tmpl, error: tErr }, { data: cls }] = await Promise.all([
       supabase.from('checklist_templates')
         .select('*, sections:template_sections(*, fields:template_fields(*))')
         .eq('status', 'active').eq('allow_surveyor_start', true).order('name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
-      supabase.from('surveyor_names').select('*').eq('is_active', true).order('name'),
     ])
     if (tErr) throw tErr
 
@@ -34,7 +33,9 @@ export async function loadNewJobData(): Promise<NewJobData> {
         .map((s: any) => ({ ...s, fields: [...(s.fields ?? [])].sort((a: any, b: any) => a.order_index - b.order_index) })),
     }))
 
-    const payload: CachedNewJobData = { templates, clients: cls ?? [], surveyors: srv ?? [], cachedAt: Date.now() }
+    // Surveyors are no longer picked on the new-job form (a surveyor IS the
+    // surveyor on their own jobs), so no surveyor list is cached.
+    const payload: CachedNewJobData = { templates, clients: cls ?? [], surveyors: [], cachedAt: Date.now() }
     await cacheNewJobData(payload).catch(() => {})
     return { templates: payload.templates, clients: payload.clients, surveyors: payload.surveyors, fromCache: false }
   } catch {
