@@ -16,6 +16,9 @@ const FILTERS: { key: InboxFilter; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'unread', label: 'Unread' }, { key: 'archived', label: 'Archived' },
 ]
 
+// Render messages in pages to keep long inboxes light.
+const PAGE_SIZE = 30
+
 export default function InboxPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [tab, setTab] = useState<'inbox' | 'sent'>('inbox')
@@ -27,6 +30,7 @@ export default function InboxPage() {
   const [detailArchived, setDetailArchived] = useState(false)
   const [compose, setCompose] = useState<{ open: boolean; initial?: ComposeInitial }>({ open: false })
   const [refresh, setRefresh] = useState(0)
+  const [shown, setShown] = useState(PAGE_SIZE)
   const tick = useRealtimeRefresh('message_recipients')
 
   useEffect(() => {
@@ -56,6 +60,9 @@ export default function InboxPage() {
     load()
     return () => { cancelled = true }
   }, [tab, filter, tick, refresh])
+
+  // New list (switched tab/filter) starts at the first page.
+  useEffect(() => { setShown(PAGE_SIZE) }, [tab, filter])
 
   async function openDetail(messageId: string, archivedRow: boolean, wasUnread: boolean) {
     const d = await getMessage(messageId)
@@ -109,8 +116,9 @@ export default function InboxPage() {
         inbox.length === 0 ? (
           <Empty icon={Mail} text={filter === 'archived' ? 'No archived messages.' : filter === 'unread' ? 'No unread messages.' : 'Your inbox is empty.'} />
         ) : (
+          <>
           <div className="card divide-y divide-gray-100">
-            {inbox.map(m => {
+            {inbox.slice(0, shown).map(m => {
               const unread = !m.read_at
               return (
                 <button key={m.recipientRowId} onClick={() => openDetail(m.messageId, !!m.archived_at, unread)}
@@ -128,13 +136,18 @@ export default function InboxPage() {
               )
             })}
           </div>
+          {inbox.length > shown && (
+            <div className="flex justify-center"><button onClick={() => setShown(s => s + PAGE_SIZE)} className="btn-secondary">Show more <span className="text-gray-400">({inbox.length - shown} more)</span></button></div>
+          )}
+          </>
         )
       ) : (
         sent.length === 0 ? (
           <Empty icon={Send} text="You haven't sent any messages." />
         ) : (
+          <>
           <div className="card divide-y divide-gray-100">
-            {sent.map(m => (
+            {sent.slice(0, shown).map(m => (
               <button key={m.id} onClick={() => openDetail(m.id, false, false)}
                 className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
                 <div className="min-w-0 flex-1">
@@ -147,6 +160,10 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
+          {sent.length > shown && (
+            <div className="flex justify-center"><button onClick={() => setShown(s => s + PAGE_SIZE)} className="btn-secondary">Show more <span className="text-gray-400">({sent.length - shown} more)</span></button></div>
+          )}
+          </>
         )
       )}
 

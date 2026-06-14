@@ -115,6 +115,10 @@ function Th({ label, col, sort, onSort, className }: { label: string; col?: Sort
   )
 }
 
+// Render in pages to keep the DOM small on big job lists. Filtering/sorting still
+// run over the full set; this only limits how many rows are painted at once.
+const PAGE_SIZE = 50
+
 export default function JobsTrackerPage() {
   const [rows, setRows] = useState<TrackerRow[]>([])
   const [jobTypes, setJobTypes] = useState<string[]>([])
@@ -125,6 +129,7 @@ export default function JobsTrackerPage() {
   const [otOnly, setOtOnly] = useState(false)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
+  const [shown, setShown] = useState(PAGE_SIZE)
   const [numberOpen, setNumberOpen] = useState(false)
   const tick = useRealtimeRefresh('jobs')
   // Suppress the realtime reload briefly after our own writes so inline edits
@@ -188,6 +193,10 @@ export default function JobsTrackerPage() {
     const dir = sort.dir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
   }, [rows, filter, typeFilter, surveyorFilter, otOnly, q, sort])
+
+  // Reset the page window whenever the filtered/sorted set changes.
+  useEffect(() => { setShown(PAGE_SIZE) }, [filter, typeFilter, surveyorFilter, otOnly, q, sort])
+  const paged = useMemo(() => visible.slice(0, shown), [visible, shown])
 
   const missingCount = rows.filter(r => !r.report_number).length
   const typeOptions = useMemo(
@@ -282,7 +291,7 @@ export default function JobsTrackerPage() {
                 ))
               ) : visible.length === 0 ? (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
-              ) : visible.map(r => (
+              ) : paged.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle">
                   <td className="px-2 py-1.5">
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
@@ -324,6 +333,14 @@ export default function JobsTrackerPage() {
           </table>
         </div>
       </div>
+
+      {!loading && visible.length > shown && (
+        <div className="flex justify-center">
+          <button onClick={() => setShown(s => s + PAGE_SIZE)} className="btn-secondary">
+            Show more <span className="text-gray-400">({visible.length - shown} more)</span>
+          </button>
+        </div>
+      )}
 
       <NumberReportsModal open={numberOpen} onClose={() => setNumberOpen(false)} rows={rows} onDone={load} />
     </div>
