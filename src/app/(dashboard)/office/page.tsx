@@ -24,8 +24,8 @@ interface MonitorJob {
   client?: { name: string } | null
 }
 
-// Statuses that represent active/ongoing work for the office summary.
-const ONGOING: JobStatus[] = ['draft', 'assigned', 'in_progress', 'submitted']
+// Workflow stages that represent active/ongoing work for the office summary.
+const ONGOING: WorkflowStatus[] = ['new', 'assigned', 'in_progress', 'report_ready']
 
 export default function OfficeDashboard() {
   const [jobs, setJobs] = useState<MonitorJob[]>([])
@@ -62,7 +62,7 @@ export default function OfficeDashboard() {
   }, [])
 
   const counts = jobs.reduce<Record<string, number>>((acc, j) => {
-    acc[j.status] = (acc[j.status] ?? 0) + 1
+    acc[j.workflow_status] = (acc[j.workflow_status] ?? 0) + 1
     return acc
   }, {})
   const ongoingCount = ONGOING.reduce((n, s) => n + (counts[s] ?? 0), 0)
@@ -71,8 +71,8 @@ export default function OfficeDashboard() {
   const summaryCards = [
     { label: 'Ongoing jobs', value: ongoingCount, icon: Briefcase, color: 'bg-indigo-500' },
     { label: 'In progress', value: counts['in_progress'] ?? 0, icon: Clock, color: 'bg-amber-500' },
-    { label: 'Submitted', value: counts['submitted'] ?? 0, icon: FileCheck2, color: 'bg-blue-500' },
-    { label: 'Completed', value: counts['completed'] ?? 0, icon: CheckCircle2, color: 'bg-green-500' },
+    { label: 'Report ready', value: counts['report_ready'] ?? 0, icon: FileCheck2, color: 'bg-blue-500' },
+    { label: 'Approved', value: counts['approved'] ?? 0, icon: CheckCircle2, color: 'bg-green-500' },
   ]
 
   return (

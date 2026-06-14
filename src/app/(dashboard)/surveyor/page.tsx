@@ -59,8 +59,9 @@ export default function SurveyorDashboard() {
   // started later with no signal. Refreshes once per dashboard open (when online).
   useEffect(() => { void loadNewJobData().catch(() => {}) }, [])
 
-  const active = jobs.filter(j => ['draft', 'in_progress', 'assigned'].includes(j.status))
-  const submitted = jobs.filter(j => ['submitted', 'completed', 'client_visible'].includes(j.status))
+  // Bucket by the unified workflow status (kept in sync with the checklist phase).
+  const active = jobs.filter(j => ['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+  const submitted = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-rise">
