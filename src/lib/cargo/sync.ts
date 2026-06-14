@@ -25,6 +25,7 @@ export async function pushVoyage(supabase: SupabaseClient, voyage: Voyage, photo
     vessel_name: voyage.vesselName,
     voyage_number: voyage.voyageNumber,
     status: voyage.status ?? 'in_progress',
+    synced_at: new Date().toISOString(), // refresh on every push (default only stamps the insert)
     doc: voyage,
   })
   if (vErr) throw vErr

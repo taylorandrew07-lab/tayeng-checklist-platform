@@ -23,6 +23,36 @@ export interface RemotePhoto {
   url: string
 }
 
+/** Admin/office company-wide ops row: every SYNCED voyage with its owner. */
+export interface OpsVoyageRow {
+  id: string
+  vessel_name: string | null
+  voyage_number: string | null
+  status: string
+  updated_at: string
+  synced_at: string
+  owner_name: string | null
+}
+
+/** All synced voyages across the company (admin RLS returns every row). Note:
+ *  voyages a surveyor hasn't synced yet still live only on their device. */
+export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyageRow[]> {
+  const { data, error } = await supabase
+    .from('cargo_voyages')
+    .select('id, vessel_name, voyage_number, status, updated_at, synced_at, owner:profiles!owner_id(full_name, display_title)')
+    .order('synced_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as any[]).map(r => ({
+    id: r.id,
+    vessel_name: r.vessel_name,
+    voyage_number: r.voyage_number,
+    status: r.status,
+    updated_at: r.updated_at,
+    synced_at: r.synced_at,
+    owner_name: r.owner?.display_title ?? r.owner?.full_name ?? null,
+  }))
+}
+
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')

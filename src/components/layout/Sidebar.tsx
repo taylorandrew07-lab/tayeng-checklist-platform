@@ -50,7 +50,6 @@ const superAdminNav: NavItem[] = [
 
 const surveyorNav: NavItem[] = [
   { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
-  { label: 'My Jobs', href: '/surveyor/jobs', icon: Briefcase },
   { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
   { label: 'My Documents', href: '/profile', icon: FileText },

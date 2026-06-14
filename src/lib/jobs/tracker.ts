@@ -81,11 +81,19 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
  *  to sync the workflow from checklist activity without ever pulling it back. */
 export async function advanceWorkflowTo(jobId: string, target: WorkflowStatus): Promise<void> {
   const supabase = createClient()
-  const { data } = await supabase.from('jobs').select('workflow_status').eq('id', jobId).single()
-  if (!data) return
-  if (WORKFLOW_ORDER.indexOf(data.workflow_status as WorkflowStatus) >= WORKFLOW_ORDER.indexOf(target)) return
-  await supabase.from('jobs').update({ workflow_status: target }).eq('id', jobId)
-  await logActivity('job', jobId, `workflow:${target}`)
+  const ti = WORKFLOW_ORDER.indexOf(target)
+  if (ti < 0) return
+  // Atomic forward-only advance: the DB itself excludes rows already at/after the
+  // target (the WHERE is evaluated at update time), so two concurrent advances
+  // can't race a read-then-write and pull the stage backward. Only log when a row
+  // actually changed.
+  const atOrAfter = WORKFLOW_ORDER.slice(ti)
+  const { data } = await supabase.from('jobs')
+    .update({ workflow_status: target })
+    .eq('id', jobId)
+    .not('workflow_status', 'in', `(${atOrAfter.join(',')})`)
+    .select('id')
+  if (data && data.length) await logActivity('job', jobId, `workflow:${target}`)
 }
 
 // ── Client-facing status (simplified — hides billing internals) ─────────────

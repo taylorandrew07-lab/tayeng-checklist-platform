@@ -13,8 +13,10 @@ import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 
-/** Cargo voyage list. Works under both /surveyor/cargo and /admin/cargo. */
-export default function CargoListView() {
+/** Cargo voyage list. Works under both /surveyor/cargo and /admin/cargo. When
+ *  `embedded`, it renders as a subsection (under the admin Cargo Operations
+ *  view) and is honest that these voyages live only on this browser. */
+export default function CargoListView({ embedded = false }: { embedded?: boolean }) {
   const pathname = usePathname()
   const base = pathname.startsWith('/admin') ? '/admin/cargo' : '/surveyor/cargo'
 
@@ -85,8 +87,14 @@ export default function CargoListView() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Cargo Monitoring</h1>
-          <p className="text-gray-500 mt-0.5">Offline cargo hold monitoring voyages stored on this device.</p>
+          {embedded
+            ? <h2 className="section-title">Voyages on this device</h2>
+            : <h1 className="page-title">Cargo Monitoring</h1>}
+          <p className="text-gray-500 mt-0.5">
+            {embedded
+              ? 'Offline voyages on this browser — use “Sync all” to publish them to Cargo Operations.'
+              : 'Offline cargo hold monitoring voyages stored on this device. Sync to publish them.'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleSyncAll} disabled={syncing || voyages.length === 0} className="btn-secondary">
