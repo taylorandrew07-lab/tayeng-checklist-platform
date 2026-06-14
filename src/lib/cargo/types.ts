@@ -14,8 +14,9 @@ export const PERIOD_LABELS: Record<Period, string> = {
   '1800': '1800 hrs',
 }
 
-export type Camera = 'fwd' | 'aft'
-export const CAMERA_LABELS: Record<Camera, string> = { fwd: 'Forward', aft: 'Aft' }
+// fwd/aft are the infrared (IR) camera angles; visual is a normal-camera photo.
+export type Camera = 'fwd' | 'aft' | 'visual'
+export const CAMERA_LABELS: Record<Camera, string> = { fwd: 'Forward (IR)', aft: 'Aft (IR)', visual: 'Visual' }
 
 export type VoyageStatus = 'in_progress' | 'finalized'
 

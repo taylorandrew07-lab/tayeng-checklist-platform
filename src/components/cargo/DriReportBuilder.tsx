@@ -4,14 +4,17 @@
 // canonical order and exports to PDF (@react-pdf/renderer) and .docx (docx). The
 // selection is saved to Voyage.dri.reportConfig so a report is reproducible.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FileDown, FileText, Loader2, Printer } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
+import { COMPANY } from '@/lib/company'
 import type { Voyage } from '@/lib/cargo/types'
 import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
 import { DriReportDocument } from '@/lib/cargo/pdf/DriReportDocument'
 import { buildDriDocxBlob } from '@/lib/cargo/dri-docx'
+
+const LOGO_URL = '/logo-invoice.png'
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -20,10 +23,25 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
+// Load the letterhead logo once: a data URL (PDF/preview) + raw bytes (.docx).
+async function loadLogo(): Promise<{ dataUrl: string; bytes: Uint8Array } | null> {
+  try {
+    const res = await fetch(LOGO_URL)
+    if (!res.ok) return null
+    const buf = await res.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return { dataUrl: `data:image/png;base64,${btoa(bin)}`, bytes }
+  } catch { return null }
+}
+
 export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage; onChange: (v: Voyage) => void }) {
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const [included, setIncluded] = useState<SectionKey[]>(dri.reportConfig?.includedSections ?? DEFAULT_INCLUDED)
   const [busy, setBusy] = useState<null | 'pdf' | 'docx'>(null)
+  const [logo, setLogo] = useState<{ dataUrl: string; bytes: Uint8Array } | null>(null)
+  useEffect(() => { loadLogo().then(setLogo) }, [])
 
   const blocks = useMemo(() => buildReportBlocks(voyage, included), [voyage, included])
   const title = `DRI ${voyage.vesselName} VOY ${voyage.voyageNumber}`.trim()
@@ -43,7 +61,7 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     try {
       persistConfig()
       const { pdf } = await import('@react-pdf/renderer')
-      const blob = await pdf(<DriReportDocument blocks={blocks} title={title} />).toBlob()
+      const blob = await pdf(<DriReportDocument blocks={blocks} title={title} logoDataUrl={logo?.dataUrl} />).toBlob()
       download(blob, `${fileBase}.pdf`)
     } catch (e: any) {
       toast.error(e?.message ?? 'PDF generation failed')
@@ -54,7 +72,7 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     setBusy('docx')
     try {
       persistConfig()
-      const blob = await buildDriDocxBlob(blocks, title)
+      const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined)
       download(blob, `${fileBase}.docx`)
     } catch (e: any) {
       toast.error(e?.message ?? '.docx generation failed')
@@ -89,13 +107,18 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
         </div>
       </div>
 
-      {/* Live preview (also the print view) */}
-      <div className="card p-6 print:shadow-none print:border-0" id="dri-report-preview">
-        {blocks.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">No sections selected.</p>
-        ) : (
-          <div className="prose-sm max-w-none">
-            {blocks.map((b, i) => {
+      {/* Live preview — styled like the printed report page (letterhead + body) */}
+      <div className="overflow-auto">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mx-auto max-w-[8.5in] p-8 sm:p-10 print:shadow-none print:border-0 print:p-0" id="dri-report-preview">
+          <div className="text-center border-b-2 border-brand-600 pb-3 mb-6">
+            {logo ? <img src={logo.dataUrl} alt={COMPANY.name} className="h-12 mx-auto mb-1.5 object-contain" /> : <p className="text-lg font-bold text-brand-700">{COMPANY.name}</p>}
+            <p className="text-[11px] text-gray-500">{COMPANY.address} · T {COMPANY.phone} · {COMPANY.email}</p>
+          </div>
+          {blocks.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-12">No sections selected.</p>
+          ) : (
+            <div className="max-w-none">
+              {blocks.map((b, i) => {
               if (b.kind === 'h1') return <h1 key={i} className="text-center text-xl font-bold text-gray-900 mb-1">{b.text}</h1>
               if (b.kind === 'h2') return <h2 key={i} className="text-sm font-bold text-brand-700 uppercase tracking-wide mt-5 mb-1.5 border-b border-gray-200 pb-1">{b.text}</h2>
               if (b.kind === 'p') return <p key={i} className={`text-sm mb-1.5 ${b.bold ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{b.text}</p>
@@ -105,9 +128,10 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
                   <tbody>{b.rows.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci} className="border border-gray-200 px-2 py-1 text-gray-700">{c}</td>)}</tr>)}</tbody>
                 </table>
               )
-            })}
-          </div>
-        )}
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

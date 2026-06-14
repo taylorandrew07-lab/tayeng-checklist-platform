@@ -204,7 +204,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
       if (await persist([{ ...photo, holdNumber: null, camera: null, assigned: false }])) markUnconfirmed()
       return
     }
-    const m = overId.match(/^slot:(\d+):(fwd|aft)$/)
+    const m = overId.match(/^slot:(\d+):(fwd|aft|visual)$/)
     if (!m) return
     const hold = parseInt(m[1], 10)
     const camera = m[2] as Camera
@@ -266,8 +266,8 @@ export default function PhotoManager({ voyage, onChange }: Props) {
           {holds.map(hold => (
             <div key={hold} className="card p-3">
               <p className="font-semibold text-gray-800 mb-2">Hold {hold}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(['fwd', 'aft'] as Camera[]).map(camera => {
+              <div className="grid grid-cols-3 gap-2">
+                {(['fwd', 'aft', 'visual'] as Camera[]).map(camera => {
                   const p = slotPhoto(hold, camera)
                   return (
                     <DropZone key={camera} id={`slot:${hold}:${camera}`} className="rounded-lg border border-dashed border-gray-300 p-1.5">

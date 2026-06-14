@@ -3,7 +3,7 @@
 
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  Table, TableRow, TableCell, WidthType, BorderStyle,
+  Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
 } from 'docx'
 import { COMPANY } from '@/lib/company'
 import type { Block } from '@/lib/cargo/dri-report'
@@ -27,9 +27,11 @@ function tableBlock(headers: string[], rows: string[][]): Table {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headRow, ...bodyRows] })
 }
 
-export async function buildDriDocxBlob(blocks: Block[], reportTitle: string): Promise<Blob> {
+export async function buildDriDocxBlob(blocks: Block[], reportTitle: string, logo?: { data: Uint8Array; width: number; height: number }): Promise<Blob> {
   const children: (Paragraph | Table)[] = [
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.name, bold: true, size: 26, color: BRAND })] }),
+    logo
+      ? new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: logo.data, transformation: { width: logo.width, height: logo.height } })] })
+      : new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: COMPANY.name, bold: true, size: 26, color: BRAND })] }),
     new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${COMPANY.address}   ·   ${COMPANY.email}`, size: 15, color: '64748b' })] }),
     new Paragraph({ text: '' }),
   ]

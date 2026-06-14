@@ -1,5 +1,5 @@
 import React from 'react'
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer'
 import { COMPANY } from '@/lib/company'
 import type { Block } from '@/lib/cargo/dri-report'
 
@@ -10,6 +10,7 @@ const LINE = '#cbd5e1'
 
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 9, color: INK, paddingTop: 34, paddingBottom: 44, paddingHorizontal: 44, lineHeight: 1.4 },
+  logo: { width: 188, alignSelf: 'center', marginBottom: 5 },
   brand: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: BRAND, textAlign: 'center' },
   headLine: { fontSize: 7.5, color: MUTE, textAlign: 'center' },
   rule: { borderBottomWidth: 1.5, borderBottomColor: BRAND, marginTop: 6, marginBottom: 12 },
@@ -36,12 +37,12 @@ function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) 
   )
 }
 
-export function DriReportDocument({ blocks, title }: { blocks: Block[]; title: string }) {
+export function DriReportDocument({ blocks, title, logoDataUrl }: { blocks: Block[]; title: string; logoDataUrl?: string | null }) {
   return (
     <Document title={title} author={COMPANY.name} subject="DRI Production Report">
       <Page size="LETTER" style={s.page}>
-        <Text style={s.brand}>{COMPANY.name}</Text>
-        <Text style={s.headLine}>{COMPANY.address}   ·   {COMPANY.email}</Text>
+        {logoDataUrl ? <Image src={logoDataUrl} style={s.logo} /> : <Text style={s.brand}>{COMPANY.name}</Text>}
+        <Text style={s.headLine}>{COMPANY.address}   ·   T {COMPANY.phone}   ·   {COMPANY.email}</Text>
         <View style={s.rule} />
         {blocks.map((b, i) => {
           switch (b.kind) {
