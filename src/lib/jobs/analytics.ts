@@ -4,7 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { isOverdue } from '@/lib/jobs/invoicing'
-import { aggregateBilling, aggregateLabour, aggregatePipeline } from '@/lib/jobs/metrics'
+import { aggregateBilling, aggregatePipeline } from '@/lib/jobs/metrics'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface MoneyByCurrency { currency: string; amount: number }
@@ -23,9 +23,9 @@ export interface Analytics {
 
 export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
   const supabase = createClient()
-  const [{ data: jobs }, { data: js }, { data: invoices }] = await Promise.all([
+  const [{ data: jobs }, labourRes, { data: invoices }] = await Promise.all([
     supabase.from('jobs').select('id, job_type, client_id, workflow_status, is_overtime, scheduled_date, created_at, client:clients(name)'),
-    supabase.from('job_surveyors').select('job_id, surveyor_id, regular_hours, overtime_hours, regular_pay, overtime_pay, pay_currency, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
+    supabase.rpc('metrics_labour'), // aggregated server-side (migration 055)
     supabase.from('invoices').select('job_id, client_id, status, total, currency, due_date'),
   ])
 
@@ -87,9 +87,9 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
     .map(b => ({ currency: b.currency, invoiced: b.invoiced, paid: b.paid, outstanding: b.outstanding, overdue: b.overdue }))
     .sort((a, b) => b.outstanding - a.outstanding)
 
-  // ── Labour per surveyor (shared definition) ──
-  const labour = [...aggregateLabour((js ?? []) as any[]).values()]
-    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: l.jobs.size, regular_hours: l.regular_hours, overtime_hours: l.overtime_hours, pay: [...l.pay.entries()].map(([currency, amount]) => ({ currency, amount })) }))
+  // ── Labour per surveyor (aggregated server-side, migration 055) ──
+  const labour = ((labourRes.data ?? []) as any[])
+    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: Number(l.jobs), regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours), pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, amount]) => ({ currency, amount: Number(amount) })) }))
     .sort((a, b) => b.jobs - a.jobs)
   const overtimeHours = labour.reduce((s, l) => s + l.overtime_hours, 0)
 

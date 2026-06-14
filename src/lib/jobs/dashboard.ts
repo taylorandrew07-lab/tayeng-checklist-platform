@@ -3,7 +3,7 @@
 // and USD totals are never summed together.
 
 import { createClient } from '@/lib/supabase/client'
-import { aggregateBilling, aggregateLabour, aggregatePipeline } from '@/lib/jobs/metrics'
+import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface CurrencyBilling { currency: string; paid: number; outstanding: number; overdue: number; draft: number; count: number }
@@ -20,38 +20,44 @@ export interface InvoicingDashboard {
 
 export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
   const supabase = createClient()
-  const [{ data: invoices }, { data: jobs }, { data: js }] = await Promise.all([
-    supabase.from('invoices').select('status, currency, total, due_date, client_id, client:clients(name)'),
-    supabase.from('jobs').select('workflow_status'),
-    supabase.from('job_surveyors').select('surveyor_id, regular_hours, overtime_hours, regular_pay, overtime_pay, pay_currency, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
+  // Aggregated server-side (migration 055) — RLS-scoped, no whole-table fetches.
+  const [billingRes, pipelineRes, labourRes, clientsRes] = await Promise.all([
+    supabase.rpc('metrics_billing'),
+    supabase.rpc('metrics_pipeline'),
+    supabase.rpc('metrics_labour'),
+    supabase.rpc('metrics_client_outstanding'),
   ])
 
-  // ── Billing, per currency (shared definition) ──
-  const billing: CurrencyBilling[] = [...aggregateBilling((invoices ?? []) as any[]).values()]
-    .map(b => ({ currency: b.currency, paid: b.paid, outstanding: b.outstanding, overdue: b.overdue, draft: b.draft, count: b.count }))
+  // ── Billing, per currency ──
+  const billing: CurrencyBilling[] = ((billingRes.data ?? []) as any[])
+    .map(b => ({ currency: b.currency, paid: Number(b.paid), outstanding: Number(b.outstanding), overdue: Number(b.overdue), draft: Number(b.draft), count: Number(b.count) }))
     .sort((a, b) => b.outstanding - a.outstanding)
 
-  // ── Outstanding per client, per currency (sent/overdue invoices only) ──
-  const clientMap = new Map<string, { name: string; cur: Map<string, number> }>()
-  for (const inv of (invoices ?? []) as any[]) {
-    if (inv.status === 'void' || inv.status === 'paid' || inv.status === 'draft' || !inv.client_id) continue
-    const total = Number(inv.total ?? 0)
-    let c = clientMap.get(inv.client_id)
-    if (!c) { c = { name: inv.client?.name ?? 'Unknown client', cur: new Map() }; clientMap.set(inv.client_id, c) }
-    c.cur.set(inv.currency, (c.cur.get(inv.currency) ?? 0) + total)
-  }
+  // ── Jobs pipeline (fill every stage from the counts) ──
+  const wf = new Map<string, number>()
+  for (const r of (pipelineRes.data ?? []) as any[]) wf.set(r.workflow_status, Number(r.count))
+  const jobsByWorkflow = WORKFLOW_ORDER.map(status => ({ status, count: wf.get(status) ?? 0 }))
+  const openJobs = WORKFLOW_ORDER.filter(s => s !== 'paid' && s !== 'closed').reduce((n, s) => n + (wf.get(s) ?? 0), 0)
 
-  // ── Jobs pipeline (shared definition) ──
-  const { byStatus: jobsByWorkflow, openJobs } = aggregatePipeline((jobs ?? []) as any[])
-
-  // ── Labour, per surveyor (shared definition) ──
-  const labour: SurveyorLabour[] = [...aggregateLabour((js ?? []) as any[]).values()]
-    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, regular_hours: l.regular_hours, overtime_hours: l.overtime_hours, pay: [...l.pay.entries()].map(([currency, total]) => ({ currency, total })) }))
+  // ── Labour, per surveyor (pay arrives as a {currency: total} map) ──
+  const labour: SurveyorLabour[] = ((labourRes.data ?? []) as any[])
+    .map(l => ({
+      surveyor_id: l.surveyor_id, name: l.name,
+      regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours),
+      pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, total]) => ({ currency, total: Number(total) })),
+    }))
     .filter(s => s.regular_hours || s.overtime_hours)
     .sort((a, b) => b.overtime_hours - a.overtime_hours || b.regular_hours - a.regular_hours)
 
-  const clients: ClientOutstanding[] = [...clientMap.entries()]
-    .map(([client_id, c]) => ({ client_id, name: c.name, amounts: [...c.cur.entries()].map(([currency, amount]) => ({ currency, amount })) }))
+  // ── Outstanding per client (one row per client+currency → group) ──
+  const cmap = new Map<string, { name: string; amounts: Map<string, number> }>()
+  for (const r of (clientsRes.data ?? []) as any[]) {
+    let c = cmap.get(r.client_id)
+    if (!c) { c = { name: r.name, amounts: new Map() }; cmap.set(r.client_id, c) }
+    c.amounts.set(r.currency, (c.amounts.get(r.currency) ?? 0) + Number(r.amount))
+  }
+  const clients: ClientOutstanding[] = [...cmap.entries()]
+    .map(([client_id, c]) => ({ client_id, name: c.name, amounts: [...c.amounts.entries()].map(([currency, amount]) => ({ currency, amount })) }))
     .sort((a, b) => b.amounts.reduce((s, x) => s + x.amount, 0) - a.amounts.reduce((s, x) => s + x.amount, 0))
 
   return { billing, jobsByWorkflow, openJobs, labour, clients }
