@@ -18,7 +18,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
-  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, BarChart3,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, BarChart3, Anchor,
 } from 'lucide-react'
 
 interface NavItem {
@@ -34,6 +34,7 @@ const adminNav: NavItem[] = [
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Cargo Operations', href: '/admin/cargo', icon: Ship },
+  { label: 'Vessels', href: '/admin/vessels', icon: Anchor },
   { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
