@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { Menu } from 'lucide-react'
+import GlobalSearch from '@/components/layout/GlobalSearch'
 import type { Profile } from '@/lib/types/database'
 
 interface HeaderProps {
@@ -21,9 +22,14 @@ export default function Header({ profile, title, onMenuClick }: HeaderProps) {
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex items-center gap-4">
         {title && (
-          <h1 className="text-lg font-semibold text-gray-900 truncate">{title}</h1>
+          <h1 className="text-lg font-semibold text-gray-900 truncate flex-shrink-0">{title}</h1>
+        )}
+        {profile.role !== 'client' && (
+          <div className="hidden sm:flex flex-1 min-w-0">
+            <GlobalSearch role={profile.role} />
+          </div>
         )}
       </div>
 
