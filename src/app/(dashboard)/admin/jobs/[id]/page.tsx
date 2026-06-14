@@ -17,6 +17,7 @@ import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import InvoiceCard from '@/components/job/InvoiceCard'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
+import { findOrCreateVessel } from '@/lib/vessels/api'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: ClipboardList },
@@ -35,6 +36,7 @@ export default function AdminChecklistDetailPage() {
   const [job, setJob] = useState<any>(null)
   const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,6 +61,7 @@ export default function AdminChecklistDetailPage() {
       { data: jobData },
       { data: srvData },
       { data: cliData },
+      { data: vslData },
     ] = await Promise.all([
       supabase.from('jobs').select(`
         *,
@@ -68,6 +71,7 @@ export default function AdminChecklistDetailPage() {
       `).eq('id', jobId).single(),
       supabase.from('profiles').select('id, full_name, role').in('role', ['surveyor', 'admin']).eq('is_active', true).order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
+      supabase.from('vessels').select('id, name').eq('is_active', true).order('name'),
     ])
 
     if (!jobData) { router.push('/admin/jobs'); return }
@@ -84,6 +88,7 @@ export default function AdminChecklistDetailPage() {
     setJob(jobData)
     setSurveyors(accounts)
     setClients(cliData ?? [])
+    setVessels((vslData ?? []) as { id: string; name: string }[])
     setEditForm({
       title: jobData.title,
       vessel_name: jobData.vessel_name ?? '',
@@ -108,11 +113,15 @@ export default function AdminChecklistDetailPage() {
       if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
     }
 
+    // Link to the vessels directory from the (possibly edited) vessel name.
+    const vesselId = editForm.vessel_name.trim() ? await findOrCreateVessel(editForm.vessel_name.trim()) : null
+
     const { error: err } = await supabase
       .from('jobs')
       .update({
         title: editForm.title,
         vessel_name: editForm.vessel_name || null,
+        vessel_id: vesselId,
         surveyor_name: surveyorNameVal,
         assigned_to: assignedToVal,
         client_id: editForm.client_id || null,
@@ -255,7 +264,9 @@ export default function AdminChecklistDetailPage() {
                 </div>
                 <div>
                   <label className="label-base">Vessel Name</label>
-                  <input type="text" value={editForm.vessel_name} onChange={(e) => setEditForm(p => ({ ...p, vessel_name: e.target.value }))} className="input-base" placeholder="e.g. Atlantic Spirit" />
+                  <input type="text" list="vesselListEdit" value={editForm.vessel_name} onChange={(e) => setEditForm(p => ({ ...p, vessel_name: e.target.value }))} className="input-base" placeholder="e.g. Atlantic Spirit" />
+                  <datalist id="vesselListEdit">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
+                  <p className="text-[11px] text-gray-400 mt-1">Saving links this job to the vessel in the directory.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
