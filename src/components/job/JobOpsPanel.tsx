@@ -77,7 +77,13 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
   )
 }
 
-export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isAdmin: boolean; onChanged: () => void }) {
+// `section` lets the job-detail tabs place the file area separately:
+//   'ops'   → Workflow + Surveyors & hours + Activity
+//   'files' → Reports & files only
+//   undefined → everything (default; backward-compatible)
+export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job: Job; isAdmin: boolean; onChanged: () => void; section?: 'ops' | 'files' }) {
+  const showOps = section !== 'files'
+  const showFiles = section !== 'ops'
   const [surveyors, setSurveyors] = useState<JobSurveyorRow[]>([])
   const [accounts, setAccounts] = useState<SurveyorAccount[]>([])
   const [attachments, setAttachments] = useState<JobAttachment[]>([])
@@ -153,7 +159,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-      {/* Workflow */}
+      {showOps && (
       <div className="card p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h3 className="font-medium text-gray-900">Workflow</h3>
@@ -185,8 +191,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
           </div>
         )}
       </div>
+      )}
 
-      {/* Surveyors & hours */}
+      {showOps && (
       <div className="card p-5">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="font-medium text-gray-900">Surveyors &amp; hours</h3>
@@ -219,8 +226,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
           </div>
         )}
       </div>
+      )}
 
-      {/* Attachments */}
+      {showFiles && (
       <div className="card p-5">
         <h3 className="font-medium text-gray-900 mb-3">Reports &amp; files</h3>
         <div className="flex items-center gap-2 mb-3">
@@ -246,9 +254,10 @@ export default function JobOpsPanel({ job, isAdmin, onChanged }: { job: Job; isA
           </div>
         )}
       </div>
+      )}
 
       {/* Activity (admin/office only) */}
-      {isAdmin && (
+      {showOps && isAdmin && (
       <div className="card p-5">
         <h3 className="font-medium text-gray-900 mb-3">Activity</h3>
         {activity.length === 0 ? (

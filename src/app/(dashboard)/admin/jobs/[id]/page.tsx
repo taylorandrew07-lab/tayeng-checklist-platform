@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2
+  ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2,
+  ClipboardList, ListChecks, FolderOpen, Receipt,
 } from 'lucide-react'
 import { getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Client } from '@/lib/types/database'
@@ -16,6 +17,14 @@ import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import InvoiceCard from '@/components/job/InvoiceCard'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
+
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: ClipboardList },
+  { id: 'checklist', label: 'Checklist', icon: ListChecks },
+  { id: 'files', label: 'Files & Reports', icon: FolderOpen },
+  { id: 'billing', label: 'Billing', icon: Receipt },
+] as const
+type DetailTab = typeof TABS[number]['id']
 
 export default function AdminChecklistDetailPage() {
   const params = useParams()
@@ -32,6 +41,7 @@ export default function AdminChecklistDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [tab, setTab] = useState<DetailTab>('overview')
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
@@ -213,16 +223,29 @@ export default function AdminChecklistDetailPage() {
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Job tracker: workflow, surveyors, reports/files, activity */}
-      <JobOpsPanel job={job} isAdmin onChanged={load} />
+      {/* Tabs */}
+      <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px rounded-t-md transition-colors ${
+              tab === t.id ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <t.icon className="h-4 w-4" />{t.label}
+          </button>
+        ))}
+      </div>
 
-      {/* Billing: the client invoice for this job */}
-      <InvoiceCard job={job} onChanged={load} />
+      {tab === 'overview' && (
+      <div className="space-y-6">
+      <JobOpsPanel job={job} isAdmin section="ops" onChanged={load} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <div className="card p-5 space-y-4">
-            <h2 className="section-title">Checklist Details</h2>
+            <h2 className="section-title">Job Details</h2>
 
             {editMode ? (
               <div className="space-y-4">
@@ -341,13 +364,20 @@ export default function AdminChecklistDetailPage() {
           </div>
         </div>
       </div>
+      </div>
+      )}
 
-      {/* Checklist fields editor.
-          Edit rights are decided inside JobChecklistEditor based on the real
-          assigned/creator profile id — an admin who is the assigned surveyor can
-          edit; others get a read-only view with an explicit "Edit as admin" override. */}
-      <div className="border-t border-gray-200 pt-6 mt-2">
-        <h2 className="section-title mb-5">Checklist Fields</h2>
+      {tab === 'files' && (
+        <JobOpsPanel job={job} isAdmin section="files" onChanged={load} />
+      )}
+
+      {tab === 'billing' && (
+        <InvoiceCard job={job} onChanged={load} />
+      )}
+
+      {/* Checklist editor stays mounted (preserves unsaved edits + the back/leave
+          guard via editorRef); shown only on the Checklist tab. */}
+      <div className={tab === 'checklist' ? '' : 'hidden'}>
         <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
       </div>
     </div>
