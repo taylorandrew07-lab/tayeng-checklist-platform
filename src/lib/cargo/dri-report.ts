@@ -76,8 +76,10 @@ export function summarizeReadings(voyage: Voyage): string[][] {
   return rows
 }
 
-/** Assemble the report into ordered blocks for the ticked sections. */
-export function buildReportBlocks(voyage: Voyage, included: SectionKey[]): Block[] {
+/** Assemble the report into ordered blocks for the ticked sections.
+ *  `opts.reportNumber` prints the official report number (issued from the shared
+ *  job-number series) under the header. */
+export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?: { reportNumber?: string }): Block[] {
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const has = (k: SectionKey) => included.includes(k)
   const out: Block[] = []
@@ -85,6 +87,7 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[]): Block
   if (has('header')) {
     out.push({ kind: 'h1', text: `M.V. ${(voyage.vesselName || '').toUpperCase()} VOY ${voyage.voyageNumber || ''}`.trim() })
     out.push({ kind: 'p', text: `${voyage.cargoType || 'DRI'} Production Report`, bold: true })
+    if (opts?.reportNumber) out.push({ kind: 'p', text: `Report No. ${opts.reportNumber}`, bold: true })
     const commenced = dri.commencedOn || voyage.startDate
     const completed = dri.completedOn || voyage.endDate
     out.push({ kind: 'p', text: `PRODUCTION REPORT COMMENCED ${fmtDate(commenced)}${completed ? `  /  COMPLETED ${fmtDate(completed)}` : ''}` })

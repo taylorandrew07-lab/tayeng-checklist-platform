@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, Cloud, CheckCircle2 } from 'lucide-react'
+import { Ship, Loader2, Cloud, CheckCircle2, ListOrdered } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
 
@@ -33,9 +33,12 @@ export default function CargoOperationsView() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      <div>
-        <h1 className="page-title">Cargo Operations</h1>
-        <p className="text-gray-500 mt-0.5">Company-wide view of every voyage surveyors have synced to the cloud.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">Cargo Operations</h1>
+          <p className="text-gray-500 mt-0.5">Company-wide view of every voyage surveyors have synced to the cloud.</p>
+        </div>
+        <Link href="/admin/cargo/register" className="btn-secondary flex-shrink-0"><ListOrdered className="h-4 w-4" />Report register</Link>
       </div>
 
       {loading ? (

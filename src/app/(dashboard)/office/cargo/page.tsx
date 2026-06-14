@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, ChevronRight, CheckCircle2, CircleDot } from 'lucide-react'
+import { Ship, Loader2, ChevronRight, CheckCircle2, CircleDot, ListOrdered } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
 
@@ -24,9 +24,12 @@ export default function OfficeCargoListPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="page-title">Cargo Reports</h1>
-        <p className="text-gray-500 mt-0.5">Synced cargo voyages. Open one to generate the DRI Production Report (PDF/.docx). Read-only — figures update as the surveyor syncs.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">Cargo Reports</h1>
+          <p className="text-gray-500 mt-0.5">Synced cargo voyages. Open one to generate the DRI Production Report (PDF/.docx). Read-only — figures update as the surveyor syncs.</p>
+        </div>
+        <Link href="/office/cargo/register" className="btn-secondary flex-shrink-0"><ListOrdered className="h-4 w-4" />Register</Link>
       </div>
 
       {loading ? (

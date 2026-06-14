@@ -5,7 +5,7 @@
 // selection is saved to Voyage.dri.reportConfig so a report is reproducible.
 
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, FileText, Loader2, Printer, AlertTriangle } from 'lucide-react'
+import { FileDown, FileText, Loader2, Printer, AlertTriangle, Hash } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { COMPANY } from '@/lib/company'
 import type { Voyage, CargoPhoto, Camera, Period } from '@/lib/cargo/types'
@@ -49,19 +49,37 @@ async function loadLogo(): Promise<{ dataUrl: string; bytes: Uint8Array } | null
  *   signed-URL fetch in the cloud) — only called when the photo appendix is ticked.
  * @param photoCount cheap count for the UI; pass undefined when unknown.
  */
-export default function DriReportBuilder({ voyage, onChange, photoCount, loadPhotos }: {
+export default function DriReportBuilder({ voyage, onChange, photoCount, loadPhotos, reportNumber: reportNumberProp, onIssueNumber }: {
   voyage: Voyage
   onChange: (v: Voyage) => void
   photoCount?: number
   loadPhotos?: () => Promise<CargoPhoto[]>
+  /** Official report number already issued for this voyage (printed in the header). */
+  reportNumber?: string | null
+  /** Issue a new official number (cloud, staff-only). Returns the assigned number. */
+  onIssueNumber?: (sections: SectionKey[]) => Promise<string>
 }) {
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const [included, setIncluded] = useState<SectionKey[]>(dri.reportConfig?.includedSections ?? DEFAULT_INCLUDED)
   const [busy, setBusy] = useState<null | 'pdf' | 'docx'>(null)
   const [logo, setLogo] = useState<{ dataUrl: string; bytes: Uint8Array } | null>(null)
+  const [reportNumber, setReportNumber] = useState<string | null>(reportNumberProp ?? null)
+  const [issuing, setIssuing] = useState(false)
   useEffect(() => { loadLogo().then(setLogo) }, [])
+  useEffect(() => { setReportNumber(reportNumberProp ?? null) }, [reportNumberProp])
 
-  const blocks = useMemo(() => buildReportBlocks(voyage, included), [voyage, included])
+  const blocks = useMemo(() => buildReportBlocks(voyage, included, { reportNumber: reportNumber ?? undefined }), [voyage, included, reportNumber])
+
+  async function issueNumber() {
+    if (!onIssueNumber) return
+    setIssuing(true)
+    try {
+      setReportNumber(await onIssueNumber(included))
+      toast.success('Official report number issued')
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not issue a report number')
+    } finally { setIssuing(false) }
+  }
   const warnings = useMemo(() => completenessWarnings(voyage, included, photoCount), [voyage, included, photoCount])
   const wantsPhotos = included.includes('photos')
 
@@ -146,6 +164,21 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
             <button onClick={() => setIncluded([])} className="text-xs text-gray-500 hover:underline">None</button>
           </div>
         </div>
+        {(onIssueNumber || reportNumber) && (
+          <div className="card p-3">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1"><Hash className="h-3.5 w-3.5" />Official report number</div>
+            {reportNumber ? (
+              <p className="font-mono text-base font-bold text-brand-700">{reportNumber}</p>
+            ) : onIssueNumber ? (
+              <>
+                <p className="text-[11px] text-gray-400 mb-2">Assigns the next number from the shared job/report series and logs it in the register. Prints on the report.</p>
+                <button onClick={issueNumber} disabled={issuing} className="btn-secondary w-full justify-center text-sm">
+                  {issuing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hash className="h-4 w-4" />}Issue official number
+                </button>
+              </>
+            ) : null}
+          </div>
+        )}
         {warnings.length > 0 && (
           <div className="card p-3 bg-amber-50 border-amber-200">
             <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold mb-1">

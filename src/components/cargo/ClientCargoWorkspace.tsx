@@ -6,7 +6,9 @@ import { ArrowLeft, Loader2, Table, LineChart, Images, FileDown, FileText, Check
 import { createClient } from '@/lib/supabase/client'
 import { type Voyage } from '@/lib/cargo/types'
 import { getRemoteVoyage, remotePhotosToCargoPhotos, type RemotePhoto } from '@/lib/cargo/remote'
+import { getVoyageReportNumber, issueReportNumber } from '@/lib/cargo/register'
 import { downloadCargoReport } from '@/lib/cargo/pdf/render'
+import type { SectionKey } from '@/lib/cargo/dri'
 import ClientReadingsView from '@/components/cargo/ClientReadingsView'
 import ClientPhotoGallery from '@/components/cargo/ClientPhotoGallery'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
@@ -31,6 +33,7 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('readings')
   const [generating, setGenerating] = useState(false)
+  const [reportNumber, setReportNumber] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -39,8 +42,9 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
       if (res) { setVoyage(res.voyage); setPhotos(res.photos) }
       setLoading(false)
     }).catch(() => { if (active) setLoading(false) })
+    if (allowDri) getVoyageReportNumber(createClient(), id).then(n => { if (active) setReportNumber(n) }).catch(() => {})
     return () => { active = false }
-  }, [id])
+  }, [id, allowDri])
 
   async function handleDownload() {
     if (!voyage) return
@@ -112,6 +116,15 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
           onChange={() => {}}
           photoCount={photos.length}
           loadPhotos={() => remotePhotosToCargoPhotos(photos, voyage.id)}
+          reportNumber={reportNumber}
+          onIssueNumber={(sections: SectionKey[]) =>
+            issueReportNumber(createClient(), {
+              voyageId: voyage.id,
+              vessel: voyage.vesselName,
+              voyageNo: voyage.voyageNumber,
+              sections,
+            }).then(r => r.reportNumber)
+          }
         />
       )}
     </div>
