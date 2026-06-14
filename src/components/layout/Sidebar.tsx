@@ -86,6 +86,9 @@ function officeNav(officePermissions: string[]): NavItem[] {
   if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
     nav.push({ label: 'Invoicing', href: '/office/invoicing', icon: Receipt })
   }
+  if (granted.has(OFFICE_PERMISSIONS.CARGO_VIEW)) {
+    nav.push({ label: 'Cargo Reports', href: '/office/cargo', icon: Ship })
+  }
   return nav
 }
 

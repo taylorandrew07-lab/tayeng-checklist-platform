@@ -15,6 +15,7 @@ export type OfficePermissionKey =
   | 'personal_docs.view'
   | 'personal_docs.expiry.notify'
   | 'calendar.view'
+  | 'cargo.view'
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 export type FieldType =
   | 'text'
