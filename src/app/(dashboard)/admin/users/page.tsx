@@ -10,6 +10,9 @@ import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate } from '@/lib/utils'
 import type { Profile, Client, UserRole, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
 
+// Cosmetic staff job titles an admin can assign (display only — no permissions).
+const STAFF_TITLES = ['Cargo Technician']
+
 export default function UsersPage() {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
   const [users, setUsers] = useState<Profile[]>([])
@@ -33,6 +36,7 @@ export default function UsersPage() {
     client_id: '',
     vehicle_number: '',
     employee_number: '',
+    display_title: '',
   })
 
   // Approval state: when approving a client-role user, we need a client link
@@ -68,7 +72,7 @@ export default function UsersPage() {
   // Generic: works for any admin/surveyor profile, no person hardcoded.
   function openCreate() {
     setEditUser(null)
-    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', employee_number: '' })
+    setForm({ email: '', full_name: '', role: 'surveyor', phone: '', password: '', client_id: '', vehicle_number: '', employee_number: '', display_title: '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -76,7 +80,7 @@ export default function UsersPage() {
 
   function openEdit(user: Profile) {
     setEditUser(user)
-    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '', vehicle_number: (user as any).vehicle_number ?? '', employee_number: (user as any).employee_number ?? '' })
+    setForm({ email: user.email, full_name: user.full_name, role: user.role, phone: user.phone ?? '', password: '', client_id: '', vehicle_number: (user as any).vehicle_number ?? '', employee_number: (user as any).employee_number ?? '', display_title: (user as any).display_title ?? '' })
     setOfficePerms({})
     setError(null)
     setShowModal(true)
@@ -149,6 +153,11 @@ export default function UsersPage() {
       if (form.role === 'surveyor' || form.role === 'admin') {
         patch.vehicle_number = form.vehicle_number || null
         patch.employee_number = form.employee_number || null
+        // Cosmetic job title (e.g. Cargo Technician) — display only, no permissions.
+        patch.display_title = form.display_title || null
+      } else {
+        // Non-staff roles never carry a cosmetic title.
+        patch.display_title = null
       }
       if (!isSuperAdmin && form.role === 'admin') {
         setError('Only the Super Admin can assign the Admin role.')
@@ -527,6 +536,18 @@ export default function UsersPage() {
               <p className="text-xs text-gray-400 mt-1">Only the Super Admin can create Admin accounts.</p>
             )}
           </div>
+          {/* Cosmetic job title for staff (e.g. Cargo Technician). Display only —
+              same role/permissions as a surveyor. Editing existing users only. */}
+          {editUser && (form.role === 'surveyor' || form.role === 'admin') && (
+            <div>
+              <label className="label-base">Job title</label>
+              <select value={form.display_title} onChange={(e) => setForm(p => ({ ...p, display_title: e.target.value }))} className="input-base">
+                <option value="">Default ({form.role === 'admin' ? 'Admin' : 'Surveyor'})</option>
+                {STAFF_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Cosmetic title shown in place of the role. Same access as a surveyor.</p>
+            </div>
+          )}
           {form.role === 'client' && !editUser && (
             <div>
               <label className="label-base">Link to Client</label>

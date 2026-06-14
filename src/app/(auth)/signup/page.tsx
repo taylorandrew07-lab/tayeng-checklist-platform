@@ -22,10 +22,10 @@ export default function SignUpPage() {
 
     const supabase = createClient()
 
-    // Super-Cargo is a surveyor with a cosmetic job title — same role/permissions.
-    const isSuperCargo = form.role === 'super_cargo'
-    const role = isSuperCargo ? 'surveyor' : form.role
-    const displayTitle = isSuperCargo ? 'Super-Cargo' : null
+    // Cargo Technician is a surveyor with a cosmetic job title — same role/permissions.
+    const isCargoTech = form.role === 'super_cargo'
+    const role = isCargoTech ? 'surveyor' : form.role
+    const displayTitle = isCargoTech ? 'Cargo Technician' : null
 
     // Pass full_name, role and optional display_title in metadata so the
     // handle_new_user trigger can use them. The trigger always sets
@@ -129,7 +129,7 @@ export default function SignUpPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },
-                { value: 'super_cargo', label: 'Super-Cargo', desc: 'Same as surveyor (different title)' },
+                { value: 'super_cargo', label: 'Cargo Technician', desc: 'Same as surveyor (different title)' },
                 { value: 'office', label: 'Office', desc: 'Office / admin support staff' },
                 { value: 'client', label: 'Client', desc: 'View job reports and results' },
               ].map(opt => (
