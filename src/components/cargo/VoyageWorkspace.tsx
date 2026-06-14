@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText } from 'lucide-react'
+import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText, ChevronRight } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { ensureDri, type DriReport } from '@/lib/cargo/dri'
 import { getVoyage, putVoyage } from '@/lib/cargo/db'
@@ -32,6 +32,17 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'report', label: 'Sensor PDF', icon: FileDown },
   { id: 'dri_report', label: 'DRI Report', icon: FileText },
 ]
+
+// The 10 tabs grouped into 3 stages (+ Setup). Voyage Workflow renders as a
+// stepper; Monitoring and Reports render as sub-tabs.
+type Group = 'setup' | 'workflow' | 'monitoring' | 'reports'
+const GROUPS: { id: Group; label: string; icon: React.ElementType; tabs: Tab[] }[] = [
+  { id: 'setup',      label: 'Setup',           icon: Settings,   tabs: ['setup'] },
+  { id: 'workflow',   label: 'Voyage Workflow', icon: Navigation, tabs: ['prep', 'loading', 'voyage', 'discharge'] },
+  { id: 'monitoring', label: 'Monitoring',      icon: Table,      tabs: ['readings', 'photos', 'charts'] },
+  { id: 'reports',    label: 'Reports',         icon: FileDown,   tabs: ['report', 'dri_report'] },
+]
+const tabMeta = (id: Tab) => TABS.find(t => t.id === id)!
 
 /** Cargo voyage workspace. Works under both /surveyor/cargo and /admin/cargo. */
 export default function VoyageWorkspace() {
@@ -150,6 +161,8 @@ export default function VoyageWorkspace() {
     )
   }
 
+  const activeGroupDef = GROUPS.find(g => g.tabs.includes(tab)) ?? GROUPS[0]
+
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center gap-4">
@@ -200,19 +213,64 @@ export default function VoyageWorkspace() {
         )}
       </div>
 
+      {/* Primary group bar */}
       <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px rounded-t-md transition-colors ${
-              tab === t.id ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-            }`}
-          >
-            <t.icon className="h-4 w-4" />{t.label}
-          </button>
-        ))}
+        {GROUPS.map(g => {
+          const isActive = g.tabs.includes(tab)
+          return (
+            <button
+              key={g.id}
+              onClick={() => setTab(g.tabs[0])}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px rounded-t-md transition-colors ${
+                isActive ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              <g.icon className="h-4 w-4" />{g.label}
+            </button>
+          )
+        })}
       </div>
+
+      {/* Sub-nav: a stepper for Voyage Workflow, sub-tabs for Monitoring/Reports */}
+      {activeGroupDef.id === 'workflow' && (
+        <div className="flex items-center overflow-x-auto pb-1">
+          {activeGroupDef.tabs.map((t, i) => {
+            const meta = tabMeta(t); const isActive = tab === t
+            return (
+              <div key={t} className="flex items-center">
+                {i > 0 && <ChevronRight className="h-4 w-4 text-gray-300 mx-0.5 flex-shrink-0" />}
+                <button
+                  onClick={() => setTab(t)}
+                  className={`flex items-center gap-2 text-sm pl-1.5 pr-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+                    isActive ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <span className={`flex items-center justify-center h-5 w-5 rounded-full text-[11px] font-semibold ${isActive ? 'bg-white/25 text-white' : 'bg-white text-gray-500'}`}>{i + 1}</span>
+                  {meta.label}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {(activeGroupDef.id === 'monitoring' || activeGroupDef.id === 'reports') && (
+        <div className="flex gap-1 overflow-x-auto">
+          {activeGroupDef.tabs.map(t => {
+            const meta = tabMeta(t); const isActive = tab === t
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex items-center gap-2 text-sm px-3.5 py-2 rounded-lg whitespace-nowrap transition-colors ${
+                  isActive ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                <meta.icon className="h-4 w-4" />{meta.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {tab === 'setup' && (
         <div className="space-y-8">
