@@ -9,9 +9,13 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
-import AttentionCard from '@/components/dashboard/AttentionCard'
+import AttentionCard, { type AttentionItem } from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
+import { useReconciliationAttention } from '@/components/dashboard/useReconciliationAttention'
 import type { UiPrefs } from '@/lib/types/database'
+
+// Most urgent first when the attention sources are merged.
+const TONE_RANK: Record<AttentionItem['tone'], number> = { danger: 0, warn: 1, info: 2 }
 
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
@@ -69,8 +73,12 @@ export default function AdminDashboard() {
   const [recentChecklists, setRecentChecklists] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [clearedAt, setClearedAt] = useState<string | null>(null)
-  // Expiring/expired documents across all surveyors (admin-wide; RLS-gated).
+  // "Needs your attention" sources, merged into one prioritised queue:
+  // billing/work exceptions (jobs done but not invoiced/closed) + expiring or
+  // expired surveyor documents (admin-wide; both RLS-gated).
   const docAttention = useDocumentAttention({ context: 'admin' })
+  const reconAttention = useReconciliationAttention()
+  const attention = [...reconAttention, ...docAttention].sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone])
 
   // Customizable tiles, persisted to profiles.ui_prefs.dashboard_tiles.
   const [userId, setUserId] = useState<string | null>(null)
@@ -239,8 +247,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Needs your attention — expiring/expired surveyor documents (RLS-gated) */}
-      <AttentionCard items={docAttention} />
+      {/* Needs your attention — billing/work exceptions + expiring documents */}
+      <AttentionCard items={attention} />
 
       {/* Customize panel */}
       {editMode && (
