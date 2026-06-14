@@ -566,17 +566,27 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }
 
         const supabase = createClient()
-        const { error } = await withTimeout(
+        const { data: updated, error } = await withTimeout(
           supabase.from('jobs').update({
             status: 'submitted',
             submitted_at: new Date().toISOString(),
-          }).eq('id', jobId),
+          }).eq('id', jobId).select('id'),
           10_000, 'Submitting checklist'
         )
 
         if (error) {
           console.error('[submit:jobUpdate]', error)
           const message = 'Submit failed: ' + error.message
+          setSaveError(message)
+          setSubmitError(message)
+          return
+        }
+
+        // A row-level policy can filter the update to zero rows with NO error —
+        // which would otherwise look like a successful submit. Surface it.
+        if (!updated || updated.length === 0) {
+          console.error('[submit:jobUpdate] 0 rows updated for', jobId)
+          const message = 'The checklist could not be submitted — your account may not have permission to update this job. Your answers are saved; please tell an admin so they can assign you or submit it.'
           setSaveError(message)
           setSubmitError(message)
           return

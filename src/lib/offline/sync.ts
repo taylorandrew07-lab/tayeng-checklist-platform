@@ -164,9 +164,17 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
         })
         return { ok: true, submitted: false }
       }
-      const { error } = await supabase.from('jobs')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', jobId)
+      const { data: updatedRows, error } = await supabase.from('jobs')
+        .update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', jobId).select('id')
       if (error) throw error
+      // RLS can filter the update to zero rows with no error (e.g. the submitter
+      // isn't assigned to this job). Keep the draft + surface it rather than
+      // silently reporting a successful submit.
+      if (!updatedRows || updatedRows.length === 0) {
+        const message = 'Saved, but could not submit — this job is not assigned to you. Ask an admin to assign you so it can be submitted.'
+        await putDraft({ ...draft, syncError: message })
+        return { ok: false, reason: 'conflict', message }
+      }
       submitted = true
     }
 
