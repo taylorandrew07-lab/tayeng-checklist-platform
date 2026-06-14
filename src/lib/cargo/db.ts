@@ -140,6 +140,11 @@ export async function getPhotosForVoyage(userId: string, voyageId: string): Prom
   return all.filter(p => p.userId === userId).sort((a, b) => a.order - b.order)
 }
 
+/** Cheap count of a voyage's photos (no blobs loaded) — for the DRI photo-section UI. */
+export async function countPhotosForVoyage(voyageId: string): Promise<number> {
+  return (await getDB()).countFromIndex('cargoPhotos', 'by-voyage', voyageId)
+}
+
 export async function deletePhoto(localId: string): Promise<void> {
   await (await getDB()).delete('cargoPhotos', localId)
 }

@@ -8,13 +8,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileDown, FileText, Loader2, Printer, AlertTriangle } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { COMPANY } from '@/lib/company'
-import type { Voyage } from '@/lib/cargo/types'
+import type { Voyage, CargoPhoto, Camera, Period } from '@/lib/cargo/types'
+import { CAMERA_LABELS } from '@/lib/cargo/types'
 import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, completenessWarnings, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
+import { compressForPdf } from '@/lib/cargo/photo'
 // @react-pdf (~600 KB) and docx are imported on demand inside the handlers so
 // they don't ship in the voyage workspace's initial load.
 
 const LOGO_URL = '/logo-invoice.png'
+
+interface PreparedPhotoRow {
+  dataUrl: string; width: number; height: number
+  holdNumber: number; camera: Camera; dateISO: string; period: Period
+  actualTime: string | null; caption: string
+}
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -36,7 +44,17 @@ async function loadLogo(): Promise<{ dataUrl: string; bytes: Uint8Array } | null
   } catch { return null }
 }
 
-export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage; onChange: (v: Voyage) => void }) {
+/**
+ * @param loadPhotos lazily fetches the voyage's photo blobs (IndexedDB on-device,
+ *   signed-URL fetch in the cloud) — only called when the photo appendix is ticked.
+ * @param photoCount cheap count for the UI; pass undefined when unknown.
+ */
+export default function DriReportBuilder({ voyage, onChange, photoCount, loadPhotos }: {
+  voyage: Voyage
+  onChange: (v: Voyage) => void
+  photoCount?: number
+  loadPhotos?: () => Promise<CargoPhoto[]>
+}) {
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const [included, setIncluded] = useState<SectionKey[]>(dri.reportConfig?.includedSections ?? DEFAULT_INCLUDED)
   const [busy, setBusy] = useState<null | 'pdf' | 'docx'>(null)
@@ -44,7 +62,26 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
   useEffect(() => { loadLogo().then(setLogo) }, [])
 
   const blocks = useMemo(() => buildReportBlocks(voyage, included), [voyage, included])
-  const warnings = useMemo(() => completenessWarnings(voyage, included), [voyage, included])
+  const warnings = useMemo(() => completenessWarnings(voyage, included, photoCount), [voyage, included, photoCount])
+  const wantsPhotos = included.includes('photos')
+
+  /** Load + compress the assigned photos once; shapes for both PDF and .docx. */
+  async function preparePhotos(): Promise<PreparedPhotoRow[]> {
+    if (!wantsPhotos || !loadPhotos) return []
+    const all = await loadPhotos()
+    const assigned = all.filter(p => p.assigned && p.holdNumber != null && p.camera != null)
+    const out: PreparedPhotoRow[] = []
+    for (const p of assigned) {
+      try {
+        const { dataUrl, width, height } = await compressForPdf(p.blob, 'standard')
+        const holdNumber = p.holdNumber as number
+        const camera = p.camera as Camera
+        const caption = `Hold ${holdNumber} – ${CAMERA_LABELS[camera]}${p.actualTime ? ` – ${p.actualTime} hrs` : ''}`
+        out.push({ dataUrl, width, height, holdNumber, camera, dateISO: p.dateISO, period: p.period, actualTime: p.actualTime, caption })
+      } catch { /* skip unreadable */ }
+    }
+    return out
+  }
   const title = `DRI ${voyage.vesselName} VOY ${voyage.voyageNumber}`.trim()
   const fileBase = `DRI_${(voyage.vesselName || 'report').replace(/[^a-z0-9]/gi, '_')}_VOY${(voyage.voyageNumber || '').replace(/[^a-z0-9]/gi, '_')}`
 
@@ -61,11 +98,13 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     setBusy('pdf')
     try {
       persistConfig()
-      const [{ pdf }, { DriReportDocument }] = await Promise.all([
+      const [{ pdf }, { DriReportDocument }, prepared] = await Promise.all([
         import('@react-pdf/renderer'),
         import('@/lib/cargo/pdf/DriReportDocument'),
+        preparePhotos(),
       ])
-      const blob = await pdf(<DriReportDocument blocks={blocks} title={title} logoDataUrl={logo?.dataUrl} />).toBlob()
+      const photos = prepared.map(p => ({ dataUrl: p.dataUrl, holdNumber: p.holdNumber, camera: p.camera, dateISO: p.dateISO, period: p.period, actualTime: p.actualTime }))
+      const blob = await pdf(<DriReportDocument blocks={blocks} title={title} logoDataUrl={logo?.dataUrl} photos={photos} />).toBlob()
       download(blob, `${fileBase}.pdf`)
     } catch (e: any) {
       toast.error(e?.message ?? 'PDF generation failed')
@@ -77,7 +116,9 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     try {
       persistConfig()
       const { buildDriDocxBlob } = await import('@/lib/cargo/dri-docx')
-      const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined)
+      const prepared = await preparePhotos()
+      const photos = prepared.map(p => ({ dataUrl: p.dataUrl, width: p.width, height: p.height, caption: p.caption }))
+      const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined, photos)
       download(blob, `${fileBase}.docx`)
     } catch (e: any) {
       toast.error(e?.message ?? '.docx generation failed')
@@ -145,6 +186,18 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
                 </table>
               )
               })}
+            </div>
+          )}
+          {wantsPhotos && (
+            <div className="mt-5 border-t border-gray-200 pt-3">
+              <h2 className="text-sm font-bold text-brand-700 uppercase tracking-wide mb-1">Photographs</h2>
+              <p className="text-xs text-gray-400">
+                {photoCount == null
+                  ? 'Assigned cargo photos will be appended as a photo plate on export (PDF & .docx).'
+                  : photoCount > 0
+                    ? `${photoCount} photo${photoCount === 1 ? '' : 's'} will be appended as a photo plate on export (PDF & .docx).`
+                    : 'No photos are attached to this voyage yet — nothing will be appended.'}
+              </p>
             </div>
           )}
         </div>

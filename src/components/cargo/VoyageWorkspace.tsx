@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText, ChevronRight } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { ensureDri, type DriReport } from '@/lib/cargo/dri'
-import { getVoyage, putVoyage } from '@/lib/cargo/db'
+import { getVoyage, putVoyage, getPhotosForVoyage, countPhotosForVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { createClient } from '@/lib/supabase/client'
 import { syncVoyage, voyageDirty } from '@/lib/cargo/sync'
@@ -58,6 +58,7 @@ export default function VoyageWorkspace() {
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [photoCount, setPhotoCount] = useState<number | undefined>(undefined)
 
   const latest = useRef<Voyage | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -74,6 +75,7 @@ export default function VoyageWorkspace() {
       setVoyage(v)
       latest.current = v
       setLoading(false)
+      countPhotosForVoyage(id).then(n => { if (active) setPhotoCount(n) }).catch(() => {})
     }
     load()
     return () => {
@@ -301,7 +303,14 @@ export default function VoyageWorkspace() {
       {tab === 'photos' && <PhotoManager voyage={voyage} onChange={update} />}
       {tab === 'charts' && <ChartsPanel voyage={voyage} onChange={update} />}
       {tab === 'report' && <ReportBuilder voyage={voyage} onChange={update} />}
-      {tab === 'dri_report' && <DriReportBuilder voyage={voyage} onChange={update} />}
+      {tab === 'dri_report' && (
+        <DriReportBuilder
+          voyage={voyage}
+          onChange={update}
+          photoCount={photoCount}
+          loadPhotos={() => getPhotosForVoyage(voyage.userId, voyage.id)}
+        />
+      )}
     </div>
   )
 }

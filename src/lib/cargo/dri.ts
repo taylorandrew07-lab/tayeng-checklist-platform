@@ -41,7 +41,7 @@ export type SectionKey =
   | 'header' | 'preliminary_meeting' | 'ultrasonic_hatch' | 'stockpile' | 'hold_inspections'
   | 'tc_wire_installation' | 'tc_wire_lengths' | 'sof_load' | 'ir_load' | 'inerting'
   | 'voyage_log' | 'sof_discharge' | 'hold_openings' | 'ir_discharge' | 'barge_list'
-  | 'temp_gas_summary' | 'signoff'
+  | 'temp_gas_summary' | 'signoff' | 'photos'
 
 /** A saved checklist selection so a report can be regenerated identically. */
 export interface ReportConfig { name: string; includedSections: SectionKey[]; options?: Record<string, unknown>; createdAt: number }
@@ -98,7 +98,7 @@ export const CANONICAL_ORDER: SectionKey[] = [
   'header', 'preliminary_meeting', 'ultrasonic_hatch', 'stockpile', 'hold_inspections',
   'tc_wire_installation', 'tc_wire_lengths', 'sof_load', 'ir_load', 'inerting',
   'voyage_log', 'sof_discharge', 'hold_openings', 'ir_discharge', 'barge_list',
-  'temp_gas_summary', 'signoff',
+  'temp_gas_summary', 'signoff', 'photos',
 ]
 export const SECTION_LABELS: Record<SectionKey, string> = {
   header: 'Header',
@@ -118,6 +118,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
   barge_list: 'Barge list',
   temp_gas_summary: 'Temperature & gas readings summary (from sensors)',
   signoff: 'Sign-off',
+  photos: 'Photographs (appendix)',
 }
 
 // ── Constructors ─────────────────────────────────────────────────────────────
@@ -163,8 +164,9 @@ export function ensureDri(dri: DriReport | undefined, holdCount: number): DriRep
   }
 }
 
-/** Default sections to tick on a fresh report: everything except optional ones. */
-export const DEFAULT_INCLUDED: SectionKey[] = CANONICAL_ORDER.filter(k => k !== 'stockpile' && k !== 'temp_gas_summary')
+/** Default sections to tick on a fresh report: everything except optional ones
+ *  (stockpile, the sensor summary, and the photo appendix are opt-in). */
+export const DEFAULT_INCLUDED: SectionKey[] = CANONICAL_ORDER.filter(k => k !== 'stockpile' && k !== 'temp_gas_summary' && k !== 'photos')
 
 // ── Completeness check ───────────────────────────────────────────────────────
 // Before generating/finalizing, warn about ticked sections that have no data, so
@@ -188,13 +190,16 @@ function hasAnyReadings(voyage: Voyage): boolean {
 
 export interface CompletenessWarning { key: SectionKey; label: string; message: string }
 
-/** Return one warning per ticked section that has no underlying data. */
-export function completenessWarnings(voyage: Voyage, included: SectionKey[]): CompletenessWarning[] {
+/** Return one warning per ticked section that has no underlying data.
+ *  `photoCount` is supplied separately because photos live outside the voyage doc;
+ *  pass undefined when unknown so the photo appendix is not falsely flagged. */
+export function completenessWarnings(voyage: Voyage, included: SectionKey[], photoCount?: number): CompletenessWarning[] {
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const has = (k: SectionKey): boolean => {
     switch (k) {
       case 'header':
       case 'signoff': return true
+      case 'photos': return photoCount == null ? true : photoCount > 0
       case 'preliminary_meeting': return !!dri.preliminaryMeeting?.notes?.trim()
       case 'ultrasonic_hatch': return dri.ultrasonicHatchTests.length > 0
       case 'stockpile': return dri.stockpileInspections.length > 0

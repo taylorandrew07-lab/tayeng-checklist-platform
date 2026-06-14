@@ -106,7 +106,14 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
       {tab === 'photos' && <ClientPhotoGallery voyage={voyage} photos={photos} />}
       {/* DRI Report builder reads the synced voyage; onChange is a no-op because the
           surveyor's device owns the document (push-only sync) — staff generate, not edit. */}
-      {tab === 'dri' && allowDri && <DriReportBuilder voyage={voyage} onChange={() => {}} />}
+      {tab === 'dri' && allowDri && (
+        <DriReportBuilder
+          voyage={voyage}
+          onChange={() => {}}
+          photoCount={photos.length}
+          loadPhotos={() => remotePhotosToCargoPhotos(photos, voyage.id)}
+        />
+      )}
     </div>
   )
 }
