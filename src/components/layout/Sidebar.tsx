@@ -183,6 +183,21 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     }
     const supabase = createClient()
     await supabase.auth.signOut()
+
+    // Wipe device-local state so nothing usable is left behind on a shared device:
+    // cached profile + session flags, offline IndexedDB stores, SW caches.
+    try {
+      ;['te_profile', 'te_last_email', 'te_remember', 'te_last_activity'].forEach(k => localStorage.removeItem(k))
+    } catch { /* storage unavailable */ }
+    try {
+      if (typeof indexedDB !== 'undefined') { indexedDB.deleteDatabase('tayeng-offline'); indexedDB.deleteDatabase('tayeng-cargo') }
+    } catch { /* ignore */ }
+    try {
+      if (typeof caches !== 'undefined') { for (const k of await caches.keys()) await caches.delete(k) }
+      const regs = await navigator.serviceWorker?.getRegistrations?.()
+      if (regs) for (const r of regs) await r.unregister()
+    } catch { /* ignore */ }
+
     dirtyState.set(false)
     dirtyState.setHandler(null)
     router.push('/login')

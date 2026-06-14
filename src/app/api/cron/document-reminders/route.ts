@@ -65,25 +65,34 @@ export async function GET(request: Request) {
   for (const d of due) if (d.ownerEmail && !staffEmails.has(d.ownerEmail)) {
     byOwner.set(d.ownerEmail, [...(byOwner.get(d.ownerEmail) ?? []), d])
   }
+  // Only mark a document reminded when its notification ACTUALLY sent, so a
+  // missing API key or a delivery failure doesn't silently suppress retries.
+  const reminded = new Set<string>()
   for (const [email, list] of byOwner) {
-    await sendEmail({
+    const ok = await sendEmail({
       to: [email],
       subject: `Your documents are expiring — ${list.length} to review`,
       html: `<p>The following documents on your Taylor Engineering profile are expiring soon:</p><ul>${list.map(line).join('')}</ul><p><a href="${APP_URL}/profile">Update your documents →</a></p>`,
     })
+    if (ok) list.forEach((d: any) => reminded.add(d.id))
   }
 
   // Staff digest: everyone's due docs.
+  let staffSent = false
   for (const email of staffEmails) {
-    await sendEmail({
+    const ok = await sendEmail({
       to: [email],
       subject: `Surveyor documents expiring — ${due.length} across the team`,
       html: `<p>The following surveyor documents are expiring soon:</p><ul>${due.map(line).join('')}</ul><p><a href="${APP_URL}/admin">Open the dashboard →</a></p>`,
     })
+    if (ok) staffSent = true
+  }
+  // Staff-owned docs are notified via the staff digest, not an owner digest.
+  if (staffSent) for (const d of due) if (d.ownerEmail && staffEmails.has(d.ownerEmail)) reminded.add(d.id)
+
+  if (reminded.size) {
+    await db.from('personal_documents').update({ last_reminded_at: now.toISOString() }).in('id', [...reminded])
   }
 
-  // Mark reminded so we don't re-send for another week.
-  await db.from('personal_documents').update({ last_reminded_at: now.toISOString() }).in('id', due.map(d => d.id))
-
-  return NextResponse.json({ ok: true, due: due.length, owners: byOwner.size, staff: staffEmails.size })
+  return NextResponse.json({ ok: true, due: due.length, reminded: reminded.size, owners: byOwner.size, staff: staffEmails.size })
 }

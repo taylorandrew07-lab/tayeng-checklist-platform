@@ -95,19 +95,18 @@ export async function POST(request: Request) {
   }
 
   // Best-effort email notification (skipped automatically if RESEND_API_KEY unset).
+  // Send one email PER recipient so staff/client addresses are never disclosed
+  // to each other (no shared to/cc array).
   try {
     const emails = Array.from(recipients.values()).filter((e): e is string => !!e)
-    if (emails.length) {
-      await sendEmail({
-        to: emails,
-        subject: safeSubject(`New message: ${subject}`),
-        html: `
+    const html = `
           <p>You have a new message on the Tayeng App from <strong>${escapeHtml(me.full_name)}</strong>:</p>
           <p style="font-weight:600">${escapeHtml(subject)}</p>
           <p style="white-space:pre-wrap">${escapeHtml(body)}</p>
           <p><a href="${APP_URL}/inbox">Open your inbox →</a></p>
-        `,
-      })
+        `
+    for (const email of emails) {
+      await sendEmail({ to: [email], subject: safeSubject(`New message: ${subject}`), html })
     }
   } catch { /* non-blocking */ }
 

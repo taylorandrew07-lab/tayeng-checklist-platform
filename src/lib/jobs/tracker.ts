@@ -181,7 +181,13 @@ export async function listJobAttachments(jobId: string): Promise<JobAttachment[]
   return (data ?? []) as JobAttachment[]
 }
 
+/** Upload allowlist — mirrors the server-side bucket limits (migration 049). */
+const UPLOAD_ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+
 export async function uploadJobAttachment(jobId: string, kind: JobAttachmentKind, file: File): Promise<{ error?: string }> {
+  if (file.size > UPLOAD_MAX_BYTES) return { error: 'File is too large (max 25 MB).' }
+  if (file.type && !UPLOAD_ALLOWED_MIME.includes(file.type)) return { error: 'Only PDF or image files (JPG, PNG, WebP) are allowed.' }
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const path = `${jobId}/${crypto.randomUUID()}_${safeName(file.name)}`
