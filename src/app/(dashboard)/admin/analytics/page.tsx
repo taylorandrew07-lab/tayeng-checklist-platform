@@ -12,7 +12,7 @@ import { getAnalytics, type Analytics } from '@/lib/jobs/analytics'
 function Kpi({ label, value, icon: Icon, tone = 'gray', href }: { label: string; value: number | string; icon: typeof Briefcase; tone?: 'gray' | 'amber' | 'red' | 'brand'; href?: string }) {
   const tones = { gray: 'bg-gray-100 text-gray-500', amber: 'bg-amber-100 text-amber-600', red: 'bg-red-100 text-red-600', brand: 'bg-brand-100 text-brand-600' }
   const inner = (
-    <div className="card p-4 h-full">
+    <div className="card p-4 h-full transition-[transform,box-shadow] duration-200 group-hover:shadow-md group-hover:-translate-y-0.5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{label}</p>
         <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${tones[tone]}`}><Icon className="h-4 w-4" /></span>
@@ -20,7 +20,7 @@ function Kpi({ label, value, icon: Icon, tone = 'gray', href }: { label: string;
       <p className="text-2xl font-bold text-gray-900 mt-2 tnum">{value}</p>
     </div>
   )
-  return href ? <Link href={href} className="block hover:opacity-90 transition-opacity">{inner}</Link> : inner
+  return href ? <Link href={href} className="block group">{inner}</Link> : inner
 }
 
 function Bars({ rows, color = 'bg-brand-500' }: { rows: { label: React.ReactNode; count: number; color?: string }[]; color?: string }) {
