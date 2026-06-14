@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  ArrowLeft, Loader2, Save, Download, Eye, Trash2
+  ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2
 } from 'lucide-react'
 import { getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Client } from '@/lib/types/database'
@@ -15,7 +15,7 @@ import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import InvoiceCard from '@/components/job/InvoiceCard'
-import { WORKFLOW } from '@/lib/jobs/tracker'
+import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
 
 export default function AdminChecklistDetailPage() {
   const params = useParams()
@@ -31,6 +31,7 @@ export default function AdminChecklistDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [marking, setMarking] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
@@ -115,6 +116,21 @@ export default function AdminChecklistDetailPage() {
     setEditMode(false)
     setSaving(false)
     toast.success('Job saved')
+    load()
+  }
+
+  // Admin escape hatch: push a completed-but-stuck checklist through, regardless
+  // of the surveyor's device/state. Sets submitted + advances the workflow.
+  async function markSubmitted() {
+    setMarking(true)
+    const supabase = createClient()
+    const { error: err } = await supabase.from('jobs')
+      .update({ status: 'submitted', submitted_at: job.submitted_at ?? new Date().toISOString() })
+      .eq('id', jobId)
+    if (err) { toast.error(err.message); setMarking(false); return }
+    await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
+    toast.success('Marked as submitted')
+    setMarking(false)
     load()
   }
 
@@ -300,7 +316,14 @@ export default function AdminChecklistDetailPage() {
           <div className="card p-5">
             <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
             <div className="space-y-2">
-              {/* Lifecycle is managed by the workflow stepper in JobOpsPanel above. */}
+              {/* Admin can push a completed checklist through if a surveyor's
+                  submit is stuck. Lifecycle otherwise via the workflow stepper above. */}
+              {!job.submitted_at && (
+                <button onClick={markSubmitted} disabled={marking} className="btn-secondary w-full justify-start text-sm">
+                  {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Mark as submitted
+                </button>
+              )}
               <button
                 onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)}
                 className="btn-ghost w-full justify-start text-sm"
