@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Save, Hash, AlertTriangle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import JobTypesManager from '@/components/admin/JobTypesManager'
 
 export default function JobNumberingSettingsPage() {
   const router = useRouter()
@@ -233,6 +234,9 @@ export default function JobNumberingSettingsPage() {
           {resetting ? 'Applying…' : 'Set Next Number'}
         </button>
       </div>
+
+      {/* Job types — add/rename/hide/delete the New Job dropdown list. */}
+      <JobTypesManager />
     </div>
   )
 }

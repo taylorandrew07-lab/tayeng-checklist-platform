@@ -119,6 +119,29 @@ export async function listJobTypes(): Promise<JobType[]> {
   return (data ?? []) as JobType[]
 }
 
+// ── Job type admin (RLS: admins manage job_types) ───────────────────────────
+export interface JobTypeRow { id: string; name: string; is_active: boolean }
+export async function listAllJobTypes(): Promise<JobTypeRow[]> {
+  const { data } = await createClient().from('job_types').select('id, name, is_active').order('name')
+  return (data ?? []) as JobTypeRow[]
+}
+export async function addJobType(name: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_types').insert({ name: name.trim() })
+  return { error: error?.message }
+}
+export async function renameJobType(id: string, name: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_types').update({ name: name.trim() }).eq('id', id)
+  return { error: error?.message }
+}
+export async function setJobTypeActive(id: string, is_active: boolean): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_types').update({ is_active }).eq('id', id)
+  return { error: error?.message }
+}
+export async function deleteJobType(id: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_types').delete().eq('id', id)
+  return { error: error?.message }
+}
+
 export interface SurveyorAccount { id: string; full_name: string; role: string; display_title: string | null }
 export async function listSurveyorAccounts(): Promise<SurveyorAccount[]> {
   const { data } = await createClient()
