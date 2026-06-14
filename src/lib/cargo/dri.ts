@@ -7,7 +7,7 @@
 // duplicated here — the report's "Temperature & Gas" section reads them straight
 // from Voyage.readings.
 
-import type { Period } from './types'
+import type { Period, Voyage } from './types'
 
 export type SofPhase = 'LOAD' | 'DISCHARGE'
 export type LengthUnit = 'm' | 'ft'
@@ -165,3 +165,54 @@ export function ensureDri(dri: DriReport | undefined, holdCount: number): DriRep
 
 /** Default sections to tick on a fresh report: everything except optional ones. */
 export const DEFAULT_INCLUDED: SectionKey[] = CANONICAL_ORDER.filter(k => k !== 'stockpile' && k !== 'temp_gas_summary')
+
+// ── Completeness check ───────────────────────────────────────────────────────
+// Before generating/finalizing, warn about ticked sections that have no data, so
+// a report isn't issued with an empty "Inerting" or "Voyage log" heading. This is
+// advisory only — the user can still generate (some reports legitimately omit a
+// section's data but keep the heading). `header` and `signoff` are always assumed
+// intentional and never flagged.
+
+/** True if any sensor reading has been entered anywhere in the voyage. */
+function hasAnyReadings(voyage: Voyage): boolean {
+  const byDate = voyage.readings
+  if (!byDate) return false
+  for (const byPeriod of Object.values(byDate))
+    for (const byHold of Object.values(byPeriod))
+      for (const byType of Object.values(byHold))
+        for (const byPoint of Object.values(byType))
+          for (const v of Object.values(byPoint))
+            if (v != null && String(v).trim() !== '') return true
+  return false
+}
+
+export interface CompletenessWarning { key: SectionKey; label: string; message: string }
+
+/** Return one warning per ticked section that has no underlying data. */
+export function completenessWarnings(voyage: Voyage, included: SectionKey[]): CompletenessWarning[] {
+  const dri = ensureDri(voyage.dri, voyage.holdCount)
+  const has = (k: SectionKey): boolean => {
+    switch (k) {
+      case 'header':
+      case 'signoff': return true
+      case 'preliminary_meeting': return !!dri.preliminaryMeeting?.notes?.trim()
+      case 'ultrasonic_hatch': return dri.ultrasonicHatchTests.length > 0
+      case 'stockpile': return dri.stockpileInspections.length > 0
+      case 'hold_inspections': return dri.holdInspections.length > 0
+      case 'tc_wire_installation': return dri.tcWireInstalls.length > 0
+      case 'tc_wire_lengths': return dri.tcWireLengths.length > 0
+      case 'inerting': return dri.inerting.length > 0
+      case 'voyage_log': return dri.voyageLog.length > 0
+      case 'sof_load': return dri.sofEvents.some(e => e.phase === 'LOAD')
+      case 'sof_discharge': return dri.sofEvents.some(e => e.phase === 'DISCHARGE')
+      case 'ir_load': return dri.irReadings.some(e => e.phase === 'LOAD')
+      case 'ir_discharge': return dri.irReadings.some(e => e.phase === 'DISCHARGE')
+      case 'hold_openings': return dri.holdOpenings.length > 0
+      case 'barge_list': return dri.barges.length > 0
+      case 'temp_gas_summary': return hasAnyReadings(voyage)
+    }
+  }
+  return included
+    .filter(k => !has(k))
+    .map(k => ({ key: k, label: SECTION_LABELS[k], message: `${SECTION_LABELS[k]} is ticked but has no data entered.` }))
+}

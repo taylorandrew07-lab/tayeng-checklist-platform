@@ -5,11 +5,11 @@
 // selection is saved to Voyage.dri.reportConfig so a report is reproducible.
 
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, FileText, Loader2, Printer } from 'lucide-react'
+import { FileDown, FileText, Loader2, Printer, AlertTriangle } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { COMPANY } from '@/lib/company'
 import type { Voyage } from '@/lib/cargo/types'
-import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, type SectionKey } from '@/lib/cargo/dri'
+import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, completenessWarnings, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
 // @react-pdf (~600 KB) and docx are imported on demand inside the handlers so
 // they don't ship in the voyage workspace's initial load.
@@ -44,6 +44,7 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
   useEffect(() => { loadLogo().then(setLogo) }, [])
 
   const blocks = useMemo(() => buildReportBlocks(voyage, included), [voyage, included])
+  const warnings = useMemo(() => completenessWarnings(voyage, included), [voyage, included])
   const title = `DRI ${voyage.vesselName} VOY ${voyage.voyageNumber}`.trim()
   const fileBase = `DRI_${(voyage.vesselName || 'report').replace(/[^a-z0-9]/gi, '_')}_VOY${(voyage.voyageNumber || '').replace(/[^a-z0-9]/gi, '_')}`
 
@@ -104,6 +105,17 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
             <button onClick={() => setIncluded([])} className="text-xs text-gray-500 hover:underline">None</button>
           </div>
         </div>
+        {warnings.length > 0 && (
+          <div className="card p-3 bg-amber-50 border-amber-200">
+            <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold mb-1">
+              <AlertTriangle className="h-3.5 w-3.5" />Empty ticked sections
+            </div>
+            <ul className="text-[11px] text-amber-700 list-disc pl-4 space-y-0.5">
+              {warnings.map(w => <li key={w.key}>{w.label}</li>)}
+            </ul>
+            <p className="text-[10px] text-amber-600 mt-1.5">These will print as a heading with no data. Untick them or add data.</p>
+          </div>
+        )}
         <div className="card p-4 space-y-2">
           <button onClick={downloadPdf} disabled={!!busy} className="btn-primary w-full justify-center text-sm">{busy === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}Download PDF</button>
           <button onClick={downloadDocx} disabled={!!busy} className="btn-secondary w-full justify-center text-sm">{busy === 'docx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}Download .docx</button>

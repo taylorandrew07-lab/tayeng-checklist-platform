@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Table, LineChart, Images, FileDown, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Loader2, Table, LineChart, Images, FileDown, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { type Voyage } from '@/lib/cargo/types'
 import { getRemoteVoyage, remotePhotosToCargoPhotos, type RemotePhoto } from '@/lib/cargo/remote'
@@ -10,17 +10,22 @@ import { downloadCargoReport } from '@/lib/cargo/pdf/render'
 import ClientReadingsView from '@/components/cargo/ClientReadingsView'
 import ClientPhotoGallery from '@/components/cargo/ClientPhotoGallery'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
+import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 
-type Tab = 'readings' | 'charts' | 'photos'
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+type Tab = 'readings' | 'charts' | 'photos' | 'dri'
+const BASE_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'readings', label: 'Readings', icon: Table },
   { id: 'charts', label: 'Charts', icon: LineChart },
   { id: 'photos', label: 'Photos', icon: Images },
 ]
+const DRI_TAB = { id: 'dri' as Tab, label: 'DRI Report', icon: FileText }
 
 /** Read-only remote voyage view (Supabase, not IndexedDB). Used by clients and,
- *  via `backHref`, by admins drilling into a synced voyage from Cargo Operations. */
-export default function ClientCargoWorkspace({ id, backHref = '/client/cargo' }: { id: string; backHref?: string }) {
+ *  via `backHref`, by admins drilling into a synced voyage from Cargo Operations.
+ *  `allowDri` exposes the full DRI Production Report builder (PDF/.docx) for staff
+ *  who issue reports from the cloud — generation only; it never writes back to the
+ *  surveyor's synced document. */
+export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', allowDri = false }: { id: string; backHref?: string; allowDri?: boolean }) {
   const [voyage, setVoyage] = useState<Voyage | null>(null)
   const [photos, setPhotos] = useState<RemotePhoto[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +65,7 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo' }:
   }
 
   const finalized = voyage.status === 'finalized'
+  const tabs = allowDri ? [...BASE_TABS, DRI_TAB] : BASE_TABS
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -86,7 +92,7 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo' }:
       )}
 
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px ${tab === t.id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
@@ -98,6 +104,9 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo' }:
       {tab === 'readings' && <ClientReadingsView voyage={voyage} />}
       {tab === 'charts' && <ChartsPanel voyage={voyage} onChange={() => {}} />}
       {tab === 'photos' && <ClientPhotoGallery voyage={voyage} photos={photos} />}
+      {/* DRI Report builder reads the synced voyage; onChange is a no-op because the
+          surveyor's device owns the document (push-only sync) — staff generate, not edit. */}
+      {tab === 'dri' && allowDri && <DriReportBuilder voyage={voyage} onChange={() => {}} />}
     </div>
   )
 }
