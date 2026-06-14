@@ -31,9 +31,14 @@
     @apply bg-brand-100 text-brand-900 dark:bg-brand-900 dark:text-brand-50;
   }
 
-  /* Keyboard focus only — never show the ring on mouse clicks. */
+  /* Keyboard focus only — never show on mouse clicks. A subtle brand outline is
+     the FALLBACK for any interactive element that doesn't define its own focus
+     style; the design-system classes (.btn-*, .input-base) set focus:outline-none
+     + their own ring, which overrides this, so there's no double indicator. */
   :focus-visible {
-    outline: none;
+    outline: 2px solid rgb(var(--brand) / 0.6);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }
 
