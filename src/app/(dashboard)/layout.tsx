@@ -13,6 +13,7 @@ import { fetchMyOfficePermissions } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { unreadCount } from '@/lib/messages/api'
 import { listReconciliation } from '@/lib/jobs/reconciliation'
+import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 import type { Profile } from '@/lib/types/database'
 
 const ROLE_HOME: Record<string, string> = {
@@ -189,6 +190,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!profile) return null
+
+  // Client portal disabled — a client account can authenticate but sees nothing.
+  // Reversible: flip CLIENT_PORTAL_ENABLED in src/lib/features.ts.
+  if (profile.role === 'client' && !CLIENT_PORTAL_ENABLED) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center mx-auto">
+            <svg className="h-7 w-7 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900">Portal unavailable</h2>
+          <p className="text-sm text-gray-500">
+            The client portal isn&apos;t available right now. Please contact Taylor Engineering directly for your reports.
+          </p>
+          <button
+            onClick={async () => { const s = createClient(); await s.auth.signOut(); window.location.href = '/login' }}
+            className="btn-secondary w-full justify-center"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

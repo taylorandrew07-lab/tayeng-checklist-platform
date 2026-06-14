@@ -4,14 +4,12 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  ArrowLeft, Loader2, Save, Download, Eye, EyeOff,
-  CheckCircle2, Trash2
+  ArrowLeft, Loader2, Save, Download, Eye, Trash2
 } from 'lucide-react'
 import { getJobStatusColor, getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
 import type { JobStatus, Client } from '@/lib/types/database'
 
 interface SurveyorAccount { id: string; full_name: string; role: string }
-import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
@@ -28,14 +26,11 @@ export default function AdminChecklistDetailPage() {
   const [job, setJob] = useState<any>(null)
   const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [permissions, setPermissions] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
-  const [showPermModal, setShowPermModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [changingStatus, setChangingStatus] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
@@ -53,7 +48,6 @@ export default function AdminChecklistDetailPage() {
       { data: jobData },
       { data: srvData },
       { data: cliData },
-      { data: permData },
     ] = await Promise.all([
       supabase.from('jobs').select(`
         *,
@@ -63,7 +57,6 @@ export default function AdminChecklistDetailPage() {
       `).eq('id', jobId).single(),
       supabase.from('profiles').select('id, full_name, role').in('role', ['surveyor', 'admin']).eq('is_active', true).order('full_name'),
       supabase.from('clients').select('*').eq('is_active', true).order('name'),
-      supabase.from('client_job_permissions').select('*').eq('job_id', jobId).single(),
     ])
 
     if (!jobData) { router.push('/admin/jobs'); return }
@@ -80,7 +73,6 @@ export default function AdminChecklistDetailPage() {
     setJob(jobData)
     setSurveyors(accounts)
     setClients(cliData ?? [])
-    setPermissions(permData)
     setEditForm({
       title: jobData.title,
       vessel_name: jobData.vessel_name ?? '',
@@ -120,44 +112,9 @@ export default function AdminChecklistDetailPage() {
 
     if (err) { setError(err.message); setSaving(false); return }
 
-    if (editForm.client_id) {
-      const { error: permErr } = await supabase.from('client_job_permissions').upsert({
-        client_id: editForm.client_id,
-        job_id: jobId,
-        can_view_status: permissions?.can_view_status ?? true,
-        can_view_pdf: permissions?.can_view_pdf ?? false,
-        can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
-      }, { onConflict: 'client_id,job_id' })
-      if (permErr) {
-        setError('Job details saved, but client permissions could not be updated: ' + permErr.message)
-        setSaving(false)
-        return
-      }
-    }
-
     setEditMode(false)
     setSaving(false)
     toast.success('Job saved')
-    load()
-  }
-
-  async function handlePermissionSave(perms: any) {
-    const supabase = createClient()
-    if (permissions?.id) {
-      await supabase.from('client_job_permissions').update(perms).eq('id', permissions.id)
-    } else if (job.client_id) {
-      await supabase.from('client_job_permissions').insert({ ...perms, job_id: jobId, client_id: job.client_id })
-    }
-    setShowPermModal(false)
-    load()
-  }
-
-  async function changeStatus(newStatus: JobStatus) {
-    setChangingStatus(true); setError(null)
-    const { error: err } = await createClient().from('jobs').update({ status: newStatus }).eq('id', jobId)
-    setChangingStatus(false)
-    if (err) { setError(err.message); toast.error('Could not update status'); return }
-    toast.success(`Marked as ${getJobStatusLabel(newStatus)}`)
     load()
   }
 
@@ -180,7 +137,10 @@ export default function AdminChecklistDetailPage() {
 
   if (!job) return null
 
-  const statusFlow: JobStatus[] = ['draft', 'in_progress', 'submitted', 'completed', 'client_visible', 'archived']
+  // Client-visibility stages (completed / client_visible) are retired — the
+  // lifecycle past "submitted" is the workflow stepper. Keep draft→submitted +
+  // archived for the checklist phase.
+  const statusFlow: JobStatus[] = ['draft', 'in_progress', 'submitted', 'archived']
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -209,7 +169,7 @@ export default function AdminChecklistDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {['submitted', 'completed', 'client_visible'].includes(job.status) && (
+          {!!job.submitted_at && (
             <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-secondary" title="Download PDF">
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download PDF</span>
@@ -279,6 +239,9 @@ export default function AdminChecklistDetailPage() {
                   <div>
                     <label className="label-base">Status</label>
                     <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">
+                      {editForm.status && !statusFlow.includes(editForm.status) && (
+                        <option value={editForm.status}>{getJobStatusLabel(editForm.status)}</option>
+                      )}
                       {statusFlow.map(s => <option key={s} value={s}>{getJobStatusLabel(s)}</option>)}
                     </select>
                   </div>
@@ -337,48 +300,10 @@ export default function AdminChecklistDetailPage() {
         </div>
 
         <div className="space-y-4">
-          {job.client_id && (
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-gray-900">Client Visibility</h3>
-                <button onClick={() => setShowPermModal(true)} className="text-xs text-brand-600 hover:text-brand-800 font-medium">Edit</button>
-              </div>
-              <div className="space-y-2">
-                <PermRow label="View status" value={permissions?.can_view_status} />
-                <PermRow label="Download PDF" value={permissions?.can_view_pdf} />
-                <PermRow label="View checklist details" value={permissions?.can_view_checklist_details} />
-              </div>
-            </div>
-          )}
-
           <div className="card p-5">
             <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
             <div className="space-y-2">
-              {/* Status transitions — one-click moves through the workflow. */}
-              {job.status === 'submitted' && (
-                <button onClick={() => changeStatus('completed')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-green-700 hover:bg-green-50">
-                  {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Mark as completed
-                </button>
-              )}
-              {job.status === 'completed' && (
-                <>
-                  <button onClick={() => changeStatus('client_visible')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-brand-700 hover:bg-brand-50">
-                    {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                    Make visible to client
-                  </button>
-                  <button onClick={() => changeStatus('submitted')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-gray-600">
-                    <ArrowLeft className="h-4 w-4" />
-                    Reopen to submitted
-                  </button>
-                </>
-              )}
-              {job.status === 'client_visible' && (
-                <button onClick={() => changeStatus('completed')} disabled={changingStatus} className="btn-ghost w-full justify-start text-sm text-gray-600">
-                  {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <EyeOff className="h-4 w-4" />}
-                  Hide from client (set completed)
-                </button>
-              )}
+              {/* Lifecycle is managed by the workflow stepper in JobOpsPanel above. */}
               <button
                 onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)}
                 className="btn-ghost w-full justify-start text-sm"
@@ -386,7 +311,7 @@ export default function AdminChecklistDetailPage() {
                 <Eye className="h-4 w-4" />
                 View Template
               </button>
-              {['submitted', 'completed', 'client_visible'].includes(job.status) && (
+              {!!job.submitted_at && (
                 <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-ghost w-full justify-start text-sm">
                   <Download className="h-4 w-4" />
                   Download PDF
@@ -397,14 +322,6 @@ export default function AdminChecklistDetailPage() {
         </div>
       </div>
 
-      <PermissionsModal
-        open={showPermModal}
-        onClose={() => setShowPermModal(false)}
-        permissions={permissions}
-        onSave={handlePermissionSave}
-        clientName={job.client?.name}
-      />
-
       {/* Checklist fields editor.
           Edit rights are decided inside JobChecklistEditor based on the real
           assigned/creator profile id — an admin who is the assigned surveyor can
@@ -414,79 +331,5 @@ export default function AdminChecklistDetailPage() {
         <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
       </div>
     </div>
-  )
-}
-
-function PermRow({ label, value }: { label: string; value: boolean }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-gray-600">{label}</span>
-      {value ? (
-        <CheckCircle2 className="h-4 w-4 text-green-500" />
-      ) : (
-        <EyeOff className="h-4 w-4 text-gray-300" />
-      )}
-    </div>
-  )
-}
-
-function PermissionsModal({
-  open, onClose, permissions, onSave, clientName
-}: {
-  open: boolean
-  onClose: () => void
-  permissions: any
-  onSave: (perms: any) => void
-  clientName?: string
-}) {
-  const [perms, setPerms] = useState({
-    can_view_status: permissions?.can_view_status ?? true,
-    can_view_pdf: permissions?.can_view_pdf ?? false,
-    can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
-  })
-
-  useEffect(() => {
-    setPerms({
-      can_view_status: permissions?.can_view_status ?? true,
-      can_view_pdf: permissions?.can_view_pdf ?? false,
-      can_view_checklist_details: permissions?.can_view_checklist_details ?? false,
-    })
-  }, [permissions])
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={`Client Permissions — ${clientName ?? 'Client'}`}
-      size="sm"
-      footer={
-        <>
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button onClick={() => onSave(perms)} className="btn-primary">Save Permissions</button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <p className="text-sm text-gray-500">Control what {clientName} can see for this checklist.</p>
-        {[
-          { key: 'can_view_status', label: 'View checklist status', desc: 'Client can see checklist progress' },
-          { key: 'can_view_pdf', label: 'Download completed PDF', desc: 'Client can download the completed checklist PDF' },
-          { key: 'can_view_checklist_details', label: 'View checklist details', desc: 'Client can view individual field answers (read-only)' },
-        ].map(item => (
-          <label key={item.key} className="flex items-start gap-3 cursor-pointer">
-            <div
-              onClick={() => setPerms(p => ({ ...p, [item.key]: !p[item.key as keyof typeof p] }))}
-              className={`mt-0.5 relative w-10 h-6 rounded-full transition-colors flex-shrink-0 cursor-pointer ${perms[item.key as keyof typeof perms] ? 'bg-brand-600' : 'bg-gray-300'}`}
-            >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${perms[item.key as keyof typeof perms] ? 'translate-x-5' : 'translate-x-1'}`} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{item.label}</p>
-              <p className="text-xs text-gray-500">{item.desc}</p>
-            </div>
-          </label>
-        ))}
-      </div>
-    </Modal>
   )
 }
