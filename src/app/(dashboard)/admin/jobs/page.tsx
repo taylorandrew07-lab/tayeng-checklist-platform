@@ -292,7 +292,7 @@ export default function JobsTrackerPage() {
                   <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => patchRow(r.id, { vessel_name: v }, { vessel_name: v })} /></td>
                   <td className="px-3 py-1.5">
                     {r.client_name
-                      ? <Link href={`/admin/clients?focus=${r.client_id}`} className="text-brand-700 hover:underline">{r.client_name}</Link>
+                      ? <Link href={`/admin/clients/${r.client_id}`} className="text-brand-700 hover:underline">{r.client_name}</Link>
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5 text-gray-600">

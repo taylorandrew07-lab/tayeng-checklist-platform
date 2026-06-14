@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
@@ -213,10 +214,14 @@ export default function ClientsPage() {
               </div>
 
               {/* Logo */}
-              <ClientLogo src={logoUrl(client.logo_path)} name={client.name} />
+              <Link href={`/admin/clients/${client.id}`} className="block">
+                <ClientLogo src={logoUrl(client.logo_path)} name={client.name} />
+              </Link>
 
               {/* Name + contacts */}
-              <h3 className="font-semibold text-gray-900 mt-4 break-words">{client.name}</h3>
+              <h3 className="font-semibold text-gray-900 mt-4 break-words">
+                <Link href={`/admin/clients/${client.id}`} className="hover:text-brand-700 hover:underline">{client.name}</Link>
+              </h3>
               {client.contact_name && <p className="text-sm text-gray-600 mt-0.5 truncate">{client.contact_name}</p>}
               {client.contact_email && <p className="text-sm text-gray-500 truncate">{client.contact_email}</p>}
               {client.contact_phone && <p className="text-sm text-gray-500 truncate">{client.contact_phone}</p>}
