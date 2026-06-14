@@ -55,7 +55,7 @@ function StatTile({ def, value, loading }: { def: TileDef; value: number; loadin
     </div>
   )
   return def.href
-    ? <Link href={def.href} className="card p-5 hover:shadow-md transition-shadow">{inner}</Link>
+    ? <Link href={def.href} className="card p-5 transition-[transform,box-shadow] duration-200 hover:shadow-md hover:-translate-y-0.5">{inner}</Link>
     : <div className="card p-5">{inner}</div>
 }
 
