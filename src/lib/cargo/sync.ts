@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { listVoyages, getVoyage, getPhotosForVoyage, putPhoto, markVoyageSynced } from './db'
+import { findOrCreateVessel } from '@/lib/vessels/api'
 import type { Voyage, CargoPhoto } from './types'
 
 export function voyageDirty(v: Voyage): boolean {
@@ -16,6 +17,10 @@ export async function pushVoyage(supabase: SupabaseClient, voyage: Voyage, photo
   const rev = voyage.updatedAt ?? 0
   const assigned = photos.filter(p => p.assigned && p.holdNumber != null && p.camera != null)
 
+  // Link to the vessels directory (create on first use) so the voyage shows on the
+  // vessel record. Best-effort — never block a sync if it fails.
+  const vesselId = voyage.vesselName?.trim() ? await findOrCreateVessel(voyage.vesselName.trim()).catch(() => null) : null
+
   // 1. Upsert the voyage document FIRST — it's the FK target for photo rows and
   //    the row the storage RLS checks (ownership) when photos upload.
   const { error: vErr } = await supabase.from('cargo_voyages').upsert({
@@ -23,6 +28,7 @@ export async function pushVoyage(supabase: SupabaseClient, voyage: Voyage, photo
     owner_id: voyage.userId,
     client_id: voyage.clientId ?? null,
     vessel_name: voyage.vesselName,
+    vessel_id: vesselId,
     voyage_number: voyage.voyageNumber,
     status: voyage.status ?? 'in_progress',
     synced_at: new Date().toISOString(), // refresh on every push (default only stamps the insert)
