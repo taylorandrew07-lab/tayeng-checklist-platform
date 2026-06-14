@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
 import { listJobTypes, listSurveyorAccounts, logActivity, type SurveyorAccount } from '@/lib/jobs/tracker'
+import { findOrCreateVessel } from '@/lib/vessels/api'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
 function formatDateDMY(date: Date): string {
@@ -21,6 +22,7 @@ export default function NewJobPage() {
   const [jobTypes, setJobTypes] = useState<JobType[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
+  const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,14 +44,16 @@ export default function NewJobPage() {
   useEffect(() => {
     async function loadData() {
       const supabase = createClient()
-      const [{ data: tmpl }, { data: cls }, jt, srv] = await Promise.all([
+      const [{ data: tmpl }, { data: cls }, { data: vsl }, jt, srv] = await Promise.all([
         supabase.from('checklist_templates').select('*').eq('status', 'active').order('name'),
         supabase.from('clients').select('*').eq('is_active', true).order('name'),
+        supabase.from('vessels').select('id, name').eq('is_active', true).order('name'),
         listJobTypes(),
         listSurveyorAccounts(),
       ])
       setTemplates(tmpl ?? [])
       setClients(cls ?? [])
+      setVessels((vsl ?? []) as { id: string; name: string }[])
       setJobTypes(jt)
       setSurveyors(srv)
       setLoading(false)
@@ -79,11 +83,15 @@ export default function NewJobPage() {
     const primary = surveyors.find(s => s.id === ids[0])
     const title = autoTitle || `M.V. ${vesselName.trim()} - ${label} - ${today}`
 
+    // Link to the vessels directory (create on first use), keeping vessel_name as snapshot.
+    const vesselId = await findOrCreateVessel(vesselName.trim())
+
     const { data: job, error: jobErr } = await supabase.from('jobs').insert({
       title,
       template_id: templateId || null,
       job_type: jobType,
       vessel_name: vesselName.trim(),
+      vessel_id: vesselId,
       surveyor_name: primary?.full_name ?? null,
       client_id: finalClientId,
       created_by: user.id,
@@ -141,8 +149,10 @@ export default function NewJobPage() {
           <label className="label-base">Vessel name *</label>
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
-            <input type="text" value={vesselName} onChange={e => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
+            <input type="text" list="vesselList" value={vesselName} onChange={e => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
+            <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
+          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically.</p>
         </div>
 
         <label className="flex items-center gap-2.5 cursor-pointer">
