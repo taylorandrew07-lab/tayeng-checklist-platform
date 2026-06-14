@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Ship, Loader2, Cloud, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
@@ -9,7 +10,7 @@ import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
  *  Distinct from the device-local list below it: this is the real operational
  *  picture (with owners), so an admin no longer mistakes one device's voyages
  *  for the whole company's. Unsynced work still lives only on a surveyor's
- *  device until they sync. Read-only for now; drill-in lands in a later phase. */
+ *  device until they sync. Each row drills into the read-only cloud voyage. */
 export default function CargoOperationsView() {
   const [rows, setRows] = useState<OpsVoyageRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,15 +62,15 @@ export default function CargoOperationsView() {
               {rows.map(r => (
                 <tr key={r.id} className="border-b border-gray-50 last:border-0">
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                    <Link href={`/admin/cargo/cloud/${r.id}`} className="group flex items-center gap-2.5 min-w-0">
                       <span className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
                         <Ship className="h-4 w-4 text-brand-600" />
                       </span>
                       <span className="min-w-0">
-                        <span className="font-medium text-gray-900 block truncate">M.V. {r.vessel_name || '—'}</span>
+                        <span className="font-medium text-gray-900 group-hover:text-brand-700 block truncate">M.V. {r.vessel_name || '—'}</span>
                         <span className="text-xs text-gray-500 block truncate">{r.voyage_number || 'No voyage no.'}</span>
                       </span>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{r.owner_name ?? '—'}</td>
                   <td className="px-4 py-3">

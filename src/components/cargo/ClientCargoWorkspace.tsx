@@ -18,7 +18,9 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'photos', label: 'Photos', icon: Images },
 ]
 
-export default function ClientCargoWorkspace({ id }: { id: string }) {
+/** Read-only remote voyage view (Supabase, not IndexedDB). Used by clients and,
+ *  via `backHref`, by admins drilling into a synced voyage from Cargo Operations. */
+export default function ClientCargoWorkspace({ id, backHref = '/client/cargo' }: { id: string; backHref?: string }) {
   const [voyage, setVoyage] = useState<Voyage | null>(null)
   const [photos, setPhotos] = useState<RemotePhoto[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +54,7 @@ export default function ClientCargoWorkspace({ id }: { id: string }) {
       <div className="max-w-lg mx-auto text-center py-16">
         <h1 className="page-title mb-2">Report not available</h1>
         <p className="text-gray-500 mb-6">This voyage report isn&apos;t available to your account.</p>
-        <Link href="/client/cargo" className="btn-secondary">Back</Link>
+        <Link href={backHref} className="btn-secondary">Back</Link>
       </div>
     )
   }
@@ -62,7 +64,7 @@ export default function ClientCargoWorkspace({ id }: { id: string }) {
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center gap-4">
-        <Link href="/client/cargo" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
+        <Link href={backHref} className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0 flex-1">
           <h1 className="page-title truncate">M.V. {voyage.vesselName} — {voyage.voyageNumber}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{voyage.cargoType || 'Cargo'} · {voyage.holdCount} holds</p>
