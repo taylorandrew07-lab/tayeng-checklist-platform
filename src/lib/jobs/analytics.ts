@@ -4,7 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { isOverdue } from '@/lib/jobs/invoicing'
-import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
+import { aggregateBilling, aggregateLabour, aggregatePipeline } from '@/lib/jobs/metrics'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface MoneyByCurrency { currency: string; amount: number }
@@ -47,10 +47,8 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
   const overdueCount = ((invoices ?? []) as any[]).filter(inv => inv.status === 'overdue' || isOverdue(inv)).length
   const otJobs = allJobs.filter(j => j.is_overtime).length
 
-  // ── By status ──
-  const statusCount = new Map<WorkflowStatus, number>()
-  for (const j of allJobs) statusCount.set(j.workflow_status, (statusCount.get(j.workflow_status) ?? 0) + 1)
-  const byStatus = WORKFLOW_ORDER.map(status => ({ status, count: statusCount.get(status) ?? 0 }))
+  // ── By status (shared pipeline definition) ──
+  const { byStatus } = aggregatePipeline(allJobs)
 
   // ── By type ──
   const typeCount = new Map<string, number>()
@@ -84,29 +82,14 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
     .map(([client_id, c]) => ({ client_id, name: c.name, jobs: c.jobs, revenue: [...(clientRev.get(client_id)?.entries() ?? [])].map(([currency, amount]) => ({ currency, amount })) }))
     .sort((a, b) => b.jobs - a.jobs)
 
-  // ── Billing per currency ──
-  const billMap = new Map<string, CurrencyBilling>()
-  const bill = (cur: string) => { let b = billMap.get(cur); if (!b) { b = { currency: cur, invoiced: 0, paid: 0, outstanding: 0, overdue: 0 }; billMap.set(cur, b) } return b }
-  for (const inv of (invoices ?? []) as any[]) {
-    if (inv.status === 'void') continue
-    const t = Number(inv.total ?? 0); const b = bill(inv.currency)
-    b.invoiced += t
-    if (inv.status === 'paid') b.paid += t
-    else if (inv.status !== 'draft') { b.outstanding += t; if (inv.status === 'overdue' || isOverdue(inv)) b.overdue += t }
-  }
-  const billing = [...billMap.values()].sort((a, b) => b.outstanding - a.outstanding)
+  // ── Billing per currency (shared definition) ──
+  const billing: CurrencyBilling[] = [...aggregateBilling((invoices ?? []) as any[]).values()]
+    .map(b => ({ currency: b.currency, invoiced: b.invoiced, paid: b.paid, outstanding: b.outstanding, overdue: b.overdue }))
+    .sort((a, b) => b.outstanding - a.outstanding)
 
-  // ── Labour per surveyor ──
-  const labMap = new Map<string, { name: string; jobs: Set<string>; reg: number; ot: number; pay: Map<string, number> }>()
-  for (const r of (js ?? []) as any[]) {
-    let l = labMap.get(r.surveyor_id); if (!l) { l = { name: r.surveyor?.display_title ?? r.surveyor?.full_name ?? 'Unknown', jobs: new Set(), reg: 0, ot: 0, pay: new Map() }; labMap.set(r.surveyor_id, l) }
-    if (r.job_id) l.jobs.add(r.job_id)
-    l.reg += Number(r.regular_hours ?? 0); l.ot += Number(r.overtime_hours ?? 0)
-    const total = Number(r.regular_pay ?? 0) + Number(r.overtime_pay ?? 0)
-    if (total) l.pay.set(r.pay_currency ?? 'TTD', (l.pay.get(r.pay_currency ?? 'TTD') ?? 0) + total)
-  }
-  const labour = [...labMap.entries()]
-    .map(([surveyor_id, l]) => ({ surveyor_id, name: l.name, jobs: l.jobs.size, regular_hours: l.reg, overtime_hours: l.ot, pay: [...l.pay.entries()].map(([currency, total]) => ({ currency, amount: total })) }))
+  // ── Labour per surveyor (shared definition) ──
+  const labour = [...aggregateLabour((js ?? []) as any[]).values()]
+    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: l.jobs.size, regular_hours: l.regular_hours, overtime_hours: l.overtime_hours, pay: [...l.pay.entries()].map(([currency, amount]) => ({ currency, amount })) }))
     .sort((a, b) => b.jobs - a.jobs)
   const overtimeHours = labour.reduce((s, l) => s + l.overtime_hours, 0)
 
