@@ -1,14 +1,8 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
-import {
-  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
@@ -17,15 +11,23 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
-  LogOut, ChevronRight, X, Settings, Calculator, GripVertical, SlidersHorizontal, Check,
+  LogOut, ChevronRight, X, Settings, Calculator, SlidersHorizontal, Check,
   Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, BarChart3, Anchor,
 } from 'lucide-react'
 
-interface NavItem {
+export interface NavItem {
   label: string
   href: string
   icon: React.ElementType
 }
+
+// Drag-to-reorder pulls in @dnd-kit (~tens of KB). It's only needed inside the
+// "Customize menu" mode, so load it on demand — normal navigation never ships it.
+// The fallback renders the rows statically so there's no flash while it loads.
+const SidebarReorder = dynamic(() => import('./SidebarReorder'), {
+  ssr: false,
+  loading: () => null,
+})
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
@@ -131,25 +133,10 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
   const [saving, setSaving] = useState(false)
   const savedRef = useRef<NavItem[]>(order)
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
-
   function handleNavClick(href: string) {
     onClose?.()
     if (!dirtyState.requestNavigate(href)) return // handler shows dialog; dialog calls router.push
     router.push(href)
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    setOrder(prev => {
-      const oldIndex = prev.findIndex(i => i.href === active.id)
-      const newIndex = prev.findIndex(i => i.href === over.id)
-      return arrayMove(prev, oldIndex, newIndex)
-    })
   }
 
   async function saveOrder() {
@@ -240,11 +227,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {editMode ? (
             <>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={order.map(i => i.href)} strategy={verticalListSortingStrategy}>
-                  {order.map(item => <SortableNavItem key={item.href} item={item} />)}
-                </SortableContext>
-              </DndContext>
+              <SidebarReorder order={order} onReorder={setOrder} />
               {settingsItem.map(item => (
                 <div key={item.href} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-400 opacity-60">
                   <span className="w-4" />
@@ -332,23 +315,5 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         </div>
       </aside>
     </>
-  )
-}
-
-function SortableNavItem({ item }: { item: NavItem }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.href })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-100 bg-brand-800/70 cursor-grab touch-none select-none"
-      {...attributes}
-      {...listeners}
-    >
-      <GripVertical className="h-4 w-4 text-brand-400 flex-shrink-0" />
-      <item.icon className="h-5 w-5 flex-shrink-0 text-brand-300" />
-      {item.label}
-    </div>
   )
 }

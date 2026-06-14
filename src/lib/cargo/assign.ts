@@ -4,7 +4,8 @@
 // and ordering) → upload order. Anything ambiguous is left UNASSIGNED for the
 // surveyor to place manually — auto-assignment never finalizes a set.
 
-import exifr from 'exifr'
+// exifr is loaded on demand inside exifCaptureTime so it only downloads when a
+// surveyor actually bulk-uploads photos, not on cargo-workspace open.
 import type { Camera } from './types'
 
 export interface AssignResult {
@@ -55,6 +56,7 @@ function toHHmm(d: Date): string {
 /** Best-effort EXIF capture time; resolves null if absent/unreadable. */
 async function exifCaptureTime(file: File): Promise<Date | null> {
   try {
+    const { default: exifr } = await import('exifr')
     const data = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'ModifyDate'])
     const raw = data?.DateTimeOriginal ?? data?.CreateDate ?? data?.ModifyDate
     if (raw instanceof Date && !isNaN(raw.getTime())) return raw
