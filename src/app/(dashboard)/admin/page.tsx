@@ -20,24 +20,19 @@ const TONE_RANK: Record<AttentionItem['tone'], number> = { danger: 0, warn: 1, i
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
 // ── Dashboard tile catalog ────────────────────────────────────────────────
+// Action/nav tiles only — analytic counts (pipeline, template breakdowns) live
+// on Insights so the Dashboard doesn't echo it.
 type TileKey =
-  | 'activeTemplates' | 'draftTemplates' | 'archivedTemplates'
-  | 'totalJobs' | 'jobsInProgress' | 'jobsSubmitted' | 'jobsCompleted'
-  | 'users' | 'clients' | 'pendingApprovals'
+  | 'activeTemplates' | 'totalJobs' | 'users' | 'clients' | 'pendingApprovals'
 
 interface TileDef { label: string; sub?: string; href?: string; icon: typeof FileText; color: string }
 
 const TILE_DEFS: Record<TileKey, TileDef> = {
-  activeTemplates:   { label: 'Templates',        sub: 'active',   href: '/admin/templates', icon: FileText,  color: 'bg-blue-500' },
-  draftTemplates:    { label: 'Draft templates',  sub: 'draft',    href: '/admin/templates', icon: FileText,  color: 'bg-gray-400' },
-  archivedTemplates: { label: 'Archived templates', sub: 'archived', href: '/admin/templates', icon: FileText, color: 'bg-red-400' },
-  totalJobs:         { label: 'Jobs',             sub: 'total',    href: '/admin/jobs',      icon: Briefcase, color: 'bg-indigo-500' },
-  jobsInProgress:    { label: 'Jobs in progress', sub: 'open',     href: '/admin/jobs',      icon: Briefcase, color: 'bg-amber-500' },
-  jobsSubmitted:     { label: 'Jobs submitted',   sub: 'awaiting', href: '/admin/jobs',      icon: Briefcase, color: 'bg-purple-500' },
-  jobsCompleted:     { label: 'Jobs completed',   sub: 'done',     href: '/admin/jobs',      icon: Briefcase, color: 'bg-green-500' },
-  users:             { label: 'Users',            href: '/admin/users',   icon: Users,     color: 'bg-purple-500' },
-  clients:           { label: 'Clients',          href: '/admin/clients', icon: Building2,  color: 'bg-pink-500' },
-  pendingApprovals:  { label: 'Pending approvals', href: '/admin/users',  icon: Clock,     color: 'bg-yellow-500' },
+  activeTemplates:   { label: 'Templates',         sub: 'active', href: '/admin/templates', icon: FileText,  color: 'bg-blue-500' },
+  totalJobs:         { label: 'Jobs',              sub: 'total',  href: '/admin/jobs',      icon: Briefcase, color: 'bg-indigo-500' },
+  users:             { label: 'Users',             href: '/admin/users',   icon: Users,     color: 'bg-purple-500' },
+  clients:           { label: 'Clients',           href: '/admin/clients', icon: Building2,  color: 'bg-pink-500' },
+  pendingApprovals:  { label: 'Pending approvals', href: '/admin/users',   icon: Clock,     color: 'bg-yellow-500' },
 }
 const ALL_TILE_KEYS = Object.keys(TILE_DEFS) as TileKey[]
 const DEFAULT_TILES: TileKey[] = ['activeTemplates', 'totalJobs', 'users', 'clients']
@@ -65,8 +60,7 @@ function StatTile({ def, value, loading }: { def: TileDef; value: number; loadin
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
-    activeTemplates: 0, draftTemplates: 0, archivedTemplates: 0,
-    checklists: 0, jobsInProgress: 0, jobsSubmitted: 0, jobsCompleted: 0,
+    activeTemplates: 0, checklists: 0,
     users: 0, clients: 0,
     pendingUsers: 0, pendingClients: 0, pendingChanges: 0,
   })
@@ -98,7 +92,6 @@ export default function AdminDashboard() {
     const [
       { data: templates },
       { count: jobCount },
-      { data: jobStatuses },
       { count: userCount },
       { count: clientCount },
       { count: pendingUserCount },
@@ -109,7 +102,6 @@ export default function AdminDashboard() {
     ] = await Promise.all([
       supabase.from('checklist_templates').select('status'),
       supabase.from('jobs').select('id', { count: 'exact', head: true }),
-      supabase.from('jobs').select('status'),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('clients').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
@@ -124,15 +116,9 @@ export default function AdminDashboard() {
     ])
 
     const tmpl = templates ?? []
-    const js = (jobStatuses ?? []) as { status: string }[]
     setStats({
       activeTemplates: tmpl.filter(t => t.status === 'active').length,
-      draftTemplates: tmpl.filter(t => t.status === 'draft').length,
-      archivedTemplates: tmpl.filter(t => t.status === 'archived').length,
       checklists: jobCount ?? 0,
-      jobsInProgress: js.filter(j => j.status === 'in_progress' || j.status === 'assigned').length,
-      jobsSubmitted: js.filter(j => j.status === 'submitted').length,
-      jobsCompleted: js.filter(j => j.status === 'completed' || j.status === 'client_visible').length,
       users: userCount ?? 0,
       clients: clientCount ?? 0,
       pendingUsers: pendingUserCount ?? 0,
@@ -195,12 +181,7 @@ export default function AdminDashboard() {
   const tileValue = (k: TileKey): number => {
     switch (k) {
       case 'activeTemplates': return stats.activeTemplates
-      case 'draftTemplates': return stats.draftTemplates
-      case 'archivedTemplates': return stats.archivedTemplates
       case 'totalJobs': return stats.checklists
-      case 'jobsInProgress': return stats.jobsInProgress
-      case 'jobsSubmitted': return stats.jobsSubmitted
-      case 'jobsCompleted': return stats.jobsCompleted
       case 'users': return stats.users
       case 'clients': return stats.clients
       case 'pendingApprovals': return totalPending
@@ -213,7 +194,7 @@ export default function AdminDashboard() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="page-title">Admin Dashboard</h1>
-          <p className="text-gray-500 mt-1">Overview of all activity</p>
+          <p className="text-gray-500 mt-1">What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View analytics</Link></p>
         </div>
         {!editMode ? (
           <button onClick={() => setEditMode(true)} className="btn-secondary text-sm flex-shrink-0">
