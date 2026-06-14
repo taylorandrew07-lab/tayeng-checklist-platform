@@ -36,7 +36,7 @@ export default function SurveyorDashboard() {
             template:checklist_templates(name),
             client:clients(name)
           `)
-          .eq('created_by', session.user.id)
+          .or(`created_by.eq.${session.user.id},assigned_to.eq.${session.user.id}`)
           .order('created_at', { ascending: false }),
       ])
 
