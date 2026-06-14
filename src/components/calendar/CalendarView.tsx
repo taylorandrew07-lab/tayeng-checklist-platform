@@ -24,23 +24,25 @@ const JOB_COLOR = '#3b82f6'
 const LEAVE_COLOR = '#f59e0b'
 const EVENT_COLOR = '#6366f1' // indigo — distinct from jobs
 
-// Jobs are coloured by status so the calendar reads at a glance.
+// Jobs are coloured by workflow stage so the calendar reads at a glance.
 const JOB_STATUS_COLOR: Record<string, string> = {
-  draft: '#94a3b8',          // slate
-  assigned: '#3b82f6',       // blue
-  in_progress: '#3b82f6',    // blue
-  submitted: '#8b5cf6',      // violet
-  completed: '#22c55e',      // green
-  client_visible: '#14b8a6', // teal
-  archived: '#94a3b8',
+  new: '#94a3b8',          // slate
+  assigned: '#3b82f6',     // blue
+  in_progress: '#3b82f6',  // blue
+  report_ready: '#8b5cf6', // violet
+  approved: '#22c55e',     // green
+  invoiced: '#14b8a6',     // teal
+  sent: '#14b8a6',         // teal
+  paid: '#22c55e',         // green
+  closed: '#94a3b8',       // slate
 }
 const jobColor = (status: string) => JOB_STATUS_COLOR[status] ?? JOB_COLOR
 
 const LEGEND: { color: string; label: string }[] = [
-  { color: '#3b82f6', label: 'Job — active' },
-  { color: '#8b5cf6', label: 'Job — submitted' },
-  { color: '#22c55e', label: 'Job — completed' },
-  { color: '#14b8a6', label: 'Job — client visible' },
+  { color: '#3b82f6', label: 'Job — in progress' },
+  { color: '#8b5cf6', label: 'Job — report ready' },
+  { color: '#22c55e', label: 'Job — approved' },
+  { color: '#14b8a6', label: 'Job — invoiced' },
   { color: LEAVE_COLOR, label: 'Leave' },
   { color: EVENT_COLOR, label: 'Event' },
 ]

@@ -32,7 +32,7 @@ export default function SurveyorDashboard() {
         supabase.from('profiles').select('*').eq('id', session.user.id).single(),
         supabase.from('jobs')
           .select(`
-            id, title, job_number, status, workflow_status, created_at, vessel_name, surveyor_name,
+            id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
             template:checklist_templates(name),
             client:clients(name)
           `)

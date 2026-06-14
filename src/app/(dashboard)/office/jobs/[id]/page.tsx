@@ -8,13 +8,12 @@ import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
-import type { JobStatus, WorkflowStatus } from '@/lib/types/database'
+import type { WorkflowStatus } from '@/lib/types/database'
 
 interface JobDetail {
   id: string
   title: string
   job_number: string | null
-  status: JobStatus
   workflow_status: WorkflowStatus
   vessel_name: string | null
   surveyor_name: string | null
@@ -54,7 +53,7 @@ export default function OfficeJobDetail() {
         const { data } = await supabase
           .from('jobs')
           .select(`
-            id, title, job_number, status, workflow_status, vessel_name, surveyor_name, internal_notes,
+            id, title, job_number, workflow_status, vessel_name, surveyor_name, internal_notes,
             scheduled_date, created_at, started_at, submitted_at, completed_at,
             template:checklist_templates(name),
             client:clients(name)

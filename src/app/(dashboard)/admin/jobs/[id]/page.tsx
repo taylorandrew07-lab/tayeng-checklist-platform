@@ -7,8 +7,8 @@ import {
   ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2,
   ClipboardList, ListChecks, FolderOpen, Receipt,
 } from 'lucide-react'
-import { getJobStatusLabel, formatDate, formatDateTime } from '@/lib/utils'
-import type { JobStatus, Client } from '@/lib/types/database'
+import { formatDate, formatDateTime } from '@/lib/utils'
+import type { Client } from '@/lib/types/database'
 
 interface SurveyorAccount { id: string; full_name: string; role: string }
 import { confirmDialog } from '@/components/ui/confirm'
@@ -49,7 +49,6 @@ export default function AdminChecklistDetailPage() {
     vessel_name: '',
     surveyor_id: '',
     client_id: '',
-    status: '' as JobStatus,
     scheduled_date: '',
   })
 
@@ -94,7 +93,6 @@ export default function AdminChecklistDetailPage() {
       vessel_name: jobData.vessel_name ?? '',
       surveyor_id: surveyorId,
       client_id: jobData.client_id ?? '',
-      status: jobData.status,
       scheduled_date: jobData.scheduled_date ?? '',
     })
     setLoading(false)
@@ -125,7 +123,6 @@ export default function AdminChecklistDetailPage() {
         surveyor_name: surveyorNameVal,
         assigned_to: assignedToVal,
         client_id: editForm.client_id || null,
-        status: editForm.status,
         scheduled_date: editForm.scheduled_date || null,
       })
       .eq('id', jobId)
@@ -144,7 +141,7 @@ export default function AdminChecklistDetailPage() {
     setMarking(true)
     const supabase = createClient()
     const { error: err } = await supabase.from('jobs')
-      .update({ status: 'submitted', submitted_at: job.submitted_at ?? new Date().toISOString() })
+      .update({ submitted_at: job.submitted_at ?? new Date().toISOString() })
       .eq('id', jobId)
     if (err) { toast.error(err.message); setMarking(false); return }
     await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
@@ -172,10 +169,6 @@ export default function AdminChecklistDetailPage() {
 
   if (!job) return null
 
-  // Client-visibility stages (completed / client_visible) are retired — the
-  // lifecycle past "submitted" is the workflow stepper. Keep draft→submitted +
-  // archived for the checklist phase.
-  const statusFlow: JobStatus[] = ['draft', 'in_progress', 'submitted', 'archived']
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -287,15 +280,6 @@ export default function AdminChecklistDetailPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="label-base">Status</label>
-                    <select value={editForm.status} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value as JobStatus }))} className="input-base">
-                      {editForm.status && !statusFlow.includes(editForm.status) && (
-                        <option value={editForm.status}>{getJobStatusLabel(editForm.status)}</option>
-                      )}
-                      {statusFlow.map(s => <option key={s} value={s}>{getJobStatusLabel(s)}</option>)}
-                    </select>
-                  </div>
-                  <div>
                     <label className="label-base">Scheduled date</label>
                     <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
                     <p className="text-[11px] text-gray-400 mt-1">Sets where the job sits on the calendar.</p>
@@ -304,11 +288,6 @@ export default function AdminChecklistDetailPage() {
               </div>
             ) : (
               <dl className="grid grid-cols-2 gap-4">
-                <div>
-                  {/* Subordinate to the workflow status in the header — checklist phase only. */}
-                  <dt className="text-xs font-medium text-gray-500">Checklist</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{getJobStatusLabel(job.status)}</dd>
-                </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Vessel</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.vessel_name ? `M.V. ${job.vessel_name}` : '—'}</dd>

@@ -5,8 +5,6 @@ export type SyncResult =
   | { ok: true; submitted: boolean; nothing?: boolean }
   | { ok: false; reason: 'no-user' | 'wrong-user' | 'conflict' | 'error'; message: string }
 
-const LOCKED = ['submitted', 'completed', 'client_visible', 'archived']
-
 function canon(
   v: Record<string, string>,
   a: Record<string, string[]>,
@@ -51,7 +49,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       client_id: j.client_id ?? null,
       created_by: user.id,
       assigned_to: user.id,
-      status: 'in_progress',
+      workflow_status: 'in_progress',
       started_at: j.started_at ?? new Date().toISOString(),
     }, { onConflict: 'id' })
     if (createErr) {
@@ -69,15 +67,15 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     draft = { ...draft, pendingCreate: false }
     await putDraft(draft)
   } else {
-    // Status-lock conflict.
-    const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, status').eq('id', jobId).single()
+    // Submitted-lock conflict: a job already submitted on the server is read-only.
+    const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, submitted_at').eq('id', jobId).single()
     if (jobErr || !serverJob) {
       const message = jobErr?.message ?? 'Job not found on the server.'
       await putDraft({ ...draft, syncError: message })
       return { ok: false, reason: 'error', message }
     }
-    if (LOCKED.includes(serverJob.status) && (draft.needsSync || draft.pendingSubmit)) {
-      const message = `This job is now "${serverJob.status}" on the server — your local changes were kept and not sent.`
+    if (serverJob.submitted_at && (draft.needsSync || draft.pendingSubmit)) {
+      const message = 'This job was already submitted on the server — your local changes were kept and not sent.'
       await putDraft({ ...draft, syncError: message })
       return { ok: false, reason: 'conflict', message }
     }
@@ -165,7 +163,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
         return { ok: true, submitted: false }
       }
       const { data: updatedRows, error } = await supabase.from('jobs')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', jobId).select('id')
+        .update({ submitted_at: new Date().toISOString(), workflow_status: 'report_ready' }).eq('id', jobId).select('id')
       if (error) throw error
       // RLS can filter the update to zero rows with no error (e.g. the submitter
       // isn't assigned to this job). Keep the draft + surface it rather than

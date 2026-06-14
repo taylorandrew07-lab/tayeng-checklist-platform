@@ -104,7 +104,7 @@ export default async function ClientJobDetailPage({ params }: { params: Promise<
           <h1 className="page-title truncate">{job.title}</h1>
           <p className="text-sm text-gray-500 mt-0.5">{job.job_number}</p>
         </div>
-        {perm.can_view_pdf && ['submitted', 'completed', 'client_visible'].includes(job.status) && (
+        {perm.can_view_pdf && !!job.submitted_at && (
           <a href={`/api/pdf/${id}`} target="_blank" rel="noopener noreferrer" className="btn-primary">
             <Download className="h-4 w-4" />
             Download PDF

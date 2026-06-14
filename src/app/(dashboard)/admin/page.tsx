@@ -108,7 +108,7 @@ export default function AdminDashboard() {
       supabase.from('client_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('jobs').select(`
-        id, title, job_number, status, workflow_status, created_at, vessel_name, surveyor_name,
+        id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
         template:checklist_templates(name),
         client:clients(name)
       `).order('created_at', { ascending: false }).limit(20),

@@ -96,7 +96,6 @@ export default function NewJobPage() {
       client_id: finalClientId,
       created_by: user.id,
       assigned_to: primary?.id ?? null,
-      status: templateId ? 'in_progress' : 'draft',
       workflow_status: ids.length ? 'assigned' : 'new',
       is_overtime: isOvertime,
       started_at: new Date().toISOString(),

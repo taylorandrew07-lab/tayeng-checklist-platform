@@ -10,13 +10,13 @@ import {
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw,
 } from 'lucide-react'
-import { formatDate, checkConditionalLogic, getJobStatusLabel, getJobStatusColor, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField } from '@/lib/utils'
+import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDialog } from '@/components/ui/confirm'
-import type { TemplateField, TemplateSection, JobFieldValue, JobSignature } from '@/lib/types/database'
-import { advanceWorkflowTo } from '@/lib/jobs/tracker'
+import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
+import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import type { OfflineDraft } from '@/lib/offline/types'
@@ -146,7 +146,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // --- Offline helpers ---
     function offlineEditable(): boolean {
       return offlineAvailable() && !forceReadOnly && !!job && !!currentUserId &&
-        !['submitted', 'completed', 'client_visible', 'archived'].includes(job?.status)
+        !job?.submitted_at
     }
 
     function hydrateFromDraft(draft: OfflineDraft) {
@@ -370,9 +370,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setFieldPhotos(fPhotos)
       setGeneralPhotos(gPhotos)
 
-      if (jobData.status === 'assigned') {
-        await supabase.from('jobs').update({ status: 'in_progress', started_at: new Date().toISOString() }).eq('id', jobId)
-        // Keep the unified workflow status in step with fieldwork starting.
+      if (!jobData.started_at && !jobData.submitted_at) {
+        await supabase.from('jobs').update({ started_at: new Date().toISOString() }).eq('id', jobId)
+        // Move the unified workflow status forward as fieldwork starts.
         await advanceWorkflowTo(jobId, 'in_progress')
       }
 
@@ -386,7 +386,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           const draft = await getDraft(userId, jobId)
           if (draft && draft.userId === userId && (draft.needsSync || draft.pendingSubmit)) {
             hydrateFromDraft(draft)
-          } else if (!['submitted', 'completed', 'client_visible', 'archived'].includes(jobData.status)) {
+          } else if (!jobData.submitted_at) {
             await putDraft({
               key: '', jobId, userId, job: jobData, sections: processedSections,
               values: vals, arrayValues: arrVals, signatures: sigs,
@@ -568,7 +568,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         const supabase = createClient()
         const { data: updated, error } = await withTimeout(
           supabase.from('jobs').update({
-            status: 'submitted',
             submitted_at: new Date().toISOString(),
           }).eq('id', jobId).select('id'),
           10_000, 'Submitting checklist'
@@ -721,7 +720,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     if (!job) return null
 
-    const isSubmitted = ['submitted', 'completed', 'client_visible'].includes(job.status)
+    const isSubmitted = !!job.submitted_at
 
     // --- Profile-based edit rights ---
     // Rights are based on the real assigned/creator profile id, not the route or role.
@@ -777,8 +776,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             <h1 className="page-title truncate">{job.title}</h1>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-sm text-gray-500">{job.job_number}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getJobStatusColor(job.status)}`}>
-                {getJobStatusLabel(job.status)}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as WorkflowStatus]?.pill ?? ''}`}>
+                {WORKFLOW[job.workflow_status as WorkflowStatus]?.label ?? job.workflow_status}
               </span>
               {lastSaved && !isDirty && (
                 <span className="text-xs text-gray-400">Saved {lastSaved.toLocaleTimeString()}</span>
@@ -865,8 +864,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           <div className="rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
-              Admin edit mode — this checklist is already {getJobStatusLabel(job.status).toLowerCase()}. Use <strong>Save Draft</strong> to keep your corrections;
-              its status stays <strong>{getJobStatusLabel(job.status).toLowerCase()}</strong> and it is not re-submitted.
+              Admin edit mode — this checklist is already submitted. Use <strong>Save Draft</strong> to keep your corrections;
+              it stays submitted and is not re-submitted.
             </span>
           </div>
         )}

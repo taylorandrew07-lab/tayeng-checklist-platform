@@ -9,13 +9,12 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
-import type { JobStatus, WorkflowStatus } from '@/lib/types/database'
+import type { WorkflowStatus } from '@/lib/types/database'
 
 interface MonitorJob {
   id: string
   title: string
   job_number: string | null
-  status: JobStatus
   workflow_status: WorkflowStatus
   created_at: string
   scheduled_date: string | null
@@ -48,7 +47,7 @@ export default function OfficeJobsMonitor() {
         const { data } = await supabase
           .from('jobs')
           .select(`
-            id, title, job_number, status, workflow_status, created_at, scheduled_date, submitted_at,
+            id, title, job_number, workflow_status, created_at, scheduled_date, submitted_at,
             vessel_name, surveyor_name,
             template:checklist_templates(name),
             client:clients(name)

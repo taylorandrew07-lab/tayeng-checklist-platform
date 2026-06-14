@@ -104,7 +104,7 @@ export default function SurveyorNewChecklistPage() {
         id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
         vessel_name: vesselName.trim(), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
-        status: 'in_progress', created_by: userId, assigned_to: userId, started_at: now, job_number: null,
+        workflow_status: 'in_progress', created_by: userId, assigned_to: userId, started_at: now, job_number: null,
       }
 
       // Create the job locally first (works with no signal). It syncs — creating

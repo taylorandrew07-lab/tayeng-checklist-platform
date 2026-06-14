@@ -19,7 +19,6 @@ type PermittedJob = {
     id: string
     job_number: string
     title: string
-    status: string
     workflow_status: WorkflowStatus
     scheduled_date: string | null
     template: { name: string } | null
@@ -60,7 +59,7 @@ export default function ClientPortal() {
         .select(`
           can_view_status, can_view_pdf, can_view_checklist_details,
           job:jobs(
-            id, job_number, title, status, workflow_status, scheduled_date,
+            id, job_number, title, workflow_status, scheduled_date,
             template:checklist_templates(name)
           )
         `)
