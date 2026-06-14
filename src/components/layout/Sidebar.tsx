@@ -35,7 +35,6 @@ const adminNav: NavItem[] = [
   { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Cargo Operations', href: '/admin/cargo', icon: Ship },
   { label: 'Vessels', href: '/admin/vessels', icon: Anchor },
-  { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
   { label: 'Users', href: '/admin/users', icon: Users },

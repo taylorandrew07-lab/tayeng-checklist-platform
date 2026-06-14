@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Anchor, Loader2, Search, Plus, ChevronRight } from 'lucide-react'
+import { Anchor, Loader2, Search, Plus, ChevronRight, FolderOpen } from 'lucide-react'
 import { listVessels, findOrCreateVessel, type VesselRow } from '@/lib/vessels/api'
 import { toast } from '@/components/ui/toast'
 
@@ -38,9 +38,12 @@ export default function VesselsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
-      <div>
-        <h1 className="page-title">Vessels</h1>
-        <p className="text-gray-500 mt-1 text-sm">{loading ? '…' : `${rows.length} vessel${rows.length !== 1 ? 's' : ''}`} · the directory jobs and cargo voyages link to.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="page-title">Vessels</h1>
+          <p className="text-gray-500 mt-1 text-sm">{loading ? '…' : `${rows.length} vessel${rows.length !== 1 ? 's' : ''}`} · the directory jobs and cargo voyages link to.</p>
+        </div>
+        <Link href="/admin/documents" className="btn-secondary flex-shrink-0"><FolderOpen className="h-4 w-4" /><span className="hidden sm:inline">Document library</span></Link>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
