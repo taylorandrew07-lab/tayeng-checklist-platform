@@ -35,7 +35,7 @@ export default function AdminInvoicingPage() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center"><Receipt className="h-5 w-5 text-brand-600" /></div>
         <div>
-          <h1 className="page-title">Invoicing</h1>
+          <h1 className="page-title">Finance</h1>
           <p className="text-gray-500 text-sm mt-0.5">Invoices, client rates and billing defaults.</p>
         </div>
       </div>

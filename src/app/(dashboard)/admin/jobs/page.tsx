@@ -216,7 +216,7 @@ export default function JobsTrackerPage() {
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="page-title">Jobs Tracker</h1>
+          <h1 className="page-title">Jobs</h1>
           <p className="text-gray-500 mt-1 text-sm">{loading ? '…' : `${visible.length} job${visible.length !== 1 ? 's' : ''}`}{missingCount > 0 && !loading ? ` · ${missingCount} missing report #` : ''}</p>
         </div>
         <div className="flex items-center gap-2">

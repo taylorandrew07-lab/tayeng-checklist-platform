@@ -29,11 +29,11 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { label: 'Jobs Tracker', href: '/admin/jobs', icon: Briefcase },
-  { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
-  { label: 'Invoicing', href: '/admin/invoicing', icon: Receipt },
+  { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Insights', href: '/admin/analytics', icon: BarChart3 },
+  { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
-  { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
+  { label: 'Cargo Operations', href: '/admin/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/admin/documents', icon: FolderOpen },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
