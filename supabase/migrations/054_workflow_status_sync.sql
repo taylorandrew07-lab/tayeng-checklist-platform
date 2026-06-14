@@ -47,7 +47,8 @@ CREATE OR REPLACE FUNCTION public.jobs_sync_workflow_from_status()
 RETURNS TRIGGER AS $$
 DECLARE floor_stage TEXT;
 BEGIN
-  floor_stage := public.workflow_floor_for_status(NEW.status);
+  -- `status` is the job_status enum — cast to text for the helper.
+  floor_stage := public.workflow_floor_for_status(NEW.status::text);
   IF floor_stage IS NOT NULL
      AND public.workflow_rank(floor_stage)
          > public.workflow_rank(COALESCE(NEW.workflow_status, 'new')) THEN
@@ -68,12 +69,12 @@ CREATE TRIGGER jobs_sync_workflow
 
 -- One-time backfill of existing drifted rows (monotonic; never moves backward).
 UPDATE public.jobs
-SET workflow_status = public.workflow_floor_for_status(status)
-WHERE public.workflow_floor_for_status(status) IS NOT NULL
-  AND public.workflow_rank(public.workflow_floor_for_status(status))
+SET workflow_status = public.workflow_floor_for_status(status::text)
+WHERE public.workflow_floor_for_status(status::text) IS NOT NULL
+  AND public.workflow_rank(public.workflow_floor_for_status(status::text))
       > public.workflow_rank(COALESCE(workflow_status, 'new'));
 
 -- Sanity check (optional): rows where the two still disagree downward — expected
 -- to be only admin-advanced jobs (approved+), which is correct.
 -- SELECT id, status, workflow_status FROM public.jobs
---   WHERE workflow_status IS DISTINCT FROM COALESCE(workflow_floor_for_status(status), workflow_status);
+--   WHERE workflow_status IS DISTINCT FROM COALESCE(workflow_floor_for_status(status::text), workflow_status);
