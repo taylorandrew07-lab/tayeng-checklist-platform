@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Anchor, Loader2, Search, Plus, ChevronRight, FolderOpen } from 'lucide-react'
-import { listVessels, findOrCreateVessel, type VesselRow } from '@/lib/vessels/api'
+import { Anchor, Loader2, Search, Plus, ChevronRight, FolderOpen, Trash2 } from 'lucide-react'
+import { listVessels, findOrCreateVessel, deleteVessel, type VesselRow } from '@/lib/vessels/api'
 import { toast } from '@/components/ui/toast'
+import { confirmDialog } from '@/components/ui/confirm'
 
 export default function VesselsPage() {
   const [rows, setRows] = useState<VesselRow[]>([])
@@ -28,6 +29,21 @@ export default function VesselsPage() {
     if (!id) { toast.error('Could not add vessel'); return }
     setNewName('')
     toast.success('Vessel added')
+    load()
+  }
+
+  async function removeVessel(v: VesselRow) {
+    const linked = v.jobs > 0 ? ` and unlink it from ${v.jobs} job${v.jobs !== 1 ? 's' : ''} (their records and vessel names are kept)` : ''
+    const ok = await confirmDialog({
+      title: `Delete M.V. ${v.name}?`,
+      message: `This permanently deletes the vessel record${linked}. Any linked cargo voyages are also unlinked, and this vessel's document library is removed. This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete vessel',
+    })
+    if (!ok) return
+    const { error } = await deleteVessel(v.id)
+    if (error) { toast.error(error); return }
+    toast.success('Vessel deleted')
     load()
   }
 
@@ -89,7 +105,12 @@ export default function VesselsPage() {
                   <td className="px-4 py-2.5 text-gray-600 tnum">{v.imo || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-2.5 text-gray-600 tnum">{v.official_number || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-2.5 text-gray-700 tnum">{v.jobs}</td>
-                  <td className="px-4 py-2.5 text-right"><Link href={`/admin/vessels/${v.id}`} className="text-gray-300 hover:text-brand-600"><ChevronRight className="h-4 w-4 inline" /></Link></td>
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <button onClick={() => removeVessel(v)} title="Delete vessel" className="text-gray-300 hover:text-red-600 p-1"><Trash2 className="h-4 w-4" /></button>
+                      <Link href={`/admin/vessels/${v.id}`} title="Open" className="text-gray-300 hover:text-brand-600 p-1"><ChevronRight className="h-4 w-4 inline" /></Link>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

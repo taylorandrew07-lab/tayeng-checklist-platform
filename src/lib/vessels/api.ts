@@ -36,6 +36,19 @@ export async function updateVessel(
   return { error: error?.message }
 }
 
+/** Permanently delete a vessel (admin). Linked jobs/cargo voyages are unlinked
+ *  (vessel_id → NULL) and keep their vessel_name snapshot; the vessel's
+ *  document-library rows cascade-delete, so we first remove their storage blobs
+ *  (best-effort) to avoid orphaning files in the bucket. */
+export async function deleteVessel(id: string): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: docs } = await supabase.from('vessel_documents').select('storage_path').eq('vessel_id', id)
+  const paths = ((docs ?? []) as any[]).map(d => d.storage_path).filter(Boolean)
+  if (paths.length) { try { await supabase.storage.from('vessel-documents').remove(paths) } catch { /* clean up rows anyway */ } }
+  const { error } = await supabase.from('vessels').delete().eq('id', id)
+  return { error: error?.message }
+}
+
 /** Find a vessel by exact (case-insensitive) name, or create it. Returns the id.
  *  Used by the job/cargo pickers to link + snapshot in one step. */
 export async function findOrCreateVessel(name: string): Promise<string | null> {
