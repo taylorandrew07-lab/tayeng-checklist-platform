@@ -56,14 +56,16 @@ export default function ClientsPage() {
 
   async function load() {
     const supabase = createClient()
-    const { data: c } = await supabase.from('clients').select('*').order('name')
+    // One clients query + one jobs query (tallied in JS) instead of a count
+    // query per client.
+    const [{ data: c }, { data: jobRows }] = await Promise.all([
+      supabase.from('clients').select('*').order('name'),
+      supabase.from('jobs').select('client_id'),
+    ])
     setClients(c ?? [])
-
-    // Get job counts per client
     const counts: Record<string, number> = {}
-    for (const client of (c ?? [])) {
-      const { count } = await supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('client_id', client.id)
-      counts[client.id] = count ?? 0
+    for (const j of (jobRows ?? []) as { client_id: string | null }[]) {
+      if (j.client_id) counts[j.client_id] = (counts[j.client_id] ?? 0) + 1
     }
     setJobCounts(counts)
     setLoading(false)

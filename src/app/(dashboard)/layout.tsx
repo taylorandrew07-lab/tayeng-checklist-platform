@@ -39,14 +39,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const msgTick = useRealtimeRefresh('message_recipients')
 
+  // Load profile + nav badges ONCE per session — NOT on every navigation. (This
+  // used to re-run on every pathname change, re-scanning jobs+invoices for the
+  // reconcile badge on each page load.)
   useEffect(() => {
     async function loadProfile() {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       // Supabase persists the session itself (cookie storage, auto-refreshed).
-      // Only redirect when there is genuinely no valid session — never force a
-      // sign-out based on custom localStorage flags, which mobile browsers evict
-      // and which was logging "Remember me" users out on every app open.
+      // Only redirect when there is genuinely no valid session.
       if (!session) { router.push('/login'); return }
 
       const { data } = await supabase
@@ -63,9 +64,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           if (cached) {
             try {
               const parsed = JSON.parse(cached)
-              // Only trust the cache if it's the same user as the live session, and
-              // only for the offline-supported staff routes (surveyor + admin).
-              const staffPath = pathname.startsWith('/surveyor') || pathname.startsWith('/admin')
+              const path = typeof window !== 'undefined' ? window.location.pathname : ''
+              const staffPath = path.startsWith('/surveyor') || path.startsWith('/admin')
               if (parsed?.id === session.user.id && staffPath) {
                 setProfile(parsed); setLoading(false); return
               }
@@ -76,20 +76,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       try { localStorage.setItem('te_profile', JSON.stringify(data)) } catch { /* storage may be unavailable */ }
       setProfile(data)
+      setLoading(false)
 
-      // Role-based path guard: redirect users who landed on the wrong dashboard.
-      // Shared routes (e.g. the profile screen) are available to every role.
-      const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel']
-      const expectedPrefix = ROLE_HOME[data.role]
-      const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
-      if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {
-        router.replace(expectedPrefix)
-        return
-      }
-
-      // Load the admin "needs attention" count for the Users hub badge — every
-      // kind of request that lands under People (Team / Clients / Approvals):
-      // pending signups, client requests, and profile change requests.
+      // Nav badge counts (admin). Cheap head-count queries; reconcile is heavier
+      // so it's fire-and-forget and only runs this once.
       if (data.role === 'admin') {
         const [u, c, p] = await Promise.all([
           supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', false),
@@ -97,20 +87,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         ])
         setPendingCount((u.count ?? 0) + (c.count ?? 0) + (p.count ?? 0))
-        // Billing-reconciliation flags (jobs done but not invoiced/closed).
         listReconciliation().then(r => setReconcileCount(r.items.length)).catch(() => {})
       }
-
-      // Load this office user's granted permission keys to drive their nav.
       if (data.role === 'office') {
         const granted = await fetchMyOfficePermissions(supabase)
         setOfficePermissions(Array.from(granted))
       }
-
-      setLoading(false)
     }
     loadProfile()
-  }, [router, pathname])
+  }, [router])
+
+  // Role-based path guard — runs on navigation (cheap; no fetches). Redirects a
+  // user who lands on another role's area; shared routes are open to everyone.
+  useEffect(() => {
+    if (!profile) return
+    const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel']
+    const expectedPrefix = ROLE_HOME[profile.role]
+    const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
+    if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {
+      router.replace(expectedPrefix)
+    }
+  }, [profile, pathname, router])
 
   // Live unread-message count for the Inbox nav badge. Safe before migration 037
   // (unreadCount returns 0 on error).
