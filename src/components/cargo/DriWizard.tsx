@@ -40,8 +40,8 @@ function RepeatList<T extends { id: string }>({ items, onChange, makeNew, addLab
     <div className="space-y-2">
       {items.length === 0 && <p className="text-sm text-gray-400">{empty ?? 'None yet.'}</p>}
       {items.map(item => (
-        <div key={item.id} className="flex items-center gap-2">
-          <div className="flex-1 flex flex-wrap items-end gap-2">{render(item, patch => update(item.id, patch))}</div>
+        <div key={item.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2 hover:bg-gray-50 transition-colors">
+          <div className="flex-1 flex flex-wrap items-end gap-x-3 gap-y-2">{render(item, patch => update(item.id, patch))}</div>
           {!readOnly && <button onClick={() => remove(item.id)} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"><X className="h-3.5 w-3.5" /></button>}
         </div>
       ))}
@@ -115,7 +115,7 @@ export function PrepTab({ dri, holdCount, onChange, readOnly }: { dri: DriReport
       <Section title="Hold inspections" hint="Standard sentence pre-filled per hold — edit as needed.">
         <div className="space-y-2">
           {inspections.map(h => (
-            <div key={h.holdNo} className="flex items-center gap-2">
+            <div key={h.holdNo} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2">
               <span className="text-sm font-medium text-gray-700 w-16 shrink-0">Hold {h.holdNo}</span>
               <input disabled={readOnly} value={h.conditionText} onChange={e => onChange({ ...dri, holdInspections: inspections.map(x => x.holdNo === h.holdNo ? { ...x, conditionText: e.target.value } : x) })} className={`${cell} flex-1`} />
               <label className="flex items-center gap-1.5 text-xs text-gray-500 shrink-0"><input type="checkbox" disabled={readOnly} checked={h.clean} onChange={e => onChange({ ...dri, holdInspections: inspections.map(x => x.holdNo === h.holdNo ? { ...x, clean: e.target.checked } : x) })} className="h-4 w-4 rounded border-gray-300 text-brand-600" />clean</label>
