@@ -11,8 +11,8 @@ import { COMPANY } from '@/lib/company'
 import type { Voyage } from '@/lib/cargo/types'
 import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
-import { DriReportDocument } from '@/lib/cargo/pdf/DriReportDocument'
-import { buildDriDocxBlob } from '@/lib/cargo/dri-docx'
+// @react-pdf (~600 KB) and docx are imported on demand inside the handlers so
+// they don't ship in the voyage workspace's initial load.
 
 const LOGO_URL = '/logo-invoice.png'
 
@@ -60,7 +60,10 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     setBusy('pdf')
     try {
       persistConfig()
-      const { pdf } = await import('@react-pdf/renderer')
+      const [{ pdf }, { DriReportDocument }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('@/lib/cargo/pdf/DriReportDocument'),
+      ])
       const blob = await pdf(<DriReportDocument blocks={blocks} title={title} logoDataUrl={logo?.dataUrl} />).toBlob()
       download(blob, `${fileBase}.pdf`)
     } catch (e: any) {
@@ -72,6 +75,7 @@ export default function DriReportBuilder({ voyage, onChange }: { voyage: Voyage;
     setBusy('docx')
     try {
       persistConfig()
+      const { buildDriDocxBlob } = await import('@/lib/cargo/dri-docx')
       const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined)
       download(blob, `${fileBase}.docx`)
     } catch (e: any) {

@@ -6,7 +6,11 @@
 import React from 'react'
 import type { Voyage, CargoPhoto, Camera, Period } from '../types'
 import { compressForPdf, type Quality } from '../photo'
-import { CargoReportDocument, FULL_REPORT, type PreparedPhoto, type ReportInclude } from './CargoReportDocument'
+// @react-pdf/renderer (~600 KB) lives in ./CargoReportDocument; both the document and
+// the FULL_REPORT default are imported on demand inside generateCargoReport so the
+// library stays out of the cargo workspace's initial bundle. Types are erased, so the
+// type-only import below costs nothing at runtime.
+import type { PreparedPhoto, ReportInclude } from './CargoReportDocument'
 
 async function loadLogoDataUrl(): Promise<string | null> {
   try {
@@ -38,6 +42,8 @@ export async function generateCargoReport(
   photos: CargoPhoto[],
   opts: GenerateOptions
 ): Promise<Blob> {
+  // Load the report document + its FULL_REPORT default on demand (pulls in @react-pdf).
+  const { CargoReportDocument, FULL_REPORT } = await import('./CargoReportDocument')
   const include = opts.include ?? FULL_REPORT
 
   // Only compress photos when the report actually includes them.
