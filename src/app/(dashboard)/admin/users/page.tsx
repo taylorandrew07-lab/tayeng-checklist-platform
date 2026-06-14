@@ -418,7 +418,7 @@ export default function UsersPage() {
                       {user.full_name.charAt(0)}
                     </div>
                     <div>
-                      <span className="font-medium text-gray-900">{user.full_name}</span>
+                      <a href={`/admin/users/${user.id}`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{user.full_name}</a>
                       {(user as any).is_super_admin && (
                         <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
                           <ShieldCheck className="h-3 w-3" />Super Admin
