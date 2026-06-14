@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter, usePathname } from 'next/navigation'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
@@ -136,6 +137,9 @@ export default function JobsTrackerPage() {
   // don't trigger a full-grid refresh (flicker / scroll jump) on every save.
   const suppressUntil = useRef(0)
   const firstTick = useRef(true)
+  const router = useRouter()
+  const pathname = usePathname()
+  const didInitUrl = useRef(false)
 
   const load = useCallback(async () => {
     const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
@@ -148,6 +152,35 @@ export default function JobsTrackerPage() {
     if (Date.now() < suppressUntil.current) return
     load()
   }, [tick, load])
+
+  // Restore filters from the URL once, so a shared/bookmarked view reopens as-is.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const v = sp.get('view'); if (v) setFilter(v as Filter)
+    const t = sp.get('type'); if (t) setTypeFilter(t)
+    const s = sp.get('surveyor'); if (s) setSurveyorFilter(s)
+    if (sp.get('ot') === '1') setOtOnly(true)
+    const qq = sp.get('q'); if (qq) setQ(qq)
+    const so = sp.get('sort'); if (so) { const [k, d] = so.split(':'); if (k) setSort({ key: k as SortKey, dir: d === 'asc' ? 'asc' : 'desc' }) }
+    didInitUrl.current = true
+  }, [])
+
+  // Mirror the active view into the URL (shareable, bookmarkable, reload-safe).
+  useEffect(() => {
+    if (!didInitUrl.current) return
+    const h = setTimeout(() => {
+      const p = new URLSearchParams()
+      if (filter !== 'open') p.set('view', filter)
+      if (typeFilter) p.set('type', typeFilter)
+      if (surveyorFilter) p.set('surveyor', surveyorFilter)
+      if (otOnly) p.set('ot', '1')
+      if (q.trim()) p.set('q', q.trim())
+      if (!(sort.key === 'date' && sort.dir === 'desc')) p.set('sort', `${sort.key}:${sort.dir}`)
+      const qs = p.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    }, 200)
+    return () => clearTimeout(h)
+  }, [filter, typeFilter, surveyorFilter, otOnly, q, sort, pathname, router])
 
   const mutate = useCallback(async (id: string, patch: Partial<TrackerRow>, persist: () => Promise<{ error?: string }>) => {
     const prev = rows
