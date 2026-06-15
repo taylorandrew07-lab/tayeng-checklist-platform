@@ -6,6 +6,7 @@
 import React from 'react'
 import type { Voyage, CargoPhoto, Camera, Period } from '../types'
 import { compressForPdf, type Quality } from '../photo'
+import { deliverPdf } from '@/lib/pdf/deliver'
 // @react-pdf/renderer (~600 KB) lives in ./CargoReportDocument; both the document and
 // the FULL_REPORT default are imported on demand inside generateCargoReport so the
 // library stays out of the cargo workspace's initial bundle. Types are erased, so the
@@ -73,17 +74,12 @@ export async function generateCargoReport(
   return await pdf(element as unknown as Parameters<typeof pdf>[0]).toBlob()
 }
 
-/** Generate and download the report. Filename derives from vessel + voyage. */
+/** Generate then share/download the report. Filename derives from vessel + voyage.
+ *  Uses the Web Share API on mobile (native save/share sheet) and a real file
+ *  download on desktop — both work offline on supported devices. */
 export async function downloadCargoReport(voyage: Voyage, photos: CargoPhoto[], opts: GenerateOptions): Promise<void> {
   const blob = await generateCargoReport(voyage, photos, opts)
   const safe = (s: string) => (s || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase()
   const filename = `cargo_monitoring_${safe(voyage.vesselName) || 'report'}${voyage.voyageNumber ? `_${safe(voyage.voyageNumber)}` : ''}.pdf`
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  await deliverPdf(blob, filename, { title: filename })
 }

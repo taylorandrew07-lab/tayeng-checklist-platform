@@ -18,6 +18,7 @@ import JobOpsPanel from '@/components/job/JobOpsPanel'
 import InvoiceCard from '@/components/job/InvoiceCard'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
+import { deliverJobPdf } from '@/lib/pdf/deliver'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: ClipboardList },
@@ -43,6 +44,19 @@ export default function AdminChecklistDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [sharing, setSharing] = useState(false)
+
+  // Share (mobile) or download (desktop) the server-rendered checklist PDF.
+  async function downloadPdf() {
+    setSharing(true)
+    try {
+      await deliverJobPdf(jobId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not download the report.')
+    } finally {
+      setSharing(false)
+    }
+  }
   const [tab, setTab] = useState<DetailTab>('overview')
   const [editForm, setEditForm] = useState({
     title: '',
@@ -198,9 +212,9 @@ export default function AdminChecklistDetailPage() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {!!job.submitted_at && (
-            <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-secondary" title="Download PDF">
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Download PDF</span>
+            <button onClick={downloadPdf} disabled={sharing} className="btn-secondary" title="Download / Share PDF">
+              {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline">Download / Share PDF</span>
             </button>
           )}
           <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-secondary' : 'btn-secondary'}>
@@ -345,9 +359,9 @@ export default function AdminChecklistDetailPage() {
                 View Template
               </button>
               {!!job.submitted_at && (
-                <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-ghost w-full justify-start text-sm">
-                  <Download className="h-4 w-4" />
-                  Download PDF
+                <button onClick={downloadPdf} disabled={sharing} className="btn-ghost w-full justify-start text-sm">
+                  {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Download / Share PDF
                 </button>
               )}
             </div>

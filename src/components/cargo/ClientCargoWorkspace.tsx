@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Table, LineChart, Images, FileDown, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from '@/components/ui/toast'
 import { type Voyage } from '@/lib/cargo/types'
 import { getRemoteVoyage, remotePhotosToCargoPhotos, type RemotePhoto } from '@/lib/cargo/remote'
 import { getVoyageReportNumber, issueReportNumber } from '@/lib/cargo/register'
@@ -52,6 +53,8 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
     try {
       const cargoPhotos = await remotePhotosToCargoPhotos(photos, voyage.id)
       await downloadCargoReport(voyage, cargoPhotos, { quality: 'standard' })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not generate the report.')
     } finally {
       setGenerating(false)
     }

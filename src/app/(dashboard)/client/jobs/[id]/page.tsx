@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Download, Lock } from 'lucide-react'
+import { ArrowLeft, Lock } from 'lucide-react'
 import { formatDate, checkConditionalLogic } from '@/lib/utils'
 import { CLIENT_STATUS, clientStatusFor } from '@/lib/jobs/tracker'
+import JobPdfButton from '@/components/job/JobPdfButton'
 
 // Resolve {uuid} tokens in a label to the selected dropdown option label (or the
 // live value of a deferred "Other" text field). Mirrors the editor/PDF resolvers.
@@ -105,10 +106,7 @@ export default async function ClientJobDetailPage({ params }: { params: Promise<
           <p className="text-sm text-gray-500 mt-0.5">{job.job_number}</p>
         </div>
         {perm.can_view_pdf && !!job.submitted_at && (
-          <a href={`/api/pdf/${id}`} target="_blank" rel="noopener noreferrer" className="btn-primary">
-            <Download className="h-4 w-4" />
-            Download PDF
-          </a>
+          <JobPdfButton jobId={id} />
         )}
       </div>
 
