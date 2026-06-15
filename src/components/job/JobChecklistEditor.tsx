@@ -771,8 +771,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
         const raw = values[fieldId] ?? ''
         const val = raw.includes('|||') ? raw.split('|||')[0] : raw
-        if (!val) return label.match(/\{[0-9a-f-]{36}\}/gi)?.length === 1 ? label : ''
         const srcField = allFieldsFlat.find(f => f.id === fieldId)
+        // Not yet answered: show the source field's name as a placeholder (e.g.
+        // "… of [Method of Delivery]") so the label is readable until selected.
+        // NEVER return the whole `label` here — that duplicates the text and leaks
+        // the raw token. Unknown/orphaned token id → drop it.
+        if (!val) return srcField?.label ? `[${srcField.label}]` : ''
         if (srcField?.field_type === 'dropdown') {
           const opt = (srcField.options ?? []).find((o: any) => o.value === val)
           if (opt?.useFieldId) {
