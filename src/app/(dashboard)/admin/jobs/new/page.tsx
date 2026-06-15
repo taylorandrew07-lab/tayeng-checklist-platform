@@ -190,7 +190,8 @@ export default function NewJobPage() {
               {surveyors.map(s => (
                 <label key={s.id} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
                   <input type="checkbox" checked={picked.has(s.id)} onChange={() => togglePicked(s.id)} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-                  <span className="text-gray-800">{s.display_title ?? s.full_name}</span>
+                  <span className="text-gray-800">{s.full_name}</span>
+                  {s.display_title && <span className="text-xs text-gray-400">{s.display_title}</span>}
                   {s.role === 'admin' && <span className="text-xs text-gray-400">admin</span>}
                 </label>
               ))}

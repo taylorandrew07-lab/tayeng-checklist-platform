@@ -36,10 +36,13 @@ interface Props {
   backHref: string
   /** Force the checklist into read-only mode regardless of job status. */
   forceReadOnly?: boolean
+  /** Hide the editor's own "Download PDF" buttons when the page already shows one
+   *  in its header (e.g. the admin job page) — avoids duplicate download buttons. */
+  hideInlinePdf?: boolean
 }
 
 const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
-  function JobChecklistEditor({ jobId, backHref, forceReadOnly = false }, ref) {
+  function JobChecklistEditor({ jobId, backHref, forceReadOnly = false, hideInlinePdf = false }, ref) {
     const router = useRouter()
 
     const [job, setJob] = useState<any>(null)
@@ -906,12 +909,14 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               <p className="text-sm font-medium text-green-800">Checklist submitted</p>
               <p className="text-xs text-green-600">This checklist is read-only.</p>
             </div>
-            <button
-              onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')}
-              className="btn-secondary text-xs py-1.5 px-3"
-            >
-              <Download className="h-3.5 w-3.5" />PDF
-            </button>
+            {!hideInlinePdf && (
+              <button
+                onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                <Download className="h-3.5 w-3.5" />Download PDF
+              </button>
+            )}
           </div>
         )}
 
@@ -1150,7 +1155,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           </div>
         )}
 
-        {readOnly && (
+        {/* Bottom download only for a read-only checklist that is NOT yet submitted
+            (the submitted banner above already carries the button). Hidden when the
+            page provides its own header download. */}
+        {readOnly && !isSubmitted && !hideInlinePdf && (
           <div className="flex justify-end">
             <button onClick={() => window.open(`/api/pdf/${jobId}`, '_blank')} className="btn-primary">
               <Download className="h-4 w-4" />Download PDF

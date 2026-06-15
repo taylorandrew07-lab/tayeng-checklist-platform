@@ -284,7 +284,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const sMap = new Map<string, { names: string[]; reg: number; ot: number }>()
   for (const r of (js ?? []) as any[]) {
     let e = sMap.get(r.job_id); if (!e) { e = { names: [], reg: 0, ot: 0 }; sMap.set(r.job_id, e) }
-    const n = r.surveyor?.display_title ?? r.surveyor?.full_name; if (n) e.names.push(n)
+    const n = r.surveyor?.full_name; if (n) e.names.push(n)
     e.reg += Number(r.regular_hours ?? 0); e.ot += Number(r.overtime_hours ?? 0)
   }
   const iMap = new Map<string, any>()

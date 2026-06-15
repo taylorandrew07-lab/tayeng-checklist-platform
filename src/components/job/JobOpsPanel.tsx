@@ -59,7 +59,7 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
   return (
     <div className="rounded-lg border border-gray-200 p-3">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-sm font-medium text-gray-800">{row.display_title ?? row.full_name}{row.role === 'admin' ? ' (admin)' : ''}</span>
+        <span className="text-sm font-medium text-gray-800">{row.full_name}{row.display_title ? <span className="font-normal text-gray-400"> · {row.display_title}</span> : null}{row.role === 'admin' ? ' (admin)' : ''}</span>
         {isAdmin && <button onClick={onRemove} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -132,7 +132,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     setAddId(''); onChanged(); reload()
   }
   async function remove(row: JobSurveyorRow) {
-    if (!(await confirmDialog({ message: `Remove ${row.display_title ?? row.full_name} from this job?`, confirmLabel: 'Remove' }))) return
+    if (!(await confirmDialog({ message: `Remove ${row.full_name} from this job?`, confirmLabel: 'Remove' }))) return
     await removeJobSurveyor(row.id, job.id); onChanged(); reload()
   }
 
@@ -220,7 +220,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           <div className="flex items-center gap-2">
             <select value={addId} onChange={e => setAddId(e.target.value)} className="input-base text-sm py-1.5 flex-1">
               <option value="">Add a surveyor…</option>
-              {available.map(a => <option key={a.id} value={a.id}>{a.display_title ?? a.full_name}{a.role === 'admin' ? ' (admin)' : ''}</option>)}
+              {available.map(a => <option key={a.id} value={a.id}>{a.full_name}{a.display_title ? ` · ${a.display_title}` : ''}{a.role === 'admin' ? ' (admin)' : ''}</option>)}
             </select>
             <button onClick={add} disabled={!addId || busy} className="btn-secondary text-sm"><Plus className="h-4 w-4" />Add</button>
           </div>

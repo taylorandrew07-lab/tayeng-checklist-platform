@@ -56,7 +56,7 @@ export function aggregateLabour(rows: any[]): Map<string, LabourTotals> {
   for (const r of rows ?? []) {
     let l = m.get(r.surveyor_id)
     if (!l) {
-      l = { surveyor_id: r.surveyor_id, name: r.surveyor?.display_title ?? r.surveyor?.full_name ?? 'Unknown', jobs: new Set(), regular_hours: 0, overtime_hours: 0, pay: new Map() }
+      l = { surveyor_id: r.surveyor_id, name: r.surveyor?.full_name ?? 'Unknown', jobs: new Set(), regular_hours: 0, overtime_hours: 0, pay: new Map() }
       m.set(r.surveyor_id, l)
     }
     if (r.job_id) l.jobs.add(r.job_id)

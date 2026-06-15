@@ -368,7 +368,7 @@ export default function AdminChecklistDetailPage() {
       {/* Checklist editor stays mounted (preserves unsaved edits + the back/leave
           guard via editorRef); shown only on the Checklist tab. */}
       <div className={tab === 'checklist' ? '' : 'hidden'}>
-        <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" />
+        <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" hideInlinePdf />
       </div>
     </div>
   )

@@ -49,7 +49,7 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
     status: r.status,
     updated_at: r.updated_at,
     synced_at: r.synced_at,
-    owner_name: r.owner?.display_title ?? r.owner?.full_name ?? null,
+    owner_name: r.owner?.full_name ?? null,
   }))
 }
 
