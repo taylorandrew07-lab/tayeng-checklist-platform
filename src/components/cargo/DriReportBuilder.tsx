@@ -13,6 +13,7 @@ import { CAMERA_LABELS } from '@/lib/cargo/types'
 import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, completenessWarnings, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
 import { compressForPdf } from '@/lib/cargo/photo'
+import { deliverFile, PDF_MIME, DOCX_MIME } from '@/lib/pdf/deliver'
 // @react-pdf (~600 KB) and docx are imported on demand inside the handlers so
 // they don't ship in the voyage workspace's initial load.
 
@@ -22,13 +23,6 @@ interface PreparedPhotoRow {
   dataUrl: string; width: number; height: number
   holdNumber: number; camera: Camera; dateISO: string; period: Period
   actualTime: string | null; caption: string
-}
-
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = filename; a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 // Load the letterhead logo once: a data URL (PDF/preview) + raw bytes (.docx).
@@ -123,7 +117,7 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
       ])
       const photos = prepared.map(p => ({ dataUrl: p.dataUrl, holdNumber: p.holdNumber, camera: p.camera, dateISO: p.dateISO, period: p.period, actualTime: p.actualTime }))
       const blob = await pdf(<DriReportDocument blocks={blocks} title={title} logoDataUrl={logo?.dataUrl} photos={photos} />).toBlob()
-      download(blob, `${fileBase}.pdf`)
+      await deliverFile(blob, `${fileBase}.pdf`, PDF_MIME, { title })
     } catch (e: any) {
       toast.error(e?.message ?? 'PDF generation failed')
     } finally { setBusy(null) }
@@ -137,7 +131,7 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
       const prepared = await preparePhotos()
       const photos = prepared.map(p => ({ dataUrl: p.dataUrl, width: p.width, height: p.height, caption: p.caption }))
       const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined, photos)
-      download(blob, `${fileBase}.docx`)
+      await deliverFile(blob, `${fileBase}.docx`, DOCX_MIME, { title })
     } catch (e: any) {
       toast.error(e?.message ?? '.docx generation failed')
     } finally { setBusy(null) }

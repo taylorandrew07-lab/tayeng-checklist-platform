@@ -9,9 +9,15 @@
 // Must be called from a direct user gesture (click handler) — the share/download
 // both require it — and only works over HTTPS (production is).
 
-/** Share if the platform supports sharing files (mobile); else download. */
-export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: string }): Promise<void> {
-  const file = new File([blob], filename, { type: 'application/pdf' })
+// Common MIME types for the files this app generates.
+export const PDF_MIME = 'application/pdf'
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+export const CSV_MIME = 'text/csv'
+
+/** Share a file if the platform supports sharing files (mobile); else download.
+ *  Works for any file type — PDF, .docx, CSV, images — by passing its MIME type. */
+export async function deliverFile(blob: Blob, filename: string, mimeType: string, opts?: { title?: string }): Promise<void> {
+  const file = new File([blob], filename, { type: mimeType })
   if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: opts?.title ?? filename })
@@ -31,6 +37,11 @@ export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: 
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
+
+/** Share if the platform supports sharing files (mobile); else download a PDF. */
+export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: string }): Promise<void> {
+  return deliverFile(blob, filename, PDF_MIME, opts)
 }
 
 /** Fetch the server-rendered checklist PDF, then share/download it. */

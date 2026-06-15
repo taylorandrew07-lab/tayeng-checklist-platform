@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, Lock, Copy, Check, Download, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { signedUrl, formatBytes } from '@/lib/personal-docs/api'
+import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 
 interface Person {
   id: string; full_name: string; role: string
@@ -125,13 +126,11 @@ export default function PersonnelPage() {
     const tsv = buildMatrix().map(r => r.join('\t')).join('\n')
     navigator.clipboard?.writeText(tsv).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
   }
-  function downloadCsv() {
+  async function downloadCsv() {
     const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
     const csv = buildMatrix().map(r => r.map(esc).join(',')).join('\r\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
-    const a = document.createElement('a')
-    a.href = url; a.download = 'personnel.csv'; a.click()
-    URL.revokeObjectURL(url)
+    // Share on mobile (Save to Files), download on desktop.
+    await deliverFile(new Blob([csv], { type: CSV_MIME }), 'personnel.csv', CSV_MIME)
   }
   async function openFile(path: string | null) {
     if (!path) return
