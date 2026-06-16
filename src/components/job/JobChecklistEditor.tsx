@@ -741,6 +741,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const isSubmitted = !!job.submitted_at
 
     // --- Profile-based edit rights ---
+    // INVARIANT (read before changing): this UI edit-rule must never be BROADER than
+    // the DB "Surveyors can update jobs" policy (migration 056 = any active surveyor)
+    // and the PDF route's download rule. If the UI lets someone edit a job the DB
+    // then refuses to update, you get the silent "submits but nothing saves / won't
+    // download" bug. Equal-or-stricter is safe (a surveyor only sees THEIR jobs as
+    // editable); broader is not. The submit handler also detects 0-row RLS denials.
     // Rights are based on the real assigned/creator profile id, not the route or role.
     const isAssignedUser = !!currentUserId && job.assigned_to === currentUserId
     // Creator may edit only when the job is not assigned to a *different* real user

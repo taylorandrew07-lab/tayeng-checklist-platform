@@ -27,13 +27,18 @@ export async function GET(
 
   const { jobId } = await params
 
-  // Authorization check
+  // Authorization check.
+  // INVARIANT: an ACTIVE surveyor may edit, submit AND download ANY job — the same
+  // rule across all three surfaces (checklist editor, the "Surveyors can update
+  // jobs" RLS policy from migration 056, and this route). Keeping them identical is
+  // what prevents the "looks editable / submits fine but won't download" class of
+  // bug. is_active is already enforced above. Do NOT narrow this to assigned_to
+  // without also narrowing the editor + the 056 UPDATE policy in lockstep.
   let canAccess = false
   if (profile?.role === 'admin') {
     canAccess = true
   } else if (profile?.role === 'surveyor') {
-    const { data: job } = await supabase.from('jobs').select('assigned_to').eq('id', jobId).single()
-    canAccess = job?.assigned_to === user.id
+    canAccess = true
   } else if (profile?.role === 'client') {
     const { data: clientLink } = await supabase.from('client_users').select('client_id').eq('profile_id', user.id).single()
     if (clientLink) {
@@ -108,19 +113,29 @@ export async function GET(
     return checkConditionalLogic(s.conditional_logic, vals)
   })
 
-  // Render PDF
-  const pdfBuffer = await renderToBuffer(
-    React.createElement(JobPDF, {
-      job,
-      sections: processedSections,
-      fieldValues: vals,
-      arrayValues: arrayVals,
-      signatures: sigs,
-      photoCount: photoCount ?? 0,
-    }) as any
-  )
+  // Render PDF. Wrap so a render failure returns a clean JSON 500 (which the client
+  // helper turns into a friendly "Could not generate the report") instead of an
+  // unhandled crash that the browser might render as a broken page.
+  let pdfBuffer: Buffer
+  try {
+    pdfBuffer = await renderToBuffer(
+      React.createElement(JobPDF, {
+        job,
+        sections: processedSections,
+        fieldValues: vals,
+        arrayValues: arrayVals,
+        signatures: sigs,
+        photoCount: photoCount ?? 0,
+      }) as any
+    )
+  } catch (e) {
+    console.error('[pdf:render]', jobId, e)
+    return NextResponse.json({ error: 'Failed to render the report.' }, { status: 500 })
+  }
 
-  const filename = `${job.job_number ?? 'job'}_${job.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`
+  // Guard against a null/empty title so the filename never throws.
+  const safeTitle = (job.title ?? 'report').replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'report'
+  const filename = `${job.job_number ?? 'job'}_${safeTitle}.pdf`
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,
