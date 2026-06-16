@@ -576,11 +576,19 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           return
         }
 
-        const saved = await handleSave()
-        if (!saved) {
-          const message = 'The latest edits could not be saved, so the checklist was not submitted. Please try Save Draft first, then submit again.'
-          setSubmitError(message)
-          return
+        // Only re-save when there are genuinely unsaved edits. Re-uploading an
+        // already-saved checklist adds several network round-trips that fail on
+        // poor connections — the common "filled it, autosaved, now submit" case
+        // should be a single small request, which is far more likely to complete
+        // on flaky field wifi. (If autosave is off/unavailable, isDirty stays true
+        // and we still save.)
+        if (isDirty) {
+          const saved = await handleSave()
+          if (!saved) {
+            const message = 'The latest edits could not be saved, so the checklist was not submitted. Please try Save Draft first, then submit again.'
+            setSubmitError(message)
+            return
+          }
         }
 
         const supabase = createClient()
@@ -588,7 +596,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           supabase.from('jobs').update({
             submitted_at: new Date().toISOString(),
           }).eq('id', jobId).select('id'),
-          10_000, 'Submitting checklist'
+          20_000, 'Submitting checklist'
         )
 
         if (error) {
