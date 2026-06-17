@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
-import { formatDate } from '@/lib/utils'
+import { formatDate, titleCaseVesselName } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import {
@@ -331,7 +331,7 @@ export default function JobsTrackerPage() {
                   </td>
                   <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
                   <td className="py-1.5 pr-2 min-w-[120px]"><EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} /></td>
-                  <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => patchRow(r.id, { vessel_name: v }, { vessel_name: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /></td>
                   <td className="px-3 py-1.5">
                     {r.client_name
                       ? <Link href={`/admin/clients/${r.client_id}`} className="text-brand-700 hover:underline">{r.client_name}</Link>

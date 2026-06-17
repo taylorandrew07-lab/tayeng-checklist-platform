@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { loadNewJobData } from '@/lib/offline/newJobData'
 import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
+import { titleCaseVesselName } from '@/lib/utils'
 
 function formatDateDMY(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0')
@@ -102,7 +103,7 @@ export default function SurveyorNewChecklistPage() {
       const now = new Date().toISOString()
       const job = {
         id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
-        vessel_name: vesselName.trim(), surveyor_name: finalSurveyor,
+        vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId, started_at: now, job_number: null,
       }

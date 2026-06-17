@@ -19,6 +19,7 @@ import InvoiceCard from '@/components/job/InvoiceCard'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
+import { titleCaseVesselName } from '@/lib/utils'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: ClipboardList },
@@ -125,14 +126,15 @@ export default function AdminChecklistDetailPage() {
       if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
     }
 
-    // Link to the vessels directory from the (possibly edited) vessel name.
-    const vesselId = editForm.vessel_name.trim() ? await findOrCreateVessel(editForm.vessel_name.trim()) : null
+    // Standardise the (possibly edited) vessel name + link to the directory.
+    const vessel = titleCaseVesselName(editForm.vessel_name)
+    const vesselId = vessel ? await findOrCreateVessel(vessel) : null
 
     const { error: err } = await supabase
       .from('jobs')
       .update({
         title: editForm.title,
-        vessel_name: editForm.vessel_name || null,
+        vessel_name: vessel || null,
         vessel_id: vesselId,
         surveyor_name: surveyorNameVal,
         assigned_to: assignedToVal,

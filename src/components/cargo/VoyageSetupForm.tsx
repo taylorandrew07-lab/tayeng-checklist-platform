@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
+import { titleCaseVesselName } from '@/lib/utils'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import {
   type Voyage, type CargoTemplate,
@@ -83,7 +84,7 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
         ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
         : clientName.trim()
 
-      next.vesselName = vesselName.trim()
+      next.vesselName = titleCaseVesselName(vesselName)
       next.voyageNumber = voyageNumber.trim()
       next.cargoType = cargoType.trim()
       next.loadingPort = loadingPort.trim()

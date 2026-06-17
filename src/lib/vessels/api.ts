@@ -2,6 +2,7 @@
 // cargo voyages link to via vessel_id. vessel_name stays as a historical snapshot.
 
 import { createClient } from '@/lib/supabase/client'
+import { titleCaseVesselName } from '@/lib/utils'
 
 export interface Vessel {
   id: string
@@ -50,9 +51,11 @@ export async function deleteVessel(id: string): Promise<{ error?: string }> {
 }
 
 /** Find a vessel by exact (case-insensitive) name, or create it. Returns the id.
- *  Used by the job/cargo pickers to link + snapshot in one step. */
+ *  Used by the job/cargo pickers to link + snapshot in one step. The name is
+ *  standardised to canonical Title Case first so the directory never accumulates
+ *  "DELTA TITAN" / "delta titan" / "Delta Titan" as separate vessels. */
 export async function findOrCreateVessel(name: string): Promise<string | null> {
-  const n = name.trim()
+  const n = titleCaseVesselName(name)
   if (!n) return null
   const supabase = createClient()
   const { data: existing } = await supabase.from('vessels').select('id').ilike('name', n).limit(1)

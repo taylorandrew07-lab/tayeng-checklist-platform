@@ -70,18 +70,30 @@ export function isSurveyedVesselNameField(label: string): boolean {
  * Returns '' for empty input (and never returns a bare prefix on its own).
  */
 export function normalizeVesselName(raw: string, prefix: 'M.T.' | 'M.V.'): string {
+  const titled = titleCaseVesselName(raw)
+  return titled ? `${prefix} ${titled}` : ''
+}
+
+/**
+ * Canonical BARE vessel name (no prefix) for storage + display wherever a vessel
+ * name appears without an explicit prefix (job list, jobs.vessel_name, the vessels
+ * directory, cargo voyages). Standardises however a surveyor typed it:
+ *  - strips a leading M.V./M.T./MV/MT prefix (dots/spaces optional, repeatable) so
+ *    the stored name stays bare and the UI re-adds the canonical prefix
+ *  - Title-Cases each word: "DELTA TITAN" → "Delta Titan", "delta emperor" →
+ *    "Delta Emperor", "Bonnie D" → "Bonnie D" (single letters stay capitalised),
+ *    "o'brien" → "O'Brien", "delta-titan" → "Delta-Titan"
+ * Returns '' for empty / prefix-only input.
+ */
+export function titleCaseVesselName(raw: string): string {
   if (!raw) return ''
   let v = raw.trim()
   if (!v) return ''
-  const initials = prefix.replace(/\./g, '').toLowerCase() // e.g. 'M.T.' → 'mt'
-  const a = initials[0], b = initials[1]
-  // Strip one or more leading "<a> <b>" prefix tokens (dots/spaces optional),
-  // each followed by a separator so real words like "Mtoto" are left intact.
-  const stripRe = new RegExp(`^(?:${a}\\.?\\s*${b}\\.?[\\s.]+)+`, 'i')
-  v = v.replace(stripRe, '').trim()
+  // Strip leading M.V./M.T. prefix tokens (dots/spaces optional), each followed by
+  // a separator so real words like "Mtoto"/"Mvuli" are left intact.
+  v = v.replace(/^(?:m\.?\s*[vt]\.?[\s.]+)+/i, '').trim()
   if (!v) return ''
-  const titled = v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
-  return `${prefix} ${titled}`
+  return v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
 }
 
 export function getJobStatusLabel(status: JobStatus): string {

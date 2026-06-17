@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
 import { listJobTypes, listSurveyorAccounts, logActivity, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
+import { titleCaseVesselName } from '@/lib/utils'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
 function formatDateDMY(date: Date): string {
@@ -81,16 +82,17 @@ export default function NewJobPage() {
 
     const ids = Array.from(picked)
     const primary = surveyors.find(s => s.id === ids[0])
-    const title = autoTitle || `M.V. ${vesselName.trim()} - ${label} - ${today}`
+    const vessel = titleCaseVesselName(vesselName)
+    const title = autoTitle || `M.V. ${vessel} - ${label} - ${today}`
 
     // Link to the vessels directory (create on first use), keeping vessel_name as snapshot.
-    const vesselId = await findOrCreateVessel(vesselName.trim())
+    const vesselId = await findOrCreateVessel(vessel)
 
     const { data: job, error: jobErr } = await supabase.from('jobs').insert({
       title,
       template_id: templateId || null,
       job_type: jobType,
-      vessel_name: vesselName.trim(),
+      vessel_name: vessel,
       vessel_id: vesselId,
       surveyor_name: primary?.full_name ?? null,
       client_id: finalClientId,
