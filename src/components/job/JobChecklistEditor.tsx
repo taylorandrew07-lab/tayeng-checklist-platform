@@ -43,6 +43,45 @@ interface Props {
   hideInlinePdf?: boolean
 }
 
+type SubmitOutcome = 'ok' | 'denied' | 'failed'
+
+/**
+ * Mark a job submitted, resiliently. Setting `submitted_at` is a tiny, idempotent
+ * write, so on flaky field wifi we RETRY it and, after any error/timeout, VERIFY by
+ * re-reading `submitted_at` — because the write often lands even when the response is
+ * lost. This is the core reliability fix: a surveyor on a weak connection can no
+ * longer end up with a fully-filled checklist that silently never submitted.
+ *  - 'ok'     → submitted (this call, a prior attempt, or already submitted)
+ *  - 'denied' → 0 rows AND not submitted → genuine RLS/permission denial
+ *  - 'failed' → couldn't reach the server after retries (answers are safe; retry)
+ */
+async function submitJobWithRetry(jobId: string): Promise<SubmitOutcome> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const supabase = createClient()
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('jobs').update({ submitted_at: new Date().toISOString() }).eq('id', jobId).select('id'),
+        20_000, 'Submitting checklist'
+      )
+      if (!error && data && data.length > 0) return 'ok'
+      if (!error && data && data.length === 0) {
+        // 0 rows: either a real RLS denial or it's already submitted — verify.
+        const { data: chk } = await supabase.from('jobs').select('submitted_at').eq('id', jobId).maybeSingle()
+        return chk?.submitted_at ? 'ok' : 'denied'
+      }
+      // An error fell through — the write may still have landed; verify below.
+    } catch { /* network/timeout — verify below, then retry */ }
+
+    try {
+      const { data: chk } = await createClient().from('jobs').select('submitted_at').eq('id', jobId).maybeSingle()
+      if (chk?.submitted_at) return 'ok'
+    } catch { /* couldn't verify either — retry */ }
+
+    if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1500))
+  }
+  return 'failed'
+}
+
 const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
   function JobChecklistEditor({ jobId, backHref, forceReadOnly = false, hideInlinePdf = false }, ref) {
     const router = useRouter()
@@ -591,27 +630,21 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           }
         }
 
-        const supabase = createClient()
-        const { data: updated, error } = await withTimeout(
-          supabase.from('jobs').update({
-            submitted_at: new Date().toISOString(),
-          }).eq('id', jobId).select('id'),
-          20_000, 'Submitting checklist'
-        )
+        // Retry + verify so a dropped request on weak field wifi can't leave a
+        // finished checklist unsubmitted (the real-world failure surveyors hit).
+        const outcome = await submitJobWithRetry(jobId)
 
-        if (error) {
-          console.error('[submit:jobUpdate]', error)
-          const message = 'Submit failed: ' + error.message
+        if (outcome === 'denied') {
+          console.error('[submit:jobUpdate] denied (0 rows, not submitted) for', jobId)
+          const message = 'The checklist could not be submitted — your account may not have permission to update this job. Your answers are saved; please tell an admin so they can assign you or submit it.'
           setSaveError(message)
           setSubmitError(message)
           return
         }
 
-        // A row-level policy can filter the update to zero rows with NO error —
-        // which would otherwise look like a successful submit. Surface it.
-        if (!updated || updated.length === 0) {
-          console.error('[submit:jobUpdate] 0 rows updated for', jobId)
-          const message = 'The checklist could not be submitted — your account may not have permission to update this job. Your answers are saved; please tell an admin so they can assign you or submit it.'
+        if (outcome === 'failed') {
+          console.error('[submit:jobUpdate] could not reach server after retries for', jobId)
+          const message = 'Submit could not reach the server after several tries. Your answers are saved — check your connection and tap Submit again.'
           setSaveError(message)
           setSubmitError(message)
           return
