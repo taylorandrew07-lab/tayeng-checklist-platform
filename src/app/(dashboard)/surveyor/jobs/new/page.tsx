@@ -36,7 +36,7 @@ export default function SurveyorNewChecklistPage() {
 
   const today = formatDateDMY(new Date())
   const autoTitle = vesselName.trim() && selectedTemplate
-    ? `M.V. ${vesselName.trim()} - ${selectedTemplate.name} - ${today}`
+    ? `M.V. ${titleCaseVesselName(vesselName)} - ${selectedTemplate.name} - ${today}`
     : ''
 
   useEffect(() => {

@@ -40,7 +40,7 @@ export default function NewJobPage() {
   const today = formatDateDMY(new Date())
   const selectedTemplate = templates.find(t => t.id === templateId) ?? null
   const label = selectedTemplate?.name ?? jobType
-  const autoTitle = vesselName.trim() && label ? `M.V. ${vesselName.trim()} - ${label} - ${today}` : ''
+  const autoTitle = vesselName.trim() && label ? `M.V. ${titleCaseVesselName(vesselName)} - ${label} - ${today}` : ''
 
   useEffect(() => {
     async function loadData() {
