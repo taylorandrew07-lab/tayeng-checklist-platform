@@ -10,7 +10,7 @@ import {
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw,
 } from 'lucide-react'
-import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField } from '@/lib/utils'
+import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -522,6 +522,24 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         }
         if (Object.keys(normalized).length > 0) {
           valuesToSave = { ...values, ...normalized }
+          setValues(valuesToSave)
+        }
+
+        // Recompute calculated fields from the final values so their results are
+        // ALWAYS persisted. (A calc updates via an effect after its inputs change
+        // and deliberately doesn't mark the form dirty, so without this a result
+        // computed after the last autosave could be saved empty — e.g. a blank
+        // "Difference" even though the figures are filled.)
+        const computed: Record<string, string> = {}
+        for (const section of sections) {
+          for (const field of section.fields) {
+            if (field.field_type !== 'calculated' || !field.calculation_formula) continue
+            const result = evaluateCalculation(field.calculation_formula, valuesToSave)
+            if (result !== (valuesToSave[field.id] ?? '')) computed[field.id] = result
+          }
+        }
+        if (Object.keys(computed).length > 0) {
+          valuesToSave = { ...valuesToSave, ...computed }
           setValues(valuesToSave)
         }
 
