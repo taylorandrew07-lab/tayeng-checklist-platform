@@ -10,6 +10,9 @@ import { getClientDetail, type ClientDetail } from '@/lib/jobs/client-detail'
 import { money } from '@/lib/jobs/tracker'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { formatDate } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from '@/components/ui/toast'
+import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
 const logoUrl = (path?: string | null) => (path ? `${LOGO_BASE}/${path}` : null)
@@ -19,6 +22,16 @@ export default function ClientDetailPage() {
   const router = useRouter()
   const [data, setData] = useState<ClientDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  // undefined = "use the loaded client.color"; a value = a just-picked override.
+  const [colorOverride, setColorOverride] = useState<string | null | undefined>(undefined)
+
+  async function saveColor(key: string | null) {
+    if (!data) return
+    const prev = colorOverride
+    setColorOverride(key) // optimistic
+    const { error } = await createClient().from('clients').update({ color: key }).eq('id', data.client.id)
+    if (error) { setColorOverride(prev); toast.error('Could not save the colour: ' + error.message) }
+  }
 
   useEffect(() => {
     let active = true
@@ -62,6 +75,10 @@ export default function ClientDetailPage() {
             {client.contact_email && <a href={`mailto:${client.contact_email}`} className="inline-flex items-center gap-1 hover:text-brand-700"><Mail className="h-3.5 w-3.5" />{client.contact_email}</a>}
             {client.contact_phone && <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{client.contact_phone}</span>}
             {client.address && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{client.address}</span>}
+          </div>
+          <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400">Colour <span className="hidden sm:inline">(used when colouring jobs by client)</span></span>
+            <ColorSwatchPicker value={colorOverride !== undefined ? colorOverride : client.color} onChange={saveColor} />
           </div>
         </div>
         <Link href={`/admin/clients?focus=${client.id}`} className="btn-secondary flex-shrink-0"><Pencil className="h-4 w-4" /><span className="hidden sm:inline">Edit</span></Link>
