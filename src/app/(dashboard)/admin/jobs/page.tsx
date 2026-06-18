@@ -11,6 +11,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate, titleCaseVesselName } from '@/lib/utils'
+import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
+import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import {
@@ -199,12 +201,15 @@ export default function JobsTrackerPage() {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })
   }
 
+  const view = useJobsView()
+
   const visible = useMemo(() => {
     const term = q.trim().toLowerCase()
     const filtered = rows.filter(r => {
       const ws = r.workflow_status
       const pass = filter === 'all' ? true : filter === 'paid' ? ws === 'paid' : filter === 'closed' ? ws === 'closed' : (ws !== 'paid' && ws !== 'closed')
       if (!pass) return false
+      if (!inYearMonth(r.created_at, view.year, view.month)) return false
       if (typeFilter && (r.job_type ?? '') !== typeFilter) return false
       if (otOnly && !r.is_overtime) return false
       if (surveyorFilter && !r.surveyors.includes(surveyorFilter)) return false
@@ -225,11 +230,18 @@ export default function JobsTrackerPage() {
     }
     const dir = sort.dir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
-  }, [rows, filter, typeFilter, surveyorFilter, otOnly, q, sort])
+  }, [rows, filter, typeFilter, surveyorFilter, otOnly, q, sort, view.year, view.month])
 
   // Reset the page window whenever the filtered/sorted set changes.
-  useEffect(() => { setShown(PAGE_SIZE) }, [filter, typeFilter, surveyorFilter, otOnly, q, sort])
+  useEffect(() => { setShown(PAGE_SIZE) }, [filter, typeFilter, surveyorFilter, otOnly, q, sort, view.year, view.month])
   const paged = useMemo(() => visible.slice(0, shown), [visible, shown])
+
+  // Colour-by years come from all rows (so the year list is stable regardless of
+  // the active filter); the legend reflects the currently-visible rows.
+  const jobYears = useMemo(() => availableYears(rows, r => r.created_at), [rows])
+  const legend = useMemo(() => buildLegend(view.colorMode, visible.map(r => ({
+    clientName: r.client_name, clientColor: r.client_color, typeName: r.template_name, typeColor: r.template_color,
+  }))), [view.colorMode, visible])
 
   const missingCount = rows.filter(r => !r.report_number).length
   const typeOptions = useMemo(
@@ -299,6 +311,9 @@ export default function JobsTrackerPage() {
         )}
       </div>
 
+      {/* Colour-by + month/year filter */}
+      <JobsViewToolbar view={view} years={jobYears} count={visible.length} legend={legend} />
+
       {/* Grid — own scroll region with a frozen header */}
       <div className="card overflow-hidden">
         <div className="overflow-auto max-h-[calc(100vh-15rem)]">
@@ -324,9 +339,11 @@ export default function JobsTrackerPage() {
                 ))
               ) : visible.length === 0 ? (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
-              ) : paged.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle">
-                  <td className="px-2 py-1.5">
+              ) : paged.map(r => {
+                const c = rowColor(view.colorMode, r.client_color, r.template_color)
+                return (
+                <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle" style={c ? { backgroundColor: c.bg } : undefined}>
+                  <td className="px-2 py-1.5" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
                   <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
@@ -361,7 +378,8 @@ export default function JobsTrackerPage() {
                   <td className="px-3 py-1.5"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></td>
                   <td className="py-1.5 pr-2 min-w-[120px]"><EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} /></td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

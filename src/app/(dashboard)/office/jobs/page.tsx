@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Lock } from 'lucide-react'
@@ -9,6 +9,8 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
+import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
+import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 interface MonitorJob {
@@ -21,8 +23,8 @@ interface MonitorJob {
   submitted_at: string | null
   vessel_name: string | null
   surveyor_name: string | null
-  template?: { name: string } | null
-  client?: { name: string } | null
+  template?: { name: string; color: string | null } | null
+  client?: { name: string; color: string | null } | null
 }
 
 export default function OfficeJobsMonitor() {
@@ -32,6 +34,14 @@ export default function OfficeJobsMonitor() {
   const [canOpenDetail, setCanOpenDetail] = useState(false)
   const [loading, setLoading] = useState(true)
   const tick = useRealtimeRefresh('jobs')
+  const view = useJobsView()
+
+  const filteredJobs = useMemo(() => jobs.filter(j => inYearMonth(j.created_at, view.year, view.month)), [jobs, view.year, view.month])
+  const jobYears = useMemo(() => availableYears(jobs, j => j.created_at), [jobs])
+  const legend = useMemo(() => buildLegend(view.colorMode, filteredJobs.map(j => ({
+    clientName: j.client?.name ?? null, clientColor: j.client?.color ?? null,
+    typeName: j.template?.name ?? null, typeColor: j.template?.color ?? null,
+  }))), [view.colorMode, filteredJobs])
 
   useEffect(() => {
     async function load() {
@@ -49,8 +59,8 @@ export default function OfficeJobsMonitor() {
           .select(`
             id, title, job_number, workflow_status, created_at, scheduled_date, submitted_at,
             vessel_name, surveyor_name,
-            template:checklist_templates(name),
-            client:clients(name)
+            template:checklist_templates(name, color),
+            client:clients(name, color)
           `)
           .order('created_at', { ascending: false })
         setJobs((data as unknown as MonitorJob[]) ?? [])
@@ -64,7 +74,7 @@ export default function OfficeJobsMonitor() {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="page-title">Jobs Monitor</h1>
-        <p className="text-gray-500 mt-1">{loading ? '…' : `${jobs.length} job${jobs.length !== 1 ? 's' : ''} · read-only`}</p>
+        <p className="text-gray-500 mt-1">{loading ? '…' : `${filteredJobs.length} job${filteredJobs.length !== 1 ? 's' : ''} · read-only`}</p>
       </div>
 
       {!loading && !canView ? (
@@ -75,6 +85,7 @@ export default function OfficeJobsMonitor() {
         </div>
       ) : (
         <>
+        {!loading && <JobsViewToolbar view={view} years={jobYears} count={filteredJobs.length} legend={legend} />}
         <div className="card overflow-hidden hidden sm:block landscape:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -94,15 +105,18 @@ export default function OfficeJobsMonitor() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr><td colSpan={canOpenDetail ? 9 : 8} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
-                ) : jobs.length === 0 ? (
+                ) : filteredJobs.length === 0 ? (
                   <tr><td colSpan={canOpenDetail ? 9 : 8} className="px-4 py-10 text-center text-gray-400">No jobs to display.</td></tr>
-                ) : jobs.map(job => (
+                ) : filteredJobs.map(job => {
+                  const c = rowColor(view.colorMode, job.client?.color ?? null, job.template?.color ?? null)
+                  return (
                   <tr
                     key={job.id}
                     onClick={canOpenDetail ? () => router.push(`/office/jobs/${job.id}`) : undefined}
                     className={`hover:bg-gray-50 ${canOpenDetail ? 'cursor-pointer' : ''}`}
+                    style={c ? { backgroundColor: c.bg } : undefined}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
                       <p className="font-medium text-gray-900">{job.title}</p>
                       <p className="text-xs text-gray-400">{job.job_number ?? '—'}</p>
                     </td>
@@ -121,7 +135,8 @@ export default function OfficeJobsMonitor() {
                       </td>
                     )}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -131,13 +146,16 @@ export default function OfficeJobsMonitor() {
         <div className="space-y-3 sm:hidden landscape:hidden">
           {loading ? (
             <div className="card p-8 text-center text-gray-400">Loading…</div>
-          ) : jobs.length === 0 ? (
+          ) : filteredJobs.length === 0 ? (
             <div className="card p-8 text-center text-gray-400">No jobs to display.</div>
-          ) : jobs.map(job => (
+          ) : filteredJobs.map(job => {
+            const c = rowColor(view.colorMode, job.client?.color ?? null, job.template?.color ?? null)
+            return (
             <div
               key={job.id}
               onClick={canOpenDetail ? () => router.push(`/office/jobs/${job.id}`) : undefined}
               className={`card p-4 space-y-2 ${canOpenDetail ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+              style={c ? { backgroundColor: c.bg, borderLeft: `4px solid ${c.fg}` } : undefined}
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium text-gray-900">{job.title}</p>
@@ -152,7 +170,8 @@ export default function OfficeJobsMonitor() {
                 <div><p className="text-[11px] text-gray-400">Submitted</p><p className="text-gray-700">{job.submitted_at ? formatDate(job.submitted_at) : '—'}</p></div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
         </>
       )}

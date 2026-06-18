@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
+import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate } from '@/lib/utils'
 import type { Client } from '@/lib/types/database'
 
@@ -49,6 +50,7 @@ export default function ClientsPage() {
     address: '',
     notes: '',
     logo_path: '',
+    color: '' as string,
   })
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
@@ -85,7 +87,7 @@ export default function ClientsPage() {
 
   function openCreate() {
     setEditClient(null)
-    setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '', logo_path: '' })
+    setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '', logo_path: '', color: '' })
     setLogoFile(null)
     setLogoPreview(null)
     setError(null)
@@ -102,6 +104,7 @@ export default function ClientsPage() {
       address: client.address ?? '',
       notes: client.notes ?? '',
       logo_path: client.logo_path ?? '',
+      color: client.color ?? '',
     })
     setLogoFile(null)
     setLogoPreview(logoUrl(client.logo_path))
@@ -135,6 +138,7 @@ export default function ClientsPage() {
       address: form.address || null,
       notes: form.notes || null,
       logo_path,
+      color: form.color || null,
     }
 
     if (editClient) {
@@ -289,6 +293,10 @@ export default function ClientsPage() {
           <div>
             <label className="label-base">Notes</label>
             <textarea value={form.notes} onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))} className="input-base resize-none" rows={2} placeholder="Internal notes about this client" />
+          </div>
+          <div>
+            <label className="label-base">Colour <span className="text-gray-400 font-normal">— used when colouring jobs by client</span></label>
+            <ColorSwatchPicker value={form.color || null} onChange={(key) => setForm(p => ({ ...p, color: key ?? '' }))} />
           </div>
           <div>
             <label className="label-base">Logo</label>

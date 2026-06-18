@@ -160,6 +160,8 @@ export interface Client {
   address: string | null
   notes: string | null
   logo_path: string | null
+  /** Curated palette key (src/lib/jobs/colors.ts) for colour-coding jobs by client. */
+  color: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -236,6 +238,8 @@ export interface ChecklistTemplate {
   archived_at: string | null
   restored_by: string | null
   restored_at: string | null
+  /** Curated palette key (src/lib/jobs/colors.ts) for colour-coding jobs by type. */
+  color: string | null
   created_at: string
   updated_at: string
 }

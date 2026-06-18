@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
+import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
 import type { TemplateStatus } from '@/lib/types/database'
@@ -19,6 +20,7 @@ export default function EditTemplatePage() {
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TemplateStatus>('draft')
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
+  const [color, setColor] = useState<string | null>(null)
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -41,7 +43,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, sections])
+  }, [name, description, status, allowSurveyorStart, color, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -78,6 +80,7 @@ export default function EditTemplatePage() {
       setDescription(tmpl.description ?? '')
       setStatus(tmpl.status)
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
+      setColor(tmpl.color ?? null)
       setJobCount(count ?? 0)
 
       const secIds = new Set<string>()
@@ -193,6 +196,7 @@ export default function EditTemplatePage() {
           description: description.trim() || null,
           status,
           allow_surveyor_start: allowSurveyorStart,
+          color,
         }).eq('id', templateId),
         15_000, 'Saving template'
       )
@@ -351,6 +355,10 @@ export default function EditTemplatePage() {
           <div className="sm:col-span-2">
             <label className="label-base">Description</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="input-base resize-none" rows={2} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label-base">Colour <span className="text-gray-400 font-normal">— used when colouring jobs by job type</span></label>
+            <ColorSwatchPicker value={color} onChange={setColor} />
           </div>
           <div>
             <label className="label-base">Status</label>
