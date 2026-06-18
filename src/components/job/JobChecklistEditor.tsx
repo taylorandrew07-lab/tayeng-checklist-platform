@@ -570,6 +570,27 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
     }, [jobId, values, arrayValues, signatures, sections]) // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Date the job by the SURVEY date the surveyor entered (the first answered
+    // date field), not the day the job was created. Updates scheduled_date (drives
+    // the jobs-list Date column, sorting + the calendar) and swaps the trailing
+    // DD-MM-YYYY in the auto-generated title. No-op if no date field is filled.
+    async function syncJobDateFromChecklist() {
+      let surveyDate: string | null = null
+      outer: for (const s of sections) {
+        for (const f of s.fields) {
+          if (f.field_type === 'date' && values[f.id]) { surveyDate = values[f.id]; break outer }
+        }
+      }
+      if (!surveyDate || !/^\d{4}-\d{2}-\d{2}$/.test(surveyDate)) return
+      const [yy, mm, dd] = surveyDate.split('-')
+      const patch: Record<string, any> = { scheduled_date: surveyDate }
+      if (job?.title) {
+        const retitled = job.title.replace(/\d{2}-\d{2}-\d{4}\s*$/, `${dd}-${mm}-${yy}`)
+        if (retitled !== job.title) patch.title = retitled
+      }
+      await createClient().from('jobs').update(patch).eq('id', jobId)
+    }
+
     // --- Submit ---
     async function handleSubmit() {
       if (submitting) return
@@ -652,6 +673,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
         // Submitting the checklist means the report is ready for review.
         await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
+        // Date the job by the SURVEY date entered in the checklist, not the day it
+        // was created (drives the jobs-list Date column, sorting + the calendar).
+        await syncJobDateFromChecklist().catch(() => {})
         setShowSubmitDialog(false)
         if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
         router.push(backHref)
