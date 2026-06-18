@@ -71,8 +71,11 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
   if (next === 'approved') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
   if (next === 'paid') patch.paid_at = new Date().toISOString()
   if (next === 'closed') { patch.closed_at = new Date().toISOString(); patch.closed_by = user?.id ?? null }
-  const { error } = await supabase.from('jobs').update(patch).eq('id', jobId)
+  // .select('id') so an RLS-filtered 0-row update (e.g. a read-only office user) is
+  // detected as a denial instead of silently reporting success.
+  const { data, error } = await supabase.from('jobs').update(patch).eq('id', jobId).select('id')
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'That change was blocked — you may not have permission to update this job.' }
   await logActivity('job', jobId, `workflow:${next}`)
   return {}
 }
@@ -308,8 +311,12 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
 
 /** Inline edit of a single job field from the tracker grid. */
 export async function updateJobField(jobId: string, patch: Record<string, any>): Promise<{ error?: string }> {
-  const { error } = await createClient().from('jobs').update(patch).eq('id', jobId)
-  return { error: error?.message }
+  // .select('id') so a 0-row RLS denial surfaces as an error instead of a silent
+  // "saved" that reverts on reload.
+  const { data, error } = await createClient().from('jobs').update(patch).eq('id', jobId).select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'Edit was blocked — you may not have permission to update this job.' }
+  return {}
 }
 
 /** Report number `YY-MM-NNN` from a date + running sequence (matches the real docs). */

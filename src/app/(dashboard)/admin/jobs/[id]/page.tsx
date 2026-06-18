@@ -156,10 +156,13 @@ export default function AdminChecklistDetailPage() {
   async function markSubmitted() {
     setMarking(true)
     const supabase = createClient()
-    const { error: err } = await supabase.from('jobs')
+    // .select('id') so a 0-row RLS denial on this escape-hatch is surfaced rather
+    // than reporting a false "Marked as submitted".
+    const { data, error: err } = await supabase.from('jobs')
       .update({ submitted_at: job.submitted_at ?? new Date().toISOString() })
-      .eq('id', jobId)
+      .eq('id', jobId).select('id')
     if (err) { toast.error(err.message); setMarking(false); return }
+    if (!data || data.length === 0) { toast.error('Could not mark as submitted — permission denied or the job no longer exists.'); setMarking(false); return }
     await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
     toast.success('Marked as submitted')
     setMarking(false)
@@ -170,8 +173,9 @@ export default function AdminChecklistDetailPage() {
     if (!(await confirmDialog({ message: `Delete "${job.title}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     setDeleting(true)
     const supabase = createClient()
-    const { error: err } = await supabase.from('jobs').delete().eq('id', jobId)
+    const { data, error: err } = await supabase.from('jobs').delete().eq('id', jobId).select('id')
     if (err) { setError(err.message); setDeleting(false); return }
+    if (!data || data.length === 0) { setError('Delete was blocked — permission denied or the job no longer exists.'); setDeleting(false); return }
     router.push('/admin/jobs')
   }
 

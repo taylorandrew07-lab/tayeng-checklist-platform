@@ -101,8 +101,12 @@ export async function saveJobInvoice(job: Job, data: {
     // Only overwrite the number when one was explicitly supplied (keeps the
     // auto-assigned number unless an admin edits it).
     const patch = data.invoice_number != null ? { ...header, invoice_number: data.invoice_number || null } : header
-    const { error } = await supabase.from('invoices').update(patch).eq('id', invoiceId)
+    // Confirm the header update actually applied BEFORE we wipe + rewrite the line
+    // items/taxes below — otherwise a 0-row RLS denial would delete the children of
+    // an invoice the user couldn't modify.
+    const { data: upd, error } = await supabase.from('invoices').update(patch).eq('id', invoiceId).select('id')
     if (error) return { error: error.message }
+    if (!upd || upd.length === 0) return { error: 'Could not save the invoice — permission denied or it no longer exists.' }
   } else {
     // On insert, a blank number lets the DB trigger assign YY-MM-NNN.
     const insert: Record<string, unknown> = { job_id: job.id, status: 'draft', created_by: user?.id ?? null, ...header }
@@ -141,10 +145,14 @@ export async function deleteJobInvoice(invoiceId: string, jobId: string | null):
   const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
   if (error) return { error: error.message }
   if (jobId) {
-    await supabase.from('jobs')
+    // Surface a failed revert so the job can't be left in a billing stage with no
+    // invoice. (0 rows is legitimate here — the .in() filter just means the job
+    // wasn't in a billing stage — so only a real error is treated as a failure.)
+    const { error: revErr } = await supabase.from('jobs')
       .update({ workflow_status: 'approved', paid_at: null })
       .eq('id', jobId)
       .in('workflow_status', ['invoiced', 'sent', 'paid'])
+    if (revErr) return { error: revErr.message }
     await logActivity('job', jobId, 'invoice:delete', { invoice_id: invoiceId })
   }
   return {}

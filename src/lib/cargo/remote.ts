@@ -91,6 +91,10 @@ export async function getRemoteVoyage(supabase: SupabaseClient, id: string): Pro
 /** Fetch the signed photos as blobs and shape them as CargoPhoto[] for the PDF. */
 export async function remotePhotosToCargoPhotos(photos: RemotePhoto[], voyageId: string): Promise<CargoPhoto[]> {
   const out: CargoPhoto[] = []
+  // `photos` arrives ordered by ordinal (getRemoteVoyage orders by it). Preserve that
+  // order on `order`/`createdAt` so anything that sorts photos (e.g. the DRI report
+  // plate) keeps the surveyor's intended sequence instead of collapsing to one value.
+  let i = 0
   for (const p of photos) {
     if (!p.url) continue
     try {
@@ -98,8 +102,9 @@ export async function remotePhotosToCargoPhotos(photos: RemotePhoto[], voyageId:
       out.push({
         localId: p.id, voyageId, userId: '', dateISO: p.dateISO, period: p.period,
         holdNumber: p.holdNumber, camera: p.camera, actualTime: p.actualTime, filename: p.filename,
-        blob, assigned: true, order: 0, createdAt: 0,
+        blob, assigned: true, order: i, createdAt: i,
       })
+      i++
     } catch { /* skip unreadable */ }
   }
   return out

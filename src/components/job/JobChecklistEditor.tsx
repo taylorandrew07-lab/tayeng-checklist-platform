@@ -1004,7 +1004,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         {sections.map(section => {
           if (!checkConditionalLogic(section.conditional_logic, values)) return null
           const collapsed = collapsedSections.has(section.id)
-          const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type))
+          // Only count fields that are actually VISIBLE right now — a field hidden by
+          // conditional logic can never be filled, so including it makes the counter
+          // stick at e.g. "4/5" and never read complete.
+          const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type) && checkConditionalLogic(f.conditional_logic, values))
           const completedCount = dataFields.filter(f => {
             if (f.field_type === 'signature') return !!signatures[f.id]
             if (f.field_type === 'multiple_choice') return (arrayValues[f.id] ?? []).length > 0
@@ -1034,6 +1037,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               {!collapsed && (
                 <div className="p-5 space-y-5">
                   {section.fields.map(field => {
+                    // Hide any field whose conditional logic isn't met. Non-photo
+                    // fields also self-hide via FieldRenderer, but the photo branch
+                    // below did not — so a conditionally-gated photo box used to show
+                    // even when it should be hidden. Gate it here for all types.
+                    if (!checkConditionalLogic(field.conditional_logic, values)) return null
                     // Photo fields get an inline upload widget
                     if (field.field_type === 'photo') {
                       const photos = fieldPhotos[field.id] ?? []

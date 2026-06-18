@@ -197,7 +197,7 @@ export default function UsersPage() {
         await supabase.from('client_users').upsert({
           profile_id: result.user_id,
           client_id: form.client_id,
-        })
+        }, { onConflict: 'profile_id,client_id' })
       }
     }
 
@@ -240,7 +240,7 @@ export default function UsersPage() {
       const { error: linkErr } = await supabase.from('client_users').upsert({
         profile_id: approvalTarget.id,
         client_id: approvalClientId,
-      })
+      }, { onConflict: 'profile_id,client_id' })
       if (linkErr) { setApprovalError(linkErr.message); setApprovingSaving(false); return }
     }
 
@@ -259,7 +259,8 @@ export default function UsersPage() {
   async function rejectUser(user: Profile) {
     if (!(await confirmDialog({ title: 'Reject account', message: `Reject and delete the account for ${user.full_name}?`, danger: true, confirmLabel: 'Reject & delete' }))) return
     const supabase = createClient()
-    await supabase.from('profiles').delete().eq('id', user.id)
+    const { error } = await supabase.from('profiles').delete().eq('id', user.id)
+    if (error) { toast.error(error.message); return }
     toast.success('Account rejected')
     load()
   }
@@ -270,22 +271,26 @@ export default function UsersPage() {
       return
     }
     const supabase = createClient()
-    await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id)
+    const { error } = await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id)
+    if (error) { toast.error(error.message); return }
     load()
   }
 
   async function approveClientRequest(req: ClientRequest) {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('clients').insert({ name: req.requested_name, is_active: true })
-    await supabase.from('client_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    const { error: insErr } = await supabase.from('clients').insert({ name: req.requested_name, is_active: true })
+    if (insErr) { toast.error(insErr.message); return }
+    const { error: updErr } = await supabase.from('client_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    if (updErr) { toast.error(updErr.message); return }
     load()
   }
 
   async function rejectClientRequest(req: ClientRequest) {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('client_requests').update({ status: 'rejected', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    const { error } = await supabase.from('client_requests').update({ status: 'rejected', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
+    if (error) { toast.error(error.message); return }
     load()
   }
 
