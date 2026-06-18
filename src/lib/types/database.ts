@@ -32,14 +32,8 @@ export type FieldType =
   | 'signature'
   | 'heading'
   | 'divider'
-export type JobStatus =
-  | 'draft'
-  | 'assigned'
-  | 'in_progress'
-  | 'submitted'
-  | 'completed'
-  | 'client_visible'
-  | 'archived'
+// (The legacy JobStatus enum + jobs.status column were dropped in migration 060;
+//  all job state now lives in WorkflowStatus / workflow_status.)
 
 export interface UiPrefs {
   /** Ordered list of nav item hrefs for this user's sidebar. */
@@ -291,7 +285,6 @@ export interface Job {
   assigned_to: string | null
   vessel_name: string | null
   surveyor_name: string | null
-  status: JobStatus
   created_by: string
   scheduled_date: string | null
   started_at: string | null

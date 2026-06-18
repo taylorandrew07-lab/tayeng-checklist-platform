@@ -93,6 +93,7 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
     <Document title={`Invoice ${invoice.invoice_number ?? ''}`.trim()} author={COMPANY.name} subject="Tax Invoice">
       <Page size="LETTER" style={s.page}>
         {/* Letterhead */}
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image renders to PDF, no HTML alt */}
         {logoSrc ? <Image src={logoSrc} style={s.logo} /> : (
           <>
             <Text style={s.wordmark}>{COMPANY.name}</Text>

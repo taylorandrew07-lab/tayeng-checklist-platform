@@ -83,6 +83,7 @@ export function DriReportDocument({ blocks, title, logoDataUrl, photos }: { bloc
   return (
     <Document title={title} author={COMPANY.name} subject="DRI Production Report">
       <Page size="LETTER" style={s.page}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image renders to PDF, no HTML alt */}
         {logoDataUrl ? <Image src={logoDataUrl} style={s.logo} /> : <Text style={s.brand}>{COMPANY.name}</Text>}
         <Text style={s.headLine}>{COMPANY.address}   ·   T {COMPANY.phone}   ·   {COMPANY.email}</Text>
         <View style={s.rule} />

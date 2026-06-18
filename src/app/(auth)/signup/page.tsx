@@ -127,10 +127,11 @@ export default function SignUpPage() {
           <div>
             <label className="label-base">I am a&hellip;</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+              {/* Office (and admin) accounts are created by an admin via
+                  /api/admin/create-user, never self-signup — see migration 068. */}
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },
                 { value: 'super_cargo', label: 'Cargo Technician', desc: 'Same as surveyor (different title)' },
-                { value: 'office', label: 'Office', desc: 'Office / admin support staff' },
                 { value: 'client', label: 'Client', desc: 'View job reports and results' },
               ].map(opt => (
                 <label key={opt.value} className={`flex flex-col gap-1 p-3 rounded-lg border-2 cursor-pointer transition-colors ${

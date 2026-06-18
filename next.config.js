@@ -10,13 +10,15 @@ const securityHeaders = [
 
 // Content-Security-Policy scoped to what the app actually loads: self, Supabase
 // (REST + realtime websockets + storage images), Google Fonts, and data:/blob:
-// (generated PDFs, photo blobs). 'unsafe-inline' is required by Next/Tailwind
-// without a nonce setup; frame-ancestors/object-src/base-uri/form-action add the
-// high-value clickjacking + injection protections. Enforced in production only so
-// it never interferes with the dev server's HMR websocket.
+// (generated PDFs, photo blobs). 'unsafe-inline' is still required by Next/Tailwind
+// without a nonce setup (removing it needs a nonce+middleware rollout). 'unsafe-eval'
+// has been DROPPED: the Next 16 webpack PRODUCTION bundle doesn't eval(), so this
+// closes the eval()-based injection vector. frame-ancestors/object-src/base-uri/
+// form-action add the high-value clickjacking + injection protections. Enforced in
+// production only so it never interferes with the dev server's HMR websocket.
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://*.supabase.co",

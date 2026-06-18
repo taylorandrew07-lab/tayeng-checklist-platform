@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, parseISO } from 'date-fns'
-import type { JobStatus, TemplateStatus, FieldType } from '@/lib/types/database'
+import type { TemplateStatus, FieldType } from '@/lib/types/database'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -94,32 +94,6 @@ export function titleCaseVesselName(raw: string): string {
   v = v.replace(/^(?:m\.?\s*[vt]\.?[\s.]+)+/i, '').trim()
   if (!v) return ''
   return v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
-}
-
-export function getJobStatusLabel(status: JobStatus): string {
-  const labels: Record<JobStatus, string> = {
-    draft: 'Draft',
-    assigned: 'Assigned',
-    in_progress: 'In Progress',
-    submitted: 'Submitted',
-    completed: 'Completed',
-    client_visible: 'Client Visible',
-    archived: 'Archived',
-  }
-  return labels[status] ?? status
-}
-
-export function getJobStatusColor(status: JobStatus): string {
-  const colors: Record<JobStatus, string> = {
-    draft: 'bg-gray-100 text-gray-700',
-    assigned: 'bg-blue-100 text-blue-700',
-    in_progress: 'bg-yellow-100 text-yellow-700',
-    submitted: 'bg-purple-100 text-purple-700',
-    completed: 'bg-green-100 text-green-700',
-    client_visible: 'bg-teal-100 text-teal-700',
-    archived: 'bg-red-100 text-red-700',
-  }
-  return colors[status] ?? 'bg-gray-100 text-gray-700'
 }
 
 export function getTemplateStatusColor(status: TemplateStatus): string {

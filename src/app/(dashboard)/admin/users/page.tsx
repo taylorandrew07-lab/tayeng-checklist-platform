@@ -206,16 +206,25 @@ export default function UsersPage() {
     load()
   }
 
-  // Start approval flow — for client-role users we show a modal to pick the client first
+  // Start approval flow — for client-role users we show a modal to pick the client first.
+  // Never default a non-super-admin's approval to the Admin role (a pending row could
+  // already carry role='admin' from before migration 068) — drop it to surveyor so it
+  // can't be approved-as-admin by accident.
   function startApprove(user: Profile) {
     setApprovalTarget(user)
-    setApprovalRole(user.role)
+    setApprovalRole(user.role === 'admin' && !isSuperAdmin ? 'surveyor' : user.role)
     setApprovalClientId('')
     setApprovalError(null)
   }
 
   async function confirmApprove() {
     if (!approvalTarget) return
+
+    // Only the super admin may grant the Admin role at approval time.
+    if (approvalRole === 'admin' && !isSuperAdmin) {
+      setApprovalError('Only the Super Admin can approve an account as Admin.')
+      return
+    }
 
     if (approvalRole === 'client' && !approvalClientId) {
       setApprovalError('Please select the client this user belongs to.')

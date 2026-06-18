@@ -4,6 +4,7 @@ import { renderInvoicePdf } from '@/lib/pdf/renderInvoice'
 import { getGraphConfig, createMailDraft } from '@/lib/email/graph'
 import { createServiceClient } from '@/lib/supabase/server'
 import { COMPANY } from '@/lib/company'
+import { escapeHtml } from '@/lib/escape-html'
 
 // Create a DRAFT email in the office mailbox with the invoice PDF attached.
 // Admin-only — sending stays a human step in Outlook.
@@ -22,12 +23,14 @@ export async function POST(
   if (!rendered) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
   const num = rendered.invoiceNumber ?? ''
+  const numHtml = escapeHtml(num)
+  // Subject is a plain-text header (not HTML) so it doesn't need escaping.
   const subject = `${COMPANY.name} — Tax Invoice ${num}`.trim()
-  const greeting = rendered.clientName ? `Dear ${rendered.clientName},` : 'Dear Sir/Madam,'
+  const greeting = rendered.clientName ? `Dear ${escapeHtml(rendered.clientName)},` : 'Dear Sir/Madam,'
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1e293b;line-height:1.5">
       <p>${greeting}</p>
-      <p>Please find attached our tax invoice${num ? ` <strong>${num}</strong>` : ''} for your kind attention.</p>
+      <p>Please find attached our tax invoice${num ? ` <strong>${numHtml}</strong>` : ''} for your kind attention.</p>
       <p>Payment is due on presentation of invoice. Should you have any queries, please do not hesitate to contact us.</p>
       <p>Kind regards,<br/>${COMPANY.name}<br/>${COMPANY.email} &nbsp;|&nbsp; ${COMPANY.phone}</p>
     </div>`.trim()
