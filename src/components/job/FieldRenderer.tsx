@@ -232,6 +232,7 @@ export default function FieldRenderer({
       {field.field_type === 'calculated' && (
         <CalculatedField
           field={field}
+          value={value}
           allValues={allValues}
           onChange={onChange}
         />
@@ -258,22 +259,31 @@ export default function FieldRenderer({
   )
 }
 
-function CalculatedField({ field, allValues, onChange }: {
+function CalculatedField({ field, value, allValues, onChange }: {
   field: TemplateField
+  value: string
   allValues: Record<string, string>
   onChange: (v: string) => void
 }) {
-  const rawResult = field.calculation_formula
+  const computed = field.calculation_formula
     ? evaluateCalculation(field.calculation_formula, allValues)
     : ''
 
+  // The result is derived, but it must still be PERSISTED so it lands in the PDF
+  // and the saved record. Only push a non-empty recompute up — never let a
+  // transient empty result (e.g. while inputs are still hydrating from a draft)
+  // overwrite an already-saved figure.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onChange(rawResult) }, [rawResult])
+  useEffect(() => { if (computed !== '') onChange(computed) }, [computed])
+
+  // Prefer the freshly computed value; fall back to the persisted one so the
+  // field never shows "—" when a correct value is already on record.
+  const effective = computed !== '' ? computed : value
 
   const isPercent = field.validation?.display_as === 'percentage'
-  const numVal = parseFloat(rawResult)
+  const numVal = parseFloat(effective)
 
-  let displayVal = rawResult || '—'
+  let displayVal = effective || '—'
   let colorCls = 'bg-gray-50 text-gray-700'
 
   if (isPercent && !isNaN(numVal)) {
@@ -284,7 +294,9 @@ function CalculatedField({ field, allValues, onChange }: {
       numVal,
       denominatorId ? allValues[denominatorId] : undefined
     )
-    displayVal = display
+    // If the denominator isn't available (e.g. showing a persisted fallback
+    // without live inputs), keep the plain figure rather than collapsing to "—".
+    displayVal = display === '—' ? (effective || '—') : display
     if (pct !== null) {
       const absVal = Math.abs(pct)
       const thresholds = field.validation?.thresholds ?? [
