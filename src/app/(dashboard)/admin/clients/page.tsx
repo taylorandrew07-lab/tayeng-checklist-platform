@@ -7,7 +7,7 @@ import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'luci
 import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import type { Client } from '@/lib/types/database'
 
@@ -124,9 +124,15 @@ export default function ClientsPage() {
     if (logoFile) {
       const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${crypto.randomUUID()}-${safeName}`
-      const { error: upErr } = await supabase.storage
-        .from('client-logos')
-        .upload(path, logoFile, { contentType: logoFile.type, upsert: false })
+      let upErr
+      try {
+        ({ error: upErr } = await withTimeout(
+          supabase.storage.from('client-logos').upload(path, logoFile, { contentType: logoFile.type, upsert: false }),
+          60_000, 'Uploading logo'
+        ))
+      } catch {
+        setError('Logo upload timed out — check your connection and try again.'); setSaving(false); return
+      }
       if (upErr) { setError('Logo upload failed: ' + upErr.message); setSaving(false); return }
       logo_path = path
     }

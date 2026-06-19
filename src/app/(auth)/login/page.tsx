@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import logoFull from '../../../../public/logo-full.png'
@@ -51,7 +52,14 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    let authError
+    try {
+      ({ error: authError } = await withTimeout(supabase.auth.signInWithPassword({ email, password }), 15_000, 'Signing in'))
+    } catch {
+      setError('Sign-in timed out — check your connection and try again.')
+      setLoading(false)
+      return
+    }
 
     if (authError) {
       setError('Invalid email or password. Please try again.')
@@ -87,17 +95,21 @@ export default function LoginPage() {
       }
     } catch { /* non-fatal */ }
 
-    // Fetch profile to determine where to route the user
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, is_active')
-      .eq('id', user!.id)
-      .single()
-
-    // Route to the role-appropriate dashboard.
-    // Inactive users land on their dashboard where the layout shows the pending screen.
-    window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
+    // Fetch profile to determine where to route the user. Sign-in already
+    // succeeded, so if this lookup stalls we still send the user into the app
+    // (the dashboard layout re-routes by role) rather than leaving a dead spinner.
+    try {
+      const { data: { user } } = await withTimeout(supabase.auth.getUser(), 10_000, 'Loading your account')
+      const { data: profile } = await withTimeout(
+        supabase.from('profiles').select('role, is_active').eq('id', user!.id).single(),
+        10_000, 'Loading your account'
+      )
+      // Route to the role-appropriate dashboard.
+      // Inactive users land on their dashboard where the layout shows the pending screen.
+      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
+    } catch {
+      window.location.href = '/surveyor'
+    }
   }
 
   return (

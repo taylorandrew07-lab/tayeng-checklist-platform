@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 
 type ReadyState = 'loading' | 'ready' | 'expired'
@@ -62,7 +63,14 @@ export default function ResetPasswordPage() {
     setError(null)
 
     const supabase = createClient()
-    const { error: err } = await supabase.auth.updateUser({ password })
+    let err
+    try {
+      ({ error: err } = await withTimeout(supabase.auth.updateUser({ password }), 15_000, 'Updating your password'))
+    } catch {
+      setError('The request timed out — check your connection and try again.')
+      setLoading(false)
+      return
+    }
 
     if (err) {
       setError(err.message)
@@ -70,15 +78,18 @@ export default function ResetPasswordPage() {
       return
     }
 
-    // Redirect to the role-appropriate dashboard
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user!.id)
-      .single()
-
-    window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/login'
+    // Redirect to the role-appropriate dashboard. The password is already changed,
+    // so if the role lookup stalls we still move the user on rather than hang.
+    try {
+      const { data: { user } } = await withTimeout(supabase.auth.getUser(), 10_000, 'Loading your account')
+      const { data: profile } = await withTimeout(
+        supabase.from('profiles').select('role').eq('id', user!.id).single(),
+        10_000, 'Loading your account'
+      )
+      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/login'
+    } catch {
+      window.location.href = '/login'
+    }
   }
 
   if (readyState === 'loading') {

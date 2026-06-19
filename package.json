@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node e2e/smoke-surveyor-flow.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

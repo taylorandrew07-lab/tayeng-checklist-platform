@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withTimeout } from '@/lib/utils'
 import type { Profile, Client, UserRole, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
 
 // Cosmetic staff job titles an admin can assign (display only — no permissions).
@@ -178,17 +178,24 @@ export default function UsersPage() {
     } else {
       if (!form.password || form.password.length < 8) { setError('Password must be at least 8 characters'); setSaving(false); return }
 
-      const response = await fetch('/api/admin/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.email,
-          password: form.password,
-          full_name: form.full_name,
-          role: form.role,
-          phone: form.phone || null,
-        }),
-      })
+      let response: Response
+      try {
+        response = await withTimeout(fetch('/api/admin/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: form.email,
+            password: form.password,
+            full_name: form.full_name,
+            role: form.role,
+            phone: form.phone || null,
+          }),
+        }), 20_000, 'Creating the account')
+      } catch {
+        setError('Creating the account timed out — check your connection and try again. (If it was created, refresh to see it.)')
+        setSaving(false)
+        return
+      }
 
       const result = await response.json()
       if (!response.ok) { setError(result.error ?? 'Failed to create user'); setSaving(false); return }

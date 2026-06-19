@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils'
 import { Loader2, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 
 export default function SignUpPage() {
@@ -30,17 +31,24 @@ export default function SignUpPage() {
     // Pass full_name, role and optional display_title in metadata so the
     // handle_new_user trigger can use them. The trigger always sets
     // is_active=false — no client-side profile upsert needed.
-    const { error: signUpErr } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: {
-          full_name: form.fullName,
-          role,
-          display_title: displayTitle,
+    let signUpErr
+    try {
+      ({ error: signUpErr } = await withTimeout(supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            full_name: form.fullName,
+            role,
+            display_title: displayTitle,
+          },
         },
-      },
-    })
+      }), 15_000, 'Creating your account'))
+    } catch {
+      setError('Sign-up timed out — check your connection and try again.')
+      setLoading(false)
+      return
+    }
 
     if (signUpErr) {
       setError(signUpErr.message)
@@ -55,8 +63,10 @@ export default function SignUpPage() {
       body: JSON.stringify({ type: 'signup', name: form.fullName, email: form.email, role: displayTitle ?? role }),
     }).catch(() => {})
 
-    // Sign out immediately — account requires admin approval before access is granted
-    await supabase.auth.signOut()
+    // Sign out immediately — account requires admin approval before access is granted.
+    // Time-bounded so a stalled sign-out can't trap the user on a spinner after the
+    // account was already created.
+    await withTimeout(supabase.auth.signOut(), 8_000, 'Finishing up').catch(() => {})
     setDone(true)
     setLoading(false)
   }
