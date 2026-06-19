@@ -1,0 +1,46 @@
+name: Smoke (surveyor flow)
+
+# Runs the end-to-end guard (e2e/smoke-surveyor-flow.mjs): an admin-created job is
+# assigned to a throwaway surveyor, who then completes & submits it — verifying each
+# step persisted against the LIVE database. Fails loudly if the core flow is blocked.
+#
+# This touches the production database (it creates + deletes its own
+# *@tayeng-test.local records), so it is NOT part of the per-push CI. It runs daily
+# and can be triggered by hand (Actions tab → "Smoke (surveyor flow)" → Run workflow),
+# e.g. right after a deploy.
+#
+# REQUIRED REPO SECRETS (Settings → Secrets and variables → Actions → New secret):
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   SUPABASE_SERVICE_ROLE_KEY
+# Until those exist the script exits 2 ("Missing env") and the run fails by design.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *' # daily ~06:17 UTC
+
+concurrency:
+  group: smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Surveyor-flow smoke test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run smoke

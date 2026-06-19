@@ -37,3 +37,26 @@ blocked; the core flow is broken — investigate before shipping.
 After any change that touches RLS policies, the checklist editor, the submit path,
 or migrations — and ideally after each production deploy. It's safe to run anytime;
 it cleans up after itself and only touches its own `*@tayeng-test.local` records.
+
+## Automated checks (GitHub Actions)
+
+Two workflows guard the app automatically (`.github/workflows/`):
+
+- **CI** (`ci.yml`) — runs typecheck + lint + unit tests + build on every push and PR
+  to `main`. No secrets, never touches the database. This catches regressions before
+  they reach production.
+- **Smoke** (`smoke.yml`) — runs this surveyor-flow smoke test against the live
+  database, daily and on demand (Actions tab → "Smoke (surveyor flow)" → **Run
+  workflow** — handy right after a deploy).
+
+### One-time setup for the Smoke workflow
+
+The smoke workflow needs three repository secrets. In GitHub: **Settings → Secrets and
+variables → Actions → New repository secret**, add each of:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+(Same values as your local `.env.local`.) Until they're set, the smoke run fails by
+design with "Missing env". The CI workflow needs no setup and works immediately.
