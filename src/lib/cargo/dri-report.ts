@@ -33,13 +33,35 @@ const fmtDT = (s?: string | null): string => {
 }
 const numStr = (n?: number | null): string => (n == null || Number.isNaN(n) ? '—' : String(n))
 
+// Default section HEADINGS as they appear in the exported report. These can be
+// overridden per report via dri.reportConfig.options.labels (e.g. a client that
+// wants the legacy spelling "THERMOCOUPLE WIRE LENGHTS" or "INERTING OPERATIONS"),
+// so the export wording is configurable without code changes.
+const DEFAULT_HEADINGS: Record<string, string> = {
+  preliminary_meeting: 'PRELIMINARY MEETING',
+  ultrasonic_hatch: 'ULTRASONIC HATCH TESTING',
+  stockpile: 'STOCK PILE INSPECTION',
+  hold_inspections: 'HOLD INSPECTIONS',
+  tc_wire_installation: 'THERMOCOUPLE WIRE INSTALLATION',
+  tc_wire_lengths: 'THERMOCOUPLE WIRE LENGTHS',
+  inerting: 'INERTING REPORT',
+  voyage_log: 'VOYAGE',
+  hold_openings: 'HOLD OPENINGS',
+  barge_list: 'BARGE LIST',
+  temp_gas_summary: 'TEMPERATURE & GAS READINGS',
+}
+
+// Chronological sort for IR reading rows (by date then 24h time).
+const irChrono = (a: { readingDate: string; readingTime: string }, b: { readingDate: string; readingTime: string }) =>
+  a.readingDate.localeCompare(b.readingDate) || hhmmOf(a.readingTime).localeCompare(hhmmOf(b.readingTime))
+
 function sofBlocks(events: SofEvent[], out: Block[]) {
   const byDate = new Map<string, SofEvent[]>()
   for (const e of events) { const g = byDate.get(e.eventDate) ?? []; g.push(e); byDate.set(e.eventDate, g) }
   for (const d of [...byDate.keys()].sort()) {
     const rows = byDate.get(d)!.sort((a, b) => a.eventTime.localeCompare(b.eventTime) || a.sortOrder - b.sortOrder)
     out.push({ kind: 'p', text: fmtDate(d), bold: true })
-    out.push({ kind: 'table', headers: ['TIME', 'EVENT'], rows: rows.map(e => [e.eventTime, e.eventText]) })
+    out.push({ kind: 'table', headers: ['TIME', 'EVENT'], rows: rows.map(e => [hhmmOf(e.eventTime), e.eventText]) })
   }
 }
 
@@ -83,6 +105,9 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
   const dri = ensureDri(voyage.dri, voyage.holdCount)
   const has = (k: SectionKey) => included.includes(k)
   const out: Block[] = []
+  // Per-report heading overrides (configurable legacy wording).
+  const labelOverrides = (dri.reportConfig?.options?.labels ?? {}) as Record<string, string>
+  const H = (k: string): string => labelOverrides[k] || DEFAULT_HEADINGS[k] || k
 
   if (has('header')) {
     out.push({ kind: 'h1', text: `M.V. ${(voyage.vesselName || '').toUpperCase()} VOY ${voyage.voyageNumber || ''}`.trim() })
@@ -91,31 +116,38 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
     const commenced = dri.commencedOn || voyage.startDate
     const completed = dri.completedOn || voyage.endDate
     out.push({ kind: 'p', text: `PRODUCTION REPORT COMMENCED ${fmtDate(commenced)}${completed ? `  /  COMPLETED ${fmtDate(completed)}` : ''}` })
+    const ports = [
+      voyage.loadingPort && `LOAD PORT: ${voyage.loadingPort}`,
+      voyage.dischargePort && `DISCHARGE PORT: ${voyage.dischargePort}`,
+    ].filter(Boolean).join('     /     ')
+    if (ports) out.push({ kind: 'p', text: ports })
   }
-  if (has('preliminary_meeting') && dri.preliminaryMeeting && (dri.preliminaryMeeting.notes || dri.preliminaryMeeting.meetingDate)) {
-    out.push({ kind: 'h2', text: 'PRELIMINARY MEETING' })
-    if (dri.preliminaryMeeting.meetingDate) out.push({ kind: 'p', text: `Date: ${fmtDate(dri.preliminaryMeeting.meetingDate)}` })
-    if (dri.preliminaryMeeting.notes) out.push({ kind: 'p', text: dri.preliminaryMeeting.notes })
+  // The preliminary meeting prints as a heading whenever the section is included —
+  // legacy reports show the heading even when no narrative was recorded.
+  if (has('preliminary_meeting')) {
+    out.push({ kind: 'h2', text: H('preliminary_meeting') })
+    if (dri.preliminaryMeeting?.meetingDate) out.push({ kind: 'p', text: `Date: ${fmtDate(dri.preliminaryMeeting.meetingDate)}` })
+    if (dri.preliminaryMeeting?.notes) out.push({ kind: 'p', text: dri.preliminaryMeeting.notes })
   }
   if (has('ultrasonic_hatch') && dri.ultrasonicHatchTests.length) {
     const first = dri.ultrasonicHatchTests[0]
-    out.push({ kind: 'h2', text: `ULTRASONIC HATCH TESTING${first.testDate ? ' ' + fmtDate(first.testDate) : ''}` })
+    out.push({ kind: 'h2', text: `${H('ultrasonic_hatch')}${first.testDate ? ' ' + fmtDate(first.testDate) : ''}` })
     for (const t of dri.ultrasonicHatchTests) out.push({ kind: 'p', text: `${t.testDate ? fmtDate(t.testDate) + ': ' : ''}${t.notes || 'Hatch covers ultrasonically tested.'}` })
   }
   if (has('stockpile') && dri.stockpileInspections.length) {
-    out.push({ kind: 'h2', text: 'STOCK PILE INSPECTION' })
+    out.push({ kind: 'h2', text: H('stockpile') })
     for (const s of dri.stockpileInspections) out.push({ kind: 'p', text: `${s.inspectedOn ? fmtDT(s.inspectedOn) + ': ' : ''}${s.description}` })
   }
   if (has('hold_inspections') && dri.holdInspections.length) {
-    out.push({ kind: 'h2', text: 'HOLD INSPECTIONS' })
+    out.push({ kind: 'h2', text: H('hold_inspections') })
     for (const h of dri.holdInspections) out.push({ kind: 'p', text: `Hold ${h.holdNo}: ${h.conditionText}` })
   }
   if (has('tc_wire_installation') && dri.tcWireInstalls.length) {
-    out.push({ kind: 'h2', text: 'THERMOCOUPLE WIRE INSTALLATION' })
-    out.push({ kind: 'table', headers: ['DATE', 'HOLD NO.', 'WIRING SEQ.', 'START', 'COMPLETED'], rows: dri.tcWireInstalls.map(t => [fmtDate(t.installDate), String(t.holdNo), t.wiringSeq, t.startTime, t.completedTime]) })
+    out.push({ kind: 'h2', text: H('tc_wire_installation') })
+    out.push({ kind: 'table', headers: ['DATE', 'HOLD NO.', 'WIRING SEQ.', 'START', 'COMPLETED'], rows: dri.tcWireInstalls.map(t => [fmtDate(t.installDate), String(t.holdNo), t.wiringSeq, hhmmOf(t.startTime), hhmmOf(t.completedTime)]) })
   }
   if (has('tc_wire_lengths') && dri.tcWireLengths.length) {
-    out.push({ kind: 'h2', text: 'THERMOCOUPLE WIRE LENGTHS' })
+    out.push({ kind: 'h2', text: H('tc_wire_lengths') })
     out.push({ kind: 'table', headers: ['WIRING LEVEL', 'HOLDS', 'TC #', 'LENGTH'], rows: dri.tcWireLengths.map(t => [t.wiringLevel, t.appliesToHolds, String(t.tcNumber), `${t.lengthValue} ${t.lengthUnit}`]) })
   }
   if (has('sof_load')) {
@@ -124,18 +156,18 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
     if (ev.length) sofBlocks(ev, out); else out.push({ kind: 'p', text: 'No events logged.' })
   }
   if (has('ir_load')) {
-    const ir = dri.irReadings.filter(r => r.phase === 'LOAD')
+    const ir = dri.irReadings.filter(r => r.phase === 'LOAD').sort(irChrono)
     if (ir.length) {
       out.push({ kind: 'h2', text: 'IR GUN READINGS — LOADING' })
-      out.push({ kind: 'table', headers: ['DATE', 'TIME', 'HOLD', 'FWD °C', 'MID °C', 'AFT °C'], rows: ir.map(r => [fmtDate(r.readingDate), r.readingTime, String(r.holdNo), numStr(r.fwdC), numStr(r.midC), numStr(r.aftC)]) })
+      out.push({ kind: 'table', headers: ['DATE', 'TIME', 'HOLD', 'FWD °C', 'MID °C', 'AFT °C'], rows: ir.map(r => [fmtDate(r.readingDate), hhmmOf(r.readingTime), String(r.holdNo), numStr(r.fwdC), numStr(r.midC), numStr(r.aftC)]) })
     }
   }
   if (has('inerting') && dri.inerting.length) {
-    out.push({ kind: 'h2', text: 'INERTING REPORT' })
+    out.push({ kind: 'h2', text: H('inerting') })
     out.push({ kind: 'table', headers: ['HOLD', 'COMMENCED', 'COMPLETED', 'TOTAL TIME', 'OXYGEN %'], rows: dri.inerting.map(t => [String(t.holdNo), fmtDT(t.commencedAt), fmtDT(t.completedAt), `${t.totalHours}h ${t.totalMinutes}m`, String(t.oxygenPct)]) })
   }
   if (has('voyage_log') && dri.voyageLog.length) {
-    out.push({ kind: 'h2', text: 'VOYAGE' })
+    out.push({ kind: 'h2', text: H('voyage_log') })
     const byDate = new Map<string, typeof dri.voyageLog>()
     for (const e of dri.voyageLog) { const g = byDate.get(e.logDate) ?? []; g.push(e); byDate.set(e.logDate, g) }
     for (const d of [...byDate.keys()].sort()) {
@@ -154,35 +186,43 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
     if (ev.length) sofBlocks(ev, out); else out.push({ kind: 'p', text: 'No events logged.' })
   }
   if (has('hold_openings') && dri.holdOpenings.length) {
-    out.push({ kind: 'h2', text: 'HOLD OPENINGS' })
+    out.push({ kind: 'h2', text: H('hold_openings') })
     for (const h of dri.holdOpenings) {
       const ir = (h.irFwdC != null || h.irMidC != null || h.irAftC != null) ? ` IR Fwd ${numStr(h.irFwdC)}°C, Mid ${numStr(h.irMidC)}°C, Aft ${numStr(h.irAftC)}°C.` : ''
       out.push({ kind: 'p', text: `Hold ${h.holdNo} opened ${fmtDT(h.openedAt)}: cargo was ${h.cargoCondition}.${ir}${h.condensation ? ' Condensation noted.' : ''}${h.notes ? ' ' + h.notes : ''}` })
     }
   }
   if (has('ir_discharge')) {
-    const ir = dri.irReadings.filter(r => r.phase === 'DISCHARGE')
+    const ir = dri.irReadings.filter(r => r.phase === 'DISCHARGE').sort(irChrono)
     if (ir.length) {
       out.push({ kind: 'h2', text: 'IR GUN READINGS — DISCHARGE' })
-      out.push({ kind: 'table', headers: ['DATE', 'TIME', 'HOLD', 'FWD °C', 'MID °C', 'AFT °C'], rows: ir.map(r => [fmtDate(r.readingDate), r.readingTime, String(r.holdNo), numStr(r.fwdC), numStr(r.midC), numStr(r.aftC)]) })
+      out.push({ kind: 'table', headers: ['DATE', 'TIME', 'HOLD', 'FWD °C', 'MID °C', 'AFT °C'], rows: ir.map(r => [fmtDate(r.readingDate), hhmmOf(r.readingTime), String(r.holdNo), numStr(r.fwdC), numStr(r.midC), numStr(r.aftC)]) })
     }
   }
   if (has('barge_list') && dri.barges.length) {
-    const loc = dri.barges[0]?.location
-    out.push({ kind: 'h2', text: `BARGE LIST${loc ? ' ' + loc.toUpperCase() : ''}` })
-    out.push({ kind: 'table', headers: ['BARGE', 'HOLD', 'COMMENCE', 'COMPLETED'], rows: dri.barges.map(b => [b.bargeId, b.holds, fmtDT(b.commenceAt), fmtDT(b.completedAt)]) })
+    // Group barges into one list per location (legacy reports have multiple barge
+    // lists, one per discharge point). Ungrouped barges fall under a single heading.
+    const byLoc = new Map<string, typeof dri.barges>()
+    for (const b of dri.barges) { const key = b.location || ''; const g = byLoc.get(key) ?? []; g.push(b); byLoc.set(key, g) }
+    for (const [loc, list] of byLoc) {
+      out.push({ kind: 'h2', text: `${H('barge_list')}${loc ? ' ' + loc.toUpperCase() : ''}` })
+      out.push({ kind: 'table', headers: ['BARGE', 'HOLD', 'COMMENCE', 'COMPLETED'], rows: list.map(b => [b.bargeId, b.holds, fmtDT(b.commenceAt), fmtDT(b.completedAt)]) })
+    }
   }
   if (has('temp_gas_summary')) {
     const rows = summarizeReadings(voyage)
     if (rows.length) {
-      out.push({ kind: 'h2', text: 'TEMPERATURE & GAS READINGS' })
+      out.push({ kind: 'h2', text: H('temp_gas_summary') })
       out.push({ kind: 'table', headers: ['READING', 'HOLD', 'MIN', 'MAX', 'AVG', 'UNIT'], rows })
     }
   }
   if (has('signoff')) {
     out.push({ kind: 'p', text: ' ' })
+    out.push({ kind: 'p', text: '_______________________________' })
     out.push({ kind: 'p', text: voyage.surveyorName || '', bold: true })
     out.push({ kind: 'p', text: dri.surveyorTitle || DEFAULT_SURVEYOR_TITLE })
+    const completed = dri.completedOn || voyage.endDate
+    if (completed) out.push({ kind: 'p', text: `Date: ${fmtDate(completed)}` })
   }
   return out
 }

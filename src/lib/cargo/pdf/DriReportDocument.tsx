@@ -26,7 +26,7 @@ const s = StyleSheet.create({
   headLine: { fontSize: 7.5, color: MUTE, textAlign: 'center' },
   rule: { borderBottomWidth: 1.5, borderBottomColor: BRAND, marginTop: 6, marginBottom: 12 },
   h1: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: INK, textAlign: 'center', marginBottom: 4 },
-  h2: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', color: BRAND, marginTop: 12, marginBottom: 4, borderBottomWidth: 0.5, borderBottomColor: LINE, paddingBottom: 2 },
+  h2: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', color: BRAND, marginTop: 12, marginBottom: 4, borderBottomWidth: 0.5, borderBottomColor: LINE, paddingBottom: 2, textAlign: 'center' },
   p: { fontSize: 9, marginBottom: 3 },
   pBold: { fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 3 },
   table: { borderWidth: 0.5, borderColor: LINE, marginTop: 3, marginBottom: 6 },

@@ -83,7 +83,7 @@ export async function buildDriDocxBlob(blocks: Block[], reportTitle: string, log
         children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: b.text, bold: true, size: 26 })] }))
         break
       case 'h2':
-        children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 80 }, children: [new TextRun({ text: b.text, bold: true, color: BRAND })] }))
+        children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { before: 200, after: 80 }, children: [new TextRun({ text: b.text, bold: true, color: BRAND })] }))
         break
       case 'p':
         children.push(new Paragraph({ children: [new TextRun({ text: b.text, bold: b.bold, size: 18 })] }))
