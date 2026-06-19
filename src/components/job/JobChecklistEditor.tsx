@@ -751,7 +751,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (!user) { setUploadingField(null); return }
 
       const path = `${jobId}/${fieldId}/${Date.now()}_${file.name}`
-      const { error: upErr } = await supabase.storage.from('job-photos').upload(path, file)
+      let upErr: any = null
+      try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
+      catch { setSaveError('Photo upload timed out — check your connection and try the photo again.'); setUploadingField(null); return }
       if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
 
       const { error: dbErr } = await supabase.from('job_photos').insert({
@@ -774,7 +776,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (!user) { setUploadingField(null); return }
 
       const path = `${jobId}/general/${Date.now()}_${file.name}`
-      const { error: upErr } = await supabase.storage.from('job-photos').upload(path, file)
+      let upErr: any = null
+      try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
+      catch { setSaveError('Photo upload timed out — check your connection and try the photo again.'); setUploadingField(null); return }
       if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
 
       const { error: dbErr } = await supabase.from('job_photos').insert({
