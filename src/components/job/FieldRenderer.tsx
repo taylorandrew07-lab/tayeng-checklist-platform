@@ -312,12 +312,31 @@ function CalculatedField({ field, value, allValues, onChange }: {
     }
   }
 
+  // TEMP DIAGNOSTIC: when a calc comes out empty, show exactly what it received so
+  // we can see why (which token is missing / what value it has). Only renders in the
+  // failure case, so working fields are unaffected. Remove once the "—" is solved.
+  const calcDebug = (() => {
+    if (computed !== '' || !field.calculation_formula) return null
+    const toks = Array.from(field.calculation_formula.matchAll(/\{([^}]+)\}/g), m => m[1])
+    const parts = toks.map(tk =>
+      `${tk.slice(0, 8)}=${Object.prototype.hasOwnProperty.call(allValues, tk) ? JSON.stringify(allValues[tk]) : 'MISSING'}`
+    )
+    return `calc: saved=${JSON.stringify(value)} | ${parts.join(' · ')} | keys=${Object.keys(allValues).length}`
+  })()
+
   return (
-    <div className="flex items-center gap-2">
-      <div className={`input-base flex-1 font-mono ${colorCls}`}>
-        {displayVal}
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <div className={`input-base flex-1 font-mono ${colorCls}`}>
+          {displayVal}
+        </div>
+        {field.unit && !isPercent && <span className="text-sm text-gray-500">{field.unit}</span>}
       </div>
-      {field.unit && !isPercent && <span className="text-sm text-gray-500">{field.unit}</span>}
+      {calcDebug && (
+        <p className="text-[10px] leading-tight text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-mono break-all">
+          {calcDebug}
+        </p>
+      )}
     </div>
   )
 }
