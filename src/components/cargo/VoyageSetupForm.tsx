@@ -53,12 +53,17 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   const voyageRef = useRef(voyage)
   const firstRun = useRef(true)
   const pendingRef = useRef<Voyage | null>(null)
+  // dirtyRef gates auto-save to GENUINE user edits only — set by the form's onChange
+  // (below). Without it, async picklist loading would fire a spurious save on open
+  // and could clobber fields the user never touched (e.g. a text-mode client name).
+  const dirtyRef = useRef(false)
   // Keep the refs current without writing to them during render.
   useEffect(() => { onSavedRef.current = onSaved; voyageRef.current = voyage })
   useEffect(() => {
     const base = voyageRef.current
     if (!base) return // create mode: nothing to auto-save yet
     if (firstRun.current) { firstRun.current = false; return }
+    if (!dirtyRef.current) return // only persist real user edits, not settling state
     const resolvedClientName = lists.clients.length
       ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
       : clientName.trim()
@@ -72,7 +77,9 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       startDate, endDate, holdCount,
       surveyorName: surveyorName.trim(),
       clientId: lists.clients.length ? (clientId || null) : null,
-      clientName: resolvedClientName || undefined,
+      // Never wipe an already-stored client name we can't represent in the dropdown
+      // (e.g. a voyage created offline in text mode, now opened online).
+      clientName: resolvedClientName || base.clientName || undefined,
       remarks: remarks.trim() || undefined,
     }
     pendingRef.current = next
@@ -147,7 +154,7 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" onChange={() => { dirtyRef.current = true }}>
       <div className="card p-6 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <div>

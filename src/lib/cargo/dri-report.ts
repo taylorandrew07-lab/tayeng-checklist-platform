@@ -18,13 +18,15 @@ export type Block =
 // ── formatting ───────────────────────────────────────────────────────────────
 const fmtDate = (iso?: string | null): string => {
   if (!iso) return ''
-  try { return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) } catch { return iso }
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 const hhmmOf = (s?: string | null): string => {
   if (!s) return ''
-  if (/^\d{4}$/.test(s)) return s
-  const t = s.includes('T') ? s.slice(11, 16) : s
-  return t.replace(':', '')
+  if (/^\d{4}$/.test(s)) return s                       // already HHMM
+  if (s.includes('T')) return s.slice(11, 16).replace(':', '') // ISO / datetime-local
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s.replace(':', '')     // HH:MM
+  return '' // anything else (e.g. a bare date) is not a time
 }
 const fmtDT = (s?: string | null): string => {
   if (!s) return ''

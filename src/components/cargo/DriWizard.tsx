@@ -43,7 +43,8 @@ function RepeatList<T extends { id: string }>({ items, onChange, makeNew, addLab
       {items.length === 0 && <p className="text-sm text-gray-400">{empty ?? 'None yet.'}</p>}
       {items.map(item => (
         <div key={item.id} className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-3 hover:border-gray-300 transition-colors">
-          <div className="flex-1 flex flex-wrap items-end gap-x-4 gap-y-3">{render(item, patch => update(item.id, patch))}</div>
+          {/* fieldset[disabled] locks every input in the row when the report is finalized. */}
+          <fieldset disabled={readOnly} className="flex-1 min-w-0 m-0 p-0 border-0 flex flex-wrap items-end gap-x-4 gap-y-3">{render(item, patch => update(item.id, patch))}</fieldset>
           {!readOnly && <button onClick={() => remove(item.id)} aria-label="Remove row" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0 mt-4"><X className="h-3.5 w-3.5" /></button>}
         </div>
       ))}

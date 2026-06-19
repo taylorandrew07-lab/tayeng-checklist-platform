@@ -57,6 +57,17 @@ describe('buildReportBlocks — report fidelity', () => {
     expect((table as any).rows[0][0]).toContain('1 January')
   })
 
+  it('does not render a bare date as a time (hhmmOf guard)', () => {
+    const dri = emptyDriReport(3)
+    // inerting commenced/completed as DATE-ONLY values (no time component)
+    dri.inerting = [{ id: '1', holdNo: 1, commencedAt: '2026-03-04', completedAt: '2026-03-05', totalHours: 24, totalMinutes: 0, oxygenPct: 3 }]
+    const out = buildReportBlocks(voyage({ dri }), ['inerting'])
+    const table = out.find(b => b.kind === 'table') as { rows: string[][] }
+    // commenced cell should be the formatted date only, never "... 2026-03-04"
+    expect(table.rows[0][1]).toBe('4 March 2026')
+    expect(table.rows[0][1]).not.toContain('2026-03-04')
+  })
+
   it('emits one barge list per location', () => {
     const dri = emptyDriReport(3)
     dri.barges = [
