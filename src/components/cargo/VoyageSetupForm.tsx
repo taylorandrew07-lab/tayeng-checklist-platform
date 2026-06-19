@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2, Save, Check } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { titleCaseVesselName } from '@/lib/utils'
@@ -43,6 +43,46 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
     loadPickLists().then(l => { if (active) setLists(l) })
     return () => { active = false }
   }, [])
+
+  // EDIT mode (an existing voyage) auto-saves like every other workspace tab, so a
+  // surveyor can never lose Setup edits by switching tabs without hitting a button.
+  // CREATE mode keeps the explicit Save button + validation below. Refs avoid a
+  // save→reprop→save loop, and the first run is skipped so mounting isn't a write.
+  const isEdit = !!voyage
+  const onSavedRef = useRef(onSaved)
+  const voyageRef = useRef(voyage)
+  const firstRun = useRef(true)
+  const pendingRef = useRef<Voyage | null>(null)
+  // Keep the refs current without writing to them during render.
+  useEffect(() => { onSavedRef.current = onSaved; voyageRef.current = voyage })
+  useEffect(() => {
+    const base = voyageRef.current
+    if (!base) return // create mode: nothing to auto-save yet
+    if (firstRun.current) { firstRun.current = false; return }
+    const resolvedClientName = lists.clients.length
+      ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
+      : clientName.trim()
+    const next: Voyage = {
+      ...base,
+      vesselName: titleCaseVesselName(vesselName),
+      voyageNumber: voyageNumber.trim(),
+      cargoType: cargoType.trim(),
+      loadingPort: loadingPort.trim(),
+      dischargePort: dischargePort.trim(),
+      startDate, endDate, holdCount,
+      surveyorName: surveyorName.trim(),
+      clientId: lists.clients.length ? (clientId || null) : null,
+      clientName: resolvedClientName || undefined,
+      remarks: remarks.trim() || undefined,
+    }
+    pendingRef.current = next
+    const t = setTimeout(() => { onSavedRef.current(next); pendingRef.current = null }, 400)
+    return () => clearTimeout(t)
+  }, [vesselName, voyageNumber, cargoType, loadingPort, dischargePort, startDate, endDate, holdCount, surveyorName, clientId, clientName, remarks, lists])
+
+  // Flush a still-pending edit if the form unmounts (e.g. switching tabs inside the
+  // debounce window) so a just-typed Setup change is never lost.
+  useEffect(() => () => { if (pendingRef.current) onSavedRef.current(pendingRef.current) }, [])
 
   const haveClients = lists.clients.length > 0
   const haveSurveyors = lists.surveyors.length > 0
@@ -176,10 +216,14 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       </div>
 
       <div className="flex justify-end">
-        <button onClick={handleSave} disabled={saving} className="btn-primary">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving…' : (submitLabel ?? 'Save Voyage')}
-        </button>
+        {isEdit ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400"><Check className="h-3.5 w-3.5 text-green-500" />Changes save automatically</span>
+        ) : (
+          <button onClick={handleSave} disabled={saving} className="btn-primary">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? 'Saving…' : (submitLabel ?? 'Save Voyage')}
+          </button>
+        )}
       </div>
     </div>
   )

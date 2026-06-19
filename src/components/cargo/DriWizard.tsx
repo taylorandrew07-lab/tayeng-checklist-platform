@@ -9,13 +9,13 @@ import { useMemo } from 'react'
 import { Plus, X } from 'lucide-react'
 import SofLogger from './SofLogger'
 import {
-  DEFAULT_HOLD_CONDITION, DEFAULT_CARGO_CONDITION_OPENING, DEFAULT_OXYGEN_PCT,
+  DEFAULT_HOLD_CONDITION, DEFAULT_CARGO_CONDITION_OPENING, DEFAULT_OXYGEN_PCT, DEFAULT_SURVEYOR_TITLE,
   WIRING_SEQS, WEATHER_OPTIONS, SEA_STATE_OPTIONS, LENGTH_UNITS,
   type DriReport, type SofPhase, type IrReading, type VoyageLogEntry,
 } from '@/lib/cargo/dri'
 import type { Period } from '@/lib/cargo/types'
 
-const cell = 'rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
+const cell = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500'
 const uid = () => crypto.randomUUID()
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s))
 
@@ -40,18 +40,18 @@ function RepeatList<T extends { id: string }>({ items, onChange, makeNew, addLab
     <div className="space-y-2">
       {items.length === 0 && <p className="text-sm text-gray-400">{empty ?? 'None yet.'}</p>}
       {items.map(item => (
-        <div key={item.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2 hover:bg-gray-50 transition-colors">
-          <div className="flex-1 flex flex-wrap items-end gap-x-3 gap-y-2">{render(item, patch => update(item.id, patch))}</div>
-          {!readOnly && <button onClick={() => remove(item.id)} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"><X className="h-3.5 w-3.5" /></button>}
+        <div key={item.id} className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-3 hover:border-gray-300 transition-colors">
+          <div className="flex-1 flex flex-wrap items-end gap-x-4 gap-y-3">{render(item, patch => update(item.id, patch))}</div>
+          {!readOnly && <button onClick={() => remove(item.id)} aria-label="Remove row" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0 mt-4"><X className="h-3.5 w-3.5" /></button>}
         </div>
       ))}
-      {!readOnly && <button onClick={() => onChange([...items, makeNew()])} className="btn-ghost py-1 px-2 text-xs text-brand-600"><Plus className="h-3.5 w-3.5" />{addLabel}</button>}
+      {!readOnly && <button onClick={() => onChange([...items, makeNew()])} className="btn-ghost py-1.5 px-2.5 text-xs font-medium text-brand-600 hover:bg-brand-50"><Plus className="h-3.5 w-3.5" />{addLabel}</button>}
     </div>
   )
 }
 
 function Field({ label, children, w }: { label: string; children: React.ReactNode; w?: string }) {
-  return <div className={w}><label className="block text-[11px] text-gray-400">{label}</label>{children}</div>
+  return <div className={w}><label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">{label}</label>{children}</div>
 }
 
 // ── Shared: IR gun readings table (Loading + Discharge) ──────────────────────
@@ -85,6 +85,20 @@ export function PrepTab({ dri, holdCount, onChange, readOnly }: { dri: DriReport
 
   return (
     <div className="space-y-5">
+      <Section title="Report details" hint="These print on the report header and the sign-off block.">
+        <div className="flex flex-wrap gap-x-4 gap-y-3">
+          <Field label="Production report commenced" w="max-w-[210px]">
+            <input type="date" disabled={readOnly} value={dri.commencedOn ?? ''} onChange={e => onChange({ ...dri, commencedOn: e.target.value })} className={`${cell} block w-full`} />
+          </Field>
+          <Field label="Production report completed" w="max-w-[210px]">
+            <input type="date" disabled={readOnly} value={dri.completedOn ?? ''} onChange={e => onChange({ ...dri, completedOn: e.target.value })} className={`${cell} block w-full`} />
+          </Field>
+          <Field label="Surveyor / signatory title" w="flex-1 min-w-[260px]">
+            <input disabled={readOnly} value={dri.surveyorTitle ?? ''} onChange={e => onChange({ ...dri, surveyorTitle: e.target.value })} placeholder={DEFAULT_SURVEYOR_TITLE} className={`${cell} block w-full`} />
+          </Field>
+        </div>
+      </Section>
+
       <Section title="Preliminary meeting">
         <div className="space-y-2">
           <Field label="Meeting date" w="max-w-[200px]"><input type="date" disabled={readOnly} value={dri.preliminaryMeeting?.meetingDate ?? ''} onChange={e => onChange({ ...dri, preliminaryMeeting: { notes: dri.preliminaryMeeting?.notes ?? '', meetingDate: e.target.value } })} className={`${cell} block`} /></Field>
