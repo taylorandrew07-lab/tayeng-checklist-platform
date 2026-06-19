@@ -689,13 +689,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           return
         }
 
-        // Submitting the checklist means the report is ready for review.
-        await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
-        // Date the job by the SURVEY date entered in the checklist, not the day it
-        // was created (drives the jobs-list Date column, sorting + the calendar).
-        await syncJobDateFromChecklist().catch(() => {})
+        // The checklist IS submitted now. The remaining steps are best-effort
+        // bookkeeping (advance the workflow to "report ready" + date the job by the
+        // survey date). They must NEVER block the surveyor on a frozen grey dialog:
+        // on a flaky connection the submit write can land while a follow-up request
+        // stalls, so each is bounded by a timeout and failures are swallowed — the
+        // surveyor is always taken back, and an admin can correct status if needed.
+        await Promise.allSettled([
+          withTimeout(advanceWorkflowTo(jobId, 'report_ready'), 8_000, 'Updating status'),
+          withTimeout(syncJobDateFromChecklist(), 8_000, 'Dating the job'),
+        ])
         setShowSubmitDialog(false)
-        if (currentUserId) await deleteDraft(currentUserId, jobId).catch(() => {})
+        if (currentUserId) await withTimeout(deleteDraft(currentUserId, jobId), 5_000, 'Clearing draft').catch(() => {})
         router.push(backHref)
       } catch (err: any) {
         const message = 'Submit failed: ' + (err.message ?? 'Unexpected error')
