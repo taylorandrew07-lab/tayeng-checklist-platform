@@ -141,11 +141,69 @@ export function evaluateCalculation(
     }
     // Only allow safe math expressions
     if (!/^[\d\s+\-*/().]+$/.test(expr)) return ''
-    const result = Function(`"use strict"; return (${expr})`)()
-    return isFinite(result) ? String(Math.round(result * 10000) / 10000) : ''
+    // Evaluate WITHOUT eval()/Function(): those need CSP 'unsafe-eval', which we
+    // (correctly) don't allow, so they throw in the browser and the result silently
+    // came back empty. This safe arithmetic parser keeps the CSP locked down.
+    const result = evalArithmetic(expr)
+    return result !== null && isFinite(result) ? String(Math.round(result * 10000) / 10000) : ''
   } catch {
     return ''
   }
+}
+
+/**
+ * Evaluate a basic arithmetic expression (numbers, + - * /, parentheses, unary
+ * +/-) without eval()/Function — so it works under a CSP that forbids
+ * 'unsafe-eval'. Returns null on any malformed input.
+ */
+export function evalArithmetic(input: string): number | null {
+  const matched = input.match(/\d+\.?\d*|\.\d+|[+\-*/()]/g)
+  if (!matched) return null
+  const tokens: string[] = matched
+  let pos = 0
+  const peek = (): string | undefined => tokens[pos]
+
+  function parseExpr(): number | null {
+    let v = parseTerm()
+    if (v === null) return null
+    while (peek() === '+' || peek() === '-') {
+      const op = tokens[pos++]
+      const r = parseTerm()
+      if (r === null) return null
+      v = op === '+' ? v + r : v - r
+    }
+    return v
+  }
+  function parseTerm(): number | null {
+    let v = parseFactor()
+    if (v === null) return null
+    while (peek() === '*' || peek() === '/') {
+      const op = tokens[pos++]
+      const r = parseFactor()
+      if (r === null) return null
+      v = op === '*' ? v * r : v / r
+    }
+    return v
+  }
+  function parseFactor(): number | null {
+    const t = peek()
+    if (t === '+') { pos++; return parseFactor() }
+    if (t === '-') { pos++; const f = parseFactor(); return f === null ? null : -f }
+    if (t === '(') {
+      pos++
+      const v = parseExpr()
+      if (peek() !== ')') return null
+      pos++
+      return v
+    }
+    if (t !== undefined && /^(?:\d+\.?\d*|\.\d+)$/.test(t)) { pos++; return parseFloat(t) }
+    return null
+  }
+
+  const result = parseExpr()
+  // Reject leftover tokens (malformed input like "1 2" or "(1+2").
+  if (result === null || pos !== tokens.length) return null
+  return result
 }
 
 /**
