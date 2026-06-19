@@ -296,7 +296,7 @@ export default function VoyageWorkspace() {
         const readOnly = voyage.status === 'finalized'
         if (tab === 'prep') return <PrepTab dri={dri} holdCount={voyage.holdCount} onChange={setDri} readOnly={readOnly} />
         if (tab === 'loading') return <LoadingTab dri={dri} defaultDate={voyage.startDate} onChange={setDri} readOnly={readOnly} />
-        if (tab === 'voyage') return <VoyageLogTab dri={dri} onChange={setDri} readOnly={readOnly} />
+        if (tab === 'voyage') return <VoyageLogTab dri={dri} startDate={voyage.startDate} endDate={voyage.endDate} onChange={setDri} readOnly={readOnly} />
         return <DischargeTab dri={dri} defaultDate={voyage.endDate} onChange={setDri} readOnly={readOnly} />
       })()}
       {tab === 'readings' && <ReadingsGrid voyage={voyage} onChange={update} />}

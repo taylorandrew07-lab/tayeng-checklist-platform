@@ -7,7 +7,7 @@
 // (Voyage.readings) — it does not duplicate them.
 
 import type { Voyage, ReadingType } from './types'
-import { ensureDri, DEFAULT_SURVEYOR_TITLE, type SectionKey, type SofEvent } from './dri'
+import { ensureDri, readingStatusOf, DEFAULT_SURVEYOR_TITLE, type SectionKey, type SofEvent } from './dri'
 
 export type Block =
   | { kind: 'h1'; text: string }
@@ -173,9 +173,15 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
     for (const d of [...byDate.keys()].sort()) {
       out.push({ kind: 'p', text: fmtDate(d), bold: true })
       for (const e of byDate.get(d)!.sort((a, b) => a.slot.localeCompare(b.slot))) {
-        const sentence = e.readingsTaken
-          ? `${e.slot} hrs — readings taken for ${e.holdsList || 'all holds'}. Weather ${e.weather}, sea ${e.seaState}. Sealing foam ${e.sealingFoamOk ? 'in good order' : 'NOT in good order'}.${e.slot === '1800' && e.atmosphericTempC != null ? ` Atmospheric temperature ${e.atmosphericTempC}°C.` : ''}`
-          : `${e.slot} hrs — ${e.note || 'readings could not be taken'}.`
+        const st = readingStatusOf(e)
+        let sentence: string
+        if (st === 'taken') {
+          sentence = `${e.slot} hrs — readings taken for ${e.holdsList || 'all holds'}. Weather ${e.weather}, sea ${e.seaState}. Sealing foam ${e.sealingFoamOk ? 'in good order' : 'NOT in good order'}.${e.slot === '1800' && e.atmosphericTempC != null ? ` Atmospheric temperature ${e.atmosphericTempC}°C.` : ''}`
+        } else {
+          const reason = e.reasonNotTaken === 'other' ? e.note : e.reasonNotTaken
+          const verb = st === 'not_taken' ? 'readings not taken' : 'readings could not be taken'
+          sentence = `${e.slot} hrs — ${verb}${reason ? ` due to ${reason}` : (e.note ? ` — ${e.note}` : '')}.`
+        }
         out.push({ kind: 'p', text: sentence })
       }
     }

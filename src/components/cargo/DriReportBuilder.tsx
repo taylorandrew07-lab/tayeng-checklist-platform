@@ -10,7 +10,7 @@ import { toast } from '@/components/ui/toast'
 import { COMPANY } from '@/lib/company'
 import type { Voyage, CargoPhoto, Camera, Period } from '@/lib/cargo/types'
 import { CAMERA_LABELS } from '@/lib/cargo/types'
-import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, completenessWarnings, type SectionKey } from '@/lib/cargo/dri'
+import { ensureDri, CANONICAL_ORDER, SECTION_LABELS, DEFAULT_INCLUDED, completenessWarnings, validateReport, type SectionKey } from '@/lib/cargo/dri'
 import { buildReportBlocks } from '@/lib/cargo/dri-report'
 import { compressForPdf } from '@/lib/cargo/photo'
 import { deliverFile, PDF_MIME, DOCX_MIME } from '@/lib/pdf/deliver'
@@ -75,6 +75,7 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
     } finally { setIssuing(false) }
   }
   const warnings = useMemo(() => completenessWarnings(voyage, included, photoCount), [voyage, included, photoCount])
+  const issues = useMemo(() => validateReport(voyage, included), [voyage, included])
   const wantsPhotos = included.includes('photos')
 
   /** Load + compress the assigned photos once; shapes for both PDF and .docx. */
@@ -173,6 +174,17 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
             ) : null}
           </div>
         )}
+        {issues.length > 0 && (
+          <div className={`card p-3 ${issues.some(i => i.severity === 'error') ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+            <div className={`flex items-center gap-1.5 text-xs font-semibold mb-1 ${issues.some(i => i.severity === 'error') ? 'text-red-800' : 'text-amber-800'}`}>
+              <AlertTriangle className="h-3.5 w-3.5" />Before you export
+            </div>
+            <ul className="text-[11px] list-disc pl-4 space-y-0.5">
+              {issues.map((i, idx) => <li key={idx} className={i.severity === 'error' ? 'text-red-700' : 'text-amber-700'}>{i.message}</li>)}
+            </ul>
+            <p className="text-[10px] text-gray-500 mt-1.5">These don&apos;t block export — fix them or generate anyway.</p>
+          </div>
+        )}
         {warnings.length > 0 && (
           <div className="card p-3 bg-amber-50 border-amber-200">
             <div className="flex items-center gap-1.5 text-amber-800 text-xs font-semibold mb-1">
@@ -204,7 +216,7 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
             <div className="max-w-none">
               {blocks.map((b, i) => {
               if (b.kind === 'h1') return <h1 key={i} className="text-center text-xl font-bold text-gray-900 mb-1">{b.text}</h1>
-              if (b.kind === 'h2') return <h2 key={i} className="text-sm font-bold text-brand-700 uppercase tracking-wide mt-5 mb-1.5 border-b border-gray-200 pb-1">{b.text}</h2>
+              if (b.kind === 'h2') return <h2 key={i} className="text-sm font-bold text-brand-700 uppercase tracking-wide mt-5 mb-1.5 border-b border-gray-200 pb-1 text-center">{b.text}</h2>
               if (b.kind === 'p') return <p key={i} className={`text-sm mb-1.5 ${b.bold ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{b.text}</p>
               return (
                 <table key={i} className="w-full text-xs border border-gray-200 my-2">

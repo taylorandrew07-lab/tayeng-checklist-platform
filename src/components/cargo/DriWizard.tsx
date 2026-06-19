@@ -10,9 +10,11 @@ import { Plus, X } from 'lucide-react'
 import SofLogger from './SofLogger'
 import {
   DEFAULT_HOLD_CONDITION, DEFAULT_CARGO_CONDITION_OPENING, DEFAULT_OXYGEN_PCT, DEFAULT_SURVEYOR_TITLE,
-  WIRING_SEQS, WEATHER_OPTIONS, SEA_STATE_OPTIONS, LENGTH_UNITS,
-  type DriReport, type SofPhase, type IrReading, type VoyageLogEntry,
+  WIRING_SEQS, WEATHER_OPTIONS, SEA_STATE_OPTIONS, LENGTH_UNITS, READING_STATUS_OPTIONS, REASON_NOT_TAKEN,
+  readingStatusOf, durationHM,
+  type DriReport, type SofPhase, type IrReading, type VoyageLogEntry, type ReadingStatus, type ReasonNotTaken,
 } from '@/lib/cargo/dri'
+import { monitoringDates } from '@/lib/cargo/periods'
 import type { Period } from '@/lib/cargo/types'
 
 const cell = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500'
@@ -177,14 +179,21 @@ export function LoadingTab({ dri, defaultDate, onChange, readOnly }: { dri: DriR
         <RepeatList items={dri.inerting} readOnly={readOnly} addLabel="Add hold" empty="No inerting recorded."
           onChange={x => onChange({ ...dri, inerting: x })}
           makeNew={() => ({ id: uid(), holdNo: 1, commencedAt: '', completedAt: '', totalHours: 0, totalMinutes: 0, oxygenPct: DEFAULT_OXYGEN_PCT })}
-          render={(t, u) => (<>
-            <Field label="Hold"><input type="number" min={1} value={t.holdNo} onChange={e => u({ holdNo: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
-            <Field label="Commenced"><input type="datetime-local" value={t.commencedAt} onChange={e => u({ commencedAt: e.target.value })} className={cell} /></Field>
-            <Field label="Completed"><input type="datetime-local" value={t.completedAt} onChange={e => u({ completedAt: e.target.value })} className={cell} /></Field>
-            <Field label="Hrs"><input type="number" min={0} value={t.totalHours} onChange={e => u({ totalHours: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
-            <Field label="Mins"><input type="number" min={0} max={59} value={t.totalMinutes} onChange={e => u({ totalMinutes: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
-            <Field label="Oxygen %"><input type="number" step="0.1" value={t.oxygenPct} onChange={e => u({ oxygenPct: Number(e.target.value) })} className={`${cell} w-20`} /></Field>
-          </>)} />
+          render={(t, u) => {
+            // Auto-fill total time from the timestamps; the Hrs/Mins stay editable.
+            const recalc = (commencedAt: string, completedAt: string): Partial<typeof t> => {
+              const d = durationHM(commencedAt, completedAt)
+              return d ? { totalHours: d.hours, totalMinutes: d.minutes } : {}
+            }
+            return (<>
+              <Field label="Hold"><input type="number" min={1} value={t.holdNo} onChange={e => u({ holdNo: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
+              <Field label="Commenced"><input type="datetime-local" value={t.commencedAt} onChange={e => u({ commencedAt: e.target.value, ...recalc(e.target.value, t.completedAt) })} className={cell} /></Field>
+              <Field label="Completed"><input type="datetime-local" value={t.completedAt} onChange={e => u({ completedAt: e.target.value, ...recalc(t.commencedAt, e.target.value) })} className={cell} /></Field>
+              <Field label="Hrs"><input type="number" min={0} value={t.totalHours} onChange={e => u({ totalHours: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
+              <Field label="Mins"><input type="number" min={0} max={59} value={t.totalMinutes} onChange={e => u({ totalMinutes: Number(e.target.value) })} className={`${cell} w-16`} /></Field>
+              <Field label="Oxygen %"><input type="number" step="0.1" value={t.oxygenPct} onChange={e => u({ oxygenPct: Number(e.target.value) })} className={`${cell} w-20`} /></Field>
+            </>)
+          }} />
       </Section>
     </div>
   )
@@ -192,7 +201,11 @@ export function LoadingTab({ dri, defaultDate, onChange, readOnly }: { dri: DriR
 
 // ── VOYAGE (daily log) ───────────────────────────────────────────────────────
 const SLOTS: Period[] = ['0600', '1200', '1800']
-export function VoyageLogTab({ dri, onChange, readOnly }: { dri: DriReport; onChange: (d: DriReport) => void; readOnly?: boolean }) {
+const seedDay = (date: string): VoyageLogEntry[] => SLOTS.map(slot => ({
+  id: uid(), logDate: date, slot, readingsTaken: true, readingStatus: 'taken',
+  holdsList: 'all holds', weather: 'clear and sunny', seaState: 'calm', sealingFoamOk: true, atmosphericTempC: null,
+}))
+export function VoyageLogTab({ dri, startDate, endDate, onChange, readOnly }: { dri: DriReport; startDate?: string; endDate?: string; onChange: (d: DriReport) => void; readOnly?: boolean }) {
   const byDate = useMemo(() => {
     const m = new Map<string, VoyageLogEntry[]>()
     for (const e of dri.voyageLog) { const g = m.get(e.logDate) ?? []; g.push(e); m.set(e.logDate, g) }
@@ -202,8 +215,14 @@ export function VoyageLogTab({ dri, onChange, readOnly }: { dri: DriReport; onCh
 
   function addDay(date: string) {
     if (!date || byDate.has(date)) return
-    const seeded: VoyageLogEntry[] = SLOTS.map(slot => ({ id: uid(), logDate: date, slot, readingsTaken: true, holdsList: 'all holds', weather: 'clear and sunny', seaState: 'calm', sealingFoamOk: true, atmosphericTempC: null }))
-    onChange({ ...dri, voyageLog: [...dri.voyageLog, ...seeded] })
+    onChange({ ...dri, voyageLog: [...dri.voyageLog, ...seedDay(date)] })
+  }
+  // Seed every monitoring date in the voyage window that isn't logged yet.
+  const allDates = startDate && endDate ? monitoringDates(startDate, endDate) : []
+  const missingDays = allDates.filter(d => !byDate.has(d))
+  function generateAllDays() {
+    if (!missingDays.length) return
+    onChange({ ...dri, voyageLog: [...dri.voyageLog, ...missingDays.flatMap(seedDay)] })
   }
   const upd = (id: string, patch: Partial<VoyageLogEntry>) => onChange({ ...dri, voyageLog: dri.voyageLog.map(e => e.id === id ? { ...e, ...patch } : e) })
   const removeDay = (date: string) => onChange({ ...dri, voyageLog: dri.voyageLog.filter(e => e.logDate !== date) })
@@ -211,9 +230,14 @@ export function VoyageLogTab({ dri, onChange, readOnly }: { dri: DriReport; onCh
   return (
     <div className="space-y-4">
       {!readOnly && (
-        <div className="card p-3 flex items-end gap-2">
-          <Field label="Add a day"><input type="date" id="vl-add" className={`${cell} block`} onChange={e => { addDay(e.target.value); e.target.value = '' }} /></Field>
-          <span className="text-xs text-gray-400 pb-1.5">Seeds the 0600 / 1200 / 1800 slots with the standard sentence.</span>
+        <div className="card p-3 flex flex-wrap items-end gap-3">
+          {missingDays.length > 0 && (
+            <button onClick={generateAllDays} className="btn-primary text-sm py-1.5 px-3">
+              <Plus className="h-3.5 w-3.5" />Generate {missingDays.length} day{missingDays.length === 1 ? '' : 's'} ({allDates.length}-day voyage)
+            </button>
+          )}
+          <Field label="Or add one day"><input type="date" id="vl-add" min={startDate} max={endDate} className={`${cell} block`} onChange={e => { addDay(e.target.value); e.target.value = '' }} /></Field>
+          <span className="text-xs text-gray-400 pb-1.5">Each day seeds the 0600 / 1200 / 1800 slots with the standard sentence — edit as needed.</span>
         </div>
       )}
       {dates.length === 0 ? <div className="card p-8 text-center text-sm text-gray-400">No voyage days yet.</div> : dates.map(d => (
@@ -228,18 +252,19 @@ export function VoyageLogTab({ dri, onChange, readOnly }: { dri: DriReport; onCh
               if (!e) return null
               return (
                 <div key={slot} className="px-4 py-3">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="tnum text-sm font-medium text-gray-700 w-12">{slot}</span>
-                    <label className="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" disabled={readOnly} checked={e.readingsTaken} onChange={ev => upd(e.id, { readingsTaken: ev.target.checked })} className="h-4 w-4 rounded border-gray-300 text-brand-600" />readings taken</label>
-                    {e.readingsTaken ? (<>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <span className="tnum text-sm font-medium text-gray-700 w-12 pb-1.5">{slot}</span>
+                    <Field label="Readings"><select disabled={readOnly} value={readingStatusOf(e)} onChange={ev => { const st = ev.target.value as ReadingStatus; upd(e.id, { readingStatus: st, readingsTaken: st === 'taken' }) }} className={cell}>{READING_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></Field>
+                    {readingStatusOf(e) === 'taken' ? (<>
                       <Field label="Holds"><input disabled={readOnly} value={e.holdsList} onChange={ev => upd(e.id, { holdsList: ev.target.value })} className={`${cell} w-28`} /></Field>
                       <Field label="Weather"><select disabled={readOnly} value={e.weather} onChange={ev => upd(e.id, { weather: ev.target.value as VoyageLogEntry['weather'] })} className={cell}>{WEATHER_OPTIONS.map(w => <option key={w}>{w}</option>)}</select></Field>
                       <Field label="Sea state"><select disabled={readOnly} value={e.seaState} onChange={ev => upd(e.id, { seaState: ev.target.value as VoyageLogEntry['seaState'] })} className={cell}>{SEA_STATE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></Field>
-                      <label className="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" disabled={readOnly} checked={e.sealingFoamOk} onChange={ev => upd(e.id, { sealingFoamOk: ev.target.checked })} className="h-4 w-4 rounded border-gray-300 text-brand-600" />sealing foam OK</label>
+                      <label className="flex items-center gap-1.5 text-xs text-gray-500 pb-1.5"><input type="checkbox" disabled={readOnly} checked={e.sealingFoamOk} onChange={ev => upd(e.id, { sealingFoamOk: ev.target.checked })} className="h-4 w-4 rounded border-gray-300 text-brand-600" />sealing foam OK</label>
                       {slot === '1800' && <Field label="Atmos. °C"><input disabled={readOnly} type="number" step="0.1" value={e.atmosphericTempC ?? ''} onChange={ev => upd(e.id, { atmosphericTempC: num(ev.target.value) })} className={`${cell} w-20`} /></Field>}
-                    </>) : (
-                      <input disabled={readOnly} value={e.note ?? ''} onChange={ev => upd(e.id, { note: ev.target.value })} placeholder="Reason readings could not be taken…" className={`${cell} flex-1 min-w-[220px]`} />
-                    )}
+                    </>) : (<>
+                      <Field label="Reason"><select disabled={readOnly} value={e.reasonNotTaken ?? ''} onChange={ev => upd(e.id, { reasonNotTaken: (ev.target.value || undefined) as ReasonNotTaken | undefined })} className={cell}><option value="">—</option>{REASON_NOT_TAKEN.map(r => <option key={r} value={r}>{r}</option>)}</select></Field>
+                      {(e.reasonNotTaken === 'other' || !e.reasonNotTaken) && <Field label="Note" w="flex-1 min-w-[220px]"><input disabled={readOnly} value={e.note ?? ''} onChange={ev => upd(e.id, { note: ev.target.value })} placeholder="Describe…" className={`${cell} w-full`} /></Field>}
+                    </>)}
                   </div>
                 </div>
               )

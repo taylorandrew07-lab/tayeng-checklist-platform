@@ -14,6 +14,8 @@ export type LengthUnit = 'm' | 'ft'
 export type WiringSeq = 'Base' | 'Level 1' | 'Level 2' | 'Level 1 & 2' | 'Mid Level' | 'Surface'
 export type Weather = 'clear and sunny' | 'overcast' | 'cloudy' | 'foggy'
 export type SeaState = 'calm' | 'moderate' | 'rough' | 'very rough'
+export type ReadingStatus = 'taken' | 'not_taken' | 'could_not'
+export type ReasonNotTaken = 'rain' | 'rough seas' | 'strong winds' | 'unsafe deck' | 'other'
 
 // ── Section record shapes ────────────────────────────────────────────────────
 export interface PreliminaryMeeting { notes: string; meetingDate?: string }
@@ -28,6 +30,10 @@ export interface VoyageLogEntry {
   weather: Weather; seaState: SeaState; sealingFoamOk: boolean
   atmosphericTempC?: number | null // only captured at the 1800 slot
   note?: string // for "could not be taken due to…" cases
+  // 3-way status refines the legacy `readingsTaken` boolean (kept for back-compat:
+  // when readingStatus is absent, readingsTaken is the source of truth).
+  readingStatus?: ReadingStatus
+  reasonNotTaken?: ReasonNotTaken
 }
 /** Statement of Facts — one timestamped event, shared by LOAD and DISCHARGE. */
 export interface SofEvent { id: string; phase: SofPhase; eventDate: string; eventTime: string; eventText: string; holdNo?: number | null; sortOrder: number }
@@ -77,6 +83,26 @@ export const WIRING_SEQS: WiringSeq[] = ['Base', 'Level 1', 'Level 2', 'Level 1 
 export const WEATHER_OPTIONS: Weather[] = ['clear and sunny', 'overcast', 'cloudy', 'foggy']
 export const SEA_STATE_OPTIONS: SeaState[] = ['calm', 'moderate', 'rough', 'very rough']
 export const LENGTH_UNITS: LengthUnit[] = ['m', 'ft']
+export const READING_STATUS_OPTIONS: { value: ReadingStatus; label: string }[] = [
+  { value: 'taken', label: 'Taken' },
+  { value: 'not_taken', label: 'Not taken' },
+  { value: 'could_not', label: 'Could not take' },
+]
+export const REASON_NOT_TAKEN: ReasonNotTaken[] = ['rain', 'rough seas', 'strong winds', 'unsafe deck', 'other']
+
+/** Read a log entry's effective status (back-compat: fall back to the boolean). */
+export function readingStatusOf(e: VoyageLogEntry): ReadingStatus {
+  return e.readingStatus ?? (e.readingsTaken ? 'taken' : 'could_not')
+}
+
+/** Whole hours + minutes between two datetime-local/ISO strings (null if invalid). */
+export function durationHM(startISO?: string, endISO?: string): { hours: number; minutes: number } | null {
+  if (!startISO || !endISO) return null
+  const a = new Date(startISO).getTime(); const b = new Date(endISO).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null
+  const mins = Math.round((b - a) / 60000)
+  return { hours: Math.floor(mins / 60), minutes: mins % 60 }
+}
 
 // SOF autocomplete vocab. `#_` prompts for a hold number on entry.
 export const SOF_LOAD_EVENTS = [
@@ -220,4 +246,43 @@ export function completenessWarnings(voyage: Voyage, included: SectionKey[], pho
   return included
     .filter(k => !has(k))
     .map(k => ({ key: k, label: SECTION_LABELS[k], message: `${SECTION_LABELS[k]} is ticked but has no data entered.` }))
+}
+
+// ── Pre-export validation ────────────────────────────────────────────────────
+// Stronger checks than the empty-section warnings: data integrity (dates, hold
+// numbers) + key operational milestones. Advisory (export is never hard-blocked),
+// but surfaced prominently so a report isn't issued missing its anchors.
+export interface ReportIssue { severity: 'warn' | 'error'; message: string }
+
+export function validateReport(voyage: Voyage, included: SectionKey[]): ReportIssue[] {
+  const dri = ensureDri(voyage.dri, voyage.holdCount)
+  const has = (k: SectionKey) => included.includes(k)
+  const hc = voyage.holdCount
+  const issues: ReportIssue[] = []
+
+  const commenced = dri.commencedOn || voyage.startDate
+  const completed = dri.completedOn || voyage.endDate
+  if (commenced && completed && completed < commenced) {
+    issues.push({ severity: 'error', message: 'Report completed date is before the commenced date.' })
+  }
+
+  const outOfRange = (n: number) => !Number.isFinite(n) || n < 1 || n > hc
+  const countBad = (ns: number[]) => ns.filter(outOfRange).length
+  const badIr = countBad(dri.irReadings.map(r => r.holdNo))
+  if (badIr) issues.push({ severity: 'warn', message: `${badIr} IR reading(s) reference a hold outside 1–${hc}.` })
+  const badInert = countBad(dri.inerting.map(r => r.holdNo))
+  if (badInert) issues.push({ severity: 'warn', message: `${badInert} inerting row(s) reference a hold outside 1–${hc}.` })
+  const badOpen = countBad(dri.holdOpenings.map(r => r.holdNo))
+  if (badOpen) issues.push({ severity: 'warn', message: `${badOpen} hold opening(s) reference a hold outside 1–${hc}.` })
+
+  const loadText = dri.sofEvents.filter(e => e.phase === 'LOAD').map(e => e.eventText.toLowerCase()).join(' | ')
+  const dischText = dri.sofEvents.filter(e => e.phase === 'DISCHARGE').map(e => e.eventText.toLowerCase()).join(' | ')
+  if (has('sof_load')) {
+    if (!/final draft survey/.test(loadText)) issues.push({ severity: 'warn', message: 'No "final draft survey" event logged at the load port.' })
+    if (!/loading completed/.test(loadText)) issues.push({ severity: 'warn', message: 'No "loading completed" event logged at the load port.' })
+  }
+  if (has('sof_discharge')) {
+    if (!/complete discharging|discharge completed/.test(dischText)) issues.push({ severity: 'warn', message: 'No "discharge completed" event logged at the discharge port.' })
+  }
+  return issues
 }
