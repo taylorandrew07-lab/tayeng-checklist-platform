@@ -29,14 +29,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npx tsc --noEmit
-
       - name: Lint
         run: npm run lint
 
       - name: Unit tests
         run: npm test
 
+      # Build first: `next build` generates next-env.d.ts (which declares the
+      # image-import types, e.g. *.png) and fully type-checks. The explicit tsc
+      # step then runs with those generated types present.
       - name: Build
         run: npm run build
+
+      - name: Typecheck
+        run: npx tsc --noEmit
