@@ -7,6 +7,7 @@ import {
   getVessel, listDocuments, uploadDocument, deleteDocument, renameVessel, deleteVessel,
   signedUrl, formatBytes, DOC_CATEGORIES, type Vessel, type VesselDocument,
 } from '@/lib/documents/api'
+import { withTimeout } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 
 export default function VesselFolderView({ id, basePath }: { id: string; basePath: string }) {
@@ -40,10 +41,12 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
     setBusy(true); setError(null)
     try {
       for (const f of Array.from(files)) {
-        const { error } = await uploadDocument(id, f, category)
+        const { error } = await withTimeout(uploadDocument(id, f, category), 60_000, `Uploading ${f.name}`)
         if (error) { setError(`${f.name}: ${error}`); break }
       }
       await reload()
+    } catch (e: any) {
+      setError(e?.message ?? 'Upload failed — please check your connection and try again.')
     } finally {
       setBusy(false)
       if (uploadRef.current) uploadRef.current.value = ''

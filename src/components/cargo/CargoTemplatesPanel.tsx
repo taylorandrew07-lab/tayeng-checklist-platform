@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Ship, Edit, Trash2, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils'
 import { type CargoTemplate } from '@/lib/cargo/types'
 import { confirmDialog } from '@/components/ui/confirm'
 
@@ -34,10 +35,18 @@ export default function CargoTemplatesPanel() {
     setDeleting(t.id)
     setError(null)
     const supabase = createClient()
-    const { error } = await supabase.from('cargo_templates').delete().eq('id', t.id)
-    setDeleting(null)
-    if (error) { setError(`Could not delete "${t.name}": ${error.message}`); return }
-    load()
+    try {
+      const { error } = await withTimeout(
+        supabase.from('cargo_templates').delete().eq('id', t.id).select('id'),
+        12_000, 'Deleting template'
+      )
+      if (error) { setError(`Could not delete "${t.name}": ${error.message}`); return }
+      load()
+    } catch (e: any) {
+      setError(`Could not delete "${t.name}": ${e?.message ?? 'request timed out — check your connection.'}`)
+    } finally {
+      setDeleting(null)
+    }
   }
 
   return (

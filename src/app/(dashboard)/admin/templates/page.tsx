@@ -166,16 +166,18 @@ export default function TemplatesPage() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
 
-    await supabase
+    const { data, error } = await supabase
       .from('checklist_templates')
       .update({
         status: 'archived',
         archived_by: session?.user.id,
         archived_at: new Date().toISOString(),
       })
-      .eq('id', template.id)
+      .eq('id', template.id).select('id')
 
     setArchiving(null)
+    if (error) { toast.error('Could not archive: ' + error.message); return }
+    if (!data || data.length === 0) { toast.error('Archive was blocked — you may not have permission.'); return }
     load()
   }
 
@@ -186,16 +188,18 @@ export default function TemplatesPage() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
 
-    await supabase
+    const { data, error } = await supabase
       .from('checklist_templates')
       .update({
         status: 'draft',
         restored_by: session?.user.id,
         restored_at: new Date().toISOString(),
       })
-      .eq('id', template.id)
+      .eq('id', template.id).select('id')
 
     setRestoring(null)
+    if (error) { toast.error('Could not restore: ' + error.message); return }
+    if (!data || data.length === 0) { toast.error('Restore was blocked — you may not have permission.'); return }
     load()
   }
 
@@ -204,8 +208,10 @@ export default function TemplatesPage() {
 
     setDeleting(template.id)
     const supabase = createClient()
-    await supabase.from('checklist_templates').delete().eq('id', template.id)
+    const { data, error } = await supabase.from('checklist_templates').delete().eq('id', template.id).select('id')
     setDeleting(null)
+    if (error) { toast.error('Could not delete: ' + error.message); return }
+    if (!data || data.length === 0) { toast.error('Delete was blocked — you may not have permission.'); return }
     load()
   }
 

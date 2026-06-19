@@ -176,8 +176,10 @@ export async function setInvoiceStatus(invoiceId: string, status: Invoice['statu
       patch.due_date = base.toISOString().slice(0, 10)
     }
   }
-  const { error } = await supabase.from('invoices').update(patch).eq('id', invoiceId)
-  return { error: error?.message }
+  const { data, error } = await supabase.from('invoices').update(patch).eq('id', invoiceId).select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'That change was blocked — you may not have permission to update this invoice.' }
+  return {}
 }
 
 /** Record that an (overdue) invoice was chased today. */

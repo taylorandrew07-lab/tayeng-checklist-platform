@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate } from '@/lib/utils'
+import { toast } from '@/components/ui/toast'
 import type { Client } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
@@ -170,7 +171,10 @@ export default function ClientsPage() {
 
   async function toggleActive(client: Client) {
     const supabase = createClient()
-    await supabase.from('clients').update({ is_active: !client.is_active }).eq('id', client.id)
+    const { data, error } = await supabase.from('clients')
+      .update({ is_active: !client.is_active }).eq('id', client.id).select('id')
+    if (error) { toast.error('Could not update client: ' + error.message); return }
+    if (!data || data.length === 0) { toast.error('That change was blocked — you may not have permission.'); return }
     load()
   }
 

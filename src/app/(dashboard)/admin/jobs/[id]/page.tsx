@@ -7,7 +7,7 @@ import {
   ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2,
   ClipboardList, ListChecks, FolderOpen, Receipt,
 } from 'lucide-react'
-import { formatDate, formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime, withTimeout } from '@/lib/utils'
 import type { Client } from '@/lib/types/database'
 
 interface SurveyorAccount { id: string; full_name: string; role: string }
@@ -116,39 +116,45 @@ export default function AdminChecklistDetailPage() {
   async function handleSaveEdit() {
     setSaving(true)
     const supabase = createClient()
+    try {
+      // Resolve the surveyor selection to a name + account assignment.
+      let surveyorNameVal: string | null = job.surveyor_name ?? null
+      let assignedToVal: string | null = job.assigned_to ?? null
+      if (editForm.surveyor_id === '') { surveyorNameVal = null; assignedToVal = null }
+      else if (editForm.surveyor_id !== '__current__') {
+        const a = surveyors.find(s => s.id === editForm.surveyor_id)
+        if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
+      }
 
-    // Resolve the surveyor selection to a name + account assignment.
-    let surveyorNameVal: string | null = job.surveyor_name ?? null
-    let assignedToVal: string | null = job.assigned_to ?? null
-    if (editForm.surveyor_id === '') { surveyorNameVal = null; assignedToVal = null }
-    else if (editForm.surveyor_id !== '__current__') {
-      const a = surveyors.find(s => s.id === editForm.surveyor_id)
-      if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
+      // Standardise the (possibly edited) vessel name + link to the directory.
+      const vessel = titleCaseVesselName(editForm.vessel_name)
+      const vesselId = vessel ? await withTimeout(findOrCreateVessel(vessel), 12_000, 'Linking vessel') : null
+
+      // .select('id') so a 0-row RLS denial is surfaced instead of a false "saved".
+      const { data, error: err } = await withTimeout(
+        supabase.from('jobs').update({
+          title: editForm.title,
+          vessel_name: vessel || null,
+          vessel_id: vesselId,
+          surveyor_name: surveyorNameVal,
+          assigned_to: assignedToVal,
+          client_id: editForm.client_id || null,
+          scheduled_date: editForm.scheduled_date || null,
+        }).eq('id', jobId).select('id'),
+        15_000, 'Saving job'
+      )
+
+      if (err) { setError(err.message); return }
+      if (!data || data.length === 0) { setError('Save was blocked — permission denied or the job no longer exists.'); return }
+
+      setEditMode(false)
+      toast.success('Job saved')
+      load()
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not save — please check your connection and try again.')
+    } finally {
+      setSaving(false)
     }
-
-    // Standardise the (possibly edited) vessel name + link to the directory.
-    const vessel = titleCaseVesselName(editForm.vessel_name)
-    const vesselId = vessel ? await findOrCreateVessel(vessel) : null
-
-    const { error: err } = await supabase
-      .from('jobs')
-      .update({
-        title: editForm.title,
-        vessel_name: vessel || null,
-        vessel_id: vesselId,
-        surveyor_name: surveyorNameVal,
-        assigned_to: assignedToVal,
-        client_id: editForm.client_id || null,
-        scheduled_date: editForm.scheduled_date || null,
-      })
-      .eq('id', jobId)
-
-    if (err) { setError(err.message); setSaving(false); return }
-
-    setEditMode(false)
-    setSaving(false)
-    toast.success('Job saved')
-    load()
   }
 
   // Admin escape hatch: push a completed-but-stuck checklist through, regardless
@@ -163,7 +169,9 @@ export default function AdminChecklistDetailPage() {
       .eq('id', jobId).select('id')
     if (err) { toast.error(err.message); setMarking(false); return }
     if (!data || data.length === 0) { toast.error('Could not mark as submitted — permission denied or the job no longer exists.'); setMarking(false); return }
-    await advanceWorkflowTo(jobId, 'report_ready').catch(() => {})
+    // Best-effort workflow advance — time-bounded so a stalled request can't hang
+    // the button (the submit itself is already verified above).
+    await withTimeout(advanceWorkflowTo(jobId, 'report_ready'), 8_000, 'Updating status').catch(() => {})
     toast.success('Marked as submitted')
     setMarking(false)
     load()

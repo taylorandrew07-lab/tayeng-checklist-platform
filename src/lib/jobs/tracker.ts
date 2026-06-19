@@ -176,18 +176,21 @@ export async function listJobSurveyors(jobId: string): Promise<JobSurveyorRow[]>
 
 /** Surveyor-or-admin: update the hours on a job↔surveyor line. */
 export async function updateJobSurveyorHours(rowId: string, jobId: string, hours: { regular_hours: number; overtime_hours: number }): Promise<{ error?: string }> {
-  const { error } = await createClient().from('job_surveyors')
-    .update({ regular_hours: hours.regular_hours, overtime_hours: hours.overtime_hours }).eq('id', rowId)
+  // .select('id') so an RLS-filtered 0-row update is reported as a denial, not a false success.
+  const { data, error } = await createClient().from('job_surveyors')
+    .update({ regular_hours: hours.regular_hours, overtime_hours: hours.overtime_hours }).eq('id', rowId).select('id')
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'That change was blocked — you may not have permission to update this job.' }
   await logActivity('job', jobId, 'hours:update', hours)
   return {}
 }
 
 /** Admin only (trigger-enforced): set a surveyor's pay rates on a job. */
 export async function updateJobSurveyorRates(rowId: string, jobId: string, rates: { pay_rate: number | null; overtime_rate: number | null; pay_currency: string }): Promise<{ error?: string }> {
-  const { error } = await createClient().from('job_surveyors')
-    .update({ pay_rate: rates.pay_rate, overtime_rate: rates.overtime_rate, pay_currency: rates.pay_currency }).eq('id', rowId)
+  const { data, error } = await createClient().from('job_surveyors')
+    .update({ pay_rate: rates.pay_rate, overtime_rate: rates.overtime_rate, pay_currency: rates.pay_currency }).eq('id', rowId).select('id')
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'That change was blocked — only an admin can set pay rates.' }
   await logActivity('job', jobId, 'rates:update')
   return {}
 }
@@ -202,8 +205,9 @@ export async function addJobSurveyor(jobId: string, surveyorId: string): Promise
 }
 
 export async function removeJobSurveyor(rowId: string, jobId: string): Promise<{ error?: string }> {
-  const { error } = await createClient().from('job_surveyors').delete().eq('id', rowId)
+  const { data, error } = await createClient().from('job_surveyors').delete().eq('id', rowId).select('id')
   if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'That change was blocked — you may not have permission to update this job.' }
   await logActivity('job', jobId, 'surveyor:remove', { row_id: rowId })
   return {}
 }

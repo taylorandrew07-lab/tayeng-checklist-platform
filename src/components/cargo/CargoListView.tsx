@@ -9,6 +9,7 @@ import { listVoyages, deleteVoyage, requestPersistentStorage, cargoAvailable } f
 import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageDate } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils'
 import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
@@ -70,7 +71,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
           return
         }
         try {
-          await deleteRemoteVoyage(createClient(), v.id)
+          await withTimeout(deleteRemoteVoyage(createClient(), v.id), 15_000, 'Deleting cloud copy')
         } catch {
           toast.error('Could not delete the cloud copy — the voyage was NOT deleted (the client can still see it). Please try again when online.')
           return

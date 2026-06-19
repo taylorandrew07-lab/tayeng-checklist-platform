@@ -280,8 +280,9 @@ export default function UsersPage() {
       return
     }
     const supabase = createClient()
-    const { error } = await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id)
+    const { data, error } = await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id).select('id')
     if (error) { toast.error(error.message); return }
+    if (!data || data.length === 0) { toast.error('That change was blocked — you may not have permission to update this account.'); return }
     load()
   }
 
