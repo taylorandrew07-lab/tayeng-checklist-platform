@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Lock } from 'lucide-react'
+import { Lock, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
@@ -35,8 +35,20 @@ export default function OfficeJobsMonitor() {
   const [loading, setLoading] = useState(true)
   const tick = useRealtimeRefresh('jobs')
   const view = useJobsView()
+  const [q, setQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
-  const filteredJobs = useMemo(() => jobs.filter(j => inYearMonth(j.created_at, view.year, view.month)), [jobs, view.year, view.month])
+  const statusOptions = useMemo(() => Array.from(new Set(jobs.map(j => j.workflow_status))).sort(), [jobs])
+  const filteredJobs = useMemo(() => {
+    const term = q.trim().toLowerCase()
+    return jobs.filter(j => {
+      if (!inYearMonth(j.created_at, view.year, view.month)) return false
+      if (statusFilter && j.workflow_status !== statusFilter) return false
+      if (!term) return true
+      return [j.title, j.job_number, j.client?.name, j.vessel_name, j.surveyor_name]
+        .some(v => (v ?? '').toLowerCase().includes(term))
+    })
+  }, [jobs, view.year, view.month, q, statusFilter])
   const jobYears = useMemo(() => availableYears(jobs, j => j.created_at), [jobs])
   const legend = useMemo(() => buildLegend(view.colorMode, filteredJobs.map(j => ({
     clientName: j.client?.name ?? null, clientColor: j.client?.color ?? null,
@@ -86,6 +98,18 @@ export default function OfficeJobsMonitor() {
       ) : (
         <>
         {!loading && <JobsViewToolbar view={view} years={jobYears} count={filteredJobs.length} legend={legend} />}
+        {!loading && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search job, client, vessel or surveyor…" className="input-base pl-9" />
+            </div>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-base sm:w-48 capitalize">
+              <option value="">All statuses</option>
+              {statusOptions.map(s => <option key={s} value={s} className="capitalize">{s.replace(/_/g, ' ')}</option>)}
+            </select>
+          </div>
+        )}
         <div className="card overflow-hidden hidden sm:block landscape:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

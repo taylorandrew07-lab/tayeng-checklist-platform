@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText } from 'lucide-react'
+import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
@@ -27,6 +27,8 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<Profile | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
   const [form, setForm] = useState({
     email: '',
     full_name: '',
@@ -332,7 +334,14 @@ export default function UsersPage() {
   }
 
   const pending = users.filter(u => !u.is_active)
-  const active = users.filter(u => u.is_active)
+  const term = q.trim().toLowerCase()
+  const active = users.filter(u => {
+    if (!u.is_active) return false
+    if (roleFilter && u.role !== roleFilter) return false
+    if (!term) return true
+    return [u.full_name, u.email, u.role, (u as any).display_title]
+      .some(v => (v ?? '').toLowerCase().includes(term))
+  })
   const totalPendingRequests = clientRequests.length
 
   return (
@@ -431,6 +440,21 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* Active users — search + role filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, email or role…" className="input-base pl-9" />
+        </div>
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="input-base sm:w-44 capitalize">
+          <option value="">All roles</option>
+          <option value="admin">Admin</option>
+          <option value="surveyor">Surveyor</option>
+          <option value="office">Office</option>
+          <option value="client">Client</option>
+        </select>
+      </div>
+
       {/* Active users table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
@@ -446,6 +470,9 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
+            {active.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No active users match your search.</td></tr>
+            )}
             {active.map(user => (
               <tr key={user.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">

@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock } from 'lucide-react'
+import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -28,7 +28,10 @@ export default function AdminInvoicingPage() {
   const [tab, setTab] = useState<Tab>('overview')
   const [flagCount, setFlagCount] = useState<number | null>(null)
 
-  useEffect(() => { listReconciliation().then(r => setFlagCount(r.items.length)) }, [tab])
+  // Fetch the badge count once on mount (not on every tab click). The Reconcile
+  // tab reports its fresh count back via onCount so the badge stays accurate after
+  // any reconcile action, without this view re-fetching the whole set repeatedly.
+  useEffect(() => { listReconciliation().then(r => setFlagCount(r.items.length)) }, [])
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-rise">
@@ -55,7 +58,7 @@ export default function AdminInvoicingPage() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'invoices' && <InvoicesTab />}
-      {tab === 'reconcile' && <ReconcileTab />}
+      {tab === 'reconcile' && <ReconcileTab onCount={setFlagCount} />}
       {tab === 'rates' && <RatesTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
@@ -181,23 +184,39 @@ function OverviewTab() {
 }
 
 // ── Invoices ledger ──────────────────────────────────────────────────────────
+const INVOICES_PAGE = 50
 function InvoicesTab() {
   const [rows, setRows] = useState<InvoiceListRow[] | null>(null)
   const [filter, setFilter] = useState<StatusFilter>('open')
+  const [q, setQ] = useState('')
+  const [shown, setShown] = useState(INVOICES_PAGE)
 
   useEffect(() => { listInvoices().then(setRows) }, [])
 
+  const term = q.trim().toLowerCase()
   const filtered = (rows ?? []).filter(r => {
-    if (filter === 'all') return true
-    if (filter === 'open') return r.status !== 'paid' && r.status !== 'void'
-    if (filter === 'overdue') return isOverdue(r)
-    return r.status === filter
+    const statusPass = filter === 'all' ? true
+      : filter === 'open' ? (r.status !== 'paid' && r.status !== 'void')
+      : filter === 'overdue' ? isOverdue(r)
+      : r.status === filter
+    if (!statusPass) return false
+    if (!term) return true
+    return [r.invoice_number, r.client_name, r.vessel_name, r.report_number]
+      .some(v => (v ?? '').toLowerCase().includes(term))
   })
+
+  // Reset the page window when the filter or search changes.
+  useEffect(() => { setShown(INVOICES_PAGE) }, [filter, q])
+  const paged = filtered.slice(0, shown)
 
   const filters: [StatusFilter, string][] = [['open', 'Open'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All']]
 
   return (
     <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search invoice #, client, vessel or report…" className="input-base pl-9" />
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {filters.map(([k, label]) => (
           <button key={k} onClick={() => setFilter(k)}
@@ -210,19 +229,28 @@ function InvoicesTab() {
       {rows === null ? (
         <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
       ) : (
-        <InvoicesTable rows={filtered} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
+        <>
+          <InvoicesTable rows={paged} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
+          {filtered.length > shown && (
+            <div className="text-center pt-1">
+              <button onClick={() => setShown(s => s + INVOICES_PAGE)} className="btn-secondary">
+                Show more ({filtered.length - shown} more)
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
 // ── Reconciliation: work done but billing not closed out ─────────────────────
-function ReconcileTab() {
+function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
   const [items, setItems] = useState<ReconItem[] | null>(null)
   const [counts, setCounts] = useState<Record<ReconCategory, number> | null>(null)
 
-  const load = () => listReconciliation().then(r => { setItems(r.items); setCounts(r.counts) })
-  useEffect(() => { load() }, [])
+  const load = () => listReconciliation().then(r => { setItems(r.items); setCounts(r.counts); onCount?.(r.items.length) })
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (items === null) return <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
 

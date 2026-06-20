@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2 } from 'lucide-react'
+import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
@@ -44,6 +44,8 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [jobCounts, setJobCounts] = useState<Record<string, number>>({})
+  const [q, setQ] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [form, setForm] = useState({
     name: '',
     contact_name: '',
@@ -192,6 +194,17 @@ export default function ClientsPage() {
     load()
   }
 
+  const filteredClients = useMemo(() => {
+    const term = q.trim().toLowerCase()
+    return clients.filter(c => {
+      if (activeFilter === 'active' && !c.is_active) return false
+      if (activeFilter === 'inactive' && c.is_active) return false
+      if (!term) return true
+      return [c.name, c.contact_name, c.contact_email, c.contact_phone]
+        .some(v => (v ?? '').toLowerCase().includes(term))
+    })
+  }, [clients, q, activeFilter])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -225,8 +238,29 @@ export default function ClientsPage() {
           </button>
         </div>
       ) : (
+        <>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search by name, contact, email or phone…"
+              className="input-base pl-9"
+            />
+          </div>
+          <select value={activeFilter} onChange={e => setActiveFilter(e.target.value as typeof activeFilter)} className="input-base sm:w-44">
+            <option value="all">All clients</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+          </select>
+        </div>
+
+        {filteredClients.length === 0 ? (
+          <div className="card py-12 text-center text-gray-400 text-sm">No clients match your search.</div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {clients.map(client => (
+          {filteredClients.map(client => (
             <div key={client.id} className={`card p-5 sm:p-6 flex flex-col ${!client.is_active ? 'opacity-60' : ''}`}>
               {/* Status */}
               <div className="flex justify-end mb-3">
@@ -266,6 +300,8 @@ export default function ClientsPage() {
             </div>
           ))}
         </div>
+        )}
+        </>
       )}
 
       <Modal
