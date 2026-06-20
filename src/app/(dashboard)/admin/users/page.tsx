@@ -286,6 +286,11 @@ export default function UsersPage() {
       toast.error('Only the Super Admin can deactivate the Super Admin account.')
       return
     }
+    if (user.is_active && !(await confirmDialog({
+      title: 'Deactivate account',
+      message: `Deactivate ${user.full_name}? They will be signed out and blocked from the app until reactivated.`,
+      danger: true, confirmLabel: 'Deactivate',
+    }))) return
     const supabase = createClient()
     const { data, error } = await supabase.from('profiles').update({ is_active: !user.is_active }).eq('id', user.id).select('id')
     if (error) { toast.error(error.message); return }

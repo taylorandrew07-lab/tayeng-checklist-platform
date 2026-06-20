@@ -9,6 +9,7 @@ import PeopleTabs from '@/components/admin/PeopleTabs'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
+import { confirmDialog } from '@/components/ui/confirm'
 import type { Client } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
@@ -149,8 +150,9 @@ export default function ClientsPage() {
     }
 
     if (editClient) {
-      const { error: err } = await supabase.from('clients').update(payload).eq('id', editClient.id)
+      const { data, error: err } = await supabase.from('clients').update(payload).eq('id', editClient.id).select('id')
       if (err) { setError(err.message); setSaving(false); return }
+      if (!data || data.length === 0) { setError('That change was blocked — you may not have permission.'); setSaving(false); return }
     } else {
       const { error: err } = await supabase.from('clients').insert(payload)
       if (err) { setError(err.message); setSaving(false); return }
@@ -158,6 +160,7 @@ export default function ClientsPage() {
 
     setShowModal(false)
     setSaving(false)
+    toast.success(editClient ? 'Client updated' : 'Client created')
     load()
   }
 
@@ -176,6 +179,11 @@ export default function ClientsPage() {
   }
 
   async function toggleActive(client: Client) {
+    if (client.is_active && !(await confirmDialog({
+      title: 'Deactivate client',
+      message: `Deactivate "${client.name}"? They'll be hidden from active lists and new-job pickers. You can reactivate anytime.`,
+      danger: true, confirmLabel: 'Deactivate',
+    }))) return
     const supabase = createClient()
     const { data, error } = await supabase.from('clients')
       .update({ is_active: !client.is_active }).eq('id', client.id).select('id')

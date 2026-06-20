@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Loader2 } from 'lucide-react'
+import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { CloudOff } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
@@ -18,42 +17,57 @@ export default function SurveyorDashboard() {
   const [jobs, setJobs] = useState<any[]>([])
   const [localJobs, setLocalJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const tick = useRealtimeRefresh('jobs')
   // Your own documents expired or expiring soon.
   const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
 
   useEffect(() => {
+    let active = true
     async function load() {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      setError(null)
+      try {
+        const supabase = createClient()
+        // Time-bound every call so a stalled request on weak field wifi surfaces an
+        // error + Retry instead of leaving the dashboard on an endless spinner.
+        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 12_000, 'Loading')
+        if (!session) { if (active) setLoading(false); return }
 
-      const [{ data: p }, { data: j }] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-        supabase.from('jobs')
-          .select(`
-            id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
-            template:checklist_templates(name),
-            client:clients(name)
-          `)
-          .or(`created_by.eq.${session.user.id},assigned_to.eq.${session.user.id}`)
-          .order('created_at', { ascending: false }),
-      ])
+        const [pRes, jRes] = await withTimeout(Promise.all([
+          supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+          supabase.from('jobs')
+            .select(`
+              id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
+              template:checklist_templates(name),
+              client:clients(name)
+            `)
+            .or(`created_by.eq.${session.user.id},assigned_to.eq.${session.user.id}`)
+            .order('created_at', { ascending: false }),
+        ]), 15_000, 'Loading your jobs')
+        if (jRes.error) throw jRes.error
+        if (!active) return
 
-      setProfile(p)
-      setJobs(j ?? [])
+        setProfile(pRes.data)
+        setJobs(jRes.data ?? [])
 
-      // Jobs started offline live only on this device until they sync — surface
-      // them so the surveyor can reopen them (server list won't include them yet).
-      if (offlineAvailable()) {
-        const serverIds = new Set((j ?? []).map((x: any) => x.id))
-        const drafts = await getLocalCreateDrafts(session.user.id).catch(() => [])
-        setLocalJobs(drafts.filter(d => !serverIds.has(d.jobId)).map(d => d.job))
+        // Jobs started offline live only on this device until they sync — surface
+        // them so the surveyor can reopen them (server list won't include them yet).
+        if (offlineAvailable()) {
+          const serverIds = new Set((jRes.data ?? []).map((x: any) => x.id))
+          const drafts = await getLocalCreateDrafts(session.user.id).catch(() => [])
+          if (active) setLocalJobs(drafts.filter(d => !serverIds.has(d.jobId)).map(d => d.job))
+        }
+      } catch (e: any) {
+        if (active) setError(e?.message ?? 'Could not load your jobs — check your connection and try again.')
+      } finally {
+        if (active) setLoading(false)
       }
-      setLoading(false)
     }
+    setLoading(true)
     load()
-  }, [tick])
+    return () => { active = false }
+  }, [tick, reloadKey])
 
   // Keep the startable templates + clients + surveyors cached so a new job can be
   // started later with no signal. Refreshes once per dashboard open (when online).
@@ -78,6 +92,17 @@ export default function SurveyorDashboard() {
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+        </div>
+      ) : error ? (
+        <div className="card p-8 text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+          </div>
+          <p className="font-medium text-gray-900">Couldn&apos;t load your jobs</p>
+          <p className="text-sm text-gray-500 mt-1 mb-4">{error}</p>
+          <button onClick={() => setReloadKey(k => k + 1)} className="btn-primary inline-flex">
+            <RefreshCw className="h-4 w-4" />Try again
+          </button>
         </div>
       ) : (
         <>
