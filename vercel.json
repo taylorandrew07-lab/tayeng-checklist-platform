@@ -1,5 +1,6 @@
 {
   "buildCommand": "next build --webpack",
+  "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/document-reminders", "schedule": "0 13 * * *" }
   ]
