@@ -5,7 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
 import type {
-  AppSettings, ClientRate, Currency, Invoice, InvoiceLineItem, InvoiceTax, Job,
+  AppSettings, BankAccount, ClientRate, Currency, Invoice, InvoiceLineItem, InvoiceTax, Job,
 } from '@/lib/types/database'
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -236,6 +236,42 @@ export async function listInvoices(): Promise<InvoiceListRow[]> {
 /** True when a sent invoice is past its due date (derived, not a stored status). */
 export function isOverdue(row: { status: Invoice['status']; due_date: string | null }, today = new Date().toISOString().slice(0, 10)): boolean {
   return row.status === 'sent' && !!row.due_date && row.due_date < today
+}
+
+// ── Bank accounts (selectable on invoices) ───────────────────────────────────
+export async function listBankAccounts(activeOnly = false): Promise<BankAccount[]> {
+  let q = createClient().from('bank_accounts').select('*')
+    .order('is_default', { ascending: false }).order('sort').order('label')
+  if (activeOnly) q = q.eq('is_active', true)
+  const { data } = await q
+  return (data ?? []) as BankAccount[]
+}
+
+/** Create or update a bank account. Enforces a single default across the set. */
+export async function saveBankAccount(input: {
+  id?: string; label: string; currency: Currency | null; details: string; is_default: boolean; is_active?: boolean
+}): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const row = { label: input.label, currency: input.currency, details: input.details, is_default: input.is_default, is_active: input.is_active ?? true }
+  let savedId = input.id
+  if (input.id) {
+    const { error } = await supabase.from('bank_accounts').update(row).eq('id', input.id)
+    if (error) return { error: error.message }
+  } else {
+    const { data, error } = await supabase.from('bank_accounts').insert(row).select('id').single()
+    if (error) return { error: error.message }
+    savedId = data.id as string
+  }
+  if (input.is_default && savedId) {
+    const { error } = await supabase.from('bank_accounts').update({ is_default: false }).neq('id', savedId).eq('is_default', true)
+    if (error) return { error: error.message }
+  }
+  return {}
+}
+
+export async function deleteBankAccount(id: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('bank_accounts').delete().eq('id', id)
+  return { error: error?.message }
 }
 
 // ── Invoice auto-numbering controls (admin) ──────────────────────────────────

@@ -365,6 +365,12 @@ export interface InvoiceLineItem { id: string; invoice_id: string; job_id: strin
 export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
 export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null }
 
+// Selectable bank accounts shown on invoices (migration 080). Admin-managed.
+export interface BankAccount {
+  id: string; label: string; currency: Currency | null; details: string
+  is_default: boolean; sort: number; is_active: boolean; created_at: string; updated_at: string
+}
+
 export type JobAttachmentKind = 'preliminary' | 'final' | 'vos' | 'time_page' | 'other'
 export interface JobAttachment {
   id: string; job_id: string; kind: JobAttachmentKind

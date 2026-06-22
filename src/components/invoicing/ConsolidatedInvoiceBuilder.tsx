@@ -12,10 +12,10 @@ import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
 import { money, CURRENCIES } from '@/lib/jobs/tracker'
 import {
-  listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings,
+  listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
-import type { Currency, ClientRate } from '@/lib/types/database'
+import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 
 interface LineState { description: string; qty: number; unit_price: number }
 
@@ -38,20 +38,29 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [reference, setReference] = useState('')
   const [description, setDescription] = useState('')
   const [bankDetails, setBankDetails] = useState('')
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccountId, setBankAccountId] = useState('')
   const [notes, setNotes] = useState('')
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
 
-  // Clients + billing defaults + the last invoice number, once.
+  // Clients + billing defaults + the last invoice number + bank accounts, once.
   useEffect(() => {
     listBillingClients().then(setClients)
     getLatestInvoiceNumber().then(setLastInvNumber)
-    getAppSettings().then(s => {
-      if (!s) return
-      setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }])
-      if (s.bank_details_default) setBankDetails(s.bank_details_default)
+    getAppSettings().then(s => { if (s) setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }]) })
+    listBankAccounts(true).then(accts => {
+      setBankAccounts(accts)
+      const def = accts.find(a => a.is_default) ?? accts[0]
+      if (def) { setBankAccountId(def.id); setBankDetails(def.details) }
     })
   }, [])
+
+  function pickBank(id: string) {
+    setBankAccountId(id)
+    const a = bankAccounts.find(x => x.id === id)
+    if (a) setBankDetails(a.details)
+  }
 
   const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
     const active = clientRates.filter(r => r.is_active)
@@ -273,8 +282,16 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           </div>
 
           <div>
-            <label className="text-[11px] text-gray-400">Bank details (optional — shown on the invoice)</label>
-            <textarea value={bankDetails} onChange={e => setBankDetails(e.target.value)} rows={2} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y" />
+            <label className="text-[11px] text-gray-400">Bank account <span className="text-gray-300">— shown on the invoice</span></label>
+            {bankAccounts.length > 0 ? (
+              <select value={bankAccountId} onChange={e => pickBank(e.target.value)} className={cell}>
+                {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
+                <option value="">Custom / none</option>
+              </select>
+            ) : (
+              <p className="text-[11px] text-gray-400">No saved bank accounts — add them in Settings, or type details below.</p>
+            )}
+            <textarea value={bankDetails} onChange={e => { setBankDetails(e.target.value); setBankAccountId('') }} rows={3} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
           </div>
           <div>
             <label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label>

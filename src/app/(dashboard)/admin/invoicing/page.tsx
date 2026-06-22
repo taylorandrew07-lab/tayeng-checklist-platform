@@ -15,13 +15,14 @@ import { CURRENCIES, money, listJobTypes, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
   getAppSettings, updateAppSettings, logInvoiceReminder, getInvoiceCounter, setInvoiceNextNumber,
+  listBankAccounts, saveBankAccount, deleteBankAccount,
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
-import type { Client, ClientRate, Currency, AppSettings, Invoice } from '@/lib/types/database'
+import type { Client, ClientRate, Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'rates' | 'settings'
 type StatusFilter = 'open' | Invoice['status'] | 'all'
@@ -527,19 +528,18 @@ function SettingsTab() {
   const [taxName, setTaxName] = useState('')
   const [taxRate, setTaxRate] = useState('')
   const [overdue, setOverdue] = useState('')
-  const [bank, setBank] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     getAppSettings().then(s => {
       setSettings(s)
-      if (s) { setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days)); setBank(s.bank_details_default ?? '') }
+      if (s) { setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days)) }
     })
   }, [])
 
   async function save() {
     setSaving(true)
-    const res = await updateAppSettings({ default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0, bank_details_default: bank || null })
+    const res = await updateAppSettings({ default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0 })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     toast.success('Settings saved')
@@ -570,11 +570,109 @@ function SettingsTab() {
         <input type="number" min={0} value={overdue} onChange={e => setOverdue(e.target.value)} className="input-base" />
         <p className="text-[11px] text-gray-400 mt-1">A sent invoice is flagged overdue this many days past its due date.</p>
       </div>
-      <div>
-        <label className="label-base">Default bank details</label>
-        <textarea value={bank} onChange={e => setBank(e.target.value)} rows={5} placeholder={'Pre-fills the bank block on new invoices (e.g. for foreign payments).\nBank name, branch, SWIFT/BIC, account name + number…'} className="input-base text-sm resize-y" />
-      </div>
       <button onClick={save} disabled={saving} className="btn-primary py-2 px-4 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save settings</button>
+      </div>
+      <BankAccountsCard />
+    </div>
+  )
+}
+
+// ── Bank accounts (selectable on invoices) ───────────────────────────────────
+function BankAccountsCard() {
+  const [accounts, setAccounts] = useState<BankAccount[] | null>(null)
+  const [editing, setEditing] = useState<BankAccount | 'new' | null>(null)
+
+  const load = () => listBankAccounts().then(setAccounts)
+  useEffect(() => { load() }, [])
+
+  async function remove(a: BankAccount) {
+    if (!(await confirmDialog({ title: 'Delete bank account?', message: `Remove "${a.label}"? Invoices already issued keep the details they were printed with.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await deleteBankAccount(a.id)
+    if (res.error) { toast.error(res.error); return }
+    toast.success('Bank account deleted'); load()
+  }
+
+  return (
+    <div className="card p-5 space-y-3">
+      <div>
+        <h3 className="font-medium text-gray-900">Bank accounts</h3>
+        <p className="text-xs text-gray-400">Pick one of these when creating an invoice. Add several (e.g. a USD and a TTD account) and mark one as the default.</p>
+      </div>
+      {accounts === null ? <div className="skeleton h-16 w-full" /> : (
+        <div className="divide-y divide-gray-100">
+          {accounts.length === 0 && editing !== 'new' && <p className="py-2 text-sm text-gray-400">No bank accounts yet.</p>}
+          {accounts.map(a => editing && editing !== 'new' && editing.id === a.id
+            ? <div key={a.id} className="py-2"><BankAccountEditor existing={a} onDone={() => { setEditing(null); load() }} /></div>
+            : (
+              <div key={a.id} className="flex items-start justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
+                    {a.label}
+                    {a.currency && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 tnum">{a.currency}</span>}
+                    {a.is_default && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700">Default</span>}
+                    {!a.is_active && <span className="text-[10px] text-gray-400">inactive</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 whitespace-pre-wrap line-clamp-2 mt-0.5">{a.details}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => setEditing(a)} className="text-xs text-brand-600 hover:text-brand-800 font-medium px-2">Edit</button>
+                  <button onClick={() => remove(a)} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          {editing === 'new' && <div className="py-2"><BankAccountEditor onDone={() => { setEditing(null); load() }} /></div>}
+        </div>
+      )}
+      {editing !== 'new' && (
+        <button onClick={() => setEditing('new')} className="btn-secondary py-1.5 px-3 text-sm"><Plus className="h-4 w-4" /> Add bank account</button>
+      )}
+    </div>
+  )
+}
+
+function BankAccountEditor({ existing, onDone }: { existing?: BankAccount; onDone: () => void }) {
+  const [label, setLabel] = useState(existing?.label ?? '')
+  const [currency, setCurrency] = useState<string>(existing?.currency ?? '')
+  const [details, setDetails] = useState(existing?.details ?? '')
+  const [isDefault, setIsDefault] = useState(existing?.is_default ?? false)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!label.trim()) { toast.error('Give the account a label'); return }
+    if (!details.trim()) { toast.error('Add the bank details'); return }
+    setSaving(true)
+    const res = await saveBankAccount({ id: existing?.id, label: label.trim(), currency: (currency || null) as Currency | null, details: details.trim(), is_default: isDefault })
+    setSaving(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success(existing ? 'Bank account updated' : 'Bank account added'); onDone()
+  }
+
+  const cell = 'input-base py-1.5 text-sm'
+  return (
+    <div className="bg-gray-50/60 rounded-lg p-3 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[11px] text-gray-400">Label</label>
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. RBC USD account" className={cell} />
+        </div>
+        <div>
+          <label className="text-[11px] text-gray-400">Currency (optional)</label>
+          <select value={currency} onChange={e => setCurrency(e.target.value)} className={cell}>
+            <option value="">Any</option>
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="text-[11px] text-gray-400">Bank details (shown on the invoice)</label>
+        <textarea value={details} onChange={e => setDetails(e.target.value)} rows={4} placeholder={'Bank name, branch, SWIFT/BIC, account name + number…'} className="input-base text-sm resize-y" />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-gray-600">
+        <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} /> Default account
+      </label>
+      <div className="flex gap-2">
+        <button onClick={save} disabled={saving} className="btn-primary py-1.5 px-3 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</button>
+        <button onClick={onDone} className="btn-secondary py-1.5 px-3 text-sm">Cancel</button>
       </div>
     </div>
   )
