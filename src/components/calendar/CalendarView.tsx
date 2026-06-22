@@ -12,7 +12,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Loader2, Plane, Briefcase, Check, X, Pencil, Trash2,
 } from 'lucide-react'
 import {
-  listCalendar, listPendingLeave, requestLeave, reviewLeave,
+  listCalendar, listPendingLeave, requestLeave, reviewLeave, adminAddLeave, listStaffForLeave,
   createGeneralEvent, updateGeneralEvent, deleteEvent,
   type CalendarEventRow,
 } from '@/lib/calendar/api'
@@ -60,6 +60,7 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
   const [loading, setLoading] = useState(true)
   const [dayDetail, setDayDetail] = useState<string | null>(null)
   const [leaveOpen, setLeaveOpen] = useState(false)
+  const [adminLeaveOpen, setAdminLeaveOpen] = useState(false)
   const [eventEdit, setEventEdit] = useState<CalendarEventRow | 'new' | null>(null)
   const tick = useRealtimeRefresh('calendar_events')
   const loadedOnce = useRef(false)
@@ -100,7 +101,9 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
           <p className="text-gray-500 mt-0.5">Jobs, leave and team events.</p>
         </div>
         <div className="flex items-center gap-2">
-          {canRequestLeave && <button onClick={() => setLeaveOpen(true)} className="btn-secondary text-sm"><Plane className="h-4 w-4" />Request leave</button>}
+          {isAdmin
+            ? <button onClick={() => setAdminLeaveOpen(true)} className="btn-secondary text-sm"><Plane className="h-4 w-4" />Add leave</button>
+            : canRequestLeave && <button onClick={() => setLeaveOpen(true)} className="btn-secondary text-sm"><Plane className="h-4 w-4" />Request leave</button>}
           {isAdmin && <button onClick={() => setEventEdit('new')} className="btn-primary text-sm"><Plus className="h-4 w-4" />Add event</button>}
         </div>
       </div>
@@ -182,6 +185,7 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
           onChanged={reload} />
       )}
       {leaveOpen && <LeaveModal onClose={() => setLeaveOpen(false)} onSaved={() => { setLeaveOpen(false); reload() }} />}
+      {adminLeaveOpen && <AdminLeaveModal onClose={() => setAdminLeaveOpen(false)} onSaved={() => { setAdminLeaveOpen(false); reload() }} />}
       {eventEdit && <EventModal editing={eventEdit} onClose={() => setEventEdit(null)} onSaved={() => { setEventEdit(null); reload() }} />}
     </div>
   )
@@ -259,6 +263,59 @@ function LeaveModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
       footer={<><button onClick={onClose} className="btn-secondary">Cancel</button><button onClick={submit} disabled={saving} className="btn-primary">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit</button></>}>
       <div className="space-y-3">
         <p className="text-sm text-gray-500">Your request goes to the administrators for approval. Other surveyors can&apos;t see your leave.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label-base">From</label><input type="date" className="input-base" value={start} onChange={e => setStart(e.target.value)} /></div>
+          <div><label className="label-base">To</label><input type="date" className="input-base" value={end} onChange={e => setEnd(e.target.value)} /></div>
+        </div>
+        <div><label className="label-base">Note (optional)</label><input className="input-base" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Annual leave" /></div>
+        {error && <div className="rounded-lg bg-red-50 border border-red-200 p-2.5 text-sm text-red-700">{error}</div>}
+      </div>
+    </Modal>
+  )
+}
+
+// Admin: add approved leave for anyone (incl. themselves) — no approval step.
+function AdminLeaveModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [staff, setStaff] = useState<{ id: string; full_name: string; role: string }[]>([])
+  const [myId, setMyId] = useState<string | null>(null)
+  const [ownerId, setOwnerId] = useState('')
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    (async () => {
+      const [list, { data: { user } }] = await Promise.all([listStaffForLeave(), createClient().auth.getUser()])
+      setStaff(list)
+      setMyId(user?.id ?? null)
+      setOwnerId(user?.id && list.some(s => s.id === user.id) ? user.id : (list[0]?.id ?? ''))
+    })()
+  }, [])
+
+  async function submit() {
+    if (!ownerId) { setError('Pick whose leave this is.'); return }
+    if (!start || !end) { setError('Pick a start and end date.'); return }
+    if (end < start) { setError('End date must be on or after the start date.'); return }
+    setSaving(true); setError(null)
+    const res = await adminAddLeave({ owner_id: ownerId, start_date: start, end_date: end, description: note })
+    setSaving(false)
+    if (res.error) { setError(res.error); return }
+    onSaved()
+  }
+  return (
+    <Modal open onClose={onClose} title="Add leave" size="md"
+      footer={<><button onClick={onClose} className="btn-secondary">Cancel</button><button onClick={submit} disabled={saving} className="btn-primary">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Add leave</button></>}>
+      <div className="space-y-3">
+        <p className="text-sm text-gray-500">Added straight to the calendar as approved leave — no approval step. Leave is private (only that person and admins can see it).</p>
+        <div>
+          <label className="label-base">Whose leave?</label>
+          <select className="input-base" value={ownerId} onChange={e => setOwnerId(e.target.value)}>
+            {staff.length === 0 && <option value="">Loading…</option>}
+            {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}{s.id === myId ? ' (you)' : ` · ${s.role}`}</option>)}
+          </select>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label-base">From</label><input type="date" className="input-base" value={start} onChange={e => setStart(e.target.value)} /></div>
           <div><label className="label-base">To</label><input type="date" className="input-base" value={end} onChange={e => setEnd(e.target.value)} /></div>

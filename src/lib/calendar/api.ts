@@ -45,6 +45,31 @@ export async function requestLeave(input: LeaveInput): Promise<{ error?: string 
   return { error: error?.message }
 }
 
+/** Admin: add leave for anyone (including themselves) directly as APPROVED — no
+ *  request/approval step. RLS already lets admins insert any calendar event. */
+export async function adminAddLeave(input: LeaveInput & { owner_id: string }): Promise<{ error?: string }> {
+  const uid = await myId()
+  if (!uid) return { error: 'Not signed in.' }
+  const { error } = await createClient().from('calendar_events').insert({
+    event_type: 'leave', status: 'approved', visibility: 'private',
+    title: 'Leave', description: input.description || null,
+    start_date: input.start_date, end_date: input.end_date,
+    owner_id: input.owner_id, created_by: uid,
+    reviewer_id: uid, reviewed_at: new Date().toISOString(),
+    color: '#f59e0b',
+  })
+  return { error: error?.message }
+}
+
+/** Active staff (admins, surveyors, office) for the admin "Add leave" picker. */
+export async function listStaffForLeave(): Promise<{ id: string; full_name: string; role: string }[]> {
+  const { data } = await createClient()
+    .from('profiles').select('id, full_name, role')
+    .in('role', ['admin', 'surveyor', 'office']).eq('is_active', true)
+    .order('full_name')
+  return (data as { id: string; full_name: string; role: string }[]) ?? []
+}
+
 export interface GeneralEventInput {
   title: string; description?: string | null
   start_date: string; end_date: string
