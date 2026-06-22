@@ -22,10 +22,15 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
   const { data: invoice } = await db.from('invoices').select('*').eq('id', invoiceId).single()
   if (!invoice) return null
 
+  // Address the invoice to the payer (bill-to) when one is set — e.g. ASCO pays for
+  // BP's vessels — otherwise to the work client. This drives the PDF "To:" block and
+  // the email recipient.
+  const recipientClientId = invoice.bill_to_client_id ?? invoice.client_id
+
   const [{ data: lines }, { data: taxes }, { data: client }, { data: job }] = await Promise.all([
     db.from('invoice_line_items').select('*').eq('invoice_id', invoiceId).order('sort'),
     db.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
-    invoice.client_id ? db.from('clients').select('name, address, contact_phone, contact_email').eq('id', invoice.client_id).single() : Promise.resolve({ data: null }),
+    recipientClientId ? db.from('clients').select('name, address, contact_phone, contact_email').eq('id', recipientClientId).single() : Promise.resolve({ data: null }),
     invoice.job_id ? db.from('jobs').select('report_number').eq('id', invoice.job_id).single() : Promise.resolve({ data: null }),
   ])
 

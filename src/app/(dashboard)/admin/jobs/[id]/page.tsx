@@ -15,7 +15,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
-import InvoiceCard from '@/components/job/InvoiceCard'
+import JobInvoiceSummary from '@/components/job/JobInvoiceSummary'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
@@ -27,7 +27,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: ClipboardList },
   { id: 'checklist', label: 'Checklist', icon: ListChecks },
   { id: 'files', label: 'Files & Reports', icon: FolderOpen },
-  { id: 'billing', label: 'Billing', icon: Receipt },
+  { id: 'billing', label: 'Invoice', icon: Receipt },
 ] as const
 type DetailTab = typeof TABS[number]['id']
 
@@ -392,7 +392,7 @@ export default function AdminChecklistDetailPage() {
       )}
 
       {tab === 'billing' && (
-        <InvoiceCard job={job} onChanged={load} />
+        <JobInvoiceSummary job={job} />
       )}
 
       {/* Checklist editor stays mounted (preserves unsaved edits + the back/leave

@@ -19,9 +19,10 @@ import {
 import { listReconciliation, RECON_META, RECON_ORDER, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
+import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import type { Client, ClientRate, Currency, AppSettings, Invoice } from '@/lib/types/database'
 
-type Tab = 'overview' | 'invoices' | 'reconcile' | 'rates' | 'settings'
+type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'rates' | 'settings'
 type StatusFilter = 'open' | Invoice['status'] | 'all'
 
 export default function AdminInvoicingPage() {
@@ -44,7 +45,7 @@ export default function AdminInvoicingPage() {
       </div>
 
       <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
-        {([['overview', 'Overview'], ['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
+        {([['overview', 'Overview'], ['create', 'Create invoice'], ['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={cn('px-3.5 py-2 text-sm font-medium border-b-2 -mb-px rounded-t-md transition-colors flex items-center gap-1.5 whitespace-nowrap',
               tab === k ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50')}>
@@ -57,6 +58,7 @@ export default function AdminInvoicingPage() {
       </div>
 
       {tab === 'overview' && <OverviewTab />}
+      {tab === 'create' && <ConsolidatedInvoiceBuilder onCreated={() => listReconciliation().then(r => setFlagCount(r.items.length))} />}
       {tab === 'invoices' && <InvoicesTab />}
       {tab === 'reconcile' && <ReconcileTab onCount={setFlagCount} />}
       {tab === 'rates' && <RatesTab />}
@@ -191,7 +193,8 @@ function InvoicesTab() {
   const [q, setQ] = useState('')
   const [shown, setShown] = useState(INVOICES_PAGE)
 
-  useEffect(() => { listInvoices().then(setRows) }, [])
+  const load = () => listInvoices().then(setRows)
+  useEffect(() => { load() }, [])
 
   const term = q.trim().toLowerCase()
   const filtered = (rows ?? []).filter(r => {
@@ -230,7 +233,7 @@ function InvoicesTab() {
         <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
       ) : (
         <>
-          <InvoicesTable rows={paged} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
+          <InvoicesTable rows={paged} manage onChanged={load} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
           {filtered.length > shown && (
             <div className="text-center pt-1">
               <button onClick={() => setShown(s => s + INVOICES_PAGE)} className="btn-secondary">

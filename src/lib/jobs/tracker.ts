@@ -278,6 +278,7 @@ export interface TrackerRow {
   invoice_status: string | null
   invoice_total: number | null
   invoice_currency: string | null
+  invoice_sent_at: string | null
 }
 
 /** One row per job with surveyor names + hours and any invoice, joined in JS. */
@@ -285,11 +286,11 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, job_type, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, scheduled_date, created_at, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, job_type, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, scheduled_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
-    supabase.from('invoices').select('job_id, invoice_number, status, total, currency'),
+    supabase.from('invoices').select('id, job_id, invoice_number, status, total, currency, sent_at'),
   ])
 
   const sMap = new Map<string, { names: string[]; reg: number; ot: number }>()
@@ -298,11 +299,17 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
     const n = r.surveyor?.full_name; if (n) e.names.push(n)
     e.reg += Number(r.regular_hours ?? 0); e.ot += Number(r.overtime_hours ?? 0)
   }
-  const iMap = new Map<string, any>()
-  for (const inv of (invs ?? []) as any[]) if (inv.job_id && !iMap.has(inv.job_id)) iMap.set(inv.job_id, inv)
+  // Two ways a job links to an invoice: legacy per-job (invoices.job_id) and the
+  // consolidated stamp (jobs.invoice_id → invoices.id). Index by both.
+  const iByJob = new Map<string, any>()
+  const iById = new Map<string, any>()
+  for (const inv of (invs ?? []) as any[]) {
+    if (inv.id) iById.set(inv.id, inv)
+    if (inv.job_id && !iByJob.has(inv.job_id)) iByJob.set(inv.job_id, inv)
+  }
 
   return ((jobs ?? []) as any[]).map(j => {
-    const s = sMap.get(j.id); const inv = iMap.get(j.id)
+    const s = sMap.get(j.id); const inv = iByJob.get(j.id) ?? (j.invoice_id ? iById.get(j.invoice_id) : null)
     // Prefer the multi-surveyor table; fall back to the legacy single name so
     // jobs assigned the old way still show their surveyor.
     const surveyors = s?.names.length ? s.names : (j.surveyor_name ? [j.surveyor_name] : [])
@@ -314,6 +321,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
       surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
+      invoice_sent_at: inv?.sent_at ?? null,
     }
   })
 }

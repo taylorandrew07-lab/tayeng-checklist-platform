@@ -308,6 +308,8 @@ export interface Job {
   paid_at: string | null
   closed_at: string | null
   closed_by: string | null
+  // Consolidated invoicing (migration 075): which invoice this job was billed on.
+  invoice_id: string | null
   created_at: string
   updated_at: string
 }
@@ -333,6 +335,8 @@ export interface ClientRate {
 
 export interface Invoice {
   id: string; job_id: string | null; invoice_number: string | null; client_id: string | null
+  // The payer this invoice is addressed to (migration 075). NULL = same as client_id.
+  bill_to_client_id: string | null
   currency: Currency; status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
   issue_date: string; due_date: string | null
   subtotal: number; tax_total: number; total: number; notes: string | null
@@ -343,7 +347,7 @@ export interface Invoice {
   last_reminded_at: string | null
   created_at: string; updated_at: string
 }
-export interface InvoiceLineItem { id: string; invoice_id: string; description: string; qty: number; unit_price: number; amount: number; sort: number }
+export interface InvoiceLineItem { id: string; invoice_id: string; job_id: string | null; description: string; qty: number; unit_price: number; amount: number; sort: number }
 export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
 export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null }
 

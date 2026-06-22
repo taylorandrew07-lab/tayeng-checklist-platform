@@ -369,9 +369,12 @@ export default function JobsTrackerPage() {
                   </td>
                   <td className="px-3 py-1.5">
                     {r.invoice_number ? (
-                      <Link href={`/admin/jobs/${r.id}`} className="inline-flex items-center gap-1.5 hover:underline">
-                        <span className="tnum text-gray-700">{r.invoice_number}</span>
-                        {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
+                      <Link href={`/admin/jobs/${r.id}`} className="block hover:underline">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="tnum text-gray-700">{r.invoice_number}</span>
+                          {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
+                        </span>
+                        {r.invoice_sent_at && <span className="block text-[10px] text-gray-400 leading-tight">sent {formatDate(r.invoice_sent_at)}</span>}
                       </Link>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
