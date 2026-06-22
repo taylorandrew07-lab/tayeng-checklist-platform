@@ -16,6 +16,8 @@ import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import InvoiceCard from '@/components/job/InvoiceCard'
+import UhtSummary from '@/components/uht/UhtSummary'
+import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
@@ -395,7 +397,10 @@ export default function AdminChecklistDetailPage() {
 
       {/* Checklist editor stays mounted (preserves unsaved edits + the back/leave
           guard via editorRef); shown only on the Checklist tab. */}
-      <div className={tab === 'checklist' ? '' : 'hidden'}>
+      <div className={tab === 'checklist' ? 'space-y-6' : 'hidden'}>
+        {job.template?.id === UHT_TEMPLATE_ID && (
+          <UhtSummary jobId={jobId} vesselName={job.vessel_name} clientName={job.client?.name} />
+        )}
         <JobChecklistEditor ref={editorRef} jobId={jobId} backHref="/admin/jobs" hideInlinePdf />
       </div>
     </div>
