@@ -608,7 +608,7 @@ function InvoiceNumberingCard() {
     <div className="card p-5 space-y-3">
       <div>
         <h3 className="font-medium text-gray-900">Invoice numbering</h3>
-        <p className="text-xs text-gray-400">Auto-numbered <span className="tnum">INV-YY/NNNN</span> — an annual sequence that resets each fiscal year (starts February). Leave the number blank on a new invoice to auto-assign.</p>
+        <p className="text-xs text-gray-400">Auto-numbered <span className="tnum">YY-MM-NNN</span> (e.g. <span className="tnum">26-06-001</span>) — same format as report numbers; the sequence resets to <span className="tnum">001</span> each fiscal year (1 February). Leave the number blank on a new invoice to auto-assign.</p>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-gray-50 p-3">
@@ -626,7 +626,7 @@ function InvoiceNumberingCard() {
           <input type="number" min={1} value={nextVal} onChange={e => setNextVal(e.target.value)} placeholder={String(counter.last_seq + 1)} className="input-base py-1.5 text-sm w-32 tnum" />
           <button onClick={save} disabled={saving || !nextVal} className="btn-primary py-1.5 px-3 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</button>
         </div>
-        <p className="text-[11px] text-gray-400 mt-1">e.g. enter <span className="tnum">100</span> and the next invoice becomes <span className="tnum">INV-{counter.next_number.slice(4, 6)}/0100</span>, continuing from there. Keep numbers unique.</p>
+        <p className="text-[11px] text-gray-400 mt-1">e.g. enter <span className="tnum">100</span> and the next invoice becomes <span className="tnum">{counter.next_number.slice(0, 6)}100</span>, continuing from there. Set to <span className="tnum">1</span> to start the year&apos;s run at <span className="tnum">001</span>. Keep numbers unique.</p>
       </div>
     </div>
   )
