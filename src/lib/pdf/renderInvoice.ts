@@ -27,12 +27,24 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
   // the email recipient.
   const recipientClientId = invoice.bill_to_client_id ?? invoice.client_id
 
-  const [{ data: lines }, { data: taxes }, { data: client }, { data: job }] = await Promise.all([
+  // Contact/payment info lives in the private client_billing table now; name stays
+  // on clients. The service client bypasses RLS, so both are readable here.
+  const [{ data: lines }, { data: taxes }, { data: clientRow }, { data: billing }, { data: job }] = await Promise.all([
     db.from('invoice_line_items').select('*').eq('invoice_id', invoiceId).order('sort'),
     db.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
-    recipientClientId ? db.from('clients').select('name, address, contact_phone, contact_email').eq('id', recipientClientId).single() : Promise.resolve({ data: null }),
+    recipientClientId ? db.from('clients').select('name').eq('id', recipientClientId).single() : Promise.resolve({ data: null }),
+    recipientClientId ? db.from('client_billing').select('address, contact_phone, contact_email, ap_email').eq('client_id', recipientClientId).maybeSingle() : Promise.resolve({ data: null }),
     invoice.job_id ? db.from('jobs').select('report_number').eq('id', invoice.job_id).single() : Promise.resolve({ data: null }),
   ])
+
+  // The PDF "To:" block needs name + address + phone; the email goes to the
+  // accounts-payable address when set, else the general contact email.
+  const client = recipientClientId ? {
+    name: (clientRow as any)?.name ?? null,
+    address: (billing as any)?.address ?? null,
+    contact_phone: (billing as any)?.contact_phone ?? null,
+  } : null
+  const recipientEmail = (billing as any)?.ap_email ?? (billing as any)?.contact_email ?? null
 
   // Letterhead logo (black-text version) as a data URI — reliable in serverless.
   let logoSrc: string | undefined
@@ -57,8 +69,8 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
     buffer: buffer as Buffer,
     filename: `Invoice_${safe}.pdf`,
     invoiceNumber: invoice.invoice_number ?? null,
-    clientEmail: (client as any)?.contact_email ?? null,
-    clientName: (client as any)?.name ?? null,
+    clientEmail: recipientEmail,
+    clientName: client?.name ?? null,
     jobId: invoice.job_id ?? null,
   }
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Loader2, Building2, Pencil, Mail, Phone, MapPin, Briefcase, FolderOpen, AlertTriangle,
+  ArrowLeft, Loader2, Building2, Pencil, Mail, Phone, MapPin, Briefcase, FolderOpen, AlertTriangle, Lock,
 } from 'lucide-react'
 import { getClientDetail, type ClientDetail } from '@/lib/jobs/client-detail'
 import { money } from '@/lib/jobs/tracker'
@@ -50,8 +50,10 @@ export default function ClientDetailPage() {
     )
   }
 
-  const { client, jobCount, openJobs, billing, jobs, invoices } = data
+  const { client, clientBilling, jobCount, openJobs, billing, jobs, invoices } = data
   const logo = logoUrl(client.logo_path)
+  const cb = clientBilling
+  const hasPayment = !!(cb && (cb.bank_details || cb.payment_terms || cb.ap_email || cb.ap_contact || cb.ap_phone || cb.tax_number))
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -71,10 +73,10 @@ export default function ClientDetailPage() {
             </span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-500">
-            {client.contact_name && <span className="text-gray-700">{client.contact_name}</span>}
-            {client.contact_email && <a href={`mailto:${client.contact_email}`} className="inline-flex items-center gap-1 hover:text-brand-700"><Mail className="h-3.5 w-3.5" />{client.contact_email}</a>}
-            {client.contact_phone && <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{client.contact_phone}</span>}
-            {client.address && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{client.address}</span>}
+            {cb?.contact_name && <span className="text-gray-700">{cb.contact_name}</span>}
+            {cb?.contact_email && <a href={`mailto:${cb.contact_email}`} className="inline-flex items-center gap-1 hover:text-brand-700"><Mail className="h-3.5 w-3.5" />{cb.contact_email}</a>}
+            {cb?.contact_phone && <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{cb.contact_phone}</span>}
+            {cb?.address && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{cb.address}</span>}
           </div>
           <div className="mt-2.5 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-400">Colour <span className="hidden sm:inline">(used when colouring jobs by client)</span></span>
@@ -84,7 +86,20 @@ export default function ClientDetailPage() {
         <Link href={`/admin/clients?focus=${client.id}`} className="btn-secondary flex-shrink-0"><Pencil className="h-4 w-4" /><span className="hidden sm:inline">Edit</span></Link>
       </div>
 
-      {client.notes && <div className="card p-4 text-sm text-gray-600"><span className="text-xs font-medium text-gray-400 block mb-1">Notes</span>{client.notes}</div>}
+      {cb?.notes && <div className="card p-4 text-sm text-gray-600"><span className="text-xs font-medium text-gray-400 block mb-1">Notes</span>{cb.notes}</div>}
+
+      {hasPayment && (
+        <div className="card p-4">
+          <p className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-1.5"><Lock className="h-3 w-3" /> Payment &amp; billing <span className="font-normal">— admin/office only</span></p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            {cb?.payment_terms && <div><span className="text-gray-400">Terms: </span><span className="text-gray-700">{cb.payment_terms}</span></div>}
+            {cb?.tax_number && <div><span className="text-gray-400">Tax/BRC/VAT: </span><span className="text-gray-700 tnum">{cb.tax_number}</span></div>}
+            {cb?.ap_email && <div><span className="text-gray-400">AP email: </span><a href={`mailto:${cb.ap_email}`} className="text-brand-700 hover:underline">{cb.ap_email}</a></div>}
+            {(cb?.ap_contact || cb?.ap_phone) && <div><span className="text-gray-400">AP contact: </span><span className="text-gray-700">{[cb?.ap_contact, cb?.ap_phone].filter(Boolean).join(' · ')}</span></div>}
+          </div>
+          {cb?.bank_details && <div className="mt-2 pt-2 border-t border-gray-100 text-sm"><span className="text-gray-400 block text-xs mb-0.5">Bank / payment details</span><span className="text-gray-700 whitespace-pre-wrap">{cb.bank_details}</span></div>}
+        </div>
+      )}
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

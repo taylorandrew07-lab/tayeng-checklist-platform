@@ -44,9 +44,10 @@ export async function globalSearch(term: string, role: string): Promise<SearchHi
   if (adminish) {
     // Clients — by name.
     tasks.push((async () => {
-      const { data } = await supabase.from('clients').select('id, name, contact_name').ilike('name', like).order('name').limit(5)
+      // Name only — contact info is private (client_billing, admin/office-gated).
+      const { data } = await supabase.from('clients').select('id, name').ilike('name', like).order('name').limit(5)
       return ((data ?? []) as any[]).map(c => ({
-        kind: 'client' as const, id: c.id, title: c.name, subtitle: c.contact_name ?? undefined,
+        kind: 'client' as const, id: c.id, title: c.name,
         href: `/admin/clients/${c.id}`,
       }))
     })())

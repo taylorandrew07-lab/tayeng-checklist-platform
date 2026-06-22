@@ -5,7 +5,8 @@
 import { createClient } from '@/lib/supabase/client'
 import { aggregateBilling, type BillingTotals } from '@/lib/jobs/metrics'
 import { isOverdue } from '@/lib/jobs/invoicing'
-import type { Client, WorkflowStatus } from '@/lib/types/database'
+import { getClientBilling } from '@/lib/clients/billing'
+import type { Client, ClientBilling, WorkflowStatus } from '@/lib/types/database'
 
 export interface ClientJobRow {
   id: string
@@ -34,6 +35,7 @@ export interface ClientInvoiceRow {
 
 export interface ClientDetail {
   client: Client
+  clientBilling: ClientBilling | null
   jobCount: number
   openJobs: number
   billing: BillingTotals[]
@@ -43,7 +45,7 @@ export interface ClientDetail {
 
 export async function getClientDetail(clientId: string): Promise<ClientDetail | null> {
   const supabase = createClient()
-  const [{ data: client }, { data: jobs }, { data: invs }] = await Promise.all([
+  const [{ data: client }, { data: jobs }, { data: invs }, clientBilling] = await Promise.all([
     supabase.from('clients').select('*').eq('id', clientId).single(),
     supabase.from('jobs')
       .select('id, report_number, vessel_name, title, workflow_status, scheduled_date, created_at')
@@ -51,6 +53,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
     supabase.from('invoices')
       .select('id, invoice_number, status, total, currency, due_date, job_id, created_at')
       .eq('client_id', clientId).order('created_at', { ascending: false }),
+    getClientBilling(clientId),
   ])
   if (!client) return null
 
@@ -77,5 +80,5 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const billing = [...aggregateBilling((invs ?? []) as any[]).values()].sort((a, b) => b.outstanding - a.outstanding)
   const openJobs = ((jobs ?? []) as any[]).filter(j => j.workflow_status !== 'paid' && j.workflow_status !== 'closed').length
 
-  return { client: client as Client, jobCount: (jobs ?? []).length, openJobs, billing, jobs: jobRows, invoices: invoiceRows }
+  return { client: client as Client, clientBilling, jobCount: (jobs ?? []).length, openJobs, billing, jobs: jobRows, invoices: invoiceRows }
 }

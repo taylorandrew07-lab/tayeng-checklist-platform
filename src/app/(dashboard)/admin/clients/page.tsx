@@ -10,7 +10,8 @@ import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import type { Client } from '@/lib/types/database'
+import { listClientBilling, upsertClientBilling } from '@/lib/clients/billing'
+import type { Client, ClientBilling } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
 function logoUrl(path?: string | null): string | null {
@@ -38,6 +39,7 @@ function ClientLogo({ src, name }: { src: string | null; name: string }) {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
+  const [billing, setBilling] = useState<Record<string, ClientBilling>>({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editClient, setEditClient] = useState<Client | null>(null)
@@ -46,16 +48,15 @@ export default function ClientsPage() {
   const [jobCounts, setJobCounts] = useState<Record<string, number>>({})
   const [q, setQ] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [form, setForm] = useState({
+  const blankForm = {
     name: '',
-    contact_name: '',
-    contact_email: '',
-    contact_phone: '',
-    address: '',
-    notes: '',
+    // contact + payment live in client_billing (admin/office only)
+    contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '',
+    bank_details: '', payment_terms: '', ap_email: '', ap_contact: '', ap_phone: '', tax_number: '',
     logo_path: '',
     color: '' as string,
-  })
+  }
+  const [form, setForm] = useState(blankForm)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -64,11 +65,13 @@ export default function ClientsPage() {
     const supabase = createClient()
     // One clients query + one jobs query (tallied in JS) instead of a count
     // query per client.
-    const [{ data: c }, { data: jobRows }] = await Promise.all([
+    const [{ data: c }, { data: jobRows }, billingMap] = await Promise.all([
       supabase.from('clients').select('*').order('name'),
       supabase.from('jobs').select('client_id'),
+      listClientBilling(),
     ])
     setClients(c ?? [])
+    setBilling(billingMap)
     const counts: Record<string, number> = {}
     for (const j of (jobRows ?? []) as { client_id: string | null }[]) {
       if (j.client_id) counts[j.client_id] = (counts[j.client_id] ?? 0) + 1
@@ -91,7 +94,7 @@ export default function ClientsPage() {
 
   function openCreate() {
     setEditClient(null)
-    setForm({ name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '', logo_path: '', color: '' })
+    setForm(blankForm)
     setLogoFile(null)
     setLogoPreview(null)
     setError(null)
@@ -100,13 +103,20 @@ export default function ClientsPage() {
 
   function openEdit(client: Client) {
     setEditClient(client)
+    const b = billing[client.id]
     setForm({
       name: client.name,
-      contact_name: client.contact_name ?? '',
-      contact_email: client.contact_email ?? '',
-      contact_phone: client.contact_phone ?? '',
-      address: client.address ?? '',
-      notes: client.notes ?? '',
+      contact_name: b?.contact_name ?? '',
+      contact_email: b?.contact_email ?? '',
+      contact_phone: b?.contact_phone ?? '',
+      address: b?.address ?? '',
+      notes: b?.notes ?? '',
+      bank_details: b?.bank_details ?? '',
+      payment_terms: b?.payment_terms ?? '',
+      ap_email: b?.ap_email ?? '',
+      ap_contact: b?.ap_contact ?? '',
+      ap_phone: b?.ap_phone ?? '',
+      tax_number: b?.tax_number ?? '',
       logo_path: client.logo_path ?? '',
       color: client.color ?? '',
     })
@@ -140,24 +150,37 @@ export default function ClientsPage() {
       logo_path = path
     }
 
-    const payload = {
-      name: form.name.trim(),
+    // The clients table is name-only (+ logo/colour). Contact and payment info go to
+    // the private client_billing table (admin/office only).
+    const clientPayload = { name: form.name.trim(), logo_path, color: form.color || null }
+    const billingPatch = {
       contact_name: form.contact_name || null,
       contact_email: form.contact_email || null,
       contact_phone: form.contact_phone || null,
       address: form.address || null,
       notes: form.notes || null,
-      logo_path,
-      color: form.color || null,
+      bank_details: form.bank_details || null,
+      payment_terms: form.payment_terms || null,
+      ap_email: form.ap_email || null,
+      ap_contact: form.ap_contact || null,
+      ap_phone: form.ap_phone || null,
+      tax_number: form.tax_number || null,
     }
 
+    let clientId = editClient?.id
     if (editClient) {
-      const { data, error: err } = await supabase.from('clients').update(payload).eq('id', editClient.id).select('id')
+      const { data, error: err } = await supabase.from('clients').update(clientPayload).eq('id', editClient.id).select('id')
       if (err) { setError(err.message); setSaving(false); return }
       if (!data || data.length === 0) { setError('That change was blocked — you may not have permission.'); setSaving(false); return }
     } else {
-      const { error: err } = await supabase.from('clients').insert(payload)
+      const { data, error: err } = await supabase.from('clients').insert(clientPayload).select('id').single()
       if (err) { setError(err.message); setSaving(false); return }
+      clientId = data.id
+    }
+
+    if (clientId) {
+      const bres = await upsertClientBilling(clientId, billingPatch)
+      if (bres.error) { setError('Saved the client, but the billing details failed: ' + bres.error); setSaving(false); return }
     }
 
     setShowModal(false)
@@ -200,10 +223,11 @@ export default function ClientsPage() {
       if (activeFilter === 'active' && !c.is_active) return false
       if (activeFilter === 'inactive' && c.is_active) return false
       if (!term) return true
-      return [c.name, c.contact_name, c.contact_email, c.contact_phone]
+      const b = billing[c.id]
+      return [c.name, b?.contact_name, b?.contact_email, b?.contact_phone]
         .some(v => (v ?? '').toLowerCase().includes(term))
     })
-  }, [clients, q, activeFilter])
+  }, [clients, billing, q, activeFilter])
 
   if (loading) {
     return (
@@ -280,9 +304,9 @@ export default function ClientsPage() {
               <h3 className="font-semibold text-gray-900 mt-4 break-words">
                 <Link href={`/admin/clients/${client.id}`} className="hover:text-brand-700 hover:underline">{client.name}</Link>
               </h3>
-              {client.contact_name && <p className="text-sm text-gray-600 mt-0.5 truncate">{client.contact_name}</p>}
-              {client.contact_email && <p className="text-sm text-gray-500 truncate">{client.contact_email}</p>}
-              {client.contact_phone && <p className="text-sm text-gray-500 truncate">{client.contact_phone}</p>}
+              {billing[client.id]?.contact_name && <p className="text-sm text-gray-600 mt-0.5 truncate">{billing[client.id].contact_name}</p>}
+              {billing[client.id]?.contact_email && <p className="text-sm text-gray-500 truncate">{billing[client.id].contact_email}</p>}
+              {billing[client.id]?.contact_phone && <p className="text-sm text-gray-500 truncate">{billing[client.id].contact_phone}</p>}
 
               {/* Footer */}
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
@@ -348,6 +372,42 @@ export default function ClientsPage() {
             <label className="label-base">Notes</label>
             <textarea value={form.notes} onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))} className="input-base resize-none" rows={2} placeholder="Internal notes about this client" />
           </div>
+
+          {/* Payment / billing — private (admin + office only; never shown to surveyors) */}
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-500 mb-2">Payment &amp; billing <span className="font-normal text-gray-400">— private; surveyors never see this</span></p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label-base">Payment terms</label>
+                  <input type="text" value={form.payment_terms} onChange={(e) => setForm(p => ({ ...p, payment_terms: e.target.value }))} className="input-base" placeholder="e.g. 30 days" />
+                </div>
+                <div>
+                  <label className="label-base">Tax / BRC / VAT no.</label>
+                  <input type="text" value={form.tax_number} onChange={(e) => setForm(p => ({ ...p, tax_number: e.target.value }))} className="input-base" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label-base">Accounts-payable email</label>
+                  <input type="email" value={form.ap_email} onChange={(e) => setForm(p => ({ ...p, ap_email: e.target.value }))} className="input-base" placeholder="invoices@client.com" />
+                </div>
+                <div>
+                  <label className="label-base">AP contact name</label>
+                  <input type="text" value={form.ap_contact} onChange={(e) => setForm(p => ({ ...p, ap_contact: e.target.value }))} className="input-base" placeholder="Name" />
+                </div>
+              </div>
+              <div>
+                <label className="label-base">AP phone</label>
+                <input type="tel" value={form.ap_phone} onChange={(e) => setForm(p => ({ ...p, ap_phone: e.target.value }))} className="input-base" />
+              </div>
+              <div>
+                <label className="label-base">Bank / payment details</label>
+                <textarea value={form.bank_details} onChange={(e) => setForm(p => ({ ...p, bank_details: e.target.value }))} className="input-base resize-y text-sm" rows={3} placeholder="Bank name, account, SWIFT…" />
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="label-base">Colour <span className="text-gray-400 font-normal">— used when colouring jobs by client</span></label>
             <ColorSwatchPicker value={form.color || null} onChange={(key) => setForm(p => ({ ...p, color: key ?? '' }))} />

@@ -155,15 +155,29 @@ export interface CalendarJob {
 export interface Client {
   id: string
   name: string
+  logo_path: string | null
+  /** Curated palette key (src/lib/jobs/colors.ts) for colour-coding jobs by client. */
+  color: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Private client contact + payment info (migration 077). Lives in its own table,
+// readable by ADMIN + OFFICE only — surveyors never see anything but the name.
+export interface ClientBilling {
+  client_id: string
   contact_name: string | null
   contact_email: string | null
   contact_phone: string | null
   address: string | null
   notes: string | null
-  logo_path: string | null
-  /** Curated palette key (src/lib/jobs/colors.ts) for colour-coding jobs by client. */
-  color: string | null
-  is_active: boolean
+  bank_details: string | null
+  payment_terms: string | null
+  ap_email: string | null
+  ap_contact: string | null
+  ap_phone: string | null
+  tax_number: string | null
   created_at: string
   updated_at: string
 }
