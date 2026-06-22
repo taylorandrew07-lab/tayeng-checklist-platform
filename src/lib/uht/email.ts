@@ -18,10 +18,10 @@ export interface UhtRoundResult {
   date: string          // raw ISO 'YYYY-MM-DD'
   start: string         // raw 'HH:MM'
   end: string
-  tested: number[]      // hold numbers with a yes/no answer
+  tested: number[]      // hold numbers with a pass/fail answer
   passed: number[]
   failed: number[]
-  bilges: 'yes' | 'no' | 'na' | ''
+  bilges: 'pass' | 'fail' | ''
 }
 
 export interface UhtResult {
@@ -71,6 +71,9 @@ export function holdList(nums: number[]): string {
 
 const answer = (raw: string | undefined): string => (raw ?? '').split('|||')[0].trim().toLowerCase()
 const num = (raw: string | undefined): number => { const n = parseInt((raw ?? '').trim(), 10); return Number.isFinite(n) ? n : 0 }
+// Holds/bilges use a 'pass_fail' field (values 'pass'/'fail'); accept legacy 'yes'/'no' too.
+const isPass = (a: string): boolean => a === 'pass' || a === 'yes'
+const isFail = (a: string): boolean => a === 'fail' || a === 'no'
 
 function summarizeRound(round: UhtRound, values: Record<string, string>): UhtRoundResult | null {
   const date = (values[round.date] ?? '').trim()
@@ -79,13 +82,15 @@ function summarizeRound(round: UhtRound, values: Record<string, string>): UhtRou
   const passed: number[] = [], failed: number[] = []
   round.holds.forEach((fid, i) => {
     const a = answer(values[fid])
-    if (a === 'yes') passed.push(i + 1)
-    else if (a === 'no') failed.push(i + 1)
+    if (isPass(a)) passed.push(i + 1)
+    else if (isFail(a)) failed.push(i + 1)
   })
   const tested = [...passed, ...failed].sort((a, b) => a - b)
   // A round "happened" only if it has a date or any tested hold (so blank re-tests are ignored).
   if (!date && tested.length === 0) return null
-  return { key: round.key, label: round.label, date, start, end, tested, passed, failed, bilges: answer(values[round.bilges]) as UhtRoundResult['bilges'] }
+  const b = answer(values[round.bilges])
+  const bilges: UhtRoundResult['bilges'] = isPass(b) ? 'pass' : isFail(b) ? 'fail' : ''
+  return { key: round.key, label: round.label, date, start, end, tested, passed, failed, bilges }
 }
 
 function roundParagraphs(r: UhtRoundResult, ctx: { holds: number; hatches: number; client: string | null; location: string }): string[] {
@@ -102,8 +107,8 @@ function roundParagraphs(r: UhtRoundResult, ctx: { holds: number; hatches: numbe
   }
   if (r.passed.length) paras.push(`Hold${r.passed.length === 1 ? '' : 's'} ${holdList(r.passed)} passed ultrasonic testing.`)
   if (r.failed.length) paras.push(`Hold${r.failed.length === 1 ? '' : 's'} ${holdList(r.failed)} failed ultrasonic testing.`)
-  if (r.bilges === 'yes') paras.push('Bilges clean and dry.')
-  else if (r.bilges === 'no') paras.push('Bilges were not clean and dry.')
+  if (r.bilges === 'pass') paras.push('Bilges clean and dry.')
+  else if (r.bilges === 'fail') paras.push('Bilges were not clean and dry.')
   return paras
 }
 
@@ -125,7 +130,7 @@ export function generateUhtEmail(input: UhtInput): UhtResult {
   let status: UhtResult['status'] = 'empty'
   if (rounds.length) {
     const last = rounds[rounds.length - 1]
-    status = (last.tested.length > 0 && last.failed.length === 0 && last.bilges !== 'no') ? 'passed' : 'open'
+    status = (last.tested.length > 0 && last.failed.length === 0 && last.bilges !== 'fail') ? 'passed' : 'open'
   }
 
   const subject = `Ultrasonic Hatch Testing${vessel ? ` — ${vessel}` : ''}`

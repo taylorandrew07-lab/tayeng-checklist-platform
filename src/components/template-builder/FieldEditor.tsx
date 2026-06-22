@@ -76,7 +76,7 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
 
   const needsOptions = field.field_type === 'dropdown' || field.field_type === 'multiple_choice'
   const isLayoutField = field.field_type === 'heading' || field.field_type === 'divider'
-  const isYesNo = field.field_type === 'yes_no' || field.field_type === 'yes_no_na'
+  const isYesNo = field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail'
 
   return (
     <div className="border border-gray-200 rounded-xl bg-white shadow-sm">
@@ -131,7 +131,7 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                 onChange={(e) => {
                   const newType = e.target.value as BuilderField['field_type']
                   const newOptions =
-                    newType === 'yes_no' || newType === 'yes_no_na'
+                    newType === 'yes_no' || newType === 'yes_no_na' || newType === 'pass_fail'
                       ? getDefaultYesNoOptions(newType)
                       : (newType === 'dropdown' || newType === 'multiple_choice') ? field.options : []
                   update({ field_type: newType, options: newOptions })

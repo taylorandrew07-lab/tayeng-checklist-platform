@@ -147,7 +147,7 @@ export default function FieldRenderer({
         </select>
       )}
 
-      {(field.field_type === 'yes_no' || field.field_type === 'yes_no_na') && (() => {
+      {(field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail') && (() => {
         const COLOR_ACTIVE_CLASSES: Record<string, string> = {
           green: 'border-green-500 bg-green-50 text-green-700',
           red: 'border-red-500 bg-red-50 text-red-700',
@@ -158,8 +158,15 @@ export default function FieldRenderer({
           yes: 'green',
           no: 'red',
           na: 'gray',
+          pass: 'green',
+          fail: 'red',
         }
-        const allOpts = field.field_type === 'yes_no_na'
+        const allOpts = field.field_type === 'pass_fail'
+          ? [
+              { value: 'pass', label: 'Pass' },
+              { value: 'fail', label: 'Fail' },
+            ]
+          : field.field_type === 'yes_no_na'
           ? [
               { value: 'yes', label: 'Yes' },
               { value: 'no', label: 'No' },

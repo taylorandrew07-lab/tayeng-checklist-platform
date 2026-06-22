@@ -13,9 +13,10 @@ function values(holds: number, hatches: number, rounds: Partial<Record<'initial'
     if (spec.date) v[r.date] = spec.date
     if (spec.start) v[r.start] = spec.start
     if (spec.end) v[r.end] = spec.end
-    for (const h of spec.pass ?? []) v[r.holds[h - 1]] = 'yes'
-    for (const h of spec.fail ?? []) v[r.holds[h - 1]] = 'no'
-    if (spec.bilges) v[r.bilges] = spec.bilges
+    // Holds + bilges are 'pass_fail' fields (stored 'pass'/'fail'); re-test toggle is yes_no.
+    for (const h of spec.pass ?? []) v[r.holds[h - 1]] = 'pass'
+    for (const h of spec.fail ?? []) v[r.holds[h - 1]] = 'fail'
+    if (spec.bilges) v[r.bilges] = spec.bilges === 'yes' ? 'pass' : 'fail'
     if (spec.furtherRetest && r.retestRequired) v[r.retestRequired] = 'yes'
   }
   return v

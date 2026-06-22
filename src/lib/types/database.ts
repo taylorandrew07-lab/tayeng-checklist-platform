@@ -25,6 +25,7 @@ export type FieldType =
   | 'dropdown'
   | 'yes_no'
   | 'yes_no_na'
+  | 'pass_fail'
   | 'multiple_choice'
   | 'textarea'
   | 'calculated'

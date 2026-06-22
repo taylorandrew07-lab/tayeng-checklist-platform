@@ -36,13 +36,20 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'dropdown', label: 'Dropdown', group: 'Choice' },
   { value: 'yes_no', label: 'Yes / No', group: 'Choice' },
   { value: 'yes_no_na', label: 'Yes / No / N/A', group: 'Choice' },
+  { value: 'pass_fail', label: 'Pass / Fail', group: 'Choice' },
   { value: 'multiple_choice', label: 'Multiple Choice', group: 'Choice' },
   { value: 'calculated', label: 'Calculated Field', group: 'Special' },
   { value: 'photo', label: 'Photo Upload', group: 'Special' },
   { value: 'signature', label: 'Signature', group: 'Special' },
 ]
 
-export function getDefaultYesNoOptions(type: 'yes_no' | 'yes_no_na'): FieldOption[] {
+export function getDefaultYesNoOptions(type: 'yes_no' | 'yes_no_na' | 'pass_fail'): FieldOption[] {
+  if (type === 'pass_fail') {
+    return [
+      { value: 'pass', label: 'Pass', color: 'green' },
+      { value: 'fail', label: 'Fail', color: 'red' },
+    ]
+  }
   const base: FieldOption[] = [
     { value: 'yes', label: 'Yes', color: 'green' },
     { value: 'no', label: 'No', color: 'red' },
@@ -55,7 +62,7 @@ export function getDefaultYesNoOptions(type: 'yes_no' | 'yes_no_na'): FieldOptio
 
 export function createBlankField(order_index: number, field_type: BuilderField['field_type'] = 'text'): BuilderField {
   const options: FieldOption[] =
-    field_type === 'yes_no' || field_type === 'yes_no_na'
+    field_type === 'yes_no' || field_type === 'yes_no_na' || field_type === 'pass_fail'
       ? getDefaultYesNoOptions(field_type)
       : []
 

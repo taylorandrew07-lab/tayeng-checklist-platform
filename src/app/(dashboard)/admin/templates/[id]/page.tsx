@@ -14,6 +14,7 @@ const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
   dropdown: List,
   yes_no: CheckSquare,
   yes_no_na: CheckSquare,
+  pass_fail: CheckSquare,
   multiple_choice: List,
   textarea: AlignLeft,
   calculated: Hash,
@@ -25,7 +26,7 @@ const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
 
 const FIELD_TYPE_LABELS: Record<string, string> = {
   text: 'Text', number: 'Number', date: 'Date', time: 'Time',
-  dropdown: 'Dropdown', yes_no: 'Yes / No', yes_no_na: 'Yes / No / N/A',
+  dropdown: 'Dropdown', yes_no: 'Yes / No', yes_no_na: 'Yes / No / N/A', pass_fail: 'Pass / Fail',
   multiple_choice: 'Multiple Choice', textarea: 'Text Area',
   calculated: 'Calculated', photo: 'Photo', signature: 'Signature',
   heading: 'Heading', divider: 'Divider',

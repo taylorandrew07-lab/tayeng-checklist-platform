@@ -6,6 +6,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
+import UhtSummary from '@/components/uht/UhtSummary'
+import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
 import { WORKFLOW } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
@@ -20,7 +22,7 @@ export default function SurveyorJobPage() {
   async function load() {
     const { data } = await createClient()
       .from('jobs')
-      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at')
+      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, client:clients(name)')
       .eq('id', jobId).single()
     setJob(data ?? null)
     setLoading(false)
@@ -55,6 +57,10 @@ export default function SurveyorJobPage() {
 
       {/* Surveyor ops: read-only status + their own assignment + report/VOS upload. */}
       <JobOpsPanel job={job} isAdmin={false} onChanged={load} />
+
+      {job.template_id === UHT_TEMPLATE_ID && (
+        <UhtSummary jobId={jobId} vesselName={job.vessel_name} clientName={job.client?.name} />
+      )}
 
       {/* Checklist editor only for checklist jobs (report-only jobs have no template). */}
       {job.template_id && (

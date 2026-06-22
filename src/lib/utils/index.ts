@@ -114,6 +114,7 @@ export function getFieldTypeLabel(type: FieldType): string {
     dropdown: 'Dropdown',
     yes_no: 'Yes / No',
     yes_no_na: 'Yes / No / N/A',
+    pass_fail: 'Pass / Fail',
     multiple_choice: 'Multiple Choice',
     textarea: 'Long Text / Remarks',
     calculated: 'Calculated',

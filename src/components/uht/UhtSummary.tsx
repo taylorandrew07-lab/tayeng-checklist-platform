@@ -66,8 +66,8 @@ export default function UhtSummary({ jobId, vesselName, clientName }: { jobId: s
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
                 {r.passed.length > 0 && <span className="text-green-700">Passed: {holdList(r.passed)}</span>}
                 {r.failed.length > 0 && <span className="text-red-600">Failed: {holdList(r.failed)}</span>}
-                <span className={r.bilges === 'yes' ? 'text-gray-500' : r.bilges === 'no' ? 'text-red-600' : 'text-gray-400'}>
-                  Bilges: {r.bilges === 'yes' ? 'clean & dry' : r.bilges === 'no' ? 'not clean/dry' : '—'}
+                <span className={r.bilges === 'pass' ? 'text-gray-500' : r.bilges === 'fail' ? 'text-red-600' : 'text-gray-400'}>
+                  Bilges: {r.bilges === 'pass' ? 'clean & dry' : r.bilges === 'fail' ? 'not clean/dry' : '—'}
                 </span>
               </div>
             </div>
