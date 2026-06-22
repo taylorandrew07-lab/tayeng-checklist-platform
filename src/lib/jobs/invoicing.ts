@@ -238,6 +238,25 @@ export function isOverdue(row: { status: Invoice['status']; due_date: string | n
   return row.status === 'sent' && !!row.due_date && row.due_date < today
 }
 
+// ── Invoice auto-numbering controls (admin) ──────────────────────────────────
+export interface InvoiceCounter { fiscal_year: number; last_seq: number; next_number: string }
+
+/** Current invoice-numbering position (admin only — RPC enforces it). */
+export async function getInvoiceCounter(): Promise<InvoiceCounter | null> {
+  const { data, error } = await createClient().rpc('get_invoice_counter')
+  if (error) return null
+  const row = Array.isArray(data) ? data[0] : data
+  return (row as InvoiceCounter) ?? null
+}
+
+/** Set where auto-numbering is, by the NEXT number to issue (so last_seq = next-1).
+ *  e.g. nextSeq=1 restarts at INV-YY/0001. */
+export async function setInvoiceNextNumber(nextSeq: number): Promise<{ error?: string }> {
+  const last = Math.max(0, Math.floor(nextSeq) - 1)
+  const { error } = await createClient().rpc('set_invoice_counter', { p_last_seq: last })
+  return { error: error?.message }
+}
+
 // ── Consolidated, Finance-driven invoices (many vessels on one invoice) ───────
 
 /** The most recently created invoice number — shown when building a new invoice so

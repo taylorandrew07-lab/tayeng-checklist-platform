@@ -14,7 +14,8 @@ import { cn, formatDate } from '@/lib/utils'
 import { CURRENCIES, money, listJobTypes, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
-  getAppSettings, updateAppSettings, logInvoiceReminder, type InvoiceListRow,
+  getAppSettings, updateAppSettings, logInvoiceReminder, getInvoiceCounter, setInvoiceNextNumber,
+  type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
@@ -547,7 +548,9 @@ function SettingsTab() {
   if (!settings) return <div className="skeleton h-32 w-full max-w-md" />
 
   return (
-    <div className="card p-5 max-w-md space-y-4">
+    <div className="space-y-6 max-w-md">
+      <InvoiceNumberingCard />
+      <div className="card p-5 space-y-4">
       <div>
         <h3 className="font-medium text-gray-900">Billing defaults</h3>
         <p className="text-xs text-gray-400">Pre-filled when a new invoice is created.</p>
@@ -572,6 +575,59 @@ function SettingsTab() {
         <textarea value={bank} onChange={e => setBank(e.target.value)} rows={5} placeholder={'Pre-fills the bank block on new invoices (e.g. for foreign payments).\nBank name, branch, SWIFT/BIC, account name + number…'} className="input-base text-sm resize-y" />
       </div>
       <button onClick={save} disabled={saving} className="btn-primary py-2 px-4 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save settings</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Invoice numbering (admin) ────────────────────────────────────────────────
+function InvoiceNumberingCard() {
+  const [counter, setCounter] = useState<InvoiceCounter | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [nextVal, setNextVal] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = () => getInvoiceCounter().then(c => { setCounter(c); setLoading(false) })
+  useEffect(() => { load() }, [])
+
+  async function save() {
+    const n = parseInt(nextVal, 10)
+    if (!Number.isFinite(n) || n < 1) { toast.error('Enter the next number (1 or higher)'); return }
+    if (counter && n <= counter.last_seq && !(await confirmDialog({ title: 'Reuse an earlier number?', message: `The next number (#${n}) is at or below the last used (#${counter.last_seq}). This can create duplicate invoice numbers. Continue?`, confirmLabel: 'Set anyway', danger: true }))) return
+    setSaving(true)
+    const res = await setInvoiceNextNumber(n)
+    setSaving(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success('Invoice numbering updated'); setNextVal(''); load()
+  }
+
+  if (loading) return <div className="card p-5"><div className="skeleton h-5 w-40 mb-3" /><div className="skeleton h-16 w-full" /></div>
+  if (!counter) return null
+
+  return (
+    <div className="card p-5 space-y-3">
+      <div>
+        <h3 className="font-medium text-gray-900">Invoice numbering</h3>
+        <p className="text-xs text-gray-400">Auto-numbered <span className="tnum">INV-YY/NNNN</span> — an annual sequence that resets each fiscal year (starts February). Leave the number blank on a new invoice to auto-assign.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="rounded-lg bg-gray-50 p-3">
+          <p className="text-[11px] text-gray-400">Next invoice will be</p>
+          <p className="tnum font-semibold text-gray-900 mt-0.5">{counter.next_number}</p>
+        </div>
+        <div className="rounded-lg bg-gray-50 p-3">
+          <p className="text-[11px] text-gray-400">Last used · FY {counter.fiscal_year}</p>
+          <p className="tnum text-gray-700 mt-0.5">{counter.last_seq > 0 ? `#${counter.last_seq}` : 'none yet'}</p>
+        </div>
+      </div>
+      <div>
+        <label className="label-base">Set the next number</label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={1} value={nextVal} onChange={e => setNextVal(e.target.value)} placeholder={String(counter.last_seq + 1)} className="input-base py-1.5 text-sm w-32 tnum" />
+          <button onClick={save} disabled={saving || !nextVal} className="btn-primary py-1.5 px-3 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</button>
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1">e.g. enter <span className="tnum">100</span> and the next invoice becomes <span className="tnum">INV-{counter.next_number.slice(4, 6)}/0100</span>, continuing from there. Keep numbers unique.</p>
+      </div>
     </div>
   )
 }
