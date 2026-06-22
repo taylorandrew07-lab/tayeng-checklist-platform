@@ -240,6 +240,15 @@ export function isOverdue(row: { status: Invoice['status']; due_date: string | n
 
 // ── Consolidated, Finance-driven invoices (many vessels on one invoice) ───────
 
+/** The most recently created invoice number — shown when building a new invoice so
+ *  you can see the last number (and pick the next one) or leave it to auto-assign. */
+export async function getLatestInvoiceNumber(): Promise<string | null> {
+  const { data } = await createClient().from('invoices')
+    .select('invoice_number').not('invoice_number', 'is', null)
+    .order('created_at', { ascending: false }).limit(1)
+  return (data?.[0] as any)?.invoice_number ?? null
+}
+
 /** Active clients for the work-client and bill-to dropdowns. */
 export async function listBillingClients(): Promise<{ id: string; name: string }[]> {
   const { data } = await createClient().from('clients').select('id, name').eq('is_active', true).order('name')

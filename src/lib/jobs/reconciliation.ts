@@ -58,20 +58,30 @@ function categorize(job: { workflow_status: WorkflowStatus; client_id: string | 
 
 export async function listReconciliation(): Promise<{ items: ReconItem[]; counts: Record<ReconCategory, number> }> {
   const supabase = createClient()
+  const nowIso = new Date().toISOString()
   const [{ data: jobs }, { data: invoices }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, client_id, workflow_status, client:clients(name)')
-      .neq('workflow_status', 'closed'),
+      .select('id, report_number, vessel_name, client_id, workflow_status, invoice_id, client:clients(name)')
+      .neq('workflow_status', 'closed')
+      // Hide jobs an admin has snoozed (cleared) until the snooze lapses.
+      .or(`recon_snoozed_until.is.null,recon_snoozed_until.lt.${nowIso}`),
     supabase.from('invoices').select('id, job_id, status, due_date, total, currency, last_reminded_at'),
   ])
 
+  // A job links to an invoice via the legacy per-job FK (invoices.job_id) OR the
+  // consolidated stamp (jobs.invoice_id → invoices.id). Index by both so a
+  // consolidated-invoiced job isn't wrongly flagged "invoice missing".
   const byJob = new Map<string, any>()
-  for (const inv of (invoices ?? []) as any[]) if (inv.job_id && !byJob.has(inv.job_id)) byJob.set(inv.job_id, inv)
+  const byId = new Map<string, any>()
+  for (const inv of (invoices ?? []) as any[]) {
+    if (inv.id) byId.set(inv.id, inv)
+    if (inv.job_id && !byJob.has(inv.job_id)) byJob.set(inv.job_id, inv)
+  }
 
   const counts: Record<ReconCategory, number> = { ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, unsent_invoice: 0, overdue_invoice: 0 }
   const items: ReconItem[] = []
   for (const j of (jobs ?? []) as any[]) {
-    const inv = byJob.get(j.id)
+    const inv = byJob.get(j.id) ?? (j.invoice_id ? byId.get(j.invoice_id) : null)
     const category = categorize(j, inv)
     if (!category) continue
     counts[category]++
@@ -86,4 +96,17 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
 
   items.sort((a, b) => RECON_ORDER.indexOf(a.category) - RECON_ORDER.indexOf(b.category))
   return { items, counts }
+}
+
+/** Number of days a cleared reconciliation flag stays hidden before re-surfacing. */
+export const RECON_SNOOZE_DAYS = 14
+
+/** Clear one or many jobs from the reconcile list WITHOUT deleting them — snoozes
+ *  their billing flags for RECON_SNOOZE_DAYS, after which they re-appear. */
+export async function snoozeReconciliation(jobIds: string | string[], days = RECON_SNOOZE_DAYS): Promise<{ error?: string }> {
+  const ids = Array.isArray(jobIds) ? jobIds : [jobIds]
+  if (ids.length === 0) return {}
+  const until = new Date(); until.setDate(until.getDate() + days)
+  const { error } = await createClient().from('jobs').update({ recon_snoozed_until: until.toISOString() }).in('id', ids)
+  return { error: error?.message }
 }

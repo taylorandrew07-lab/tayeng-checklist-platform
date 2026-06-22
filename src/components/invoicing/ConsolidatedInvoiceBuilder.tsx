@@ -13,7 +13,7 @@ import { formatDate } from '@/lib/utils'
 import { money, CURRENCIES } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings,
-  createConsolidatedInvoice, computeTotals, type InvoiceableJob, type TaxDraft,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import type { Currency, ClientRate } from '@/lib/types/database'
 
@@ -31,6 +31,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [lines, setLines] = useState<Record<string, LineState>>({}) // keyed by job id
 
   const [currency, setCurrency] = useState<Currency>('USD')
+  const [invNumber, setInvNumber] = useState('')
+  const [lastInvNumber, setLastInvNumber] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState('')
   const [attention, setAttention] = useState('')
   const [reference, setReference] = useState('')
@@ -40,9 +42,10 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
 
-  // Clients + billing defaults, once.
+  // Clients + billing defaults + the last invoice number, once.
   useEffect(() => {
     listBillingClients().then(setClients)
+    getLatestInvoiceNumber().then(setLastInvNumber)
     getAppSettings().then(s => {
       if (!s) return
       setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }])
@@ -106,6 +109,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const res = await createConsolidatedInvoice({
       client_id: clientId,
       bill_to_client_id: billToId || null,
+      invoice_number: invNumber.trim() || null,
       currency, due_date: dueDate || null, notes: notes || null,
       description: description || null, reference: reference || null,
       attention: attention || null, bank_details: bankDetails || null,
@@ -116,7 +120,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     if (res.error) { toast.error(res.error); return }
     const n = orderedLines.length
     toast.success(`Invoice created for ${n} vessel${n === 1 ? '' : 's'}`)
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate('')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber('')
+    getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
   }
@@ -221,6 +226,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
+              <label className="text-[11px] text-gray-400">Invoice no.</label>
+              <input value={invNumber} onChange={e => setInvNumber(e.target.value)} placeholder="auto (YY-MM-NNN)" className={`${cell} tnum`} />
+              <p className="text-[11px] text-gray-400 mt-0.5">{lastInvNumber ? <>Last: <span className="tnum">{lastInvNumber}</span> · blank = auto</> : 'Leave blank to auto-number'}</p>
+            </div>
+            <div>
               <label className="text-[11px] text-gray-400">Currency</label>
               <select value={currency} onChange={e => setCurrency(e.target.value as Currency)} className={cell}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
             </div>
@@ -228,10 +238,10 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
               <label className="text-[11px] text-gray-400">Due date</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={cell} />
             </div>
-            <div>
-              <label className="text-[11px] text-gray-400">Your ref / PO no. (optional)</label>
-              <input value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. PO 4500284686" className={cell} />
-            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-gray-400">Your ref / PO no. (optional)</label>
+            <input value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. PO 4500284686" className={cell} />
           </div>
           <div>
             <label className="text-[11px] text-gray-400">Attention (optional)</label>

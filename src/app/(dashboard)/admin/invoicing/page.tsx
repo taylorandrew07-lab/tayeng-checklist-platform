@@ -16,7 +16,7 @@ import {
   listInvoices, isOverdue, listClientRates, addClientRate, updateClientRate, deleteClientRate,
   getAppSettings, updateAppSettings, logInvoiceReminder, type InvoiceListRow,
 } from '@/lib/jobs/invoicing'
-import { listReconciliation, RECON_META, RECON_ORDER, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
+import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
@@ -255,6 +255,14 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
   const load = () => listReconciliation().then(r => { setItems(r.items); setCounts(r.counts); onCount?.(r.items.length) })
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  async function clearAll() {
+    if (!items || items.length === 0) return
+    if (!(await confirmDialog({ title: 'Clear all flags?', message: `Hide all ${items.length} reconciliation item${items.length === 1 ? '' : 's'} for ${RECON_SNOOZE_DAYS} days. The jobs aren't deleted — flags re-check automatically later.`, confirmLabel: 'Clear all' }))) return
+    const res = await snoozeReconciliation(items.map(i => i.job_id))
+    if (res.error) { toast.error(res.error); return }
+    toast.success('All cleared'); load()
+  }
+
   if (items === null) return <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
 
   if (items.length === 0) {
@@ -269,10 +277,13 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500 flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-amber-500" />
-        {items.length} job{items.length === 1 ? '' : 's'} need attention so billing isn&apos;t forgotten.
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-gray-500 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          {items.length} job{items.length === 1 ? '' : 's'} need attention so billing isn&apos;t forgotten.
+        </p>
+        <button onClick={clearAll} className="btn-ghost py-1 px-2.5 text-xs text-gray-500 hover:text-gray-800 shrink-0"><X className="h-3.5 w-3.5" /> Clear all</button>
+      </div>
       {RECON_ORDER.filter(c => (counts?.[c] ?? 0) > 0).map(cat => {
         const meta = RECON_META[cat]
         const group = items.filter(i => i.category === cat)
@@ -286,23 +297,43 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
             </div>
             <div className="divide-y divide-gray-50">
               {group.map(i => cat === 'overdue_invoice'
-                ? <OverdueRow key={i.job_id} item={i} onReminded={load} />
+                ? <OverdueRow key={i.job_id} item={i} onReminded={load} onCleared={load} />
                 : (
-                  <Link key={i.job_id} href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
-                    <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
-                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
-                    </div>
-                    {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
-                    <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
-                  </Link>
+                  <div key={i.job_id} className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50/60 transition-colors">
+                    <Link href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-2 py-2 min-w-0 flex-1">
+                      <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
+                        {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
+                      </div>
+                      {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
+                      <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+                    </Link>
+                    <ClearReconButton jobId={i.job_id} onCleared={load} />
+                  </div>
                 ))}
             </div>
           </div>
         )
       })}
     </div>
+  )
+}
+
+function ClearReconButton({ jobId, onCleared }: { jobId: string; onCleared: () => void }) {
+  const [busy, setBusy] = useState(false)
+  async function clear() {
+    setBusy(true)
+    const res = await snoozeReconciliation(jobId)
+    setBusy(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success('Cleared'); onCleared()
+  }
+  return (
+    <button onClick={clear} disabled={busy} title={`Hide for now — re-checks in ${RECON_SNOOZE_DAYS} days`}
+      className="btn-ghost py-1 px-2 text-xs text-gray-400 hover:text-gray-700 shrink-0">
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />} Clear
+    </button>
   )
 }
 
@@ -313,7 +344,7 @@ function daysOverdue(due: string | null): number {
   return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86_400_000))
 }
 
-function OverdueRow({ item, onReminded }: { item: ReconItem; onReminded: () => void }) {
+function OverdueRow({ item, onReminded, onCleared }: { item: ReconItem; onReminded: () => void; onCleared: () => void }) {
   const [busy, setBusy] = useState(false)
   const days = daysOverdue(item.due_date)
 
@@ -342,6 +373,7 @@ function OverdueRow({ item, onReminded }: { item: ReconItem; onReminded: () => v
       <button onClick={remind} disabled={busy} className="btn-secondary py-1 px-2.5 text-xs shrink-0">
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />} Log reminder
       </button>
+      <ClearReconButton jobId={item.job_id} onCleared={onCleared} />
     </div>
   )
 }
