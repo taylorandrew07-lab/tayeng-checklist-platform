@@ -1,7 +1,7 @@
 /* Minimal service worker for offline app-shell + previously-visited pages.
    Never caches Supabase (cross-origin) or same-origin /api responses, so
    private API/auth/storage data is never stored. */
-const VERSION = 'v3'
+const VERSION = 'v4'
 const STATIC_CACHE = `tayeng-static-${VERSION}`
 const PAGE_CACHE = `tayeng-pages-${VERSION}`
 const OFFLINE_URL = '/offline'

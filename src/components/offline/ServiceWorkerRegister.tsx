@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RefreshCw, Share, X, HardDrive } from 'lucide-react'
+import { dirtyState } from '@/lib/dirty-state'
 
 /**
  * Registers the offline service worker for staff and surfaces three field-friendly
@@ -14,6 +15,8 @@ export default function ServiceWorkerRegister({ enabled }: { enabled: boolean })
   const [updateReady, setUpdateReady] = useState(false)
   const [iosHint, setIosHint] = useState(false)
   const [quotaWarn, setQuotaWarn] = useState(false)
+  const regRef = useRef<ServiceWorkerRegistration | null>(null)
+  const reloadedRef = useRef(false)
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
@@ -26,25 +29,54 @@ export default function ServiceWorkerRegister({ enabled }: { enabled: boolean })
       return
     }
 
+    // Refresh onto the new version automatically — but NEVER while the surveyor has
+    // unsaved checklist edits or the app is backgrounded. In those cases the banner
+    // waits and it auto-applies the moment they're idle (e.g. after they submit).
+    // This is what stops surveyors running a stale app (the cause of submit issues)
+    // without anyone deleting/reinstalling.
+    const applyUpdate = () => {
+      if (reloadedRef.current) return
+      if (dirtyState.isDirty) return
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      reloadedRef.current = true
+      window.location.reload()
+    }
+
     const watch = (reg: ServiceWorkerRegistration) => {
       reg.addEventListener('updatefound', () => {
         const sw = reg.installing
         if (!sw) return
         sw.addEventListener('statechange', () => {
           // A new worker finished installing while an old one controls the page → update available.
-          if (sw.state === 'installed' && navigator.serviceWorker.controller) setUpdateReady(true)
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) { setUpdateReady(true); applyUpdate() }
         })
       })
     }
 
     const register = () => {
       navigator.serviceWorker.register('/sw.js').then(reg => {
+        regRef.current = reg
         watch(reg)
         reg.update().catch(() => {})
       }).catch(() => {})
     }
     if (document.readyState === 'complete') register()
     else window.addEventListener('load', register, { once: true })
+
+    // A long-open PWA never reloads on its own, so it can sit on a stale version for
+    // a day+. Poll for a new one when the app regains focus and every 15 min, then
+    // apply it when safe. This closes the staleness window with no manual reinstall.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      regRef.current?.update().catch(() => {})
+      applyUpdate()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    const interval = setInterval(() => { regRef.current?.update().catch(() => {}) }, 15 * 60 * 1000)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(interval)
+    }
   }, [enabled])
 
   // iOS "Add to Home Screen" hint (installed PWAs get much stronger iOS storage).
