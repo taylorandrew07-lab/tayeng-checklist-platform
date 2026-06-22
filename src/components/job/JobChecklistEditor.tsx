@@ -631,8 +631,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               missing.push(field.label)
             } else if (field.field_type === 'photo' && !(fieldPhotos[field.id]?.length)) {
               missing.push(field.label)
-            } else if (!['signature', 'multiple_choice', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type) && !values[field.id]) {
-              missing.push(field.label)
+            } else if (!['signature', 'multiple_choice', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
+              // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
+              // so a field with only remarks (no Yes/No/Pass/Fail picked) still counts as missing.
+              const raw = values[field.id] ?? ''
+              const answerPart = raw.includes('|||') ? raw.split('|||')[0] : raw
+              if (!answerPart.trim()) missing.push(field.label)
             }
           }
         }
