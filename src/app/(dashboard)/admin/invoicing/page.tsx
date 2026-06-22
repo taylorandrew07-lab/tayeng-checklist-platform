@@ -385,19 +385,24 @@ function RatesTab() {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState('')
   const [rates, setRates] = useState<ClientRate[]>([])
+  const [allRates, setAllRates] = useState<ClientRate[]>([])
   const [jobTypes, setJobTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
 
+  const loadAll = async () => setAllRates(await listClientRates())
+
   useEffect(() => {
     (async () => {
       const supabase = createClient()
-      const [{ data: cli }, jt] = await Promise.all([
-        supabase.from('clients').select('*').eq('is_active', true).order('name'),
+      const [{ data: cli }, jt, all] = await Promise.all([
+        supabase.from('clients').select('*').order('name'),
         listJobTypes(),
+        listClientRates(),
       ])
       setClients((cli ?? []) as Client[])
       setJobTypes(jt.map(t => t.name))
+      setAllRates(all)
       setLoading(false)
     })()
   }, [])
@@ -405,23 +410,38 @@ function RatesTab() {
   async function loadRates(id: string) { setRates(id ? await listClientRates(id) : []) }
   useEffect(() => { loadRates(clientId) }, [clientId])
 
+  // Refresh both the selected client's rates and the cross-client overview.
+  function afterChange() { loadRates(clientId); loadAll() }
+
   if (loading) return <div className="skeleton h-32 w-full" />
 
+  // Group every entered rate by client for the at-a-glance overview.
+  const clientById = new Map(clients.map(c => [c.id, c]))
+  const byClient = new Map<string, ClientRate[]>()
+  for (const r of allRates) { const a = byClient.get(r.client_id) ?? []; a.push(r); byClient.set(r.client_id, a) }
+  const withRates = [...byClient.entries()]
+    .map(([cid, rs]) => ({ client: clientById.get(cid), rs }))
+    .filter((x): x is { client: Client; rs: ClientRate[] } => !!x.client)
+    .sort((a, b) => a.client.name.localeCompare(b.client.name))
+  const activeCount = clients.filter(c => c.is_active).length
+  const selected = clientId ? clientById.get(clientId) : undefined
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="max-w-sm">
         <label className="label-base">Client</label>
         <select value={clientId} onChange={e => setClientId(e.target.value)} className="input-base">
           <option value="">— Select a client —</option>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
 
       {clientId && (
         <div className="card divide-y divide-gray-100">
+          <div className="px-4 py-2.5 text-sm font-medium text-gray-700">{selected?.name ?? 'Client'} — rates</div>
           {rates.length === 0 && !adding && <p className="p-5 text-sm text-gray-400">No rates set for this client. Jobs will start blank.</p>}
-          {rates.map(r => <RateRow key={r.id} rate={r} jobTypes={jobTypes} onChanged={() => loadRates(clientId)} />)}
-          {adding && <RateEditor clientId={clientId} jobTypes={jobTypes} onDone={() => { setAdding(false); loadRates(clientId) }} />}
+          {rates.map(r => <RateRow key={r.id} rate={r} jobTypes={jobTypes} onChanged={afterChange} />)}
+          {adding && <RateEditor clientId={clientId} jobTypes={jobTypes} onDone={() => { setAdding(false); afterChange() }} />}
           {!adding && (
             <div className="p-4">
               <button onClick={() => setAdding(true)} className="btn-secondary py-1.5 px-3 text-sm"><Plus className="h-4 w-4" /> Add rate</button>
@@ -429,6 +449,27 @@ function RatesTab() {
           )}
         </div>
       )}
+
+      {/* Overview: which clients actually have rates entered */}
+      <div>
+        <h3 className="section-title mb-2">Clients with rates <span className="text-xs font-normal text-gray-400">· {withRates.length} of {activeCount}</span></h3>
+        {withRates.length === 0 ? (
+          <div className="card p-6 text-center text-sm text-gray-400">No client rates entered yet. Pick a client above and add their rates.</div>
+        ) : (
+          <div className="card divide-y divide-gray-50">
+            {withRates.map(({ client, rs }) => (
+              <button key={client.id} onClick={() => setClientId(client.id)}
+                className={cn('w-full text-left flex items-start justify-between gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors', clientId === client.id && 'bg-brand-50/50')}>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{client.name}{!client.is_active && <span className="text-[10px] text-gray-400 ml-1.5">inactive</span>}</p>
+                  <p className="text-xs text-gray-500 truncate">{rs.map(r => `${r.job_type || 'Any'} · ${rateSummary(r)}`).join('   ·   ')}</p>
+                </div>
+                <span className="text-xs text-gray-400 tnum shrink-0">{rs.length} rate{rs.length === 1 ? '' : 's'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
