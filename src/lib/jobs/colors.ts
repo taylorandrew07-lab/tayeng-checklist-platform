@@ -10,7 +10,9 @@ export const JOB_PALETTE: PaletteOption[] = [
   { key: 'slate',   label: 'Slate',   bg: '#f1f5f9', fg: '#334155' },
   { key: 'gray',    label: 'Gray',    bg: '#f3f4f6', fg: '#374151' },
   { key: 'rose',    label: 'Rose',    bg: '#ffe4e6', fg: '#9f1239' },
+  { key: 'red',     label: 'Red',     bg: '#fee2e2', fg: '#991b1b' },
   { key: 'orange',  label: 'Orange',  bg: '#ffedd5', fg: '#9a3412' },
+  { key: 'brown',   label: 'Brown',   bg: '#f1e7da', fg: '#6b4423' },
   { key: 'amber',   label: 'Amber',   bg: '#fef3c7', fg: '#92400e' },
   { key: 'yellow',  label: 'Yellow',  bg: '#fef9c3', fg: '#854d0e' },
   { key: 'emerald', label: 'Emerald', bg: '#d1fae5', fg: '#065f46' },
@@ -18,6 +20,7 @@ export const JOB_PALETTE: PaletteOption[] = [
   { key: 'sky',     label: 'Sky',     bg: '#e0f2fe', fg: '#075985' },
   { key: 'indigo',  label: 'Indigo',  bg: '#e0e7ff', fg: '#3730a3' },
   { key: 'violet',  label: 'Violet',  bg: '#ede9fe', fg: '#5b21b6' },
+  { key: 'purple',  label: 'Purple',  bg: '#f3e8ff', fg: '#6b21a8' },
   { key: 'pink',    label: 'Pink',    bg: '#fce7f3', fg: '#9d174d' },
 ]
 

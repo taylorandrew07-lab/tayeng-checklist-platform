@@ -9,7 +9,7 @@ import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 
 interface Person {
   id: string; full_name: string; role: string
-  vehicle_number: string | null; employee_number: string | null
+  vehicle_number: string | null; employee_number: string | null; phone: string | null
 }
 interface CredRow {
   id: string; profile_id: string; credential_key: string | null
@@ -25,6 +25,7 @@ interface Col { key: string; label: string; group: string; get: (p: Person, c: C
 const COLS: Col[] = [
   { key: 'role', label: 'Role', group: 'Identifiers', get: p => p.role },
   { key: 'employee_number', label: 'Employee #', group: 'Identifiers', get: p => p.employee_number ?? '' },
+  { key: 'phone', label: 'Phone', group: 'Identifiers', get: p => p.phone ?? '' },
   { key: 'vehicle_number', label: 'Vehicle #', group: 'Identifiers', get: p => p.vehicle_number ?? '' },
   { key: 'dp_number', label: "Driver's permit #", group: "Driver's permit", get: (_p, c) => c.drivers_permit?.doc_number ?? '' },
   { key: 'dp_expiry', label: "Driver's permit expiry", group: "Driver's permit", get: (_p, c) => c.drivers_permit?.expiry_date ?? '' },
@@ -41,7 +42,7 @@ const COLS: Col[] = [
   { key: 'coc_stage', label: 'CoC stage', group: 'CoC', get: (_p, c) => c.coc?.coc_stage ?? '' },
 ]
 const COL_GROUPS = [...new Set(COLS.map(c => c.group))]
-const DEFAULT_COLS = ['employee_number', 'vehicle_number', 'dp_number', 'dp_expiry', 'id_number', 'id_expiry', 'pp_number', 'pp_expiry']
+const DEFAULT_COLS = ['phone', 'employee_number', 'vehicle_number', 'dp_number', 'dp_expiry', 'id_number', 'id_expiry', 'pp_number', 'pp_expiry']
 
 export default function PersonnelPage() {
   const [allowed, setAllowed] = useState(true)
@@ -71,7 +72,7 @@ export default function PersonnelPage() {
 
       const { data: profs } = await supabase
         .from('profiles')
-        .select('id, full_name, role, vehicle_number, employee_number')
+        .select('id, full_name, role, vehicle_number, employee_number, phone')
         .in('role', ['surveyor', 'admin']).eq('is_active', true).order('full_name')
       const staff = (profs as Person[]) ?? []
       const ids = staff.map(p => p.id)
