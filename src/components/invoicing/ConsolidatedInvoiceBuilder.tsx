@@ -7,7 +7,7 @@
 // Creating the invoice stamps each job with it, so each vessel shows its invoice.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, X, Loader2, Receipt, Users, CheckSquare, Square } from 'lucide-react'
+import { Plus, X, Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
 import { money, CURRENCIES } from '@/lib/jobs/tracker'
@@ -15,6 +15,7 @@ import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
+import LineItemsEditor, { type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 
 interface LineState { description: string; qty: number; unit_price: number }
@@ -29,6 +30,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [rates, setRates] = useState<ClientRate[]>([])
   const [lines, setLines] = useState<Record<string, LineState>>({}) // keyed by job id
+  const [extra, setExtra] = useState<DraftLine[]>([])               // manual lines + expenses
 
   const [currency, setCurrency] = useState<Currency>('USD')
   const [invNumber, setInvNumber] = useState('')
@@ -107,13 +109,24 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const setTax = (i: number, patch: Partial<TaxDraft>) => setTaxes(ts => ts.map((t, j) => j === i ? { ...t, ...patch } : t))
 
   const orderedLines = jobs.filter(j => lines[j.id]).map(j => ({ job: j, ...lines[j.id] }))
-  const totals = computeTotals(orderedLines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })), taxes)
+  const allDrafts = [
+    ...orderedLines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
+    ...extra.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
+  ]
+  const lineCount = orderedLines.length + extra.length
+  const totals = computeTotals(allDrafts, taxes)
   const clientName = clients.find(c => c.id === clientId)?.name ?? ''
   const billToName = clients.find(c => c.id === billToId)?.name ?? ''
 
+  // The note saved against this client's rate for a job's type (e.g. initial/final fees).
+  function rateNoteFor(job: InvoiceableJob): string | null {
+    const active = rates.filter(r => r.is_active)
+    return (active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type))?.notes ?? null
+  }
+
   async function create() {
-    if (!clientId) { toast.error('Choose the client whose vessels you are billing'); return }
-    if (orderedLines.length === 0) { toast.error('Select at least one job to invoice'); return }
+    if (!clientId) { toast.error('Choose a client'); return }
+    if (lineCount === 0) { toast.error('Add at least one job, line or expense'); return }
     setSaving(true)
     const res = await createConsolidatedInvoice({
       client_id: clientId,
@@ -122,14 +135,17 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       currency, due_date: dueDate || null, notes: notes || null,
       description: description || null, reference: reference || null,
       attention: attention || null, bank_details: bankDetails || null,
-      lines: orderedLines.map(l => ({ job_id: l.job.id, description: l.description, qty: l.qty, unit_price: l.unit_price })),
+      lines: [
+        ...orderedLines.map(l => ({ job_id: l.job.id, description: l.description, qty: l.qty, unit_price: l.unit_price, is_expense: false })),
+        ...extra.map(l => ({ job_id: null, description: l.description, qty: l.qty, unit_price: l.unit_price, is_expense: l.is_expense, receipt_path: l.receipt_path })),
+      ],
       taxes: taxes.filter(t => t.name.trim()),
     })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
-    const n = orderedLines.length
-    toast.success(`Invoice created for ${n} vessel${n === 1 ? '' : 's'}`)
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber('')
+    const v = orderedLines.length
+    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber(''); setExtra([])
     getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
@@ -191,6 +207,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
               {jobs.map(j => {
                 const sel = !!lines[j.id]
                 const ls = lines[j.id]
+                const note = rateNoteFor(j)
                 return (
                   <div key={j.id} className={sel ? 'px-4 py-3 bg-brand-50/30' : 'px-4 py-3'}>
                     <div className="flex items-start gap-3">
@@ -214,6 +231,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         ) : (
                           <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
                         )}
+                        {note && <p className="text-[11px] text-amber-700 mt-1">Rate note: {note}</p>}
                       </div>
                     </div>
                   </div>
@@ -229,8 +247,19 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         </div>
       )}
 
+      {/* 2b — Expenses & extra lines (works standalone, with no jobs ticked) */}
+      {clientId && (
+        <div className="card p-5 space-y-3">
+          <div>
+            <h3 className="font-medium text-gray-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-brand-500" /> Expenses &amp; extra lines</h3>
+            <p className="text-xs text-gray-400">Reimbursable expenses (e.g. a launch) with the vendor receipt + value, or any extra line. Leave the vessels above unticked to bill a standalone invoice.</p>
+          </div>
+          <LineItemsEditor lines={extra} setLines={setExtra} currency={currency} />
+        </div>
+      )}
+
       {/* 3 — Invoice details */}
-      {clientId && orderedLines.length > 0 && (
+      {clientId && lineCount > 0 && (
         <div className="card p-5 space-y-3">
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -267,7 +296,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
               <div key={i} className="grid grid-cols-[1fr_5rem_5rem_auto] gap-2 items-center">
                 <input value={t.name} onChange={e => setTax(i, { name: e.target.value })} placeholder="Tax name" className={cell} />
                 <div className="relative"><input type="number" min={0} step="0.01" value={t.rate} onChange={e => setTax(i, { rate: Number(e.target.value) })} className={`${cell} text-right pr-5`} /><span className="absolute right-2 top-1.5 text-xs text-gray-400">%</span></div>
-                <span className="text-sm text-gray-700 text-right tnum">{computeTotals(orderedLines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })), [t]).tax_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-sm text-gray-700 text-right tnum">{computeTotals(allDrafts, [t]).tax_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 <button onClick={() => setTaxes(ts => ts.filter((_, j) => j !== i))} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>
               </div>
             ))}
@@ -301,7 +330,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           <div className="flex items-center gap-2 pt-1">
             <button onClick={create} disabled={saving} className="btn-primary py-2 px-4 text-sm">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
-              Create invoice ({orderedLines.length} {orderedLines.length === 1 ? 'vessel' : 'vessels'})
+              Create invoice{orderedLines.length > 0 ? ` (${orderedLines.length} ${orderedLines.length === 1 ? 'vessel' : 'vessels'})` : ''}
             </button>
             <span className="text-sm text-gray-400 tnum">{money(totals.total, currency)}</span>
           </div>

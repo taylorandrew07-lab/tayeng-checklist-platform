@@ -22,6 +22,7 @@ import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECO
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
+import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
 import type { Client, ClientRate, Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'rates' | 'settings'
@@ -194,6 +195,7 @@ function InvoicesTab() {
   const [filter, setFilter] = useState<StatusFilter>('open')
   const [q, setQ] = useState('')
   const [shown, setShown] = useState(INVOICES_PAGE)
+  const [editId, setEditId] = useState<string | null>(null)
 
   const load = () => listInvoices().then(setRows)
   useEffect(() => { load() }, [])
@@ -235,7 +237,7 @@ function InvoicesTab() {
         <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
       ) : (
         <>
-          <InvoicesTable rows={paged} manage onChanged={load} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
+          <InvoicesTable rows={paged} manage onChanged={load} onEdit={r => setEditId(r.id)} hrefFor={r => r.job_id ? `/admin/jobs/${r.job_id}` : null} />
           {filtered.length > shown && (
             <div className="text-center pt-1">
               <button onClick={() => setShown(s => s + INVOICES_PAGE)} className="btn-secondary">
@@ -245,6 +247,7 @@ function InvoicesTab() {
           )}
         </>
       )}
+      {editId && <InvoiceEditModal invoiceId={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); load() }} />}
     </div>
   )
 }

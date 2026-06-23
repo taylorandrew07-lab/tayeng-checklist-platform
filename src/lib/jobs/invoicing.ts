@@ -338,7 +338,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   return rows
 }
 
-export interface ConsolidatedLine { job_id: string; description: string; qty: number; unit_price: number }
+export interface ConsolidatedLine { job_id: string | null; description: string; qty: number; unit_price: number; is_expense?: boolean; receipt_path?: string | null }
 
 /** Create one invoice spanning many jobs/vessels, stamp each job with it, and
  *  advance those jobs to "invoiced". client_id = whose vessels these are (e.g. BP);
@@ -371,9 +371,10 @@ export async function createConsolidatedInvoice(input: {
   const invoiceId = ins.id as string
 
   const lineRows = input.lines.map((l, i) => ({
-    invoice_id: invoiceId, job_id: l.job_id, description: l.description,
+    invoice_id: invoiceId, job_id: l.job_id ?? null, description: l.description,
     qty: Number(l.qty) || 0, unit_price: Number(l.unit_price) || 0,
     amount: r2((Number(l.qty) || 0) * (Number(l.unit_price) || 0)), sort: i,
+    is_expense: !!l.is_expense, receipt_path: l.receipt_path ?? null,
   }))
   const { error: liErr } = await supabase.from('invoice_line_items').insert(lineRows)
   if (liErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: liErr.message } }
@@ -423,4 +424,93 @@ export async function deleteInvoice(invoiceId: string): Promise<{ error?: string
   }
   await logActivity('invoice', invoiceId, 'invoice:delete', { jobs: jobIds.length })
   return {}
+}
+
+// ── Editing an existing invoice (lines, expenses, receipts, values) ───────────
+export interface EditableLine {
+  description: string; qty: number; unit_price: number
+  is_expense: boolean; receipt_path: string | null; job_id: string | null
+  vessel_name?: string | null; report_number?: string | null
+}
+export interface InvoiceForEdit { invoice: Invoice; lines: EditableLine[]; taxes: TaxDraft[] }
+
+export async function getInvoiceForEdit(invoiceId: string): Promise<InvoiceForEdit | null> {
+  const supabase = createClient()
+  const { data: invoice } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
+  if (!invoice) return null
+  const [{ data: lines }, { data: taxes }] = await Promise.all([
+    // invoice_line_items → jobs is a single FK (job_id), so the embed needs no hint.
+    supabase.from('invoice_line_items').select('*, job:jobs(vessel_name, report_number)').eq('invoice_id', invoiceId).order('sort'),
+    supabase.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
+  ])
+  return {
+    invoice: invoice as Invoice,
+    lines: ((lines ?? []) as any[]).map(l => ({
+      description: l.description, qty: Number(l.qty), unit_price: Number(l.unit_price),
+      is_expense: !!l.is_expense, receipt_path: l.receipt_path ?? null, job_id: l.job_id ?? null,
+      vessel_name: l.job?.vessel_name ?? null, report_number: l.job?.report_number ?? null,
+    })),
+    taxes: ((taxes ?? []) as any[]).map(t => ({ name: t.name, rate: Number(t.rate) })),
+  }
+}
+
+/** Replace an invoice's header fields, line items (incl. expenses/receipts) and
+ *  taxes, recomputing totals. Used by the Finance invoice editor. */
+export async function updateInvoice(invoiceId: string, data: {
+  invoice_number?: string | null
+  currency: Currency; due_date: string | null; notes: string | null
+  description: string | null; reference: string | null; attention: string | null; bank_details: string | null
+  bill_to_client_id?: string | null
+  lines: EditableLine[]; taxes: TaxDraft[]
+}): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { subtotal, taxAmounts, tax_total, total } = computeTotals(data.lines, data.taxes)
+  const header: Record<string, unknown> = {
+    currency: data.currency, due_date: data.due_date || null, notes: data.notes || null,
+    description: data.description || null, reference: data.reference || null,
+    attention: data.attention || null, bank_details: data.bank_details || null,
+    subtotal, tax_total, total,
+  }
+  if (data.invoice_number !== undefined) header.invoice_number = data.invoice_number || null
+  if (data.bill_to_client_id !== undefined) header.bill_to_client_id = data.bill_to_client_id || null
+
+  const { data: upd, error } = await supabase.from('invoices').update(header).eq('id', invoiceId).select('id')
+  if (error) return { error: error.message }
+  if (!upd || upd.length === 0) return { error: 'Could not save — permission denied or the invoice no longer exists.' }
+
+  await supabase.from('invoice_line_items').delete().eq('invoice_id', invoiceId)
+  if (data.lines.length) {
+    const rows = data.lines.map((l, i) => ({
+      invoice_id: invoiceId, job_id: l.job_id ?? null, description: l.description,
+      qty: Number(l.qty) || 0, unit_price: Number(l.unit_price) || 0,
+      amount: r2((Number(l.qty) || 0) * (Number(l.unit_price) || 0)), sort: i,
+      is_expense: !!l.is_expense, receipt_path: l.receipt_path ?? null,
+    }))
+    const { error: e } = await supabase.from('invoice_line_items').insert(rows)
+    if (e) return { error: e.message }
+  }
+  await supabase.from('invoice_taxes').delete().eq('invoice_id', invoiceId)
+  if (data.taxes.length) {
+    const rows = data.taxes.map((t, i) => ({ invoice_id: invoiceId, name: t.name, rate: Number(t.rate) || 0, amount: taxAmounts[i] }))
+    const { error: e } = await supabase.from('invoice_taxes').insert(rows)
+    if (e) return { error: e.message }
+  }
+  await logActivity('invoice', invoiceId, 'invoice:update', { total })
+  return {}
+}
+
+// ── Receipt attachments (private invoice-receipts bucket) ─────────────────────
+export async function uploadInvoiceReceipt(file: File): Promise<{ path?: string; error?: string }> {
+  const supabase = createClient()
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${crypto.randomUUID()}-${safe}`
+  const { error } = await supabase.storage.from('invoice-receipts').upload(path, file, { contentType: file.type, upsert: false })
+  if (error) return { error: error.message }
+  return { path }
+}
+
+/** Short-lived signed URL to view/download a receipt (bucket is private). */
+export async function invoiceReceiptUrl(path: string): Promise<string | null> {
+  const { data } = await createClient().storage.from('invoice-receipts').createSignedUrl(path, 3600)
+  return data?.signedUrl ?? null
 }

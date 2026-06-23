@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { FileText, Mail, Send, CheckCircle2, Trash2, Loader2 } from 'lucide-react'
+import { FileText, Mail, Send, CheckCircle2, Trash2, Loader2, Pencil } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { money } from '@/lib/jobs/tracker'
 import { toast } from '@/components/ui/toast'
@@ -39,7 +39,7 @@ function SubLine({ row }: { row: InvoiceListRow }) {
   )
 }
 
-function RowActions({ row, onChanged }: { row: InvoiceListRow; onChanged: () => void }) {
+function RowActions({ row, onChanged, onEdit }: { row: InvoiceListRow; onChanged: () => void; onEdit?: (row: InvoiceListRow) => void }) {
   const [busy, setBusy] = useState<string | null>(null)
 
   async function advance(next: 'sent' | 'paid') {
@@ -76,6 +76,7 @@ function RowActions({ row, onChanged }: { row: InvoiceListRow; onChanged: () => 
   const btn = 'btn-ghost py-1 px-1.5 text-gray-400'
   return (
     <div className="flex items-center justify-end gap-0.5">
+      {onEdit && <button onClick={() => onEdit(row)} title="Edit" className={`${btn} hover:text-brand-600`}><Pencil className="h-3.5 w-3.5" /></button>}
       <a href={`/api/invoice-pdf/${row.id}`} target="_blank" rel="noopener noreferrer" title="PDF" className={`${btn} hover:text-brand-600`}><FileText className="h-3.5 w-3.5" /></a>
       <button onClick={email} disabled={!!busy} title="Email draft" className={`${btn} hover:text-brand-600`}>{busy === 'email' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}</button>
       {row.status === 'draft' && <button onClick={() => advance('sent')} disabled={!!busy} title="Mark sent" className={`${btn} hover:text-cyan-700`}>{busy === 'sent' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}</button>}
@@ -85,11 +86,12 @@ function RowActions({ row, onChanged }: { row: InvoiceListRow; onChanged: () => 
   )
 }
 
-export default function InvoicesTable({ rows, hrefFor, manage, onChanged }: {
+export default function InvoicesTable({ rows, hrefFor, manage, onChanged, onEdit }: {
   rows: InvoiceListRow[]
   hrefFor?: (row: InvoiceListRow) => string | null
   manage?: boolean
   onChanged?: () => void
+  onEdit?: (row: InvoiceListRow) => void
 }) {
   if (rows.length === 0) {
     return <div className="card p-10 text-center text-sm text-gray-400">No invoices yet.</div>
@@ -133,7 +135,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged }: {
                   <td className="px-4 py-3 text-gray-500">{formatDate(r.issue_date)}</td>
                   <td className="px-4 py-3 text-gray-500">{r.due_date ? formatDate(r.due_date) : '—'}</td>
                   <td className="px-4 py-3"><StatusPill row={r} /></td>
-                  {manage && <td className="px-4 py-3"><RowActions row={r} onChanged={refresh} /></td>}
+                  {manage && <td className="px-4 py-3"><RowActions row={r} onChanged={refresh} onEdit={onEdit} /></td>}
                 </tr>
               )
             })}
@@ -160,7 +162,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged }: {
                 <span className="text-gray-400 text-xs">Due {r.due_date ? formatDate(r.due_date) : '—'}</span>
                 <span className="tnum font-semibold text-gray-900">{money(r.total, r.currency)}</span>
               </div>
-              {manage && <div className="mt-2 pt-2 border-t border-gray-100"><RowActions row={r} onChanged={refresh} /></div>}
+              {manage && <div className="mt-2 pt-2 border-t border-gray-100"><RowActions row={r} onChanged={refresh} onEdit={onEdit} /></div>}
             </div>
           )
         })}
