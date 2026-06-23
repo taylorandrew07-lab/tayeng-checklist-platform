@@ -10,6 +10,7 @@ import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
 import type { TemplateStatus } from '@/lib/types/database'
 import { dirtyState } from '@/lib/dirty-state'
 import { withTimeout } from '@/lib/utils'
+import { useAutoSave } from '@/lib/useAutoSave'
 
 export default function EditTemplatePage() {
   const router = useRouter()
@@ -61,6 +62,15 @@ export default function EditTemplatePage() {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
+
+  // Auto-save edits (debounced) — no need to press Save. handleSave upserts by id
+  // and re-baselines, so repeated saves are safe and it clears isDirty (no loop).
+  // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
+  useAutoSave(
+    () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
+    [name, description, status, allowSurveyorStart, color, sections, isDirty],
+    { enabled: !loading },
+  )
 
   useEffect(() => {
     async function load() {

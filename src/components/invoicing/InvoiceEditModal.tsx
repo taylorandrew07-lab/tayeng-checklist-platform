@@ -4,13 +4,14 @@
 // expenses (with receipts + editable values) and taxes. Job-linked lines keep their
 // vessel and can't be removed here. Used from the Finance invoices ledger.
 
-import { useEffect, useState } from 'react'
-import { Loader2, Save, Plus, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2, Check, Plus, X } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import { money, CURRENCIES } from '@/lib/jobs/tracker'
 import { getInvoiceForEdit, updateInvoice, computeTotals, type TaxDraft } from '@/lib/jobs/invoicing'
 import LineItemsEditor, { type DraftLine } from '@/components/invoicing/LineItemsEditor'
+import { useAutoSave } from '@/lib/useAutoSave'
 import type { Currency } from '@/lib/types/database'
 
 export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invoiceId: string; onClose: () => void; onSaved: () => void }) {
@@ -26,11 +27,16 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
+  const [dirty, setDirty] = useState(false)
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const loadedRef = useRef(false)
+  const skipDirtyRef = useRef(false)
 
   useEffect(() => {
     getInvoiceForEdit(invoiceId).then(d => {
       if (!d) { toast.error('Invoice not found'); onClose(); return }
       const inv = d.invoice
+      skipDirtyRef.current = true // suppress the dirty flag for this hydration batch
       setNumber(inv.invoice_number ?? '')
       setCurrency(inv.currency)
       setDueDate(inv.due_date ?? '')
@@ -45,6 +51,7 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
         job_id: l.job_id, vessel_name: l.vessel_name, report_number: l.report_number,
       })))
       setTaxes(d.taxes)
+      loadedRef.current = true
       setLoading(false)
     })
   }, [invoiceId, onClose])
@@ -53,8 +60,15 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
   const totals = computeTotals(drafts, taxes)
   const setTax = (i: number, patch: Partial<TaxDraft>) => setTaxes(ts => ts.map((t, j) => j === i ? { ...t, ...patch } : t))
 
-  async function save() {
-    if (lines.length === 0) { toast.error('Add at least one line'); return }
+  // Mark dirty after load, skipping the hydration batch (mirrors the template editor).
+  useEffect(() => {
+    if (!loadedRef.current) return
+    if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
+    setDirty(true)
+  }, [number, currency, dueDate, attention, reference, description, bankDetails, notes, lines, taxes])
+
+  async function persist(): Promise<boolean> {
+    if (lines.length === 0) return false
     setSaving(true)
     const res = await updateInvoice(invoiceId, {
       invoice_number: number.trim() || null,
@@ -64,16 +78,36 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
       taxes: taxes.filter(t => t.name.trim()),
     })
     setSaving(false)
-    if (res.error) { toast.error(res.error); return }
-    toast.success('Invoice updated'); onSaved()
+    if (res.error) { toast.error(res.error); return false }
+    setDirty(false); setSavedAt(new Date())
+    return true
+  }
+
+  // Auto-save edits (debounced) — no Save button needed. persist() clears dirty so
+  // this won't loop; updateInvoice replaces lines/taxes idempotently.
+  useAutoSave(
+    () => { if (dirty && !saving) void persist() },
+    [number, currency, dueDate, attention, reference, description, bankDetails, notes, lines, taxes, dirty],
+    { enabled: !loading },
+  )
+
+  // Flush any pending edit, then close + refresh the ledger.
+  async function done() {
+    if (dirty && !saving && lines.length) await persist()
+    onSaved()
   }
 
   const cell = 'input-base py-1 text-sm'
   return (
-    <Modal open onClose={onClose} size="xl" title="Edit invoice" footer={
+    <Modal open onClose={done} size="xl" title="Edit invoice" footer={
       <>
-        <button onClick={onClose} className="btn-secondary">Cancel</button>
-        <button onClick={save} disabled={saving || loading} className="btn-primary">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save changes</button>
+        <span className="text-xs text-gray-400 mr-auto inline-flex items-center gap-1.5">
+          {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
+            : dirty ? 'Unsaved changes…'
+            : savedAt ? <><Check className="h-3.5 w-3.5 text-green-600" /> All changes saved</>
+            : null}
+        </span>
+        <button onClick={done} disabled={loading} className="btn-primary">Done</button>
       </>
     }>
       {loading ? (
