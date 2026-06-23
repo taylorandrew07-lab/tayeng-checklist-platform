@@ -191,6 +191,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       return () => clearTimeout(t)
     }, [values, arrayValues, signatures, isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Auto-save to the SERVER (debounced) so changes persist WITHOUT pressing Save —
+    // 2s after you stop editing. Online only; offline edits stay in the local draft
+    // above and push on reconnect. handleSave clears isDirty, so this won't loop, and
+    // upserts are idempotent so a rare overlap with a manual Save is harmless. The
+    // "Save Draft" button stays as a manual flush; a failed auto-save still surfaces
+    // its error and the local draft keeps the data.
+    useEffect(() => {
+      if (!isDirty || readOnly || saving) return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      const t = setTimeout(() => {
+        if (!isDirty || saving) return
+        handleSave().catch(() => { /* local draft holds the data; saveError shows in the UI */ })
+      }, 2000)
+      return () => clearTimeout(t)
+    }, [values, arrayValues, signatures, isDirty]) // eslint-disable-line react-hooks/exhaustive-deps
+
     // Auto-clear the transient "synced" badge.
     useEffect(() => {
       if (syncStatus !== 'synced') return
