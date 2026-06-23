@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, X, Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
-import { money, CURRENCIES } from '@/lib/jobs/tracker'
+import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
@@ -45,11 +45,16 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [notes, setNotes] = useState('')
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
+  // Standalone (no jobs ticked): a job is created for the invoice on the job sheet.
+  const [jobTypes, setJobTypes] = useState<string[]>([])
+  const [newJobVessel, setNewJobVessel] = useState('')
+  const [newJobType, setNewJobType] = useState('')
 
   // Clients + billing defaults + the last invoice number + bank accounts, once.
   useEffect(() => {
     listBillingClients().then(setClients)
     getLatestInvoiceNumber().then(setLastInvNumber)
+    listJobTypes().then(ts => setJobTypes(ts.map(t => t.name)))
     getAppSettings().then(s => { if (s) setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }]) })
     listBankAccounts(true).then(accts => {
       setBankAccounts(accts)
@@ -140,12 +145,18 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         ...extra.map(l => ({ job_id: null, description: l.description, qty: l.qty, unit_price: l.unit_price, is_expense: l.is_expense, receipt_path: l.receipt_path })),
       ],
       taxes: taxes.filter(t => t.name.trim()),
+      // No vessels ticked → create a job for this invoice on the job sheet.
+      new_job: orderedLines.length === 0 ? {
+        title: newJobVessel.trim() ? `M.V. ${newJobVessel.trim()}` : `${clientName || 'Client'} — invoice`,
+        vessel_name: newJobVessel.trim() || null,
+        job_type: newJobType || null,
+      } : null,
     })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     const v = orderedLines.length
-    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created')
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber(''); setExtra([])
+    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created — a job was added to the job sheet')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType('')
     getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
@@ -262,6 +273,25 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       {clientId && lineCount > 0 && (
         <div className="card p-5 space-y-3">
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
+
+          {orderedLines.length === 0 && (
+            <div className="rounded-lg bg-amber-50/60 border border-amber-100 p-3 space-y-2">
+              <p className="text-xs text-amber-800">No vessels ticked — a job will be created on the job sheet for this invoice.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] text-gray-400">Vessel name (optional)</label>
+                  <input value={newJobVessel} onChange={e => setNewJobVessel(e.target.value)} placeholder="e.g. Channel Pearl" className={cell} />
+                </div>
+                <div>
+                  <label className="text-[11px] text-gray-400">Job type (optional)</label>
+                  <select value={newJobType} onChange={e => setNewJobType(e.target.value)} className={cell}>
+                    <option value="">—</option>
+                    {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-[11px] text-gray-400">Invoice no.</label>

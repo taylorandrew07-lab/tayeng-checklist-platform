@@ -350,6 +350,9 @@ export async function createConsolidatedInvoice(input: {
   currency: Currency; due_date: string | null; notes: string | null
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   lines: ConsolidatedLine[]; taxes: TaxDraft[]
+  // For a standalone invoice (no job-linked lines): create a report-only job so it
+  // still appears on the job sheet, linked to this invoice.
+  new_job?: { title: string; vessel_name: string | null; job_type: string | null } | null
 }): Promise<{ error?: string; invoiceId?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -389,17 +392,33 @@ export async function createConsolidatedInvoice(input: {
   // applied (RLS) — otherwise the invoice's jobs would be unlinked and wrongly
   // reappear as "available to invoice". Roll the invoice back if it didn't.
   const jobIds = [...new Set(input.lines.map(l => l.job_id).filter(Boolean))] as string[]
-  const { data: stamped, error: jErr } = await supabase.from('jobs')
-    .update({ invoice_id: invoiceId, workflow_status: 'invoiced' })
-    .in('id', jobIds)
-    .select('id')
-  if (jErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: jErr.message } }
-  if (!stamped || stamped.length !== jobIds.length) {
-    await supabase.from('invoices').delete().eq('id', invoiceId)
-    return { error: 'Could not stamp every job onto the invoice (permission denied or a job changed). Nothing was billed.' }
+  if (jobIds.length > 0) {
+    const { data: stamped, error: jErr } = await supabase.from('jobs')
+      .update({ invoice_id: invoiceId, workflow_status: 'invoiced' })
+      .in('id', jobIds)
+      .select('id')
+    if (jErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: jErr.message } }
+    if (!stamped || stamped.length !== jobIds.length) {
+      await supabase.from('invoices').delete().eq('id', invoiceId)
+      return { error: 'Could not stamp every job onto the invoice (permission denied or a job changed). Nothing was billed.' }
+    }
+  } else if (input.new_job) {
+    // Standalone invoice: create a report-only job (no checklist template) so the
+    // invoice still shows on the job sheet, linked to it.
+    const { error: njErr } = await supabase.from('jobs').insert({
+      title: input.new_job.title || 'Invoice',
+      client_id: input.client_id,
+      vessel_name: input.new_job.vessel_name ?? null,
+      job_type: input.new_job.job_type ?? null,
+      template_id: null,
+      workflow_status: 'invoiced',
+      invoice_id: invoiceId,
+      created_by: user?.id ?? null,
+    })
+    if (njErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: njErr.message } }
   }
 
-  await logActivity('invoice', invoiceId, 'invoice:create_consolidated', { jobs: jobIds.length, total })
+  await logActivity('invoice', invoiceId, 'invoice:create_consolidated', { jobs: jobIds.length, standalone_job: jobIds.length === 0 && !!input.new_job, total })
   return { invoiceId }
 }
 
