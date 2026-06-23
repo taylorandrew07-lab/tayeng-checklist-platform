@@ -463,6 +463,7 @@ function RatesTab() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">{client.name}{!client.is_active && <span className="text-[10px] text-gray-400 ml-1.5">inactive</span>}</p>
                   <p className="text-xs text-gray-500 truncate">{rs.map(r => `${r.job_type || 'Any'} · ${rateSummary(r)}`).join('   ·   ')}</p>
+                  {rs.some(r => r.notes) && <p className="text-[11px] text-gray-400 truncate mt-0.5">{rs.filter(r => r.notes).map(r => r.notes).join('  ·  ')}</p>}
                 </div>
                 <span className="text-xs text-gray-400 tnum shrink-0">{rs.length} rate{rs.length === 1 ? '' : 's'}</span>
               </button>
@@ -494,9 +495,10 @@ function RateRow({ rate, jobTypes, onChanged }: { rate: ClientRate; jobTypes: st
   }
   return (
     <div className="flex items-center justify-between gap-3 p-4">
-      <div>
+      <div className="min-w-0">
         <p className="text-sm font-medium text-gray-900">{rate.job_type || 'Any job type'} <span className="text-xs text-gray-400 font-normal">· {RATE_TYPES.find(t => t[0] === rate.rate_type)?.[1]}</span></p>
         <p className="text-sm text-gray-600 tnum">{rateSummary(rate)}</p>
+        {rate.notes && <p className="text-xs text-gray-500 mt-0.5 whitespace-pre-wrap">{rate.notes}</p>}
       </div>
       <div className="flex items-center gap-1">
         <button onClick={() => setEditing(true)} className="text-xs text-brand-600 hover:text-brand-800 font-medium px-2">Edit</button>
@@ -512,11 +514,12 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
   const [rate, setRate] = useState(existing ? String(existing.rate) : '')
   const [unitLabel, setUnitLabel] = useState(existing?.unit_label ?? '')
   const [currency, setCurrency] = useState<Currency>(existing?.currency ?? 'USD')
+  const [notes, setNotes] = useState(existing?.notes ?? '')
   const [saving, setSaving] = useState(false)
 
   async function save() {
     setSaving(true)
-    const payload = { client_id: clientId, job_type: jobType || null, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : null, currency }
+    const payload = { client_id: clientId, job_type: jobType || null, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : null, currency, notes: notes.trim() || null }
     const res = existing ? await updateClientRate(existing.id, payload) : await addClientRate(payload as any)
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
@@ -554,6 +557,10 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
             <input value={unitLabel} onChange={e => setUnitLabel(e.target.value)} placeholder="e.g. vessel" className={cell} />
           </div>
         )}
+        <div className="sm:col-span-2">
+          <label className="text-[11px] text-gray-400">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="e.g. Draught survey — initial USD 700, final USD 500" className="input-base py-1.5 text-sm resize-y" />
+        </div>
       </div>
       <div className="flex gap-2">
         <button onClick={save} disabled={saving || !rate} className="btn-primary py-1.5 px-3 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</button>

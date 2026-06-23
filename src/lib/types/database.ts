@@ -344,7 +344,10 @@ export interface JobSurveyor {
 export interface ClientRate {
   id: string; client_id: string; job_type: string | null
   rate_type: 'fixed' | 'hourly' | 'per_unit'; rate: number
-  unit_label: string | null; currency: Currency; is_active: boolean; created_at: string
+  unit_label: string | null; currency: Currency; is_active: boolean
+  /** Free-text note, e.g. "initial $X, final $Y" for a draught survey (migration 082). */
+  notes: string | null
+  created_at: string
 }
 
 export interface Invoice {

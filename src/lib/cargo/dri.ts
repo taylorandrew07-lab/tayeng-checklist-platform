@@ -106,7 +106,7 @@ export function durationHM(startISO?: string, endISO?: string): { hours: number;
 
 // SOF autocomplete vocab. `#_` prompts for a hold number on entry.
 export const SOF_LOAD_EVENTS = [
-  'All fast', 'Gangway up', 'Initial draft survey', 'Interim draft survey', 'Final draft survey',
+  'All fast', 'Gangway up', 'Initial draught survey', 'Interim draught survey', 'Final draught survey',
   'All clear to load', 'Opening #_ manhole fwd', 'Opening #_ manhole aft', 'Closing #_ manhole fwd', 'Closing #_ manhole aft',
   'Positioning loading arm', 'Commence loading hold #_', 'Resume loading hold #_',
   'Awaiting shifting', 'Commence shifting', 'Complete shifting',
@@ -278,7 +278,7 @@ export function validateReport(voyage: Voyage, included: SectionKey[]): ReportIs
   const loadText = dri.sofEvents.filter(e => e.phase === 'LOAD').map(e => e.eventText.toLowerCase()).join(' | ')
   const dischText = dri.sofEvents.filter(e => e.phase === 'DISCHARGE').map(e => e.eventText.toLowerCase()).join(' | ')
   if (has('sof_load')) {
-    if (!/final draft survey/.test(loadText)) issues.push({ severity: 'warn', message: 'No "final draft survey" event logged at the load port.' })
+    if (!/final draught survey/.test(loadText)) issues.push({ severity: 'warn', message: 'No "final draught survey" event logged at the load port.' })
     if (!/loading completed/.test(loadText)) issues.push({ severity: 'warn', message: 'No "loading completed" event logged at the load port.' })
   }
   if (has('sof_discharge')) {
