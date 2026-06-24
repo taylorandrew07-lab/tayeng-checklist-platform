@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2,
@@ -320,7 +321,11 @@ export default function AdminChecklistDetailPage() {
               <dl className="grid grid-cols-2 gap-4">
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Vessel</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{job.vessel_name ? `M.V. ${job.vessel_name}` : '—'}</dd>
+                  <dd className="mt-1 text-sm text-gray-900">{job.vessel_name
+                    ? (job.vessel_id
+                      ? <Link href={`/admin/vessels/${job.vessel_id}`} className="text-brand-700 hover:underline">M.V. {job.vessel_name}</Link>
+                      : `M.V. ${job.vessel_name}`)
+                    : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Surveyor</dt>
@@ -328,7 +333,11 @@ export default function AdminChecklistDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Client</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{job.client?.name ?? '—'}</dd>
+                  <dd className="mt-1 text-sm text-gray-900">{job.client?.name
+                    ? (job.client_id
+                      ? <Link href={`/admin/clients/${job.client_id}`} className="text-brand-700 hover:underline">{job.client.name}</Link>
+                      : job.client.name)
+                    : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Template</dt>
