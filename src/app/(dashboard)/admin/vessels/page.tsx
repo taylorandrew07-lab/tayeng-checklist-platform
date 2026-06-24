@@ -53,7 +53,7 @@ export default function VesselsPage() {
     : rows
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
+    <div className="max-w-7xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="page-title">Vessels</h1>

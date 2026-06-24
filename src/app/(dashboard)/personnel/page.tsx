@@ -154,7 +154,7 @@ export default function PersonnelPage() {
   const admins = people.filter(p => p.role === 'admin')
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
+    <div className="max-w-7xl mx-auto space-y-5">
       <div>
         <h1 className="page-title">Credentials</h1>
         <p className="text-gray-500 mt-0.5">Pull staff credentials, numbers and document expiry dates — for port passes and records. Pick the people and the fields, then copy or export.</p>

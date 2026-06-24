@@ -38,7 +38,7 @@ export default function OfficeInvoicing() {
   const filters: [StatusFilter, string][] = [['open', 'Open'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All']]
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-rise">
+    <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center"><Receipt className="h-5 w-5 text-brand-600" /></div>
         <div>

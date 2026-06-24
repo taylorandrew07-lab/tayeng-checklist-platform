@@ -56,7 +56,7 @@ export default function ClientDetailPage() {
   const hasPayment = !!(cb && (cb.bank_details || cb.payment_terms || cb.ap_email || cb.ap_contact || cb.ap_phone || cb.tax_number))
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
         <button onClick={() => router.push('/admin/clients')} className="btn-ghost py-2 px-3 mt-1" aria-label="Back to clients">

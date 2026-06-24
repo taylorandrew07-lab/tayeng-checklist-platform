@@ -45,7 +45,7 @@ export default function AnalyticsPage() {
   useEffect(() => { getAnalytics().then(setData) }, [])
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto animate-rise">
+    <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <div>
         <h1 className="page-title">Insights</h1>
         <p className="text-gray-500 mt-1 text-sm">Everything across all jobs — volume, pipeline, billing and labour.</p>

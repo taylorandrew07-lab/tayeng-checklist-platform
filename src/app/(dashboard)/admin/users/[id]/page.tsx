@@ -39,7 +39,7 @@ export default function PersonRecordPage() {
   const isStaff = p.role === 'surveyor' || p.role === 'admin'
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
         <button onClick={() => router.push('/admin/users')} className="btn-ghost py-2 px-3 mt-1" aria-label="Back to team"><ArrowLeft className="h-4 w-4" /></button>

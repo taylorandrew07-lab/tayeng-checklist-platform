@@ -75,7 +75,7 @@ export default function OfficeDashboard() {
   ]
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="page-title">Home</h1>
         <p className="text-gray-500 mt-1">Read-only overview of job activity</p>

@@ -51,7 +51,7 @@ export default function VesselDetailPage() {
   const { vessel, jobs, voyages } = data
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-start gap-4">
         <button onClick={() => router.push('/admin/vessels')} className="btn-ghost py-2 px-3 mt-1" aria-label="Back to vessels"><ArrowLeft className="h-4 w-4" /></button>
         <div className="h-14 w-14 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><Anchor className="h-7 w-7 text-brand-600" /></div>
