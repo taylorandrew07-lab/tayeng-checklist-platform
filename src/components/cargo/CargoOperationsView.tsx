@@ -58,6 +58,7 @@ export default function CargoOperationsView() {
                 <th className="px-4 py-2.5 font-medium">Vessel / Voyage</th>
                 <th className="px-4 py-2.5 font-medium">Surveyor</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 font-medium">Job</th>
                 <th className="px-4 py-2.5 font-medium">Last synced</th>
               </tr>
             </thead>
@@ -86,6 +87,11 @@ export default function CargoOperationsView() {
                         In progress
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {r.job_id
+                      ? <Link href={`/admin/jobs/${r.job_id}`} className="text-brand-700 hover:underline tnum">{r.job_number ?? 'View job'}</Link>
+                      : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-500 tnum">{formatWhen(r.synced_at)}</td>
                 </tr>

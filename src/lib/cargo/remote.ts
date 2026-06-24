@@ -32,6 +32,9 @@ export interface OpsVoyageRow {
   updated_at: string
   synced_at: string
   owner_name: string | null
+  /** Linked job (billing), null until staff attach the voyage to a job. */
+  job_id: string | null
+  job_number: string | null
 }
 
 /** All synced voyages across the company (admin RLS returns every row). Note:
@@ -42,6 +45,20 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
     .select('id, vessel_name, voyage_number, status, updated_at, synced_at, owner:profiles!owner_id(full_name, display_title)')
     .order('synced_at', { ascending: false })
   if (error) throw error
+
+  // Best-effort job linkage. Separate query so the core view still loads if the
+  // job_id column isn't there yet (the brief window between a deploy and migration
+  // 085 applying). Once the column exists, the Job links light up automatically.
+  const jobByVoyage = new Map<string, { job_id: string | null; job_number: string | null }>()
+  const link = await supabase
+    .from('cargo_voyages')
+    .select('id, job_id, job:jobs!cargo_voyages_job_id_fkey(job_number)')
+  if (!link.error) {
+    for (const r of (link.data ?? []) as any[]) {
+      jobByVoyage.set(r.id, { job_id: r.job_id ?? null, job_number: r.job?.job_number ?? null })
+    }
+  }
+
   return ((data ?? []) as any[]).map(r => ({
     id: r.id,
     vessel_name: r.vessel_name,
@@ -50,7 +67,56 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
     updated_at: r.updated_at,
     synced_at: r.synced_at,
     owner_name: r.owner?.full_name ?? null,
+    job_id: jobByVoyage.get(r.id)?.job_id ?? null,
+    job_number: jobByVoyage.get(r.id)?.job_number ?? null,
   }))
+}
+
+/** A synced voyage as shown in the job-page "Cargo voyages" picker/list. */
+export interface LinkedVoyageRow {
+  id: string
+  vessel_name: string | null
+  voyage_number: string | null
+  status: string
+  owner_name: string | null
+}
+
+function toLinkedRow(r: any): LinkedVoyageRow {
+  return {
+    id: r.id,
+    vessel_name: r.vessel_name,
+    voyage_number: r.voyage_number,
+    status: r.status,
+    owner_name: r.owner?.full_name ?? null,
+  }
+}
+
+/** Synced voyages attached to a given job (its billable cargo work). */
+export async function listVoyagesForJob(supabase: SupabaseClient, jobId: string): Promise<LinkedVoyageRow[]> {
+  const { data, error } = await supabase
+    .from('cargo_voyages')
+    .select('id, vessel_name, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .eq('job_id', jobId)
+    .order('synced_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as any[]).map(toLinkedRow)
+}
+
+/** Synced voyages not yet attached to any job — the attach picker's options. */
+export async function listUnlinkedVoyages(supabase: SupabaseClient): Promise<LinkedVoyageRow[]> {
+  const { data, error } = await supabase
+    .from('cargo_voyages')
+    .select('id, vessel_name, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .is('job_id', null)
+    .order('synced_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as any[]).map(toLinkedRow)
+}
+
+/** Attach a voyage to a job (or pass null to detach). Staff-only via RLS. */
+export async function setVoyageJob(supabase: SupabaseClient, voyageId: string, jobId: string | null): Promise<void> {
+  const { error } = await supabase.from('cargo_voyages').update({ job_id: jobId }).eq('id', voyageId)
+  if (error) throw error
 }
 
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {

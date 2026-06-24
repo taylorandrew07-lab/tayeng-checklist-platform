@@ -17,6 +17,7 @@ import { toast } from '@/components/ui/toast'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import JobInvoiceSummary from '@/components/job/JobInvoiceSummary'
+import JobCargoVoyages from '@/components/job/JobCargoVoyages'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
 import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
@@ -393,6 +394,13 @@ export default function AdminChecklistDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Cargo voyages billed on this job (cargo jobs / jobs that already have links) */}
+      <JobCargoVoyages
+        jobId={jobId}
+        vesselName={job.vessel_name}
+        isCargoJob={/cargo/i.test(job.job_type ?? '') || /cargo/i.test(job.template?.name ?? '')}
+      />
       </div>
       )}
 
