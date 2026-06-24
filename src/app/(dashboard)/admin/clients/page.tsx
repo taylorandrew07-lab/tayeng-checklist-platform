@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
+import PageHeader from '@/components/ui/PageHeader'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
@@ -240,16 +241,11 @@ export default function ClientsPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <PeopleTabs />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">Clients</h1>
-          <p className="text-gray-500 mt-1">{clients.length} clients</p>
-        </div>
-        <button onClick={openCreate} className="btn-primary">
-          <Plus className="h-4 w-4" />
-          Add Client
-        </button>
-      </div>
+      <PageHeader
+        title="Clients"
+        subtitle={`${clients.length} clients`}
+        actions={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" />Add Client</button>}
+      />
 
       {clients.length === 0 ? (
         <div className="card py-16 text-center">

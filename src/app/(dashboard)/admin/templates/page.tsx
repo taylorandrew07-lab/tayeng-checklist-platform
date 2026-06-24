@@ -8,6 +8,7 @@ import { formatDate, formatDateTime } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import CargoTemplatesPanel from '@/components/cargo/CargoTemplatesPanel'
+import PageHeader from '@/components/ui/PageHeader'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -220,17 +221,13 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">Templates</h1>
-          <p className="text-gray-500 mt-1">{loading ? '…' : `${active.length} active/draft · ${archived.length} archived`}</p>
-        </div>
-        {tab === 'checklist' && (
-          <Link href="/admin/templates/new" className="btn-primary">
-            <Plus className="h-4 w-4" />New Template
-          </Link>
+      <PageHeader
+        title="Templates"
+        subtitle={loading ? '…' : `${active.length} active/draft · ${archived.length} archived`}
+        actions={tab === 'checklist' && (
+          <Link href="/admin/templates/new" className="btn-primary"><Plus className="h-4 w-4" />New Template</Link>
         )}
-      </div>
+      />
 
       {/* Template kind tabs */}
       <div className="flex gap-1 border-b border-gray-200">

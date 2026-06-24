@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Briefcase, Clock, CheckCircle2, FileCheck2, Lock } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import PageHeader from '@/components/ui/PageHeader'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
@@ -76,10 +77,7 @@ export default function OfficeDashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="page-title">Home</h1>
-        <p className="text-gray-500 mt-1">Read-only overview of job activity</p>
-      </div>
+      <PageHeader title="Home" subtitle="Read-only overview of job activity" />
 
       <AttentionCard items={docAttention} />
 

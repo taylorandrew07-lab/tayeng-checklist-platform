@@ -6,6 +6,7 @@ import { Anchor, Loader2, Search, Plus, ChevronRight, FolderOpen, Trash2 } from 
 import { listVessels, findOrCreateVessel, deleteVessel, type VesselRow } from '@/lib/vessels/api'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
+import PageHeader from '@/components/ui/PageHeader'
 
 export default function VesselsPage() {
   const [rows, setRows] = useState<VesselRow[]>([])
@@ -54,13 +55,11 @@ export default function VesselsPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">Vessels</h1>
-          <p className="text-gray-500 mt-1 text-sm">{loading ? '…' : `${rows.length} vessel${rows.length !== 1 ? 's' : ''}`} · the directory jobs and cargo voyages link to.</p>
-        </div>
-        <Link href="/admin/documents" className="btn-secondary flex-shrink-0"><FolderOpen className="h-4 w-4" /><span className="hidden sm:inline">Document library</span></Link>
-      </div>
+      <PageHeader
+        title="Vessels"
+        subtitle={<>{loading ? '…' : `${rows.length} vessel${rows.length !== 1 ? 's' : ''}`} · the directory jobs and cargo voyages link to.</>}
+        actions={<Link href="/admin/documents" className="btn-secondary"><FolderOpen className="h-4 w-4" /><span className="hidden sm:inline">Document library</span></Link>}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">

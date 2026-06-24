@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
+import PageHeader from '@/components/ui/PageHeader'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate, withTimeout } from '@/lib/utils'
@@ -347,20 +348,15 @@ export default function UsersPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <PeopleTabs />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">Team</h1>
-          <p className="text-gray-500 mt-1">
-            {users.length} users
-            {pending.length > 0 && ` · ${pending.length} pending approval`}
-            {totalPendingRequests > 0 && ` · ${totalPendingRequests} pending request${totalPendingRequests > 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <button onClick={openCreate} className="btn-primary">
-          <Plus className="h-4 w-4" />
-          Add User
-        </button>
-      </div>
+      <PageHeader
+        title="Team"
+        subtitle={<>
+          {users.length} members
+          {pending.length > 0 && ` · ${pending.length} pending approval`}
+          {totalPendingRequests > 0 && ` · ${totalPendingRequests} pending request${totalPendingRequests > 1 ? 's' : ''}`}
+        </>}
+        actions={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" />Add member</button>}
+      />
 
       {/* Pending user approvals */}
       {pending.length > 0 && (
