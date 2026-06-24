@@ -10,12 +10,8 @@ import { Receipt, FileText, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { money } from '@/lib/jobs/tracker'
 import { formatDate } from '@/lib/utils'
+import { InvoiceStatusPill } from '@/components/job/StatusPill'
 import type { Invoice, Job } from '@/lib/types/database'
-
-const STATUS_PILL: Record<Invoice['status'], string> = {
-  draft: 'bg-gray-100 text-gray-600', sent: 'bg-cyan-100 text-cyan-700',
-  paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700', void: 'bg-slate-200 text-slate-500',
-}
 
 export default function JobInvoiceSummary({ job }: { job: Job }) {
   const [inv, setInv] = useState<Invoice | null>(null)
@@ -51,12 +47,11 @@ export default function JobInvoiceSummary({ job }: { job: Job }) {
     </div>
   )
 
-  const label = inv.status[0].toUpperCase() + inv.status.slice(1)
   return (
     <div className="card p-5 space-y-3 max-w-md">
       <div className="flex items-center justify-between">
         <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice</h3>
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL[inv.status]}`}>{label}</span>
+        <InvoiceStatusPill status={inv.status} />
       </div>
       <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-sm">
         <div><p className="text-[11px] text-gray-400">Invoice no.</p><p className="tnum font-medium text-gray-900">{inv.invoice_number ?? '—'}</p></div>

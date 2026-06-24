@@ -9,6 +9,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import CargoTemplatesPanel from '@/components/cargo/CargoTemplatesPanel'
 import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -266,9 +267,11 @@ export default function TemplatesPage() {
             <Loader2 className="h-6 w-6 animate-spin mr-2" />Loading…
           </div>
         ) : active.length === 0 ? (
-          <div className="card p-10 text-center text-gray-400">
-            No templates yet. <Link href="/admin/templates/new" className="text-brand-600 hover:underline">Create one →</Link>
-          </div>
+          <EmptyState
+            icon={FileText}
+            title="No templates yet"
+            description={<><Link href="/admin/templates/new" className="text-brand-600 hover:underline">Create one</Link> to get started.</>}
+          />
         ) : active.map((template) => (
           <TemplateRow
             key={template.id}

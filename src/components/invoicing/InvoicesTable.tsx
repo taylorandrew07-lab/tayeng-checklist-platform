@@ -13,19 +13,7 @@ import { money } from '@/lib/jobs/tracker'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { isOverdue, setInvoiceAndJobsStatus, deleteInvoice, type InvoiceListRow } from '@/lib/jobs/invoicing'
-import type { Invoice } from '@/lib/types/database'
-
-const STATUS_PILL: Record<Invoice['status'], string> = {
-  draft: 'bg-gray-100 text-gray-600', sent: 'bg-cyan-100 text-cyan-700',
-  paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700', void: 'bg-slate-200 text-slate-500',
-}
-
-function StatusPill({ row }: { row: InvoiceListRow }) {
-  const overdue = isOverdue(row)
-  const s = overdue ? 'overdue' : row.status
-  const label = overdue ? 'Overdue' : row.status[0].toUpperCase() + row.status.slice(1)
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL[s]}`}>{label}</span>
-}
+import { InvoiceStatusPill } from '@/components/job/StatusPill'
 
 /** Secondary line under the client name: the vessel(s) this invoice covers, plus
  *  the bill-to party when it differs from the work client. */
@@ -134,7 +122,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged, onEdit
                   <td className="px-4 py-3 text-right tnum text-gray-900">{money(r.total, r.currency)}</td>
                   <td className="px-4 py-3 text-gray-500">{formatDate(r.issue_date)}</td>
                   <td className="px-4 py-3 text-gray-500">{r.due_date ? formatDate(r.due_date) : '—'}</td>
-                  <td className="px-4 py-3"><StatusPill row={r} /></td>
+                  <td className="px-4 py-3"><InvoiceStatusPill status={r.status} overdue={isOverdue(r)} /></td>
                   {manage && <td className="px-4 py-3"><RowActions row={r} onChanged={refresh} onEdit={onEdit} /></td>}
                 </tr>
               )
@@ -150,7 +138,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged, onEdit
           const header = (
             <div className="flex items-center justify-between gap-2">
               <span className="tnum font-medium text-gray-900">{r.invoice_number ?? '—'}</span>
-              <StatusPill row={r} />
+              <InvoiceStatusPill status={r.status} overdue={isOverdue(r)} />
             </div>
           )
           return (

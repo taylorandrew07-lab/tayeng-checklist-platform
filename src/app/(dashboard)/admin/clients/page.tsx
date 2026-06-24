@@ -7,6 +7,7 @@ import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } fr
 import { Modal } from '@/components/ui/Modal'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
@@ -248,15 +249,12 @@ export default function ClientsPage() {
       />
 
       {clients.length === 0 ? (
-        <div className="card py-16 text-center">
-          <Building2 className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No clients yet</h3>
-          <p className="text-gray-500 text-sm mb-6">Add your first client to start assigning jobs.</p>
-          <button onClick={openCreate} className="btn-primary">
-            <Plus className="h-4 w-4" />
-            Add Client
-          </button>
-        </div>
+        <EmptyState
+          icon={Building2}
+          title="No clients yet"
+          description="Add your first client to start assigning jobs."
+          action={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" />Add Client</button>}
+        />
       ) : (
         <>
         <div className="flex flex-col sm:flex-row gap-3">
