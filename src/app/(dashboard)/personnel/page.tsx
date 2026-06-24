@@ -6,6 +6,7 @@ import { Loader2, Lock, Copy, Check, Download, FileText, ChevronDown, ChevronRig
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { signedUrl, formatBytes } from '@/lib/personal-docs/api'
 import PageHeader from '@/components/ui/PageHeader'
+import PeopleTabs from '@/components/admin/PeopleTabs'
 import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 
 interface Person {
@@ -156,6 +157,7 @@ export default function PersonnelPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5">
+      <PeopleTabs />
       <PageHeader title="Credentials" subtitle="Pull staff credentials, numbers and document expiry dates — for port passes and records. Pick the people and the fields, then copy or export." />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

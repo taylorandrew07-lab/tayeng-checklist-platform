@@ -77,7 +77,7 @@ export default function OfficeDashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <PageHeader title="Home" subtitle="Read-only overview of job activity" />
+      <PageHeader title="Dashboard" subtitle="Read-only overview of job activity" />
 
       <AttentionCard items={docAttention} />
 

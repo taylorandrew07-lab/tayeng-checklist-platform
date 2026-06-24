@@ -54,10 +54,10 @@ export default function ProfileRequestsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <PeopleTabs />
       <div>
-        <h1 className="page-title">Profile Change Requests</h1>
+        <h1 className="page-title">Approvals</h1>
         <p className="text-gray-500 mt-0.5">Review and approve changes users have requested to their profile.</p>
       </div>
 

@@ -90,10 +90,10 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
         <div>
           {embedded
             ? <h2 className="section-title">Voyages on this device</h2>
-            : <h1 className="page-title">Cargo</h1>}
+            : <h1 className="page-title">Cargo Monitoring</h1>}
           <p className="text-gray-500 mt-0.5">
             {embedded
-              ? 'Offline voyages on this browser — use “Sync all” to publish them to Cargo.'
+              ? 'Offline voyages on this browser — use “Sync all” to publish them to Cargo Monitoring.'
               : 'Offline cargo hold monitoring voyages stored on this device. Sync to publish them.'}
           </p>
         </div>

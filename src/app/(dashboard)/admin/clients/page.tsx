@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
-import PeopleTabs from '@/components/admin/PeopleTabs'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
@@ -241,7 +240,6 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <PeopleTabs />
       <PageHeader
         title="Clients"
         subtitle={`${clients.length} clients`}

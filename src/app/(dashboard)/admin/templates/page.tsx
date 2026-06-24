@@ -237,7 +237,7 @@ export default function TemplatesPage() {
         onChange={k => setTab(k as 'checklist' | 'cargo')}
         tabs={[
           { key: 'checklist', label: <><ClipboardList className="h-4 w-4" /> Checklist</> },
-          { key: 'cargo', label: <><Ship className="h-4 w-4" /> Cargo</> },
+          { key: 'cargo', label: <><Ship className="h-4 w-4" /> Cargo Monitoring</> },
         ]}
       />
 

@@ -81,7 +81,7 @@ export default function SurveyorDashboard() {
     <div className="space-y-6 max-w-4xl mx-auto animate-rise">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Home</h1>
+          <h1 className="page-title">Dashboard</h1>
           <p className="text-gray-500 mt-1">Welcome, {profile?.full_name ?? '…'}</p>
         </div>
         <Link href="/surveyor/jobs/new" className="btn-primary">

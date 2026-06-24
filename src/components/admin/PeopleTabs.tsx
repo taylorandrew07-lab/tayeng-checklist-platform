@@ -3,23 +3,31 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Users, Building2, ShieldCheck } from 'lucide-react'
+import { Users, IdCard, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const TABS = [
   { key: 'team', label: 'Team', href: '/admin/users', icon: Users },
-  { key: 'clients', label: 'Clients', href: '/admin/clients', icon: Building2 },
+  { key: 'credentials', label: 'Credentials', href: '/personnel', icon: IdCard },
   { key: 'approvals', label: 'Approvals', href: '/admin/profile-requests', icon: ShieldCheck },
 ] as const
 
-/** Shared sub-nav for the People hub (Users / Clients / Approvals). Each tab
- *  shows a yellow count when something is waiting there: Team = pending signups
- *  + client requests; Approvals = profile change requests. */
+/** Shared sub-nav for the Team hub (Team / Credentials / Approvals). Admin-only —
+ *  renders nothing for other roles (e.g. office staff who can also reach
+ *  /personnel). Yellow count: Team = pending signups + client requests; Approvals
+ *  = profile change requests. */
 export default function PeopleTabs() {
   const pathname = usePathname()
+  const [isAdmin, setIsAdmin] = useState(false)
   const [counts, setCounts] = useState<{ team: number; approvals: number }>({ team: 0, approvals: 0 })
 
   useEffect(() => {
+    // Role from the layout's cached profile — instant, no fetch/flash.
+    let admin = false
+    try { admin = JSON.parse(localStorage.getItem('te_profile') ?? 'null')?.role === 'admin' } catch { /* ignore */ }
+    setIsAdmin(admin)
+    if (!admin) return
+
     const supabase = createClient()
     let cancelled = false
     ;(async () => {
@@ -32,6 +40,8 @@ export default function PeopleTabs() {
     })()
     return () => { cancelled = true }
   }, [pathname])
+
+  if (!isAdmin) return null
 
   return (
     <div className="flex items-center gap-1 border-b border-gray-200">

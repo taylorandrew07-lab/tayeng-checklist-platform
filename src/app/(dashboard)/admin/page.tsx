@@ -193,7 +193,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <PageHeader
-        title="Home"
+        title="Dashboard"
         subtitle={<>What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View insights</Link></>}
         actions={!editMode ? (
           <button onClick={() => setEditMode(true)} className="btn-secondary text-sm">

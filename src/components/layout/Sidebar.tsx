@@ -1,5 +1,7 @@
 'use client'
 
+import { useState, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -9,8 +11,8 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
-  LogOut, ChevronRight, X, Settings, Calculator,
-  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, BarChart3, Anchor, Building2,
+  LogOut, ChevronRight, X, Settings, Calculator, SlidersHorizontal, Check,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -19,90 +21,94 @@ export interface NavItem {
   icon: React.ElementType
 }
 
-// The nav is organised into labelled groups (Operations / People …) so the app
-// reads as one structured product instead of a flat pile of links. A section with
-// no title is an unlabelled group (the landing item, utilities) separated only by
-// a divider.
-interface NavSection {
-  title?: string
-  items: NavItem[]
-}
+// Drag-to-reorder pulls in @dnd-kit (~tens of KB). It's only needed inside the
+// "Customize menu" mode, so load it on demand — normal navigation never ships it.
+// The fallback renders the rows statically so there's no flash while it loads.
+const SidebarReorder = dynamic(() => import('./SidebarReorder'), {
+  ssr: false,
+  loading: () => null,
+})
 
-const adminNav: NavSection[] = [
-  { items: [{ label: 'Home', href: '/admin', icon: LayoutDashboard }] },
-  { title: 'Operations', items: [
-    { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
-    { label: 'Cargo', href: '/admin/cargo', icon: Ship },
-    { label: 'Vessels', href: '/admin/vessels', icon: Anchor },
-    { label: 'Templates', href: '/admin/templates', icon: FileText },
-  ] },
-  { title: 'Finance & clients', items: [
-    { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
-    { label: 'Clients', href: '/admin/clients', icon: Building2 },
-    { label: 'Insights', href: '/admin/analytics', icon: BarChart3 },
-  ] },
-  { title: 'People', items: [
-    { label: 'Team', href: '/admin/users', icon: Users },
-    { label: 'Credentials', href: '/personnel', icon: IdCard },
-  ] },
-  { items: [
-    { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
-    { label: 'Calendar', href: '/calendar', icon: CalendarDays },
-    { label: 'Inbox', href: '/inbox', icon: Mail },
-  ] },
+const adminNav: NavItem[] = [
+  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
+  { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
+  { label: 'Clients', href: '/admin/clients', icon: Building2 },
+  // Team is a hub: the page itself has tabs for Team / Credentials / Approvals.
+  { label: 'Team', href: '/admin/users', icon: Users },
+  { label: 'Templates', href: '/admin/templates', icon: FileText },
+  { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
+  { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
+  { label: 'Calendar', href: '/calendar', icon: CalendarDays },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
-const surveyorNav: NavSection[] = [
-  { items: [{ label: 'Home', href: '/surveyor', icon: LayoutDashboard }] },
-  { title: 'Operations', items: [
-    { label: 'Cargo', href: '/surveyor/cargo', icon: Ship },
-    { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
-  ] },
-  { items: [
-    { label: 'Profile', href: '/profile', icon: IdCard },
-    { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
-    { label: 'Calendar', href: '/calendar', icon: CalendarDays },
-    { label: 'Inbox', href: '/inbox', icon: Mail },
-  ] },
+// Settings is pinned to the bottom and is never reorderable.
+const superAdminNav: NavItem[] = [
+  { label: 'Settings', href: '/admin/settings', icon: Settings },
 ]
 
-const clientNav: NavSection[] = [
-  { items: [
-    { label: 'Home', href: '/client', icon: ClipboardList },
-    { label: 'Cargo', href: '/client/cargo', icon: Ship },
-    { label: 'Inbox', href: '/inbox', icon: Mail },
-  ] },
+const surveyorNav: NavItem[] = [
+  { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
+  { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
+  { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
+  { label: 'Profile', href: '/profile', icon: FileText },
+  { label: 'Calendar', href: '/calendar', icon: CalendarDays },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
+  { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
-// Office nav is permission-built: Home + Jobs are always present; the rest appear
-// per granted permission, grouped to match the admin structure.
-function officeNav(officePermissions: string[]): NavSection[] {
+const clientNav: NavItem[] = [
+  { label: 'Dashboard', href: '/client', icon: ClipboardList },
+  { label: 'Cargo Monitoring', href: '/client/cargo', icon: Ship },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
+]
+
+// Office nav. Home + Jobs are always present; Finance is added only when the user
+// holds an invoicing permission (see officeNav()).
+const officeBaseNav: NavItem[] = [
+  { label: 'Dashboard', href: '/office', icon: LayoutDashboard },
+  { label: 'Jobs', href: '/office/jobs', icon: Briefcase },
+  { label: 'Inbox', href: '/inbox', icon: Mail },
+]
+
+function officeNav(officePermissions: string[]): NavItem[] {
+  const nav = [...officeBaseNav]
   const granted = new Set(officePermissions)
-  const ops: NavItem[] = [{ label: 'Jobs', href: '/office/jobs', icon: Briefcase }]
-  if (granted.has(OFFICE_PERMISSIONS.CARGO_VIEW)) ops.push({ label: 'Cargo', href: '/office/cargo', icon: Ship })
-
-  const sections: NavSection[] = [
-    { items: [{ label: 'Home', href: '/office', icon: LayoutDashboard }] },
-    { title: 'Operations', items: ops },
-  ]
-  if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
-    sections.push({ title: 'Finance', items: [{ label: 'Finance', href: '/office/invoicing', icon: Receipt }] })
-  }
   if (granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) {
-    sections.push({ title: 'People', items: [{ label: 'Credentials', href: '/personnel', icon: IdCard }] })
+    nav.push({ label: 'Credentials', href: '/personnel', icon: IdCard })
   }
-  const utils: NavItem[] = []
-  if (granted.has(OFFICE_PERMISSIONS.CALENDAR_VIEW)) utils.push({ label: 'Calendar', href: '/calendar', icon: CalendarDays })
-  utils.push({ label: 'Inbox', href: '/inbox', icon: Mail })
-  sections.push({ items: utils })
-  return sections
+  if (granted.has(OFFICE_PERMISSIONS.CALENDAR_VIEW)) {
+    nav.push({ label: 'Calendar', href: '/calendar', icon: CalendarDays })
+  }
+  if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
+    nav.push({ label: 'Finance', href: '/office/invoicing', icon: Receipt })
+  }
+  if (granted.has(OFFICE_PERMISSIONS.CARGO_VIEW)) {
+    nav.push({ label: 'Cargo Monitoring', href: '/office/cargo', icon: Ship })
+  }
+  return nav
 }
 
-function roleNav(role: string, officePermissions: string[]): NavSection[] {
+function roleNav(role: string, officePermissions: string[]): NavItem[] {
   if (role === 'admin') return adminNav
   if (role === 'surveyor') return surveyorNav
   if (role === 'office') return officeNav(officePermissions)
   return clientNav
+}
+
+// Apply a saved order; keep unknown saved entries out, append new canonical
+// items at the end so adding a nav item later never hides it.
+function orderedNav(canonical: NavItem[], savedOrder?: string[]): NavItem[] {
+  if (!savedOrder?.length) return canonical
+  const byHref = new Map(canonical.map(i => [i.href, i]))
+  const result: NavItem[] = []
+  for (const href of savedOrder) {
+    const item = byHref.get(href)
+    if (item) { result.push(item); byHref.delete(href) }
+  }
+  for (const item of canonical) if (byHref.has(item.href)) result.push(item)
+  return result
 }
 
 interface SidebarProps {
@@ -112,7 +118,7 @@ interface SidebarProps {
   pendingCount?: number
   /** Unread message count; badges the Inbox nav item. */
   unreadMessages?: number
-  /** Billing-reconciliation flag count; badges the Finance nav item. */
+  /** Billing-reconciliation flag count; badges the Invoicing nav item. */
   reconcileCount?: number
   /** Granted office permission keys; drives which office nav items appear. */
   officePermissions?: string[]
@@ -122,11 +128,11 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
   const pathname = usePathname()
   const router = useRouter()
 
-  const sections = roleNav(profile.role, officePermissions)
-  // Settings is a fixed, super-admin-only item pinned after the nav groups.
-  const settingsSection: NavSection | null = profile.is_super_admin
-    ? { items: [{ label: 'Settings', href: '/admin/settings', icon: Settings }] }
-    : null
+  const canonical = roleNav(profile.role, officePermissions)
+  const [order, setOrder] = useState<NavItem[]>(() => orderedNav(canonical, profile.ui_prefs?.nav_order))
+  const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savedRef = useRef<NavItem[]>(order)
 
   function handleNavClick(href: string) {
     onClose?.()
@@ -134,44 +140,26 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     router.push(href)
   }
 
-  function badgeFor(href: string): number {
-    if (href === '/admin/users') return pendingCount
-    if (href === '/inbox') return unreadMessages
-    if (href === '/admin/invoicing' || href === '/office/invoicing') return reconcileCount
-    return 0
+  async function saveOrder() {
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const nav_order = order.map(i => i.href)
+      const ui_prefs = { ...(profile.ui_prefs ?? {}), nav_order }
+      const { error } = await supabase.from('profiles').update({ ui_prefs }).eq('id', profile.id)
+      if (error) throw error
+      savedRef.current = order
+      setEditMode(false)
+    } catch {
+      // Keep edit mode open on failure (e.g. migration not yet applied).
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function renderItem(item: NavItem) {
-    const isRoot = item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
-    const isActive = isRoot ? pathname === item.href : pathname.startsWith(item.href)
-    const badge = badgeFor(item.href)
-    return (
-      <button
-        key={item.href}
-        onClick={() => handleNavClick(item.href)}
-        className={cn(
-          'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
-          isActive ? 'bg-brand-700 text-white' : 'text-brand-300 hover:bg-brand-800 hover:text-white',
-        )}
-      >
-        <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
-        {item.label}
-        {badge > 0
-          ? <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">{badge}</span>
-          : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
-      </button>
-    )
-  }
-
-  function renderSection(section: NavSection, withDivider: boolean, key: string) {
-    return (
-      <div key={key} className={withDivider ? 'mt-3 pt-3 border-t border-brand-800/70' : ''}>
-        {section.title && (
-          <p className="px-3 pb-1 text-[10px] uppercase tracking-wider font-semibold text-brand-400/80">{section.title}</p>
-        )}
-        <div className="space-y-1">{section.items.map(renderItem)}</div>
-      </div>
-    )
+  function cancelEdit() {
+    setOrder(savedRef.current)
+    setEditMode(false)
   }
 
   async function handleSignOut() {
@@ -203,7 +191,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
     router.refresh()
   }
 
-  const allSections = settingsSection ? [...sections, settingsSection] : sections
+  const settingsItem = profile.is_super_admin ? superAdminNav : []
 
   return (
     <>
@@ -215,7 +203,7 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         className={cn(
           'fixed inset-y-0 left-0 z-30 w-64 bg-brand-900 flex flex-col transition-transform duration-300',
           'lg:translate-x-0',
-          open ? 'translate-x-0' : '-translate-x-full',
+          open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Header / logo */}
@@ -237,8 +225,83 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 overflow-y-auto">
-          {allSections.map((section, i) => renderSection(section, i > 0, `sec-${i}`))}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {editMode ? (
+            <>
+              <SidebarReorder order={order} onReorder={setOrder} />
+              {settingsItem.map(item => (
+                <div key={item.href} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-400 opacity-60">
+                  <span className="w-4" />
+                  <item.icon className="h-5 w-5 flex-shrink-0" />
+                  {item.label}
+                  <span className="ml-auto text-[10px] uppercase tracking-wide">Fixed</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            [...order, ...settingsItem].map((item) => {
+              const isActive =
+                item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href)
+              return (
+                <button
+                  key={item.href}
+                  onClick={() => handleNavClick(item.href)}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
+                    isActive ? 'bg-brand-700 text-white' : 'text-brand-300 hover:bg-brand-800 hover:text-white'
+                  )}
+                >
+                  <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
+                  {item.label}
+                  {item.href === '/admin/users' && pendingCount > 0 ? (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {pendingCount}
+                    </span>
+                  ) : item.href === '/inbox' && unreadMessages > 0 ? (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {unreadMessages}
+                    </span>
+                  ) : item.href === '/admin/invoicing' && reconcileCount > 0 ? (
+                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      {reconcileCount}
+                    </span>
+                  ) : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
+                </button>
+              )
+            })
+          )}
+
+          {/* Customize controls (only when there's more than one item to order) */}
+          {order.length > 1 && (
+            <div className="pt-2">
+              {editMode ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveOrder}
+                    disabled={saving}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-500 transition-colors"
+                  >
+                    <Check className="h-3.5 w-3.5" />{saving ? 'Saving…' : 'Done'}
+                  </button>
+                  <button
+                    onClick={cancelEdit}
+                    className="px-3 py-2 rounded-lg text-xs font-medium text-brand-300 hover:bg-brand-800 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEditMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-brand-400 hover:bg-brand-800 hover:text-white transition-colors w-full"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />Customize menu
+                </button>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Sign out */}
