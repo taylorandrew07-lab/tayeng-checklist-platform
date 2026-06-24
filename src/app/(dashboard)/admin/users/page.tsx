@@ -349,7 +349,7 @@ export default function UsersPage() {
       <PeopleTabs />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Users</h1>
+          <h1 className="page-title">Team</h1>
           <p className="text-gray-500 mt-1">
             {users.length} users
             {pending.length > 0 && ` · ${pending.length} pending approval`}

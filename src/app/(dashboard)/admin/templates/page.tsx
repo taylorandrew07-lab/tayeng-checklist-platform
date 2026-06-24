@@ -234,7 +234,7 @@ export default function TemplatesPage() {
 
       {/* Template kind tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {([['checklist', 'Checklist', ClipboardList], ['cargo', 'Cargo Monitoring', Ship]] as const).map(([id, label, Icon]) => (
+        {([['checklist', 'Checklist', ClipboardList], ['cargo', 'Cargo', Ship]] as const).map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setTab(id)}

@@ -22,7 +22,7 @@ export default function ClientCargoListPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="page-title">Cargo Monitoring Reports</h1>
+        <h1 className="page-title">Cargo</h1>
         <p className="text-gray-500 mt-0.5">Live monitoring reports shared with you. Read-only; figures update as the surveyor syncs.</p>
       </div>
 

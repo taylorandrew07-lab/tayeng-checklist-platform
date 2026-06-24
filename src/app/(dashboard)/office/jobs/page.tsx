@@ -85,7 +85,7 @@ export default function OfficeJobsMonitor() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
-        <h1 className="page-title">Jobs Monitor</h1>
+        <h1 className="page-title">Jobs</h1>
         <p className="text-gray-500 mt-1">{loading ? '…' : `${filteredJobs.length} job${filteredJobs.length !== 1 ? 's' : ''} · read-only`}</p>
       </div>
 

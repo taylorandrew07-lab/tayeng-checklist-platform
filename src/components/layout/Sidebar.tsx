@@ -30,17 +30,17 @@ const SidebarReorder = dynamic(() => import('./SidebarReorder'), {
 })
 
 const adminNav: NavItem[] = [
-  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { label: 'Home', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Insights', href: '/admin/analytics', icon: BarChart3 },
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
-  { label: 'Cargo Operations', href: '/admin/cargo', icon: Ship },
+  { label: 'Cargo', href: '/admin/cargo', icon: Ship },
   { label: 'Vessels', href: '/admin/vessels', icon: Anchor },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
-  // Users is a hub: the page itself has tabs for Team / Clients / Approvals.
-  { label: 'Users', href: '/admin/users', icon: Users },
-  { label: 'Personnel', href: '/personnel', icon: IdCard },
+  // Team is a hub: the page itself has tabs for Team / Clients / Approvals.
+  { label: 'Team', href: '/admin/users', icon: Users },
+  { label: 'Credentials', href: '/personnel', icon: IdCard },
   { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
@@ -51,26 +51,26 @@ const superAdminNav: NavItem[] = [
 ]
 
 const surveyorNav: NavItem[] = [
-  { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
-  { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
+  { label: 'Home', href: '/surveyor', icon: LayoutDashboard },
+  { label: 'Cargo', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
-  { label: 'My Documents', href: '/profile', icon: FileText },
+  { label: 'Profile', href: '/profile', icon: FileText },
   { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
   { label: 'Tools', href: '/surveyor/tools/interpolation', icon: Calculator },
 ]
 
 const clientNav: NavItem[] = [
-  { label: 'My Jobs', href: '/client', icon: ClipboardList },
-  { label: 'Cargo Reports', href: '/client/cargo', icon: Ship },
+  { label: 'Home', href: '/client', icon: ClipboardList },
+  { label: 'Cargo', href: '/client/cargo', icon: Ship },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
-// Office nav. Dashboard + Jobs Monitor are always present; Invoicing is added
-// only when the user holds an invoicing permission (see officeNav()).
+// Office nav. Home + Jobs are always present; Finance is added only when the user
+// holds an invoicing permission (see officeNav()).
 const officeBaseNav: NavItem[] = [
-  { label: 'Dashboard', href: '/office', icon: LayoutDashboard },
-  { label: 'Jobs Monitor', href: '/office/jobs', icon: Briefcase },
+  { label: 'Home', href: '/office', icon: LayoutDashboard },
+  { label: 'Jobs', href: '/office/jobs', icon: Briefcase },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
@@ -78,16 +78,16 @@ function officeNav(officePermissions: string[]): NavItem[] {
   const nav = [...officeBaseNav]
   const granted = new Set(officePermissions)
   if (granted.has(OFFICE_PERMISSIONS.PERSONAL_DOCS_VIEW)) {
-    nav.push({ label: 'Personnel', href: '/personnel', icon: IdCard })
+    nav.push({ label: 'Credentials', href: '/personnel', icon: IdCard })
   }
   if (granted.has(OFFICE_PERMISSIONS.CALENDAR_VIEW)) {
     nav.push({ label: 'Calendar', href: '/calendar', icon: CalendarDays })
   }
   if (granted.has(OFFICE_PERMISSIONS.INVOICING_VIEW) || granted.has(OFFICE_PERMISSIONS.INVOICING_MANAGE)) {
-    nav.push({ label: 'Invoicing', href: '/office/invoicing', icon: Receipt })
+    nav.push({ label: 'Finance', href: '/office/invoicing', icon: Receipt })
   }
   if (granted.has(OFFICE_PERMISSIONS.CARGO_VIEW)) {
-    nav.push({ label: 'Cargo Reports', href: '/office/cargo', icon: Ship })
+    nav.push({ label: 'Cargo', href: '/office/cargo', icon: Ship })
   }
   return nav
 }

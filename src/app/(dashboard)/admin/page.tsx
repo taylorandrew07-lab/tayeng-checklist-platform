@@ -193,8 +193,8 @@ export default function AdminDashboard() {
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="page-title">Admin Dashboard</h1>
-          <p className="text-gray-500 mt-1">What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View analytics</Link></p>
+          <h1 className="page-title">Home</h1>
+          <p className="text-gray-500 mt-1">What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View insights</Link></p>
         </div>
         {!editMode ? (
           <button onClick={() => setEditMode(true)} className="btn-secondary text-sm flex-shrink-0">

@@ -158,7 +158,7 @@ export default function VoyageWorkspace() {
       <div className="max-w-lg mx-auto text-center py-16">
         <h1 className="page-title mb-2">Voyage not found</h1>
         <p className="text-gray-500 mb-6">This voyage isn&apos;t stored on this device.</p>
-        <Link href={base} className="btn-secondary">Back to Cargo Monitoring</Link>
+        <Link href={base} className="btn-secondary">Back to Cargo</Link>
       </div>
     )
   }

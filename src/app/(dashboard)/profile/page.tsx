@@ -131,7 +131,7 @@ export default function ProfilePage() {
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">My Profile</h1>
+          <h1 className="page-title">Profile</h1>
           <p className="text-gray-500 mt-0.5">View your details and manage your account.</p>
         </div>
         {isAdmin && (

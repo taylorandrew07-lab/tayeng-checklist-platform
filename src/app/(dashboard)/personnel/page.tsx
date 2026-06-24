@@ -156,7 +156,7 @@ export default function PersonnelPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       <div>
-        <h1 className="page-title">Personnel</h1>
+        <h1 className="page-title">Credentials</h1>
         <p className="text-gray-500 mt-0.5">Pull staff credentials, numbers and document expiry dates — for port passes and records. Pick the people and the fields, then copy or export.</p>
       </div>
 

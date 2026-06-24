@@ -54,7 +54,7 @@ export default function NewVoyageView() {
             </select>
             <p className="text-xs text-gray-500 mt-1">
               {selected.reading_types.length} reading type{selected.reading_types.length !== 1 ? 's' : ''} · default {selected.default_hold_count} holds.
-              {templates.length === 0 && ' No templates available — create them under Templates → Cargo Monitoring.'}
+              {templates.length === 0 && ' No templates available — create them under Templates → Cargo.'}
             </p>
           </div>
 
