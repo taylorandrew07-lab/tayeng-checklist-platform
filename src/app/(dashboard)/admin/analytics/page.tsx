@@ -5,9 +5,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Briefcase, FolderOpen, CalendarDays, Receipt, AlertTriangle, Clock, TrendingUp } from 'lucide-react'
+import { Briefcase, FolderOpen, CalendarDays, Receipt, AlertTriangle, Clock, TrendingUp, BarChart3 } from 'lucide-react'
 import { WORKFLOW, money } from '@/lib/jobs/tracker'
 import { getAnalytics, type Analytics } from '@/lib/jobs/analytics'
+import PageHeader from '@/components/ui/PageHeader'
 
 function Kpi({ label, value, icon: Icon, tone = 'gray', href }: { label: string; value: number | string; icon: typeof Briefcase; tone?: 'gray' | 'amber' | 'red' | 'brand'; href?: string }) {
   const tones = { gray: 'bg-gray-100 text-gray-500', amber: 'bg-amber-100 text-amber-600', red: 'bg-red-100 text-red-600', brand: 'bg-brand-100 text-brand-600' }
@@ -46,10 +47,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
-      <div>
-        <h1 className="page-title">Insights</h1>
-        <p className="text-gray-500 mt-1 text-sm">Everything across all jobs — volume, pipeline, billing and labour.</p>
-      </div>
+      <PageHeader icon={BarChart3} title="Insights" subtitle="Everything across all jobs — volume, pipeline, billing and labour." />
 
       {!data ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-24" />)}</div>

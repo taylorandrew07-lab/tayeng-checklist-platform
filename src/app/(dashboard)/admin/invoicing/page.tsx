@@ -23,6 +23,7 @@ import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashb
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
+import PageHeader from '@/components/ui/PageHeader'
 import type { Client, ClientRate, Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'rates' | 'settings'
@@ -39,13 +40,7 @@ export default function AdminInvoicingPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-rise">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center"><Receipt className="h-5 w-5 text-brand-600" /></div>
-        <div>
-          <h1 className="page-title">Finance</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Invoices, client rates and billing defaults.</p>
-        </div>
-      </div>
+      <PageHeader icon={Receipt} title="Finance" subtitle="Invoices, client rates and billing defaults." />
 
       <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
         {([['overview', 'Overview'], ['create', 'Create invoice'], ['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (

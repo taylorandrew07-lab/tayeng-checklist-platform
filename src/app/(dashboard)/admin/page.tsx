@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import PageHeader from '@/components/ui/PageHeader'
 import AttentionCard, { type AttentionItem } from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 import { useReconciliationAttention } from '@/components/dashboard/useReconciliationAttention'
@@ -191,24 +192,22 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">Home</h1>
-          <p className="text-gray-500 mt-1">What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View insights</Link></p>
-        </div>
-        {!editMode ? (
-          <button onClick={() => setEditMode(true)} className="btn-secondary text-sm flex-shrink-0">
+      <PageHeader
+        title="Home"
+        subtitle={<>What needs you today · <Link href="/admin/analytics" className="text-brand-600 hover:underline">View insights</Link></>}
+        actions={!editMode ? (
+          <button onClick={() => setEditMode(true)} className="btn-secondary text-sm">
             <SlidersHorizontal className="h-4 w-4" />Customize
           </button>
         ) : (
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <>
             <button onClick={cancelEdit} className="btn-secondary text-sm">Cancel</button>
             <button onClick={saveTiles} disabled={savingTiles} className="btn-primary text-sm">
               <Check className="h-4 w-4" />{savingTiles ? 'Saving…' : 'Done'}
             </button>
-          </div>
+          </>
         )}
-      </div>
+      />
 
       {/* Pending approvals banner */}
       {totalPending > 0 && (
