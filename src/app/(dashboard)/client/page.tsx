@@ -107,7 +107,7 @@ export default function ClientPortal() {
   const visibleJobs = jobs.filter(p => p.job !== null)
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-3">
         {clientLogo && (
           <img src={clientLogo} alt="" className="h-12 w-12 rounded-lg object-contain bg-white border border-gray-200 flex-shrink-0" />

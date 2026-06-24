@@ -78,7 +78,7 @@ export default function SurveyorDashboard() {
   const submitted = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-rise">
+    <div className="space-y-6 max-w-7xl mx-auto animate-rise">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Dashboard</h1>
