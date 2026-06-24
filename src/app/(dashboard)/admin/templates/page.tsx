@@ -10,6 +10,7 @@ import { toast } from '@/components/ui/toast'
 import CargoTemplatesPanel from '@/components/cargo/CargoTemplatesPanel'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
+import Tabs from '@/components/ui/Tabs'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -231,19 +232,14 @@ export default function TemplatesPage() {
       />
 
       {/* Template kind tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {([['checklist', 'Checklist', ClipboardList], ['cargo', 'Cargo', Ship]] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
-              tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Icon className="h-4 w-4" />{label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        active={tab}
+        onChange={k => setTab(k as 'checklist' | 'cargo')}
+        tabs={[
+          { key: 'checklist', label: <><ClipboardList className="h-4 w-4" /> Checklist</> },
+          { key: 'cargo', label: <><Ship className="h-4 w-4" /> Cargo</> },
+        ]}
+      />
 
       {tab === 'cargo' && <CargoTemplatesPanel />}
 

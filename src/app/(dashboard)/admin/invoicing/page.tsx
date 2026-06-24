@@ -24,6 +24,7 @@ import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
 import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
 import type { Client, ClientRate, Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'rates' | 'settings'
@@ -42,18 +43,18 @@ export default function AdminInvoicingPage() {
     <div className="max-w-7xl mx-auto space-y-6 animate-rise">
       <PageHeader icon={Receipt} title="Finance" subtitle="Invoices, client rates and billing defaults." />
 
-      <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
-        {([['overview', 'Overview'], ['create', 'Create invoice'], ['invoices', 'Invoices'], ['reconcile', 'Reconcile'], ['rates', 'Client rates'], ['settings', 'Settings']] as [Tab, string][]).map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={cn('px-3.5 py-2 text-sm font-medium border-b-2 -mb-px rounded-t-md transition-colors flex items-center gap-1.5 whitespace-nowrap',
-              tab === k ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50')}>
-            {label}
-            {k === 'reconcile' && flagCount != null && flagCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold tnum">{flagCount}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        active={tab}
+        onChange={k => setTab(k as Tab)}
+        tabs={[
+          { key: 'overview', label: 'Overview' },
+          { key: 'create', label: 'Create invoice' },
+          { key: 'invoices', label: 'Invoices' },
+          { key: 'reconcile', label: 'Reconcile', badge: flagCount ?? undefined },
+          { key: 'rates', label: 'Client rates' },
+          { key: 'settings', label: 'Settings' },
+        ]}
+      />
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'create' && <ConsolidatedInvoiceBuilder onCreated={() => listReconciliation().then(r => setFlagCount(r.items.length))} />}
