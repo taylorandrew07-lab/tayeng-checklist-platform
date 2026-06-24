@@ -7,6 +7,8 @@ import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } fr
 import { Modal } from '@/components/ui/Modal'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
+import Tabs from '@/components/ui/Tabs'
+import ClientRates from '@/components/clients/ClientRates'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
@@ -39,6 +41,7 @@ function ClientLogo({ src, name }: { src: string | null; name: string }) {
 }
 
 export default function ClientsPage() {
+  const [tab, setTab] = useState<'directory' | 'rates'>('directory')
   const [clients, setClients] = useState<Client[]>([])
   const [billing, setBilling] = useState<Record<string, ClientBilling>>({})
   const [loading, setLoading] = useState(true)
@@ -230,23 +233,27 @@ export default function ClientsPage() {
     })
   }, [clients, billing, q, activeFilter])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <PageHeader
         title="Clients"
-        subtitle={`${clients.length} clients`}
-        actions={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" />Add Client</button>}
+        subtitle={tab === 'rates' ? 'Billing rates per client' : loading ? undefined : `${clients.length} clients`}
+        actions={tab === 'directory' && !loading ? <button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" />Add Client</button> : undefined}
       />
 
-      {clients.length === 0 ? (
+      <Tabs
+        active={tab}
+        onChange={k => setTab(k as 'directory' | 'rates')}
+        tabs={[{ key: 'directory', label: 'Clients' }, { key: 'rates', label: 'Rates' }]}
+      />
+
+      {tab === 'rates' ? (
+        <ClientRates />
+      ) : loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+        </div>
+      ) : clients.length === 0 ? (
         <EmptyState
           icon={Building2}
           title="No clients yet"

@@ -11,6 +11,7 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import AttentionCard, { type AttentionItem } from '@/components/dashboard/AttentionCard'
+import InsightsSummary from '@/components/dashboard/InsightsSummary'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 import { useReconciliationAttention } from '@/components/dashboard/useReconciliationAttention'
 import type { UiPrefs } from '@/lib/types/database'
@@ -21,8 +22,9 @@ const TONE_RANK: Record<AttentionItem['tone'], number> = { danger: 0, warn: 1, i
 const CLEARED_AT_KEY = 'recentChecklistsClearedAt'
 
 // ── Dashboard tile catalog ────────────────────────────────────────────────
-// Action/nav tiles only — analytic counts (pipeline, template breakdowns) live
-// on Insights so the Dashboard doesn't echo it.
+// Action/nav tiles — catalog counts (templates, jobs, users, clients). The
+// deeper analytics (operational + billing KPIs, trend) render below via
+// <InsightsSummary>, so the headline insights live on the Dashboard too.
 type TileKey =
   | 'activeTemplates' | 'totalJobs' | 'users' | 'clients' | 'pendingApprovals'
 
@@ -275,6 +277,9 @@ export default function AdminDashboard() {
           {tiles.map(k => <StatTile key={k} def={TILE_DEFS[k]} value={tileValue(k)} loading={loading} />)}
         </div>
       )}
+
+      {/* Insights — headline operational + billing metrics, embedded from /admin/analytics */}
+      <InsightsSummary />
 
       {/* Recent Checklists */}
       <div className="card">
