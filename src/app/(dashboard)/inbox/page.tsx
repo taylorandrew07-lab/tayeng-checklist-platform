@@ -85,7 +85,7 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-7xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Inbox</h1>

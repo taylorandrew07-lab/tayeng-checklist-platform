@@ -16,8 +16,10 @@ export function useAutoSave(
   opts: { enabled?: boolean; delay?: number } = {},
 ) {
   const { enabled = true, delay = 2000 } = opts
+  // Keep the latest `save` closure in a ref so the debounce always runs the most
+  // recent one — updated in an effect (never during render) so the lint stays clean.
   const saveRef = useRef(save)
-  saveRef.current = save
+  useEffect(() => { saveRef.current = save })
 
   useEffect(() => {
     if (!enabled) return

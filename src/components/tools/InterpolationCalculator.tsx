@@ -166,7 +166,7 @@ export default function InterpolationCalculator() {
     : null
 
   return (
-    <div className={`mx-auto space-y-6 ${mode === 'bilinear' ? 'max-w-5xl' : 'max-w-2xl'} ${showKeypad ? 'pb-72 lg:pb-0' : ''}`}>
+    <div className={`mx-auto space-y-6 max-w-7xl ${showKeypad ? 'pb-72 lg:pb-0' : ''}`}>
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center flex-shrink-0">
           <Calculator className="h-5 w-5 text-brand-700" />
