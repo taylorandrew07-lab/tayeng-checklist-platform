@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { Download, Loader2, Share2 } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
-import { deliverJobPdf, isMobileDevice, type DeliverMode } from '@/lib/pdf/deliver'
+import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser, type DeliverMode } from '@/lib/pdf/deliver'
 
 export default function JobPdfButton({ jobId, className = 'btn-primary', label = 'Download / Share PDF' }: {
   jobId: string
@@ -45,7 +45,7 @@ export default function JobPdfButton({ jobId, className = 'btn-primary', label =
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
           <div className="absolute right-0 mt-1 z-20 w-52 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
-            <button onClick={() => go('download')} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+            <button onClick={() => { setMenuOpen(false); openJobPdfInBrowser(jobId) }} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
               <Download className="h-4 w-4 text-gray-400" />Download to device
             </button>
             <button onClick={() => go('share')} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">

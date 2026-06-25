@@ -91,9 +91,28 @@ export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: 
   return deliverFile(blob, filename, PDF_MIME, opts)
 }
 
-/** Fetch the server-rendered checklist PDF, then share/download it. */
+/** Open the server PDF endpoint directly in a new browser tab. The most reliable way
+ *  to get a report onto a MOBILE device — the native PDF viewer handles save/share, so
+ *  there's no blob/Web-Share-API hang (which can leave the button spinning forever).
+ *  Must be called synchronously from a click handler so the browser allows the tab. */
+export function openJobPdfInBrowser(jobId: string): void {
+  window.open(`/api/pdf/${jobId}`, '_blank', 'noopener')
+}
+
+/** Fetch the server-rendered checklist PDF, then share/download it. Times out rather
+ *  than spinning forever if the render/network stalls. */
 export async function deliverJobPdf(jobId: string, opts?: { mode?: DeliverMode }): Promise<void> {
-  const res = await fetch(`/api/pdf/${jobId}`, { credentials: 'include' })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 120_000)
+  let res: Response
+  try {
+    res = await fetch(`/api/pdf/${jobId}`, { credentials: 'include', signal: controller.signal })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') throw new Error('The report took too long to generate — please try again.')
+    throw new Error('Could not reach the server. Check your connection and try again.')
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) {
     const msg = res.status === 403 ? 'You are not allowed to download this report.'
       : res.status === 401 ? 'Your session has expired — please sign in again.'

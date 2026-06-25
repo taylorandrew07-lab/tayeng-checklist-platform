@@ -16,7 +16,7 @@ import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
-import { deliverJobPdf } from '@/lib/pdf/deliver'
+import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/deliver'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
 import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
@@ -102,8 +102,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [submitting, setSubmitting] = useState(false)
     const [sharing, setSharing] = useState(false)
 
-    // Share (mobile) or download (desktop) the server-rendered checklist PDF.
+    // Get the report onto the device. Mobile opens the PDF endpoint in a new tab (the
+    // native viewer handles save/share — no Web-Share-API hang); desktop downloads.
     async function downloadPdf() {
+      if (isMobileDevice()) { openJobPdfInBrowser(jobId); return }
       setSharing(true)
       try {
         await deliverJobPdf(jobId)

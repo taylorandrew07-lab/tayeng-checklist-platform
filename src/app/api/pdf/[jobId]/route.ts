@@ -6,6 +6,10 @@ import React from 'react'
 import { checkConditionalLogic } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 
+// Reports with many full-resolution photos take a while to render — give the function
+// headroom so it completes instead of being cut off (which the client sees as a hang).
+export const maxDuration = 60
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ jobId: string }> }
