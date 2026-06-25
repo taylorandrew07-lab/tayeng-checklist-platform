@@ -326,10 +326,10 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                     <p className="text-xs text-gray-500 mt-1">
                       Reference other fields using their ID in curly braces: {'{field_id}'}. Supports +, -, *, /
                     </p>
-                    {allFields.filter(f => f.field_type === 'number' && f.id !== field.id).length > 0 && (
+                    {allFields.filter(f => ['number', 'time'].includes(f.field_type) && f.id !== field.id).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {allFields
-                          .filter(f => f.field_type === 'number' && f.id !== field.id)
+                          .filter(f => ['number', 'time'].includes(f.field_type) && f.id !== field.id)
                           .map(f => (
                             <button
                               key={f.id}

@@ -379,7 +379,10 @@ function VideoLinkInput({ links, onChange, readOnly, baseInputClass }: {
 
   function commit(next: string[]) {
     setRows(next)
-    const cleaned = next.map(s => s.trim()).filter(Boolean)
+    // Persist only valid http(s) URLs — the single source of truth so storage,
+    // required-field validation and the PDF all agree (no junk strings stored or
+    // rendered as broken links). The local `rows` buffer keeps what's being typed.
+    const cleaned = next.map(s => s.trim()).filter(isHttpUrl)
     lastExternal.current = cleaned
     onChange(cleaned)
   }

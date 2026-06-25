@@ -485,9 +485,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                     <View key={i} style={styles.photoItem} wrap={false}>
                       {/* eslint-disable-next-line jsx-a11y/alt-text */}
                       <Image src={p.url} style={styles.photoImage} />
-                      {(p.caption || p.filename) && (
-                        <Text style={styles.photoCaption}>{p.caption || p.filename}</Text>
-                      )}
+                      {/* Always label a photo so a reader can tell which line/field it belongs to:
+                          a real caption if set, else "[field] — Photo N". Never the raw filename. */}
+                      <Text style={styles.photoCaption}>{p.caption || `${group.label} — Photo ${i + 1}`}</Text>
                     </View>
                   ))}
                 </View>
@@ -588,7 +588,7 @@ function renderField(
           ) : (
             <Text style={styles.fieldValueEmpty}>No signature</Text>
           )
-        ) : field.field_type === 'yes_no' || field.field_type === 'yes_no_na' ? (
+        ) : field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail' ? (
           <YesNoCell rawValue={rawValue} options={field.options} />
         ) : field.field_type === 'textarea' ? (
           <Text style={styles.textareaValue}>{rawValue || '—'}</Text>

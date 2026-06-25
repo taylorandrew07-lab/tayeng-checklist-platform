@@ -60,23 +60,26 @@ export async function GET(
   // and "View PDF" permission means the client receives the complete report.
   const db = createServiceClient()
 
-  // Load all job data
+  // Load the job first (it carries template_id), then everything else in parallel
+  // keyed off it — avoids a second jobs round-trip just to get template_id.
+  const { data: job } = await db.from('jobs').select(`
+      *,
+      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer),
+      client:clients(name),
+      assignee:profiles!jobs_assigned_to_fkey(full_name)
+    `).eq('id', jobId).single()
+
+  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+
   const [
-    { data: job },
     { data: sections },
     { data: fieldValues },
     { data: signatureData },
     { data: photoData },
   ] = await Promise.all([
-    db.from('jobs').select(`
-      *,
-      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer),
-      client:clients(name),
-      assignee:profiles!jobs_assigned_to_fkey(full_name)
-    `).eq('id', jobId).single(),
     db.from('template_sections')
       .select('*, fields:template_fields(*)')
-      .eq('template_id', (await db.from('jobs').select('template_id').eq('id', jobId).single()).data?.template_id ?? '')
+      .eq('template_id', job.template_id ?? '')
       .order('order_index'),
     db.from('job_field_values').select('*').eq('job_id', jobId),
     db.from('job_signatures').select('*').eq('job_id', jobId),
@@ -85,8 +88,6 @@ export async function GET(
       .eq('job_id', jobId)
       .order('created_at', { ascending: true }),
   ])
-
-  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
 
   // Build value maps
   const vals: Record<string, string> = {}
