@@ -126,6 +126,18 @@ export function getFieldTypeLabel(type: FieldType): string {
   return labels[type] ?? type
 }
 
+/**
+ * Numeric value of a checklist field for a calculation. A `time` field holds
+ * "HH:MM" — convert it to decimal hours so a formula like
+ * `{arriveBase} - {departBase}` yields elapsed hours (17:30 − 08:00 = 9.5).
+ * Everything else parses as a plain number (NaN for non-numeric).
+ */
+function fieldNumericValue(value: string): number {
+  const t = /^(\d{1,2}):([0-5]\d)$/.exec(value.trim())
+  if (t) return Number(t[1]) + Number(t[2]) / 60
+  return parseFloat(value)
+}
+
 export function evaluateCalculation(
   formula: string,
   values: Record<string, string>
@@ -133,12 +145,8 @@ export function evaluateCalculation(
   try {
     let expr = formula
     for (const [fieldId, value] of Object.entries(values)) {
-      const num = parseFloat(value)
-      if (!isNaN(num)) {
-        expr = expr.replace(new RegExp(`\\{${fieldId}\\}`, 'g'), String(num))
-      } else {
-        expr = expr.replace(new RegExp(`\\{${fieldId}\\}`, 'g'), '0')
-      }
+      const num = fieldNumericValue(value)
+      expr = expr.replace(new RegExp(`\\{${fieldId}\\}`, 'g'), isNaN(num) ? '0' : String(num))
     }
     // Only allow safe math expressions
     if (!/^[\d\s+\-*/().]+$/.test(expr)) return ''

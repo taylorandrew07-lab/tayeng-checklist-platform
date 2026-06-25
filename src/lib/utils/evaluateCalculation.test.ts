@@ -30,6 +30,27 @@ describe('evaluateCalculation (CSP-safe, no eval())', () => {
     const b = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
     expect(evaluateCalculation(`{${a}} / {${b}}`, { [a]: '1', [b]: '3' })).toBe('0.3333')
   })
+
+  // Time (HH:MM) fields become decimal hours, so a duration formula like
+  // {end} - {start} yields the elapsed hours — drives OVID billable hours.
+  it('treats HH:MM time fields as decimal hours', () => {
+    const start = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+    const end = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+    const F = `{${end}} - {${start}}`
+    expect(evaluateCalculation(F, { [start]: '08:00', [end]: '17:30' })).toBe('9.5')
+    expect(evaluateCalculation(F, { [start]: '06:15', [end]: '14:45' })).toBe('8.5')
+  })
+
+  it('sums multiple time intervals (travel out + back)', () => {
+    const departBase = '11111111-1111-1111-1111-111111111111'
+    const arriveLoc = '22222222-2222-2222-2222-222222222222'
+    const departLoc = '33333333-3333-3333-3333-333333333333'
+    const arriveBase = '44444444-4444-4444-4444-444444444444'
+    // travel = (arrive on location − depart base) + (arrive base − depart location)
+    const F = `{${arriveLoc}} - {${departBase}} + {${arriveBase}} - {${departLoc}}`
+    const vals = { [departBase]: '07:00', [arriveLoc]: '08:30', [departLoc]: '15:00', [arriveBase]: '16:30' }
+    expect(evaluateCalculation(F, vals)).toBe('3') // 1.5 out + 1.5 back
+  })
 })
 
 describe('evalArithmetic (safe parser, no eval())', () => {
