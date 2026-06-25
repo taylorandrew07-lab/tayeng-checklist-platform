@@ -287,19 +287,26 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: '#e2e8f0',
   },
-  // Repeatable-section entry block
+  // Repeatable-section entry block — a light-blue heading bar (lighter than the solid
+  // section header) clearly separates the entry label from its data rows.
   entryBlock: {
     borderWidth: 0.5,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
     borderRadius: 3,
-    padding: '4 6',
-    marginBottom: 4,
+    marginBottom: 5,
   },
   entryHeading: {
-    fontSize: 8,
+    fontSize: 8.5,
     fontFamily: 'Helvetica-Bold',
-    color: '#1d4ed8',
-    marginBottom: 2,
+    color: '#1e3a8a',
+    backgroundColor: '#dbeafe',
+    padding: '3 6',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    marginBottom: 3,
+  },
+  entryBody: {
+    padding: '0 6 3 6',
   },
   disclaimer: {
     marginTop: 6,
@@ -588,7 +595,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                     <React.Fragment key={inst}>
                       <View style={styles.entryBlock} wrap={false}>
                         <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
-                        {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
+                        <View style={styles.entryBody}>
+                          {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
+                        </View>
                       </View>
                       {/* Photos flow right after the line (no forced page break) — they fill the
                           page, up to 6 per page (2×3), then continue. */}
