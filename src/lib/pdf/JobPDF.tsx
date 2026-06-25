@@ -527,10 +527,12 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         <View style={styles.jobDetailsBlock}>
           {useFlagHeader ? (
             <>
-              {/* Vessel-identity left; commercial (client/surveyors) + flagged rows right */}
+              {/* Left = vessel identity (Vessel + non-date flagged fields); right =
+                  commercial/people (Client, Surveyors) + date-type flagged fields, so
+                  the two columns stay balanced. */}
               <View style={styles.jobDetailCol}>
                 {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
-                {headerRowFields.map((f: any) => {
+                {headerRowFields.filter((f: any) => f.field_type !== 'date').map((f: any) => {
                   const raw = fieldValues[f.id]
                   if (!raw) return null
                   // Number fields (e.g. Gross Tonnes) print with thousands separators.
@@ -541,6 +543,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               <View style={styles.jobDetailCol}>
                 {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
                 {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
+                {headerRowFields.filter((f: any) => f.field_type === 'date').map((f: any) => (
+                  fieldValues[f.id] ? <DetailRow key={f.id} label={f.label} value={fieldValues[f.id]} /> : null
+                ))}
               </View>
             </>
           ) : (

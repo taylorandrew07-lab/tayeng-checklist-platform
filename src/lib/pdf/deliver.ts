@@ -17,7 +17,7 @@ export const CSV_MIME = 'text/csv'
 /** True only for mobile-like devices, where the native share sheet is the right UX.
  *  Desktop (even touchscreen laptops, even though they CAN share) returns false so
  *  the file is downloaded/saved instead of opening a phone-style share sheet. */
-function isMobileDevice(): boolean {
+export function isMobileDevice(): boolean {
   if (typeof navigator === 'undefined') return false
   // Chromium (Android/Windows/macOS/ChromeOS) exposes an explicit, reliable flag.
   const uaMobile = (navigator as unknown as { userAgentData?: { mobile?: boolean } }).userAgentData?.mobile
@@ -61,11 +61,19 @@ async function saveToDisk(blob: Blob, filename: string, mimeType: string): Promi
   setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
+/** How to deliver: 'auto' = share on mobile / save on desktop (legacy); 'download' =
+ *  always save to the device; 'share' = always open the native share sheet. */
+export type DeliverMode = 'auto' | 'download' | 'share'
+
 /** Share on mobile (native sheet); save/download on desktop. Works for any file
- *  type — PDF, .docx, CSV — by passing its MIME type. */
-export async function deliverFile(blob: Blob, filename: string, mimeType: string, opts?: { title?: string }): Promise<void> {
+ *  type — PDF, .docx, CSV — by passing its MIME type. `mode` forces the channel so
+ *  mobile can offer an explicit "Download to device" vs "Share…" choice. */
+export async function deliverFile(blob: Blob, filename: string, mimeType: string, opts?: { title?: string; mode?: DeliverMode }): Promise<void> {
+  const mode = opts?.mode ?? 'auto'
   const file = new File([blob], filename, { type: mimeType })
-  if (isMobileDevice() && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+  const canShareFiles = typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })
+  const wantShare = mode === 'share' || (mode === 'auto' && isMobileDevice() && canShareFiles)
+  if (wantShare && canShareFiles) {
     try {
       await navigator.share({ files: [file], title: opts?.title ?? filename })
       return
@@ -79,12 +87,12 @@ export async function deliverFile(blob: Blob, filename: string, mimeType: string
 }
 
 /** Share if the platform supports sharing files (mobile); else download a PDF. */
-export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: string }): Promise<void> {
+export async function deliverPdf(blob: Blob, filename: string, opts?: { title?: string; mode?: DeliverMode }): Promise<void> {
   return deliverFile(blob, filename, PDF_MIME, opts)
 }
 
 /** Fetch the server-rendered checklist PDF, then share/download it. */
-export async function deliverJobPdf(jobId: string): Promise<void> {
+export async function deliverJobPdf(jobId: string, opts?: { mode?: DeliverMode }): Promise<void> {
   const res = await fetch(`/api/pdf/${jobId}`, { credentials: 'include' })
   if (!res.ok) {
     const msg = res.status === 403 ? 'You are not allowed to download this report.'
@@ -97,5 +105,5 @@ export async function deliverJobPdf(jobId: string): Promise<void> {
   const m = cd?.match(/filename="?([^"]+)"?/i)
   const filename = m?.[1] ?? `report-${jobId}.pdf`
   const blob = await res.blob()
-  await deliverPdf(blob, filename, { title: filename })
+  await deliverPdf(blob, filename, { title: filename, mode: opts?.mode })
 }
