@@ -1206,7 +1206,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   </label>
                   {field.help_text && <p className="text-xs text-gray-500">{field.help_text}</p>}
                   {!readOnly && (
-                    <div className="space-y-2">
+                    <div
+                      className="space-y-2"
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={async e => {
+                        e.preventDefault()
+                        const fs = e.dataTransfer?.files
+                        if (!fs || !fs.length) return
+                        for (const f of Array.from(fs)) await uploadPhotoForField(field.id, inst, f)
+                      }}
+                    >
                       <input
                         ref={el => { fieldPhotoRefs.current[key] = el }}
                         type="file"
@@ -1346,11 +1355,20 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
         {/* General (extra) photos section */}
         {!readOnly && (
-          <div className="card p-5">
+          <div
+            className="card p-5"
+            onDragOver={e => e.preventDefault()}
+            onDrop={async e => {
+              e.preventDefault()
+              const fs = e.dataTransfer?.files
+              if (!fs || !fs.length) return
+              for (const f of Array.from(fs)) await uploadGeneralPhoto(f)
+            }}
+          >
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="section-title">Additional Photos</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Extra photos not tied to a specific field</p>
+                <p className="text-xs text-gray-500 mt-0.5">Extra photos not tied to a specific field — drag &amp; drop or click Upload</p>
               </div>
               <button
                 onClick={() => generalPhotoRef.current?.click()}

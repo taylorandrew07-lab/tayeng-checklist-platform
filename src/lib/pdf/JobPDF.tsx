@@ -230,6 +230,42 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  // Letterhead
+  letterhead: {
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  logo: {
+    width: 150,
+    objectFit: 'contain',
+    marginBottom: 2,
+  },
+  letterheadName: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1e3a8a',
+  },
+  letterheadMeta: {
+    fontSize: 6.5,
+    color: '#94a3b8',
+  },
+  // Per-entry photo pages: 2 columns × 3 rows = 6 per page, started on a fresh page.
+  reportPhotoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  reportPhotoItem: {
+    width: '50%',
+    padding: 4,
+  },
+  reportPhotoImage: {
+    width: '100%',
+    height: 200,
+    objectFit: 'cover',
+    borderRadius: 2,
+    borderWidth: 0.5,
+    borderColor: '#e2e8f0',
+  },
   // Repeatable-section entry block
   entryBlock: {
     borderWidth: 0.5,
@@ -373,9 +409,13 @@ interface PDFProps {
   photos?: JobPhoto[]
   /** Fixed legal boilerplate printed at the end (template.pdf_disclaimer). */
   disclaimer?: string | null
+  /** Company letterhead logo as a data URI (loaded server-side). */
+  logoSrc?: string
+  /** Names of the surveyors assigned to the job, printed in the header. */
+  surveyors?: string[]
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, logoSrc, surveyors = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
   // Photo fields inside a repeatable section render INLINE per entry (above), so keep
@@ -419,7 +459,18 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
     >
       <Page size="LETTER" style={styles.page}>
 
-        {/* Report title only — no company block */}
+        {/* Letterhead — logo + company line */}
+        <View style={styles.letterhead} fixed>
+          {logoSrc ? (
+            // eslint-disable-next-line jsx-a11y/alt-text
+            <Image src={logoSrc} style={styles.logo} />
+          ) : (
+            <Text style={styles.letterheadName}>{COMPANY.name}</Text>
+          )}
+          <Text style={styles.letterheadMeta}>{COMPANY.address} · {COMPANY.phone} · {COMPANY.email}</Text>
+        </View>
+
+        {/* Report title */}
         <View style={styles.reportTitleBlock}>
           <Text style={styles.reportTitle}>{reportTitle}</Text>
         </View>
@@ -445,6 +496,12 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <Text style={styles.jobDetailValue}>{fieldValues[dateField.id]}</Text>
               </View>
             )}
+            {surveyors.length > 0 && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Surveyor{surveyors.length > 1 ? 's' : ''}:</Text>
+                <Text style={styles.jobDetailValue}>{surveyors.join(', ')}</Text>
+              </View>
+            )}
           </View>
           <View style={styles.jobDetailCol}>
             {portField && fieldValues[portField.id] && (
@@ -468,14 +525,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           </View>
         </View>
 
-        {/* Checklist sections */}
+        {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}
         {sections.map(section => {
           const visibleFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
           const photoFields = (section.fields as any[]).filter((f: any) => f.field_type === 'photo')
 
-          // Repeatable section: render each entry as its own block, with that entry's
-          // photos INLINE under it (labelled), so a reader always knows which entry a
-          // photo belongs to.
+          // Repeatable section: each entry is its own block; that entry's photos follow
+          // on a fresh page (6 per page, 2×3), labelled by line — never an anonymous dump.
           if (section.is_repeatable) {
             const count = instanceCountFor(section, fieldValues, arrayValues, signatures, photos)
             return (
@@ -483,34 +539,36 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <View wrap={false}>
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
-                    {section.description && <Text style={styles.sectionDescription}>{section.description}</Text>}
                   </View>
                 </View>
                 {Array.from({ length: count }).map((_, inst) => {
                   const lineName = entryName(section, inst, fieldValues)
+                  const entryPhotos = photoFields.flatMap((pf: any) => photos.filter(p => p.field_id === pf.id && p.instance === inst))
+                  const chunks: JobPhoto[][] = []
+                  for (let i = 0; i < entryPhotos.length; i += 6) chunks.push(entryPhotos.slice(i, i + 6))
                   return (
-                    <View key={inst} style={styles.entryBlock}>
-                      <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
-                      {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
-                      {photoFields.map((pf: any) => {
-                        const items = photos.filter(p => p.field_id === pf.id && p.instance === inst)
-                        if (items.length === 0) return null
-                        return (
-                          <View key={pf.id} style={{ marginTop: 3 }}>
-                            <Text style={styles.photoGroupHeading}>{pf.label}</Text>
-                            <View style={styles.photoGrid}>
-                              {items.map((p, i) => (
-                                <View key={i} style={styles.photoItem} wrap={false}>
-                                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                                  <Image src={p.url} style={styles.photoImage} />
-                                  <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${i + 1}`}</Text>
-                                </View>
-                              ))}
-                            </View>
+                    <React.Fragment key={inst}>
+                      <View style={styles.entryBlock} wrap={false}>
+                        <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
+                        {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
+                      </View>
+                      {chunks.map((chunk, ci) => (
+                        <View key={ci} break>
+                          <View style={styles.photosSectionHeader}>
+                            <Text style={styles.sectionTitle}>{lineName || `Entry ${inst + 1}`} — Photographs{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ''}</Text>
                           </View>
-                        )
-                      })}
-                    </View>
+                          <View style={styles.reportPhotoGrid}>
+                            {chunk.map((p, i) => (
+                              <View key={i} style={styles.reportPhotoItem} wrap={false}>
+                                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                                <Image src={p.url} style={styles.reportPhotoImage} />
+                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${ci * 6 + i + 1}`}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      ))}
+                    </React.Fragment>
                   )
                 })}
               </View>
@@ -525,9 +583,6 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               <View wrap={false}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>{section.title}</Text>
-                  {section.description && (
-                    <Text style={styles.sectionDescription}>{section.description}</Text>
-                  )}
                 </View>
                 {renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
               </View>
@@ -540,31 +595,28 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           )
         })}
 
-        {/* Photographs — embedded as a captioned grid, grouped by field, when the
-            template opts in (pdf_include_photos). Starts on a fresh page. */}
-        {endPhotos.length > 0 && (
-          <View break>
-            <View style={styles.photosSectionHeader}>
-              <Text style={styles.sectionTitle}>Photographs</Text>
-            </View>
-            {groupPhotosByField(endPhotos, allFieldsFlat).map(group => (
-              <View key={group.key}>
-                <Text style={styles.photoGroupHeading}>{group.label}</Text>
-                <View style={styles.photoGrid}>
-                  {group.items.map((p, i) => (
-                    <View key={i} style={styles.photoItem} wrap={false}>
-                      {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                      <Image src={p.url} style={styles.photoImage} />
-                      {/* Always label a photo so a reader can tell which line/field it belongs to:
-                          a real caption if set, else "[field] — Photo N". Never the raw filename. */}
-                      <Text style={styles.photoCaption}>{p.caption || `${group.label} — Photo ${i + 1}`}</Text>
-                    </View>
-                  ))}
-                </View>
+        {/* Additional (field-less) photos only — line photos already print with their
+            entry above. New page, 6 per page (2×3). No anonymous filename dump. */}
+        {endPhotos.length > 0 && (() => {
+          const chunks: JobPhoto[][] = []
+          for (let i = 0; i < endPhotos.length; i += 6) chunks.push(endPhotos.slice(i, i + 6))
+          return chunks.map((chunk, ci) => (
+            <View key={ci} break>
+              <View style={styles.photosSectionHeader}>
+                <Text style={styles.sectionTitle}>Additional Photographs{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ''}</Text>
               </View>
-            ))}
-          </View>
-        )}
+              <View style={styles.reportPhotoGrid}>
+                {chunk.map((p, i) => (
+                  <View key={i} style={styles.reportPhotoItem} wrap={false}>
+                    {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                    <Image src={p.url} style={styles.reportPhotoImage} />
+                    <Text style={styles.photoCaption}>{p.caption || `Additional — Photo ${ci * 6 + i + 1}`}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))
+        })()}
 
         {/* Legacy photo note — only when photos exist but are NOT embedded in the PDF */}
         {photoCount > 0 && photos.length === 0 && (
@@ -591,28 +643,6 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
       </Page>
     </Document>
   )
-}
-
-// Group embedded photos by their field (preserving first-seen order); field-less
-// "general" photos collect under one heading. Used to lay the Photographs section out.
-function groupPhotosByField(
-  photos: JobPhoto[],
-  allFieldsFlat: any[]
-): { key: string; label: string; items: JobPhoto[] }[] {
-  const groups: { key: string; label: string; items: JobPhoto[] }[] = []
-  const indexByKey = new Map<string, number>()
-  for (const p of photos) {
-    const key = p.field_id ?? '__general__'
-    if (!indexByKey.has(key)) {
-      const label = p.field_id
-        ? (allFieldsFlat.find((f: any) => f.id === p.field_id)?.label ?? 'Photos')
-        : 'General Photos'
-      indexByKey.set(key, groups.length)
-      groups.push({ key, label, items: [] })
-    }
-    groups[indexByKey.get(key)!].items.push(p)
-  }
-  return groups
 }
 
 // How many entries a repeatable section has = 1 + the highest instance seen across
@@ -679,7 +709,7 @@ function renderField(
         <Text style={styles.fieldLabelText}>
           {field.item_number ? <Text style={{ color: '#1d4ed8' }}>{field.item_number}{'  '}</Text> : null}
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
-          {field.is_required && <Text style={styles.fieldRequired}> *</Text>}
+          {/* No required-asterisk in the report — that marker is only for the survey form. */}
         </Text>
         {/* help_text is on-screen surveyor guidance only — intentionally omitted
             from the PDF so the report shows just the question + answer. */}

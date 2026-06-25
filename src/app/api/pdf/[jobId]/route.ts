@@ -7,7 +7,7 @@ import { checkConditionalLogic } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
   const supabase = await createClient()
@@ -126,6 +126,21 @@ export async function GET(
       .filter(p => p.url)
   }
 
+  // Assigned surveyors (printed in the report header). job_surveyors has two FKs to
+  // profiles (surveyor_id, created_by), so the embed is hinted by the surveyor FK.
+  const { data: survRows } = await db.from('job_surveyors')
+    .select('surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name), created_at')
+    .eq('job_id', jobId)
+    .order('created_at', { ascending: true })
+  const surveyors = ((survRows ?? []) as any[]).map(r => r.surveyor?.full_name).filter(Boolean) as string[]
+
+  // Letterhead logo as a data URI (reliable in serverless), loaded from the app origin.
+  let logoSrc: string | undefined
+  try {
+    const res = await fetch(new URL('/logo-full.png', new URL(request.url).origin))
+    if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
+  } catch { /* logo is optional — the report falls back to the company name */ }
+
   // Process sections — sort and evaluate conditional logic
   const processedSections = (sections ?? []).map((s: any) => ({
     ...s,
@@ -156,6 +171,8 @@ export async function GET(
         photoCount,
         photos,
         disclaimer: job.template?.pdf_disclaimer ?? null,
+        logoSrc,
+        surveyors,
       }) as any
     )
   } catch (e) {
