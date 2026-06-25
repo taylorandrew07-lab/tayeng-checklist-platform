@@ -202,10 +202,18 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
   }
 
   function updateField(sectionId: string, fieldId: string, field: BuilderField) {
+    // "Billable hours" is one-per-template: turning it on here clears it everywhere
+    // else, so the Ops panel and the invoice can never read two different fields.
+    const single = field.is_billable_hours === true
     onChange(sections.map(s => {
-      if (s.id !== sectionId) return s
-      // renumber so a field-type change to/from a layout type re-flows the sequence
-      return { ...s, fields: renumberFields(s.fields.map(f => f.id === fieldId ? field : f)) }
+      if (s.id === sectionId) {
+        let fields = s.fields.map(f => f.id === fieldId ? field : f)
+        if (single) fields = fields.map(f => (f.id !== fieldId && f.is_billable_hours) ? { ...f, is_billable_hours: false } : f)
+        // renumber so a field-type change to/from a layout type re-flows the sequence
+        return { ...s, fields: renumberFields(fields) }
+      }
+      if (single) return { ...s, fields: s.fields.map(f => f.is_billable_hours ? { ...f, is_billable_hours: false } : f) }
+      return s
     }))
   }
 

@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Edit, Loader2, FileText, CheckSquare, AlignLeft, Hash, Type, Calendar, Clock, List, Camera, PenLine, Minus } from 'lucide-react'
+import { ArrowLeft, Edit, Loader2, FileText, CheckSquare, AlignLeft, Hash, Type, Calendar, Clock, List, Camera, PenLine, Minus, Video, User } from 'lucide-react'
+import { getFieldTypeLabel } from '@/lib/utils'
 
 const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
   text: Type,
@@ -19,18 +20,15 @@ const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
   textarea: AlignLeft,
   calculated: Hash,
   photo: Camera,
+  video_link: Video,
+  client_select: User,
   signature: PenLine,
   heading: Type,
   divider: Minus,
 }
 
-const FIELD_TYPE_LABELS: Record<string, string> = {
-  text: 'Text', number: 'Number', date: 'Date', time: 'Time',
-  dropdown: 'Dropdown', yes_no: 'Yes / No', yes_no_na: 'Yes / No / N/A', pass_fail: 'Pass / Fail',
-  multiple_choice: 'Multiple Choice', textarea: 'Text Area',
-  calculated: 'Calculated', photo: 'Photo', signature: 'Signature',
-  heading: 'Heading', divider: 'Divider',
-}
+// Label comes from the shared getFieldTypeLabel() so this page can never drift from
+// the canonical field-type list again (the old private map missed new types).
 
 export default function TemplatePreviewPage() {
   const params = useParams()
@@ -188,7 +186,7 @@ export default function TemplatePreviewPage() {
                         })()}
                         {(field.field_type === 'text' || field.field_type === 'number' || field.field_type === 'date' || field.field_type === 'time') && (
                           <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-xs text-gray-400 mt-1">
-                            {FIELD_TYPE_LABELS[field.field_type]}
+                            {getFieldTypeLabel(field.field_type)}
                             {field.unit && <span className="ml-1 text-gray-500">({field.unit})</span>}
                           </div>
                         )}
@@ -226,7 +224,7 @@ export default function TemplatePreviewPage() {
                       </div>
                       <div className="flex-shrink-0">
                         <span className="text-xs text-gray-300 bg-gray-50 px-1.5 py-0.5 rounded">
-                          {FIELD_TYPE_LABELS[field.field_type]}
+                          {getFieldTypeLabel(field.field_type)}
                         </span>
                       </div>
                     </div>

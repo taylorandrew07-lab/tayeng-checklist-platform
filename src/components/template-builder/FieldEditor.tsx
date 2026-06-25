@@ -575,17 +575,10 @@ function ConditionalLogicEditor({ logic, onChange, availableFields }: Conditiona
               <option value="is_not_empty">is not empty</option>
             </select>
             {!['is_empty', 'is_not_empty'].includes(condition.operator) && (
-              (refField?.field_type === 'yes_no' || refField?.field_type === 'yes_no_na') ? (
-                <select
-                  value={condition.value}
-                  onChange={(e) => updateCondition(idx, { value: e.target.value })}
-                  className="text-xs border border-amber-300 rounded px-2 py-1 bg-white"
-                >
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                  {refField?.field_type === 'yes_no_na' && <option value="na">N/A</option>}
-                </select>
-              ) : refField?.field_type === 'dropdown' ? (
+              // Any options-bearing field (yes_no / yes_no_na / pass_fail / dropdown /
+              // multiple_choice) gets a constrained dropdown from its own options, so a
+              // rule can't silently never-fire on a typo (e.g. "Pass" vs the stored "pass").
+              (refField && ['yes_no', 'yes_no_na', 'pass_fail', 'dropdown', 'multiple_choice'].includes(refField.field_type) && refField.options.length > 0) ? (
                 <select
                   value={condition.value}
                   onChange={(e) => updateCondition(idx, { value: e.target.value })}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Info, Plus, X, Video } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
+import { getCachedNewJobData } from '@/lib/offline/db'
 import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
 import SignaturePad from './SignaturePad'
 
@@ -450,8 +451,20 @@ function ClientSelectInput({ value, onChange, readOnly, baseInputClass, listId }
   const [names, setNames] = useState<string[]>([])
   useEffect(() => {
     let active = true
-    createClient().from('clients').select('name').eq('is_active', true).order('name')
-      .then(({ data }) => { if (active && data) setNames((data as { name: string }[]).map(c => c.name).filter(Boolean)) })
+    const fromCache = async () => {
+      const cached = await getCachedNewJobData().catch(() => undefined)
+      if (active && cached?.clients) setNames((cached.clients as { name: string }[]).map(c => c.name).filter(Boolean))
+    }
+    void (async () => {
+      try {
+        const { data } = await createClient().from('clients').select('name').eq('is_active', true).order('name')
+        if (!active) return
+        if (data && data.length) setNames((data as { name: string }[]).map(c => c.name).filter(Boolean))
+        else await fromCache() // offline / empty → fall back to the offline new-job cache
+      } catch {
+        await fromCache()
+      }
+    })()
     return () => { active = false }
   }, [])
 

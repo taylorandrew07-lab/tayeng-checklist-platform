@@ -133,7 +133,8 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     if (job.template_id) {
       const supabase = createClient()
       const { data: f } = await supabase.from('template_fields')
-        .select('id').eq('template_id', job.template_id).eq('is_billable_hours', true).limit(1).maybeSingle()
+        .select('id').eq('template_id', job.template_id).eq('is_billable_hours', true)
+        .order('order_index').limit(1).maybeSingle()
       if (f?.id) {
         const { data: v } = await supabase.from('job_field_values')
           .select('value').eq('job_id', job.id).eq('field_id', f.id).maybeSingle()

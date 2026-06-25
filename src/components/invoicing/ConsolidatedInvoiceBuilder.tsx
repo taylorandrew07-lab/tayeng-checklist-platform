@@ -145,6 +145,18 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   async function create() {
     if (!clientId) { toast.error('Choose a client'); return }
     if (lineCount === 0) { toast.error('Add at least one job, line or expense'); return }
+    // Money-safety: every line is summed under one invoice currency, so block creating
+    // an invoice where a selected job's rate is in a DIFFERENT currency (no conversion).
+    const active = rates.filter(r => r.is_active)
+    const mismatch = orderedLines.find(l => {
+      const rate = active.find(r => r.job_type === l.job.job_type) ?? active.find(r => !r.job_type)
+      return rate && rate.currency !== currency
+    })
+    if (mismatch) {
+      const rate = active.find(r => r.job_type === mismatch.job.job_type) ?? active.find(r => !r.job_type)
+      toast.error(`${mismatch.job.job_type ?? 'A job'} is rated in ${rate?.currency}, but this invoice is ${currency}. Match the currency (or remove that job) before billing.`)
+      return
+    }
     setSaving(true)
     const res = await createConsolidatedInvoice({
       client_id: clientId,
