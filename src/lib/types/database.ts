@@ -30,6 +30,7 @@ export type FieldType =
   | 'textarea'
   | 'calculated'
   | 'photo'
+  | 'video_link'
   | 'signature'
   | 'heading'
   | 'divider'
@@ -247,6 +248,9 @@ export interface ChecklistTemplate {
   version: number
   status: TemplateStatus
   allow_surveyor_start: boolean
+  /** When true, the report PDF embeds the job's photos as a captioned grid
+   *  (default false keeps the legacy "photos stored internally" behaviour). */
+  pdf_include_photos: boolean
   created_by: string
   duplicated_from: string | null
   archived_by: string | null

@@ -66,11 +66,11 @@ export async function GET(
     { data: sections },
     { data: fieldValues },
     { data: signatureData },
-    { count: photoCount },
+    { data: photoData },
   ] = await Promise.all([
     db.from('jobs').select(`
       *,
-      template:checklist_templates(name),
+      template:checklist_templates(name, pdf_include_photos),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single(),
@@ -80,7 +80,10 @@ export async function GET(
       .order('order_index'),
     db.from('job_field_values').select('*').eq('job_id', jobId),
     db.from('job_signatures').select('*').eq('job_id', jobId),
-    db.from('job_photos').select('id', { count: 'exact', head: true }).eq('job_id', jobId),
+    db.from('job_photos')
+      .select('id, field_id, storage_path, caption, filename, created_at')
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: true }),
   ])
 
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -96,6 +99,28 @@ export async function GET(
   const sigs: Record<string, string> = {}
   for (const sig of (signatureData ?? [])) {
     sigs[sig.field_id] = sig.signature_data
+  }
+
+  // Photos: count is always known. Only when the template opts in (pdf_include_photos)
+  // do we sign URLs and embed them as a captioned grid — otherwise the PDF keeps the
+  // legacy "N photos stored internally" note (unchanged for every existing template).
+  // The template flag is the gate: when on, every stored photo is embedded. (The
+  // per-photo include_in_pdf column has no UI and defaults false, so gating on it
+  // would embed nothing — it is intentionally ignored here.)
+  const photoRows = (photoData ?? []) as Array<{ field_id: string | null; storage_path: string; caption: string | null; filename: string | null }>
+  const photoCount = photoRows.length
+  let photos: Array<{ field_id: string | null; url: string; caption: string | null; filename: string | null }> = []
+  if (job.template?.pdf_include_photos === true && photoRows.length > 0) {
+    const usable = photoRows.filter(p => p.storage_path)
+    const paths = usable.map(p => p.storage_path)
+    const signed = paths.length
+      ? (await db.storage.from('job-photos').createSignedUrls(paths, 3600)).data ?? []
+      : []
+    const urlByPath = new Map<string, string>()
+    for (const s of signed) if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl)
+    photos = usable
+      .map(p => ({ field_id: p.field_id, url: urlByPath.get(p.storage_path) ?? '', caption: p.caption, filename: p.filename }))
+      .filter(p => p.url)
   }
 
   // Process sections — sort and evaluate conditional logic
@@ -125,7 +150,8 @@ export async function GET(
         fieldValues: vals,
         arrayValues: arrayVals,
         signatures: sigs,
-        photoCount: photoCount ?? 0,
+        photoCount,
+        photos,
       }) as any
     )
   } catch (e) {

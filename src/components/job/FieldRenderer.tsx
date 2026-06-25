@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { Info } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Info, Plus, X, Video } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
 import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
 import SignaturePad from './SignaturePad'
@@ -236,6 +236,15 @@ export default function FieldRenderer({
         </div>
       )}
 
+      {field.field_type === 'video_link' && (
+        <VideoLinkInput
+          links={valueArray ?? []}
+          onChange={v => onArrayChange?.(v)}
+          readOnly={readOnly}
+          baseInputClass={baseInputClass}
+        />
+      )}
+
       {field.field_type === 'calculated' && (
         <CalculatedField
           field={field}
@@ -325,6 +334,87 @@ function CalculatedField({ field, value, allValues, onChange }: {
         {displayVal}
       </div>
       {field.unit && !isPercent && <span className="text-sm text-gray-500">{field.unit}</span>}
+    </div>
+  )
+}
+
+/**
+ * Video Link input — one or more pasted external URLs (videos live on our NAS,
+ * nothing is uploaded to Supabase). Persists only valid, non-empty URLs (via the
+ * value_array path, like multiple_choice); keeps a local trailing blank row for
+ * editing so an in-progress entry never gets stored.
+ */
+function isHttpUrl(u: string): boolean {
+  try { const x = new URL(u.trim()); return x.protocol === 'http:' || x.protocol === 'https:' }
+  catch { return false }
+}
+
+function VideoLinkInput({ links, onChange, readOnly, baseInputClass }: {
+  links: string[]
+  onChange: (v: string[]) => void
+  readOnly: boolean
+  baseInputClass: string
+}) {
+  const [rows, setRows] = useState<string[]>(links.length ? links : [''])
+  // Re-seed from the persisted value only when it genuinely changes from outside
+  // (e.g. a draft hydrates), not on our own edits — so the editing row is kept.
+  const lastExternal = useRef(links)
+  useEffect(() => {
+    if (links.join('') !== lastExternal.current.join('')) {
+      lastExternal.current = links
+      setRows(links.length ? links : [''])
+    }
+  }, [links])
+
+  function commit(next: string[]) {
+    setRows(next)
+    const cleaned = next.map(s => s.trim()).filter(Boolean)
+    lastExternal.current = cleaned
+    onChange(cleaned)
+  }
+
+  if (readOnly) {
+    const valid = links.filter(isHttpUrl)
+    if (valid.length === 0) return <p className="text-sm text-gray-400">—</p>
+    return (
+      <div className="space-y-1">
+        {valid.map((url, i) => (
+          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-800 break-all">
+            <Video className="h-3.5 w-3.5 flex-shrink-0" />Video {i + 1}
+          </a>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {rows.map((url, i) => {
+        const invalid = url.trim() !== '' && !isHttpUrl(url)
+        return (
+          <div key={i}>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                inputMode="url"
+                value={url}
+                onChange={e => commit(rows.map((r, j) => j === i ? e.target.value : r))}
+                placeholder="https://… (paste the video link)"
+                className={`${baseInputClass} flex-1 ${invalid ? 'border-red-400 focus:border-red-400' : ''}`}
+              />
+              {rows.length > 1 && (
+                <button type="button" onClick={() => commit(rows.filter((_, j) => j !== i))} className="btn-ghost p-1.5 text-gray-400 hover:text-red-600" aria-label="Remove link">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {invalid && <p className="text-xs text-red-600 mt-1">Enter a full URL starting with http:// or https://</p>}
+          </div>
+        )
+      })}
+      <button type="button" onClick={() => setRows([...rows, ''])} className="text-sm text-brand-600 hover:text-brand-800 font-medium inline-flex items-center gap-1">
+        <Plus className="h-3.5 w-3.5" />Add another link
+      </button>
     </div>
   )
 }

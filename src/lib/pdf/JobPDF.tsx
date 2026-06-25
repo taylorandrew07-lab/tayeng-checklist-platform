@@ -6,6 +6,7 @@ import {
   View,
   StyleSheet,
   Image,
+  Link,
 } from '@react-pdf/renderer'
 import { format, parseISO } from 'date-fns'
 import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
@@ -184,6 +185,50 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     marginVertical: 4,
   },
+  videoLink: {
+    fontSize: 8,
+    color: '#1d4ed8',
+    textDecoration: 'underline',
+    marginBottom: 1,
+  },
+  // Photographs section (only rendered when the template opts in)
+  photosSectionHeader: {
+    backgroundColor: '#1e3a8a',
+    padding: '4 8',
+    borderRadius: 2,
+    marginBottom: 4,
+  },
+  photoGroupHeading: {
+    fontSize: 8.5,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1d4ed8',
+    marginTop: 6,
+    marginBottom: 3,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#bfdbfe',
+    paddingBottom: 2,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  photoItem: {
+    width: '33.33%',
+    padding: 3,
+  },
+  photoImage: {
+    width: '100%',
+    height: 110,
+    objectFit: 'cover',
+    borderRadius: 2,
+    borderWidth: 0.5,
+    borderColor: '#e2e8f0',
+  },
+  photoCaption: {
+    fontSize: 6.5,
+    color: '#64748b',
+    marginTop: 2,
+  },
 })
 
 /**
@@ -279,6 +324,13 @@ function CalcDiffCell({ rawValue, validation, formula, fieldValues }: {
   )
 }
 
+interface JobPhoto {
+  field_id: string | null
+  url: string
+  caption: string | null
+  filename: string | null
+}
+
 interface PDFProps {
   job: any
   sections: any[]
@@ -286,9 +338,12 @@ interface PDFProps {
   arrayValues: Record<string, string[]>
   signatures: Record<string, string>
   photoCount: number
+  /** Signed photo URLs to embed — populated only when the template opts in
+   *  (pdf_include_photos). Empty array keeps the legacy "stored internally" note. */
+  photos?: JobPhoto[]
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
   // Locate key Job Detail fields by label pattern
@@ -393,8 +448,34 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           )
         })}
 
-        {/* Photo note */}
-        {photoCount > 0 && (
+        {/* Photographs — embedded as a captioned grid, grouped by field, when the
+            template opts in (pdf_include_photos). Starts on a fresh page. */}
+        {photos.length > 0 && (
+          <View break>
+            <View style={styles.photosSectionHeader}>
+              <Text style={styles.sectionTitle}>Photographs</Text>
+            </View>
+            {groupPhotosByField(photos, allFieldsFlat).map(group => (
+              <View key={group.key}>
+                <Text style={styles.photoGroupHeading}>{group.label}</Text>
+                <View style={styles.photoGrid}>
+                  {group.items.map((p, i) => (
+                    <View key={i} style={styles.photoItem} wrap={false}>
+                      {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                      <Image src={p.url} style={styles.photoImage} />
+                      {(p.caption || p.filename) && (
+                        <Text style={styles.photoCaption}>{p.caption || p.filename}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Legacy photo note — only when photos exist but are NOT embedded in the PDF */}
+        {photoCount > 0 && photos.length === 0 && (
           <View style={styles.photoNote}>
             <Text style={styles.photoNoteText}>
               Note: {photoCount} photo{photoCount !== 1 ? 's' : ''} attached to this job are stored internally and not included in this PDF.
@@ -411,6 +492,28 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
       </Page>
     </Document>
   )
+}
+
+// Group embedded photos by their field (preserving first-seen order); field-less
+// "general" photos collect under one heading. Used to lay the Photographs section out.
+function groupPhotosByField(
+  photos: JobPhoto[],
+  allFieldsFlat: any[]
+): { key: string; label: string; items: JobPhoto[] }[] {
+  const groups: { key: string; label: string; items: JobPhoto[] }[] = []
+  const indexByKey = new Map<string, number>()
+  for (const p of photos) {
+    const key = p.field_id ?? '__general__'
+    if (!indexByKey.has(key)) {
+      const label = p.field_id
+        ? (allFieldsFlat.find((f: any) => f.id === p.field_id)?.label ?? 'Photos')
+        : 'General Photos'
+      indexByKey.set(key, groups.length)
+      groups.push({ key, label, items: [] })
+    }
+    groups[indexByKey.get(key)!].items.push(p)
+  }
+  return groups
 }
 
 function renderField(
@@ -471,6 +574,20 @@ function renderField(
           <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
             {hasValue ? resolveDropdownValue(field, rawValue) : '—'}
           </Text>
+        ) : field.field_type === 'video_link' ? (
+          (() => {
+            const links = (arrayValues[field.id] ?? []).filter(Boolean)
+            if (links.length === 0) return <Text style={styles.fieldValueEmpty}>—</Text>
+            return (
+              <View>
+                {links.map((url, i) => (
+                  <Link key={i} src={url} style={styles.videoLink}>
+                    {links.length > 1 ? `Video ${i + 1}: ` : ''}{url}
+                  </Link>
+                ))}
+              </View>
+            )
+          })()
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>

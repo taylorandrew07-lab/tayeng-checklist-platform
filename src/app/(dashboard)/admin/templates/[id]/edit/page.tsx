@@ -21,6 +21,7 @@ export default function EditTemplatePage() {
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TemplateStatus>('draft')
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
+  const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [color, setColor] = useState<string | null>(null)
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
@@ -44,7 +45,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, color, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, color, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, allowSurveyorStart, color, sections, isDirty],
+    [name, description, status, allowSurveyorStart, pdfIncludePhotos, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -90,6 +91,7 @@ export default function EditTemplatePage() {
       setDescription(tmpl.description ?? '')
       setStatus(tmpl.status)
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
+      setPdfIncludePhotos(tmpl.pdf_include_photos ?? false)
       setColor(tmpl.color ?? null)
       setJobCount(count ?? 0)
 
@@ -206,6 +208,7 @@ export default function EditTemplatePage() {
           description: description.trim() || null,
           status,
           allow_surveyor_start: allowSurveyorStart,
+          pdf_include_photos: pdfIncludePhotos,
           color,
         }).eq('id', templateId),
         15_000, 'Saving template'
@@ -387,6 +390,17 @@ export default function EditTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${allowSurveyorStart ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Allow surveyor start</span>
+            </label>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setPdfIncludePhotos(!pdfIncludePhotos)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${pdfIncludePhotos ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfIncludePhotos ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
           </div>
         </div>

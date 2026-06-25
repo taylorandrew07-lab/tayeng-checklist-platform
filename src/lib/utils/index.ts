@@ -119,6 +119,7 @@ export function getFieldTypeLabel(type: FieldType): string {
     textarea: 'Long Text / Remarks',
     calculated: 'Calculated',
     photo: 'Photo Upload',
+    video_link: 'Video Link',
     signature: 'Signature',
     heading: 'Section Heading',
     divider: 'Divider',

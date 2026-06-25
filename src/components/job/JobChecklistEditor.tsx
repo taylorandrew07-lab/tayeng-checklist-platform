@@ -643,11 +643,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             if (!checkConditionalLogic(field.conditional_logic, values)) continue
             if (field.field_type === 'signature' && !signatures[field.id]) {
               missing.push(field.label)
-            } else if (field.field_type === 'multiple_choice' && !(arrayValues[field.id]?.length)) {
+            } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[field.id]?.length)) {
               missing.push(field.label)
             } else if (field.field_type === 'photo' && !(fieldPhotos[field.id]?.length)) {
               missing.push(field.label)
-            } else if (!['signature', 'multiple_choice', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
+            } else if (!['signature', 'multiple_choice', 'video_link', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
               // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
               // so a field with only remarks (no Yes/No/Pass/Fail picked) still counts as missing.
               const raw = values[field.id] ?? ''
@@ -1081,7 +1081,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type) && checkConditionalLogic(f.conditional_logic, values))
           const completedCount = dataFields.filter(f => {
             if (f.field_type === 'signature') return !!signatures[f.id]
-            if (f.field_type === 'multiple_choice') return (arrayValues[f.id] ?? []).length > 0
+            if (f.field_type === 'multiple_choice' || f.field_type === 'video_link') return (arrayValues[f.id] ?? []).length > 0
             if (f.field_type === 'photo') return (fieldPhotos[f.id] ?? []).length > 0
             return !!values[f.id]
           }).length

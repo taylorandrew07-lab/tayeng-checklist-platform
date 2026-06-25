@@ -38,6 +38,7 @@ export default function NewTemplatePage() {
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TemplateStatus>('draft')
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
+  const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +54,7 @@ export default function NewTemplatePage() {
   useEffect(() => {
     if (!loadedRef.current) return
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -184,6 +185,7 @@ export default function NewTemplatePage() {
         description: description.trim() || null,
         status,
         allow_surveyor_start: allowSurveyorStart,
+        pdf_include_photos: pdfIncludePhotos,
         created_by: user.id,
         duplicated_from: duplicateFrom || null,
       })
@@ -354,6 +356,17 @@ export default function NewTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${allowSurveyorStart ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Allow surveyors to start new jobs from this template</span>
+            </label>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setPdfIncludePhotos(!pdfIncludePhotos)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${pdfIncludePhotos ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfIncludePhotos ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
           </div>
         </div>

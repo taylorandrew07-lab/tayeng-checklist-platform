@@ -237,7 +237,7 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                 <ConditionalLogicEditor
                   logic={field.conditional_logic}
                   onChange={updateConditional}
-                  availableFields={allFields.filter(f => f.id !== field.id && !['photo', 'signature', 'heading', 'divider'].includes(f.field_type))}
+                  availableFields={allFields.filter(f => f.id !== field.id && !['photo', 'video_link', 'signature', 'heading', 'divider'].includes(f.field_type))}
                 />
               )}
             </div>

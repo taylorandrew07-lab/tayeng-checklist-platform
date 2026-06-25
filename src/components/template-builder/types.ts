@@ -40,6 +40,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'multiple_choice', label: 'Multiple Choice', group: 'Choice' },
   { value: 'calculated', label: 'Calculated Field', group: 'Special' },
   { value: 'photo', label: 'Photo Upload', group: 'Special' },
+  { value: 'video_link', label: 'Video Link', group: 'Special' },
   { value: 'signature', label: 'Signature', group: 'Special' },
 ]
 
