@@ -302,18 +302,18 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   disclaimer: {
-    marginTop: 10,
-    padding: 6,
+    marginTop: 6,
+    padding: 4,
     backgroundColor: '#f8fafc',
     borderWidth: 0.5,
     borderColor: '#e2e8f0',
     borderRadius: 2,
   },
   disclaimerText: {
-    fontSize: 6.5,
+    fontSize: 6,
     color: '#64748b',
     fontStyle: 'italic',
-    lineHeight: 1.4,
+    lineHeight: 1.3,
   },
 })
 
@@ -530,9 +530,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               {/* Vessel-identity left; commercial (client/surveyors) + flagged rows right */}
               <View style={styles.jobDetailCol}>
                 {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
-                {headerRowFields.map((f: any) => (
-                  fieldValues[f.id] ? <DetailRow key={f.id} label={f.label} value={`${fieldValues[f.id]}${f.unit ? ` ${f.unit}` : ''}`} /> : null
-                ))}
+                {headerRowFields.map((f: any) => {
+                  const raw = fieldValues[f.id]
+                  if (!raw) return null
+                  // Number fields (e.g. Gross Tonnes) print with thousands separators.
+                  const display = f.field_type === 'number' && !isNaN(Number(raw)) ? Number(raw).toLocaleString('en-US') : raw
+                  return <DetailRow key={f.id} label={f.label} value={`${display}${f.unit ? ` ${f.unit}` : ''}`} />
+                })}
               </View>
               <View style={styles.jobDetailCol}>
                 {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
@@ -575,30 +579,28 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 {Array.from({ length: count }).map((_, inst) => {
                   const lineName = entryName(section, inst, fieldValues)
                   const entryPhotos = photoFields.flatMap((pf: any) => photos.filter(p => p.field_id === pf.id && p.instance === inst))
-                  const chunks: JobPhoto[][] = []
-                  for (let i = 0; i < entryPhotos.length; i += 6) chunks.push(entryPhotos.slice(i, i + 6))
                   return (
                     <React.Fragment key={inst}>
                       <View style={styles.entryBlock} wrap={false}>
                         <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
                         {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
                       </View>
-                      {chunks.map((chunk, ci) => (
-                        <View key={ci} break>
-                          <View style={styles.photosSectionHeader}>
-                            <Text style={styles.sectionTitle}>{lineName || `Entry ${inst + 1}`} — Photographs{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ''}</Text>
-                          </View>
+                      {/* Photos flow right after the line (no forced page break) — they fill the
+                          page, up to 6 per page (2×3), then continue. */}
+                      {entryPhotos.length > 0 && (
+                        <>
+                          <Text style={styles.photoGroupHeading}>{lineName || `Entry ${inst + 1}`} — Photographs</Text>
                           <View style={styles.reportPhotoGrid}>
-                            {chunk.map((p, i) => (
+                            {entryPhotos.map((p, i) => (
                               <View key={i} style={styles.reportPhotoItem} wrap={false}>
                                 {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                 <Image src={p.url} style={styles.reportPhotoImage} />
-                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${ci * 6 + i + 1}`}</Text>
+                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${i + 1}`}</Text>
                               </View>
                             ))}
                           </View>
-                        </View>
-                      ))}
+                        </>
+                      )}
                     </React.Fragment>
                   )
                 })}
