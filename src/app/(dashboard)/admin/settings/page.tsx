@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, Save, Hash, AlertTriangle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import JobTypesManager from '@/components/admin/JobTypesManager'
+import PhotoRetentionPanel from '@/components/admin/PhotoRetentionPanel'
 
 export default function JobNumberingSettingsPage() {
   const router = useRouter()
@@ -237,6 +238,9 @@ export default function JobNumberingSettingsPage() {
 
       {/* Job types — add/rename/hide/delete the New Job dropdown list. */}
       <JobTypesManager />
+
+      {/* Photo storage cleanup — review + delete job photos older than the retention window. */}
+      <PhotoRetentionPanel />
     </div>
   )
 }
