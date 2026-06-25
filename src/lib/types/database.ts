@@ -252,6 +252,9 @@ export interface ChecklistTemplate {
   /** When true, the report PDF embeds the job's photos as a captioned grid
    *  (default false keeps the legacy "photos stored internally" behaviour). */
   pdf_include_photos: boolean
+  /** Fixed legal boilerplate printed at the end of every generated PDF for this
+   *  template (NOT an editable survey field). null prints nothing. */
+  pdf_disclaimer: string | null
   created_by: string
   duplicated_from: string | null
   archived_by: string | null

@@ -229,6 +229,20 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  disclaimer: {
+    marginTop: 10,
+    padding: 6,
+    backgroundColor: '#f8fafc',
+    borderWidth: 0.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 2,
+  },
+  disclaimerText: {
+    fontSize: 6.5,
+    color: '#64748b',
+    fontStyle: 'italic',
+    lineHeight: 1.4,
+  },
 })
 
 /**
@@ -341,9 +355,11 @@ interface PDFProps {
   /** Signed photo URLs to embed — populated only when the template opts in
    *  (pdf_include_photos). Empty array keeps the legacy "stored internally" note. */
   photos?: JobPhoto[]
+  /** Fixed legal boilerplate printed at the end (template.pdf_disclaimer). */
+  disclaimer?: string | null
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [] }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
   // Locate key Job Detail fields by label pattern
@@ -486,6 +502,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
             <Text style={styles.photoNoteText}>
               Note: {photoCount} photo{photoCount !== 1 ? 's' : ''} attached to this job are stored internally and not included in this PDF.
             </Text>
+          </View>
+        )}
+
+        {/* Fixed disclaimer boilerplate (template.pdf_disclaimer) */}
+        {disclaimer && (
+          <View style={styles.disclaimer} wrap={false}>
+            <Text style={styles.disclaimerText}>{disclaimer}</Text>
           </View>
         )}
 

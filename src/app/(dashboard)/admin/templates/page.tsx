@@ -71,6 +71,8 @@ export default function TemplatesPage() {
         status: 'draft',
         version: 1,
         allow_surveyor_start: template.allow_surveyor_start,
+        pdf_include_photos: template.pdf_include_photos ?? false,
+        pdf_disclaimer: template.pdf_disclaimer ?? null,
         created_by: userId,
         duplicated_from: template.id,
       })

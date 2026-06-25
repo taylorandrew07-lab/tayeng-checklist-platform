@@ -39,6 +39,7 @@ export default function NewTemplatePage() {
   const [status, setStatus] = useState<TemplateStatus>('draft')
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
+  const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,7 +55,7 @@ export default function NewTemplatePage() {
   useEffect(() => {
     if (!loadedRef.current) return
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -187,6 +188,7 @@ export default function NewTemplatePage() {
         status,
         allow_surveyor_start: allowSurveyorStart,
         pdf_include_photos: pdfIncludePhotos,
+        pdf_disclaimer: pdfDisclaimer.trim() || null,
         created_by: user.id,
         duplicated_from: duplicateFrom || null,
       })
@@ -370,6 +372,16 @@ export default function NewTemplatePage() {
               </div>
               <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">PDF disclaimer <span className="font-normal text-gray-400">— fixed boilerplate printed at the end of every report (leave blank for none)</span></label>
+            <textarea
+              value={pdfDisclaimer}
+              onChange={e => setPdfDisclaimer(e.target.value)}
+              rows={4}
+              placeholder="e.g. This report remains the property of…"
+              className="input-base text-sm resize-y"
+            />
           </div>
         </div>
       </div>

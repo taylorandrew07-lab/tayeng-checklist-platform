@@ -70,7 +70,7 @@ export async function GET(
   ] = await Promise.all([
     db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos),
+      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single(),
@@ -152,6 +152,7 @@ export async function GET(
         signatures: sigs,
         photoCount,
         photos,
+        disclaimer: job.template?.pdf_disclaimer ?? null,
       }) as any
     )
   } catch (e) {
