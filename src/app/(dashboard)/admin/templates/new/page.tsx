@@ -129,6 +129,7 @@ export default function NewTemplatePage() {
               unit: f.unit ?? '',
               item_number: f.item_number ?? '',
               with_remarks: f.with_remarks ?? false,
+              is_billable_hours: f.is_billable_hours ?? false,
             })),
         }))
         setSections(builtSections)
@@ -234,6 +235,7 @@ export default function NewTemplatePage() {
         unit: f.unit || null,
         item_number: f.item_number || null,
         with_remarks: f.with_remarks || false,
+        is_billable_hours: f.field_type === 'calculated' ? f.is_billable_hours || false : false,
       })))
       if (fieldRows.length > 0) {
         const { error } = await withTimeout(

@@ -399,6 +399,20 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                       </div>
                     </div>
                   )}
+
+                  {/* Billable hours: feeds the invoice qty when the client rate is hourly */}
+                  <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
+                    <input
+                      type="checkbox"
+                      checked={field.is_billable_hours}
+                      onChange={(e) => update({ is_billable_hours: e.target.checked })}
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Use as billable hours
+                      <span className="block text-xs text-gray-400">On Finance &gt; Create invoice, this field&apos;s value seeds the line quantity (hours) when the client&apos;s rate for the job type is hourly. Set this on one field per template.</span>
+                    </span>
+                  </label>
                 </div>
               )}
 

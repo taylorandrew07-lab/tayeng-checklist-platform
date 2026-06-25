@@ -290,6 +290,10 @@ export interface TemplateField {
   unit: string | null
   item_number: string | null
   with_remarks: boolean
+  /** When true, this (calculated) field's value is the job's billable hours —
+   *  the Finance invoice builder seeds an hourly line's qty from it. One per
+   *  template. See migration 089. */
+  is_billable_hours: boolean
   created_at: string
   updated_at: string
 }

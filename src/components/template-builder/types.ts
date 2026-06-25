@@ -14,6 +14,9 @@ export interface BuilderField {
   unit: string
   item_number: string
   with_remarks: boolean
+  /** Calculated field only: this field's value is the job's billable hours,
+   *  used to seed an hourly invoice line's qty. One per template. */
+  is_billable_hours: boolean
 }
 
 export interface BuilderSection {
@@ -81,6 +84,7 @@ export function createBlankField(order_index: number, field_type: BuilderField['
     unit: '',
     item_number: '',
     with_remarks: false,
+    is_billable_hours: false,
   }
 }
 

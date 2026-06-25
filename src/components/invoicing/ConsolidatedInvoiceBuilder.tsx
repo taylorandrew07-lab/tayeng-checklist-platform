@@ -73,7 +73,10 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const active = clientRates.filter(r => r.is_active)
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type) ?? null
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
-    return { description: job.job_type ? `${label} — ${job.job_type}` : label, qty: 1, unit_price: rate ? Number(rate.rate) : 0 }
+    // Hourly rate → bill hours × rate: seed qty with the job's billable hours (from
+    // the checklist, else the labour ledger). Fixed / per-unit rates stay qty 1.
+    const qty = rate?.rate_type === 'hourly' && job.billable_hours && job.billable_hours > 0 ? job.billable_hours : 1
+    return { description: job.job_type ? `${label} — ${job.job_type}` : label, qty, unit_price: rate ? Number(rate.rate) : 0 }
   }, [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
@@ -127,6 +130,16 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   function rateNoteFor(job: InvoiceableJob): string | null {
     const active = rates.filter(r => r.is_active)
     return (active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type))?.notes ?? null
+  }
+
+  // When the matched rate is hourly, show that the line's qty came from the job's
+  // billable hours (checklist total or labour ledger) — so it's clear the chain is linked.
+  function hoursHintFor(job: InvoiceableJob): string | null {
+    const active = rates.filter(r => r.is_active)
+    const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type)
+    if (rate?.rate_type !== 'hourly') return null
+    if (!job.billable_hours || job.billable_hours <= 0) return 'Hourly rate — no billable hours found on this job yet; enter the qty (hours) manually.'
+    return `${job.billable_hours} billable hrs × ${money(Number(rate.rate), rate.currency)}/hr`
   }
 
   async function create() {
@@ -219,6 +232,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                 const sel = !!lines[j.id]
                 const ls = lines[j.id]
                 const note = rateNoteFor(j)
+                const hoursHint = hoursHintFor(j)
                 return (
                   <div key={j.id} className={sel ? 'px-4 py-3 bg-brand-50/30' : 'px-4 py-3'}>
                     <div className="flex items-start gap-3">
@@ -242,6 +256,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         ) : (
                           <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
                         )}
+                        {sel && hoursHint && <p className="text-[11px] text-brand-700 mt-1">{hoursHint}</p>}
                         {note && <p className="text-[11px] text-amber-700 mt-1">Rate note: {note}</p>}
                       </div>
                     </div>

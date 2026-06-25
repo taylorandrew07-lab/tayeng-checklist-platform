@@ -314,6 +314,10 @@ export interface InvoiceableJob {
   id: string; report_number: string | null; vessel_name: string | null
   job_type: string | null; client_id: string | null; client_name: string | null
   scheduled_date: string | null; created_at: string; workflow_status: Job['workflow_status']
+  /** Billable hours for an hourly rate: the checklist's designated billable-hours
+   *  field value if present, else the labour ledger (sum of regular_hours). null
+   *  when neither is set. The invoice builder seeds an hourly line's qty from it. */
+  billable_hours: number | null
 }
 
 /** Jobs whose work is done (report-ready or approved) and not yet on an invoice —
@@ -321,8 +325,9 @@ export interface InvoiceableJob {
  *  on purpose so jobs awaiting approval aren't invisible to billing. Optionally
  *  narrowed to a client and/or a YYYY-MM month (by scheduled date, else created). */
 export async function listInvoiceableJobs(opts: { clientId?: string; month?: string } = {}): Promise<InvoiceableJob[]> {
+  const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
-  let q = createClient().from('jobs')
+  let q = supabase.from('jobs')
     .select('id, report_number, vessel_name, job_type, client_id, scheduled_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
     .in('workflow_status', ['report_ready', 'approved'])
@@ -333,8 +338,38 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, job_type: j.job_type,
     client_id: j.client_id, client_name: j.client?.name ?? null,
     scheduled_date: j.scheduled_date, created_at: j.created_at, workflow_status: j.workflow_status,
+    billable_hours: null as number | null,
   })) as InvoiceableJob[]
   if (opts.month) rows = rows.filter(r => (r.scheduled_date ?? r.created_at ?? '').slice(0, 7) === opts.month)
+
+  // Billable hours per job (for hourly-rate lines). Prefer the value of the field a
+  // template flags is_billable_hours (e.g. OVID "Total hours"); otherwise fall back
+  // to the surveyor labour ledger (sum of regular_hours). Two small lookups keyed on
+  // the jobs we're about to show — avoids an embed filter and keeps each query flat.
+  const ids = rows.map(r => r.id)
+  if (ids.length) {
+    const [{ data: bhFields }, { data: surv }] = await Promise.all([
+      supabase.from('template_fields').select('id').eq('is_billable_hours', true),
+      supabase.from('job_surveyors').select('job_id, regular_hours').in('job_id', ids),
+    ])
+    const bhIds = ((bhFields ?? []) as any[]).map(f => f.id)
+    const fromChecklist: Record<string, number> = {}
+    if (bhIds.length) {
+      const { data: fv } = await supabase.from('job_field_values')
+        .select('job_id, value').in('job_id', ids).in('field_id', bhIds)
+      for (const v of (fv ?? []) as any[]) {
+        const n = parseFloat(v.value ?? '')
+        if (Number.isFinite(n) && n > 0) fromChecklist[v.job_id] = n
+      }
+    }
+    const fromLedger: Record<string, number> = {}
+    for (const s of (surv ?? []) as any[]) {
+      fromLedger[s.job_id] = (fromLedger[s.job_id] ?? 0) + Number(s.regular_hours || 0)
+    }
+    rows.forEach(r => {
+      r.billable_hours = fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null)
+    })
+  }
   return rows
 }
 

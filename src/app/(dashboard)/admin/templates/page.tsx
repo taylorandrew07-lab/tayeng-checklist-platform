@@ -122,6 +122,7 @@ export default function TemplatesPage() {
             help_text: f.help_text,
             item_number: f.item_number,
             with_remarks: f.with_remarks,
+            is_billable_hours: f.is_billable_hours ?? false,
             validation: f.validation,
             conditional_logic: null,
             calculation_formula: null,
