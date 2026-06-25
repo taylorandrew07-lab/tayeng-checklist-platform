@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { JobPDF } from '@/lib/pdf/JobPDF'
 import React from 'react'
 import { checkConditionalLogic } from '@/lib/utils'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 
 export async function GET(
   _request: Request,
@@ -84,22 +85,23 @@ export async function GET(
     db.from('job_field_values').select('*').eq('job_id', jobId),
     db.from('job_signatures').select('*').eq('job_id', jobId),
     db.from('job_photos')
-      .select('id, field_id, storage_path, caption, filename, created_at')
+      .select('id, field_id, instance, storage_path, caption, filename, created_at')
       .eq('job_id', jobId)
       .order('created_at', { ascending: true }),
   ])
 
-  // Build value maps
+  // Build value maps, keyed per repeatable-section instance (instance 0 = bare id).
   const vals: Record<string, string> = {}
   const arrayVals: Record<string, string[]> = {}
   for (const v of (fieldValues ?? [])) {
-    if (v.value_array) arrayVals[v.field_id] = v.value_array
-    else vals[v.field_id] = v.value ?? ''
+    const key = instanceKey(v.field_id, (v as any).instance ?? 0)
+    if (v.value_array) arrayVals[key] = v.value_array
+    else vals[key] = v.value ?? ''
   }
 
   const sigs: Record<string, string> = {}
   for (const sig of (signatureData ?? [])) {
-    sigs[sig.field_id] = sig.signature_data
+    sigs[instanceKey(sig.field_id, (sig as any).instance ?? 0)] = sig.signature_data
   }
 
   // Photos: count is always known. Only when the template opts in (pdf_include_photos)
@@ -108,9 +110,9 @@ export async function GET(
   // The template flag is the gate: when on, every stored photo is embedded. (The
   // per-photo include_in_pdf column has no UI and defaults false, so gating on it
   // would embed nothing — it is intentionally ignored here.)
-  const photoRows = (photoData ?? []) as Array<{ field_id: string | null; storage_path: string; caption: string | null; filename: string | null }>
+  const photoRows = (photoData ?? []) as Array<{ field_id: string | null; instance: number | null; storage_path: string; caption: string | null; filename: string | null }>
   const photoCount = photoRows.length
-  let photos: Array<{ field_id: string | null; url: string; caption: string | null; filename: string | null }> = []
+  let photos: Array<{ field_id: string | null; instance: number; url: string; caption: string | null; filename: string | null }> = []
   if (job.template?.pdf_include_photos === true && photoRows.length > 0) {
     const usable = photoRows.filter(p => p.storage_path)
     const paths = usable.map(p => p.storage_path)
@@ -120,7 +122,7 @@ export async function GET(
     const urlByPath = new Map<string, string>()
     for (const s of signed) if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl)
     photos = usable
-      .map(p => ({ field_id: p.field_id, url: urlByPath.get(p.storage_path) ?? '', caption: p.caption, filename: p.filename }))
+      .map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, url: urlByPath.get(p.storage_path) ?? '', caption: p.caption, filename: p.filename }))
       .filter(p => p.url)
   }
 

@@ -10,6 +10,7 @@ import {
 } from '@react-pdf/renderer'
 import { format, parseISO } from 'date-fns'
 import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
+import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -229,6 +230,20 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  // Repeatable-section entry block
+  entryBlock: {
+    borderWidth: 0.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 3,
+    padding: '4 6',
+    marginBottom: 4,
+  },
+  entryHeading: {
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1d4ed8',
+    marginBottom: 2,
+  },
   disclaimer: {
     marginTop: 10,
     padding: 6,
@@ -340,6 +355,7 @@ function CalcDiffCell({ rawValue, validation, formula, fieldValues }: {
 
 interface JobPhoto {
   field_id: string | null
+  instance: number
   url: string
   caption: string | null
   filename: string | null
@@ -361,6 +377,14 @@ interface PDFProps {
 
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
+
+  // Photo fields inside a repeatable section render INLINE per entry (above), so keep
+  // them out of the end-of-report grid to avoid showing them twice.
+  const repeatablePhotoFieldIds = new Set<string>()
+  for (const s of sections as any[]) {
+    if (s.is_repeatable) for (const f of (s.fields ?? [])) if (f.field_type === 'photo') repeatablePhotoFieldIds.add(f.id)
+  }
+  const endPhotos = photos.filter(p => !(p.field_id && repeatablePhotoFieldIds.has(p.field_id)))
 
   // Locate key Job Detail fields by label pattern
   const bunkerVesselField = allFieldsFlat.find((f: any) =>
@@ -447,6 +471,52 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {/* Checklist sections */}
         {sections.map(section => {
           const visibleFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
+          const photoFields = (section.fields as any[]).filter((f: any) => f.field_type === 'photo')
+
+          // Repeatable section: render each entry as its own block, with that entry's
+          // photos INLINE under it (labelled), so a reader always knows which entry a
+          // photo belongs to.
+          if (section.is_repeatable) {
+            const count = instanceCountFor(section, fieldValues, arrayValues, signatures, photos)
+            return (
+              <View key={section.id} style={styles.sectionContainer}>
+                <View wrap={false}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    {section.description && <Text style={styles.sectionDescription}>{section.description}</Text>}
+                  </View>
+                </View>
+                {Array.from({ length: count }).map((_, inst) => {
+                  const lineName = entryName(section, inst, fieldValues)
+                  return (
+                    <View key={inst} style={styles.entryBlock}>
+                      <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
+                      {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
+                      {photoFields.map((pf: any) => {
+                        const items = photos.filter(p => p.field_id === pf.id && p.instance === inst)
+                        if (items.length === 0) return null
+                        return (
+                          <View key={pf.id} style={{ marginTop: 3 }}>
+                            <Text style={styles.photoGroupHeading}>{pf.label}</Text>
+                            <View style={styles.photoGrid}>
+                              {items.map((p, i) => (
+                                <View key={i} style={styles.photoItem} wrap={false}>
+                                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                                  <Image src={p.url} style={styles.photoImage} />
+                                  <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${i + 1}`}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  )
+                })}
+              </View>
+            )
+          }
+
           if (visibleFields.length === 0) return null
 
           return (
@@ -472,12 +542,12 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
         {/* Photographs — embedded as a captioned grid, grouped by field, when the
             template opts in (pdf_include_photos). Starts on a fresh page. */}
-        {photos.length > 0 && (
+        {endPhotos.length > 0 && (
           <View break>
             <View style={styles.photosSectionHeader}>
               <Text style={styles.sectionTitle}>Photographs</Text>
             </View>
-            {groupPhotosByField(photos, allFieldsFlat).map(group => (
+            {groupPhotosByField(endPhotos, allFieldsFlat).map(group => (
               <View key={group.key}>
                 <Text style={styles.photoGroupHeading}>{group.label}</Text>
                 <View style={styles.photoGrid}>
@@ -545,31 +615,64 @@ function groupPhotosByField(
   return groups
 }
 
+// How many entries a repeatable section has = 1 + the highest instance seen across
+// any of its fields' values / signatures / photos.
+function instanceCountFor(
+  section: any,
+  fieldValues: Record<string, string>,
+  arrayValues: Record<string, string[]>,
+  signatures: Record<string, string>,
+  photos: JobPhoto[]
+): number {
+  const fieldIds = new Set((section.fields ?? []).map((f: any) => f.id))
+  let max = 0
+  for (const map of [fieldValues, arrayValues, signatures]) {
+    for (const k of Object.keys(map)) {
+      const { fieldId, instance } = parseInstanceKey(k)
+      if (fieldIds.has(fieldId) && instance > max) max = instance
+    }
+  }
+  for (const p of photos) if (p.field_id && fieldIds.has(p.field_id) && p.instance > max) max = p.instance
+  return max + 1
+}
+
+// A short human label for a repeatable entry — the first text field's value (e.g. the
+// Cargo Line Name), so photos/headers read "Entry 2 — No.3 Cargo Line".
+function entryName(section: any, inst: number, fieldValues: Record<string, string>): string {
+  const f = (section.fields ?? []).find((x: any) => x.field_type === 'text')
+  if (!f) return ''
+  return (fieldValues[instanceKey(f.id, inst)] ?? '').trim()
+}
+
 function renderField(
   field: any,
   fieldValues: Record<string, string>,
   arrayValues: Record<string, string[]>,
   signatures: Record<string, string>,
-  allFieldsFlat: any[]
+  allFieldsFlat: any[],
+  inst = 0
 ): React.ReactElement | null {
   if (!field) return null
 
+  // Repeatable-section instance: read this entry's value (instance 0 = bare id).
+  const key = instanceKey(field.id, inst)
+
   if (field.field_type === 'divider') {
-    return <View key={field.id} style={styles.dividerLine} />
+    return <View key={key} style={styles.dividerLine} />
   }
 
   if (field.field_type === 'heading') {
-    return <Text key={field.id} style={styles.inlineHeading}>{field.label}</Text>
+    return <Text key={key} style={styles.inlineHeading}>{field.label}</Text>
   }
 
   const rawValue = field.field_type === 'multiple_choice'
-    ? (arrayValues[field.id] ?? []).join(', ')
-    : fieldValues[field.id] ?? ''
+    ? (arrayValues[key] ?? []).join(', ')
+    : fieldValues[key] ?? ''
 
   const hasValue = !!rawValue
 
   return (
-    <View key={field.id} style={styles.fieldRow}>
+    <View key={key} style={styles.fieldRow}>
       <View style={styles.fieldLabel}>
         <Text style={styles.fieldLabelText}>
           {field.item_number ? <Text style={{ color: '#1d4ed8' }}>{field.item_number}{'  '}</Text> : null}
@@ -582,9 +685,9 @@ function renderField(
 
       <View style={styles.fieldValue}>
         {field.field_type === 'signature' ? (
-          signatures[field.id] ? (
+          signatures[key] ? (
             // eslint-disable-next-line jsx-a11y/alt-text
-            <Image src={signatures[field.id]} style={styles.signatureImage} />
+            <Image src={signatures[key]} style={styles.signatureImage} />
           ) : (
             <Text style={styles.fieldValueEmpty}>No signature</Text>
           )
@@ -605,7 +708,7 @@ function renderField(
           </Text>
         ) : field.field_type === 'video_link' ? (
           (() => {
-            const links = (arrayValues[field.id] ?? []).filter(Boolean)
+            const links = (arrayValues[key] ?? []).filter(Boolean)
             if (links.length === 0) return <Text style={styles.fieldValueEmpty}>—</Text>
             return (
               <View>

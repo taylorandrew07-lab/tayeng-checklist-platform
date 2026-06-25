@@ -274,6 +274,9 @@ export interface TemplateSection {
   description: string | null
   order_index: number
   conditional_logic: ConditionalLogic | null
+  /** When true the surveyor can add many entries of this section (one block per
+   *  inspection/line); answers are stored per `instance` index. See migration 094. */
+  is_repeatable: boolean
   created_at: string
   updated_at: string
 }

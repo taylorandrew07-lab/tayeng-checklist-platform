@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
-  Cloud, CloudOff, RefreshCw,
+  Cloud, CloudOff, RefreshCw, Plus,
 } from 'lucide-react'
 import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
@@ -21,6 +21,7 @@ import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, Workf
 import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
+import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
 import type { OfflineDraft } from '@/lib/offline/types'
 
 interface SectionWithFields extends TemplateSection {
@@ -91,7 +92,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [values, setValues] = useState<Record<string, string>>({})
     const [arrayValues, setArrayValues] = useState<Record<string, string[]>>({})
     const [signatures, setSignatures] = useState<Record<string, string>>({})
-    // fieldPhotos: photos linked to a specific field_id; generalPhotos: extras with no field_id
+    // How many entries each repeatable section currently shows (sectionId → count ≥ 1).
+    const [instanceCounts, setInstanceCounts] = useState<Record<string, number>>({})
+    // fieldPhotos: photos keyed by instanceKey(field_id, instance); generalPhotos: extras with no field_id
     const [fieldPhotos, setFieldPhotos] = useState<Record<string, any[]>>({})
     const [generalPhotos, setGeneralPhotos] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -230,6 +233,23 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setSignatures(draft.signatures)
       setFieldPhotos(draft.fieldPhotos ?? {})
       setGeneralPhotos(draft.generalPhotos ?? [])
+      // Rebuild repeatable entry counts from the draft's instance keys, so a draft
+      // edited offline reopens with all its entries (not just the server's).
+      const maxByField: Record<string, number> = {}
+      for (const map of [draft.values, draft.arrayValues, draft.signatures, draft.fieldPhotos ?? {}] as Record<string, any>[]) {
+        for (const k of Object.keys(map)) {
+          const { fieldId, instance } = parseInstanceKey(k)
+          if (instance > (maxByField[fieldId] ?? 0)) maxByField[fieldId] = instance
+        }
+      }
+      const counts: Record<string, number> = {}
+      for (const s of (draft.sections ?? []) as any[]) {
+        if (!s.is_repeatable) continue
+        let m = 0
+        for (const f of (s.fields ?? [])) m = Math.max(m, maxByField[f.id] ?? 0)
+        counts[s.id] = m + 1
+      }
+      setInstanceCounts(counts)
       serverBaselineRef.current = {
         values: draft.serverValues ?? {},
         arrayValues: draft.serverArrayValues ?? {},
@@ -398,9 +418,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
       const vals: Record<string, string> = {}
       const arrVals: Record<string, string[]> = {}
+      // For repeatable sections: the highest instance seen for each field, so we know
+      // how many entry blocks to render. instance 0 is the bare field id (unchanged).
+      const maxInstanceByField: Record<string, number> = {}
+      const noteInstance = (fieldId: string, inst: number) => {
+        if (inst > (maxInstanceByField[fieldId] ?? 0)) maxInstanceByField[fieldId] = inst
+      }
       for (const v of (valData ?? [])) {
-        if (v.value_array) arrVals[v.field_id] = v.value_array
-        else vals[v.field_id] = v.value ?? ''
+        const inst = (v as any).instance ?? 0
+        const key = instanceKey(v.field_id, inst)
+        if (v.value_array) arrVals[key] = v.value_array
+        else vals[key] = v.value ?? ''
+        noteInstance(v.field_id, inst)
       }
       for (const section of processedSections) {
         for (const field of section.fields) {
@@ -425,14 +454,31 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
 
       const sigs: Record<string, string> = {}
-      for (const sig of (sigData ?? [])) sigs[sig.field_id] = sig.signature_data
+      for (const sig of (sigData ?? [])) {
+        const inst = (sig as any).instance ?? 0
+        sigs[instanceKey(sig.field_id, inst)] = sig.signature_data
+        noteInstance(sig.field_id, inst)
+      }
 
-      // Split photos by field_id
+      // Split photos by field (keyed per instance); field-less ones are "general".
       const fPhotos: Record<string, any[]> = {}
       const gPhotos: any[] = []
       for (const p of (photoData ?? [])) {
-        if (p.field_id) fPhotos[p.field_id] = [...(fPhotos[p.field_id] ?? []), p]
-        else gPhotos.push(p)
+        if (p.field_id) {
+          const inst = (p as any).instance ?? 0
+          const key = instanceKey(p.field_id, inst)
+          fPhotos[key] = [...(fPhotos[key] ?? []), p]
+          noteInstance(p.field_id, inst)
+        } else gPhotos.push(p)
+      }
+
+      // How many entry blocks each repeatable section starts with (≥ 1).
+      const counts: Record<string, number> = {}
+      for (const section of processedSections) {
+        if (!section.is_repeatable) continue
+        let maxInst = 0
+        for (const f of section.fields) maxInst = Math.max(maxInst, maxInstanceByField[f.id] ?? 0)
+        counts[section.id] = maxInst + 1
       }
 
       setJob(jobData)
@@ -440,6 +486,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setValues(vals)
       setArrayValues(arrVals)
       setSignatures(sigs)
+      setInstanceCounts(counts)
       setFieldPhotos(fPhotos)
       setGeneralPhotos(gPhotos)
 
@@ -497,6 +544,45 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setSignatures(prev => ({ ...prev, [fieldId]: data }))
       setIsDirty(true)
     }, [])
+
+    // --- Repeatable-section entries ---
+    const addInstance = useCallback((sectionId: string) => {
+      setInstanceCounts(prev => ({ ...prev, [sectionId]: (prev[sectionId] ?? 1) + 1 }))
+      setIsDirty(true)
+    }, [])
+
+    // Remove the LAST entry of a repeatable section: delete its saved rows/photos and
+    // drop its in-memory keys. Only the last entry is removable, so no renumbering.
+    const removeLastInstance = useCallback(async (section: SectionWithFields) => {
+      const count = instanceCounts[section.id] ?? 1
+      if (count <= 1) return
+      const inst = count - 1
+      const fieldIds = section.fields.map(f => f.id)
+      const online = typeof navigator === 'undefined' || navigator.onLine
+      if (online && fieldIds.length) {
+        const supabase = createClient()
+        try {
+          await supabase.from('job_field_values').delete().eq('job_id', jobId).in('field_id', fieldIds).eq('instance', inst)
+          await supabase.from('job_signatures').delete().eq('job_id', jobId).in('field_id', fieldIds).eq('instance', inst)
+          const { data: ph } = await supabase.from('job_photos').select('id, storage_path').eq('job_id', jobId).in('field_id', fieldIds).eq('instance', inst)
+          if (ph && ph.length) {
+            await supabase.storage.from('job-photos').remove(ph.map((p: any) => p.storage_path))
+            await supabase.from('job_photos').delete().in('id', ph.map((p: any) => p.id))
+          }
+        } catch { /* best effort — the in-memory keys are cleared regardless */ }
+      }
+      const drop = (obj: Record<string, any>) => {
+        const next = { ...obj }
+        for (const f of section.fields) delete next[instanceKey(f.id, inst)]
+        return next
+      }
+      setValues(prev => drop(prev))
+      setArrayValues(prev => drop(prev))
+      setSignatures(prev => drop(prev))
+      setFieldPhotos(prev => drop(prev))
+      setInstanceCounts(prev => ({ ...prev, [section.id]: count - 1 }))
+      setIsDirty(true)
+    }, [instanceCounts, jobId])
 
     // --- Save (returns true on success) ---
     const handleSave = useCallback(async (): Promise<boolean> => {
@@ -559,33 +645,38 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           setValues(valuesToSave)
         }
 
-        const upserts = Object.entries(valuesToSave).map(([field_id, value]) => ({
-          job_id: jobId, field_id, value, value_array: null,
-        }))
-        const arrayUpserts = Object.entries(arrayValues).map(([field_id, value_array]) => ({
-          job_id: jobId, field_id, value: null, value_array,
-        }))
+        // Keys carry the repeatable-section instance (fieldId@@n); split it back out
+        // so each entry persists against (job_id, field_id, instance).
+        const upserts = Object.entries(valuesToSave).map(([key, value]) => {
+          const { fieldId, instance } = parseInstanceKey(key)
+          return { job_id: jobId, field_id: fieldId, instance, value, value_array: null }
+        })
+        const arrayUpserts = Object.entries(arrayValues).map(([key, value_array]) => {
+          const { fieldId, instance } = parseInstanceKey(key)
+          return { job_id: jobId, field_id: fieldId, instance, value: null, value_array }
+        })
 
         if (upserts.length > 0) {
           const { error } = await withTimeout(
-            supabase.from('job_field_values').upsert(upserts, { onConflict: 'job_id,field_id' }),
+            supabase.from('job_field_values').upsert(upserts, { onConflict: 'job_id,field_id,instance' }),
             15_000, 'Saving answers'
           )
           if (error) { console.error('[save:fieldValues]', error); throw error }
         }
         if (arrayUpserts.length > 0) {
           const { error } = await withTimeout(
-            supabase.from('job_field_values').upsert(arrayUpserts, { onConflict: 'job_id,field_id' }),
+            supabase.from('job_field_values').upsert(arrayUpserts, { onConflict: 'job_id,field_id,instance' }),
             15_000, 'Saving multi-select answers'
           )
           if (error) { console.error('[save:arrayValues]', error); throw error }
         }
-        for (const [field_id, signature_data] of Object.entries(signatures)) {
+        for (const [key, signature_data] of Object.entries(signatures)) {
           if (!signature_data) continue
+          const { fieldId, instance } = parseInstanceKey(key)
           const { error } = await withTimeout(
             supabase.from('job_signatures').upsert(
-              { job_id: jobId, field_id, signature_data, signed_at: new Date().toISOString() },
-              { onConflict: 'job_id,field_id' }
+              { job_id: jobId, field_id: fieldId, instance, signature_data, signed_at: new Date().toISOString() },
+              { onConflict: 'job_id,field_id,instance' }
             ),
             10_000, 'Saving signature'
           )
@@ -634,25 +725,30 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setSaveError(null)
 
       try {
-        // Validate required fields
+        // Validate required fields — every entry of a repeatable section.
         const missing: string[] = []
         for (const section of sections) {
           if (!checkConditionalLogic(section.conditional_logic, values)) continue
-          for (const field of section.fields) {
-            if (!field.is_required) continue
-            if (!checkConditionalLogic(field.conditional_logic, values)) continue
-            if (field.field_type === 'signature' && !signatures[field.id]) {
-              missing.push(field.label)
-            } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[field.id]?.length)) {
-              missing.push(field.label)
-            } else if (field.field_type === 'photo' && !(fieldPhotos[field.id]?.length)) {
-              missing.push(field.label)
-            } else if (!['signature', 'multiple_choice', 'video_link', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
-              // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
-              // so a field with only remarks (no Yes/No/Pass/Fail picked) still counts as missing.
-              const raw = values[field.id] ?? ''
-              const answerPart = raw.includes('|||') ? raw.split('|||')[0] : raw
-              if (!answerPart.trim()) missing.push(field.label)
+          const count = section.is_repeatable ? (instanceCounts[section.id] ?? 1) : 1
+          for (let inst = 0; inst < count; inst++) {
+            for (const field of section.fields) {
+              if (!field.is_required) continue
+              if (!checkConditionalLogic(field.conditional_logic, values)) continue
+              const key = instanceKey(field.id, inst)
+              const label = count > 1 ? `${field.label} (entry ${inst + 1})` : field.label
+              if (field.field_type === 'signature' && !signatures[key]) {
+                missing.push(label)
+              } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[key]?.length)) {
+                missing.push(label)
+              } else if (field.field_type === 'photo' && !(fieldPhotos[key]?.length)) {
+                missing.push(label)
+              } else if (!['signature', 'multiple_choice', 'video_link', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
+                // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
+                // so a field with only remarks (no Yes/No/Pass/Fail picked) still counts as missing.
+                const raw = values[key] ?? ''
+                const answerPart = raw.includes('|||') ? raw.split('|||')[0] : raw
+                if (!answerPart.trim()) missing.push(label)
+              }
             }
           }
         }
@@ -764,26 +860,27 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     // --- Photo helpers ---
-    async function uploadPhotoForField(fieldId: string, file: File) {
-      setUploadingField(fieldId)
+    async function uploadPhotoForField(fieldId: string, instance: number, file: File) {
+      const key = instanceKey(fieldId, instance)
+      setUploadingField(key)
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setUploadingField(null); return }
 
-      const path = `${jobId}/${fieldId}/${Date.now()}_${file.name}`
+      const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${file.name}`
       let upErr: any = null
       try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
       catch { setSaveError('Photo upload timed out — check your connection and try the photo again.'); setUploadingField(null); return }
       if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
 
       const { error: dbErr } = await supabase.from('job_photos').insert({
-        job_id: jobId, field_id: fieldId, storage_path: path,
+        job_id: jobId, field_id: fieldId, instance, storage_path: path,
         filename: file.name, uploaded_by: user.id,
       })
       if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
 
-      const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId)
-      const nextFp = { ...fieldPhotos, [fieldId]: fresh ?? [] }
+      const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
+      const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
       setFieldPhotos(nextFp)
       void cacheServerPhotos(nextFp, generalPhotos)
       setUploadingField(null)
@@ -814,15 +911,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setUploadingField(null)
     }
 
-    async function deletePhoto(photoId: string, storagePath: string, fieldId?: string | null) {
+    async function deletePhoto(photoId: string, storagePath: string, fieldKey?: string | null) {
       const supabase = createClient()
       const { error: storErr } = await supabase.storage.from('job-photos').remove([storagePath])
       if (storErr) { setSaveError('Delete failed: ' + storErr.message); return }
       const { error: dbErr } = await supabase.from('job_photos').delete().eq('id', photoId)
       if (dbErr) { setSaveError('Delete record failed: ' + dbErr.message); return }
 
-      if (fieldId) {
-        const nextFp = { ...fieldPhotos, [fieldId]: (fieldPhotos[fieldId] ?? []).filter(p => p.id !== photoId) }
+      if (fieldKey) {
+        const nextFp = { ...fieldPhotos, [fieldKey]: (fieldPhotos[fieldKey] ?? []).filter(p => p.id !== photoId) }
         setFieldPhotos(nextFp)
         void cacheServerPhotos(nextFp, generalPhotos)
       } else {
@@ -1079,12 +1176,116 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // conditional logic can never be filled, so including it makes the counter
           // stick at e.g. "4/5" and never read complete.
           const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type) && checkConditionalLogic(f.conditional_logic, values))
-          const completedCount = dataFields.filter(f => {
-            if (f.field_type === 'signature') return !!signatures[f.id]
-            if (f.field_type === 'multiple_choice' || f.field_type === 'video_link') return (arrayValues[f.id] ?? []).length > 0
-            if (f.field_type === 'photo') return (fieldPhotos[f.id] ?? []).length > 0
-            return !!values[f.id]
-          }).length
+          const count = section.is_repeatable ? (instanceCounts[section.id] ?? 1) : 1
+          // Completion counts every entry of a repeatable section.
+          const isFilled = (f: TemplateField, inst: number) => {
+            const k = instanceKey(f.id, inst)
+            if (f.field_type === 'signature') return !!signatures[k]
+            if (f.field_type === 'multiple_choice' || f.field_type === 'video_link') return (arrayValues[k] ?? []).length > 0
+            if (f.field_type === 'photo') return (fieldPhotos[k] ?? []).length > 0
+            return !!values[k]
+          }
+          let completedCount = 0
+          let totalCount = 0
+          for (let inst = 0; inst < count; inst++) for (const f of dataFields) { totalCount++; if (isFilled(f, inst)) completedCount++ }
+
+          // One field's control (input / photo widget) at a given repeatable instance.
+          // instance 0 uses the bare field id, so non-repeatable sections are unchanged.
+          const renderFieldControl = (field: TemplateField, inst: number) => {
+            if (!checkConditionalLogic(field.conditional_logic, values)) return null
+            const key = instanceKey(field.id, inst)
+            if (field.field_type === 'photo') {
+              const photos = fieldPhotos[key] ?? []
+              const uploading = uploadingField === key
+              return (
+                <div key={key} className="space-y-1.5">
+                  <label className="label-base mb-0">
+                    {field.item_number && <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>}
+                    {field.label}
+                    {field.is_required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  {field.help_text && <p className="text-xs text-gray-500">{field.help_text}</p>}
+                  {!readOnly && (
+                    <div className="space-y-2">
+                      <input
+                        ref={el => { fieldPhotoRefs.current[key] = el }}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={async e => {
+                          const files = e.target.files
+                          if (!files) return
+                          for (const f of Array.from(files)) await uploadPhotoForField(field.id, inst, f)
+                          if (fieldPhotoRefs.current[key]) fieldPhotoRefs.current[key]!.value = ''
+                        }}
+                      />
+                      {photos.length === 0 ? (
+                        <div
+                          onClick={() => !uploading && fieldPhotoRefs.current[key]?.click()}
+                          className="border-2 border-dashed border-gray-300 rounded-lg py-6 text-center cursor-pointer hover:border-brand-300 transition-colors"
+                        >
+                          {uploading ? <Loader2 className="h-6 w-6 mx-auto text-brand-400 animate-spin" /> : (
+                            <>
+                              <Camera className="h-6 w-6 mx-auto text-gray-300 mb-1" />
+                              <p className="text-sm text-gray-500">Upload photo(s)</p>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {photos.map(p => (
+                              <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
+                                <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                                <button
+                                  onClick={() => deletePhoto(p.id, p.storage_path, key)}
+                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              onClick={() => fieldPhotoRefs.current[key]?.click()}
+                              disabled={uploading}
+                              className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-brand-300 transition-colors"
+                            >
+                              {uploading ? <Loader2 className="h-4 w-4 animate-spin text-brand-400" /> : <Camera className="h-4 w-4 text-gray-400" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {readOnly && (
+                    <p className="text-sm text-gray-600">{photos.length} photo{photos.length !== 1 ? 's' : ''} uploaded</p>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <FieldRenderer
+                key={key}
+                field={field}
+                resolvedLabel={resolveLabel(field.label)}
+                value={values[key] ?? ''}
+                valueArray={arrayValues[key]}
+                signature={signatures[key]}
+                allValues={values}
+                onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(key, v) : v => updateValue(key, v)}
+                onArrayChange={v => updateArrayValue(key, v)}
+                onSignatureChange={data => updateSignature(key, data)}
+                onBlur={v => {
+                  const prefix = vesselPrefixForLabel(field.label)
+                  if (!prefix) return
+                  const next = normalizeVesselName(v, prefix)
+                  if (next !== v) updateValue(key, next)
+                }}
+                readOnly={readOnly}
+              />
+            )
+          }
 
           return (
             <div key={section.id} className="card overflow-hidden">
@@ -1094,119 +1295,49 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 className="w-full flex items-center gap-3 px-5 py-4 bg-gray-50 border-b border-gray-200 text-left hover:bg-gray-100 transition-colors"
               >
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-semibold text-gray-900">{section.title}</h2>
+                  <h2 className="font-semibold text-gray-900">{section.title}{section.is_repeatable && <span className="ml-2 text-[11px] font-medium text-brand-600 align-middle">repeatable</span>}</h2>
                   {section.description && (
                     <p className="text-xs text-gray-500 mt-0.5">{section.description}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-gray-500">{completedCount}/{dataFields.length}</span>
+                  <span className="text-xs text-gray-500">{completedCount}/{totalCount}</span>
                   {collapsed ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronUp className="h-4 w-4 text-gray-400" />}
                 </div>
               </button>
 
               {!collapsed && (
                 <div className="p-5 space-y-5">
-                  {section.fields.map(field => {
-                    // Hide any field whose conditional logic isn't met. Non-photo
-                    // fields also self-hide via FieldRenderer, but the photo branch
-                    // below did not — so a conditionally-gated photo box used to show
-                    // even when it should be hidden. Gate it here for all types.
-                    if (!checkConditionalLogic(field.conditional_logic, values)) return null
-                    // Photo fields get an inline upload widget
-                    if (field.field_type === 'photo') {
-                      const photos = fieldPhotos[field.id] ?? []
-                      const uploading = uploadingField === field.id
-                      return (
-                        <div key={field.id} className="space-y-1.5">
-                          <label className="label-base mb-0">
-                            {field.item_number && <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>}
-                            {field.label}
-                            {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                          </label>
-                          {field.help_text && <p className="text-xs text-gray-500">{field.help_text}</p>}
-                          {!readOnly && (
-                            <div className="space-y-2">
-                              <input
-                                ref={el => { fieldPhotoRefs.current[field.id] = el }}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="hidden"
-                                onChange={async e => {
-                                  const files = e.target.files
-                                  if (!files) return
-                                  for (const f of Array.from(files)) await uploadPhotoForField(field.id, f)
-                                  if (fieldPhotoRefs.current[field.id]) fieldPhotoRefs.current[field.id]!.value = ''
-                                }}
-                              />
-                              {photos.length === 0 ? (
-                                <div
-                                  onClick={() => !uploading && fieldPhotoRefs.current[field.id]?.click()}
-                                  className="border-2 border-dashed border-gray-300 rounded-lg py-6 text-center cursor-pointer hover:border-brand-300 transition-colors"
-                                >
-                                  {uploading ? <Loader2 className="h-6 w-6 mx-auto text-brand-400 animate-spin" /> : (
-                                    <>
-                                      <Camera className="h-6 w-6 mx-auto text-gray-300 mb-1" />
-                                      <p className="text-sm text-gray-500">Upload photo(s)</p>
-                                    </>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                    {photos.map(p => (
-                                      <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
-                                        <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
-                                        <button
-                                          onClick={() => deletePhoto(p.id, p.storage_path, field.id)}
-                                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </button>
-                                      </div>
-                                    ))}
-                                    <button
-                                      onClick={() => fieldPhotoRefs.current[field.id]?.click()}
-                                      disabled={uploading}
-                                      className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-brand-300 transition-colors"
-                                    >
-                                      {uploading ? <Loader2 className="h-4 w-4 animate-spin text-brand-400" /> : <Camera className="h-4 w-4 text-gray-400" />}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {readOnly && (
-                            <p className="text-sm text-gray-600">{photos.length} photo{photos.length !== 1 ? 's' : ''} uploaded</p>
-                          )}
+                  {section.is_repeatable ? (
+                    <div className="space-y-4">
+                      {Array.from({ length: count }).map((_, inst) => (
+                        <div key={inst} className="rounded-xl border border-gray-200 bg-gray-50/40 p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-semibold text-gray-700">{section.title} — Entry {inst + 1}</span>
+                            {!readOnly && count > 1 && inst === count - 1 && (
+                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs text-red-600 hover:text-red-700 inline-flex items-center gap-1">
+                                <X className="h-3.5 w-3.5" /> Remove
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-5">
+                            {section.fields.map(field => renderFieldControl(field, inst))}
+                          </div>
                         </div>
-                      )
-                    }
-
-                    return (
-                      <FieldRenderer
-                        key={field.id}
-                        field={field}
-                        resolvedLabel={resolveLabel(field.label)}
-                        value={values[field.id] ?? ''}
-                        valueArray={arrayValues[field.id]}
-                        signature={signatures[field.id]}
-                        allValues={values}
-                        onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(field.id, v) : v => updateValue(field.id, v)}
-                        onArrayChange={v => updateArrayValue(field.id, v)}
-                        onSignatureChange={data => updateSignature(field.id, data)}
-                        onBlur={v => {
-                          const prefix = vesselPrefixForLabel(field.label)
-                          if (!prefix) return
-                          const next = normalizeVesselName(v, prefix)
-                          if (next !== v) updateValue(field.id, next)
-                        }}
-                        readOnly={readOnly}
-                      />
-                    )
-                  })}
+                      ))}
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => addInstance(section.id)}
+                          className="w-full rounded-xl border-2 border-dashed border-gray-300 py-3 text-sm font-medium text-brand-600 hover:border-brand-300 hover:bg-brand-50/40 transition-colors inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="h-4 w-4" /> Add {section.title}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    section.fields.map(field => renderFieldControl(field, 0))
+                  )}
                 </div>
               )}
             </div>

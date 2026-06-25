@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getDraft, putDraft, deleteDraft, getPhotosForJob, putPhoto, deletePhoto } from './db'
+import { instanceKey, parseInstanceKey } from './instanceKeys'
 
 export type SyncResult =
   | { ok: true; submitted: boolean; nothing?: boolean }
@@ -83,8 +84,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // Concurrent-edit conflict: did the server answers change since we cached them?
     if (draft.needsSync || draft.pendingSubmit) {
       const [valsRes, sigsRes] = await Promise.all([
-        supabase.from('job_field_values').select('field_id, value, value_array').eq('job_id', jobId),
-        supabase.from('job_signatures').select('field_id, signature_data').eq('job_id', jobId),
+        supabase.from('job_field_values').select('field_id, instance, value, value_array').eq('job_id', jobId),
+        supabase.from('job_signatures').select('field_id, instance, signature_data').eq('job_id', jobId),
       ])
       if (valsRes.error || sigsRes.error) {
         // Don't compare against an empty/failed read — that would false-conflict
@@ -95,11 +96,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       }
       const svVals = valsRes.data
       const svSigs = sigsRes.data
+      // Key by instanceKey so this matches the draft's composite-keyed maps (repeatable
+      // sections store one row per (field, instance)).
       const nowVals: Record<string, string> = {}
       const nowArr: Record<string, string[]> = {}
-      for (const v of (svVals ?? [])) { if (v.value_array) nowArr[v.field_id] = v.value_array; else nowVals[v.field_id] = v.value ?? '' }
+      for (const v of (svVals ?? [])) { const k = instanceKey(v.field_id, (v as any).instance ?? 0); if (v.value_array) nowArr[k] = v.value_array; else nowVals[k] = v.value ?? '' }
       const nowSigs: Record<string, string> = {}
-      for (const s of (svSigs ?? [])) nowSigs[s.field_id] = s.signature_data
+      for (const s of (svSigs ?? [])) nowSigs[instanceKey(s.field_id, (s as any).instance ?? 0)] = s.signature_data
       if (canon(nowVals, nowArr, nowSigs) !== canon(draft.serverValues, draft.serverArrayValues, draft.serverSignatures)) {
         const message = 'This checklist was changed on the server since you went offline. Your local changes were kept and not sent — reload to merge.'
         await putDraft({ ...draft, syncError: message })
@@ -109,21 +112,29 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
   }
 
   try {
-    const valueRows = Object.entries(draft.values).map(([field_id, value]) => ({ job_id: jobId, field_id, value, value_array: null }))
-    const arrayRows = Object.entries(draft.arrayValues).map(([field_id, value_array]) => ({ job_id: jobId, field_id, value: null, value_array }))
+    // Keys carry the repeatable-section instance — split it back out for persistence.
+    const valueRows = Object.entries(draft.values).map(([key, value]) => {
+      const { fieldId, instance } = parseInstanceKey(key)
+      return { job_id: jobId, field_id: fieldId, instance, value, value_array: null }
+    })
+    const arrayRows = Object.entries(draft.arrayValues).map(([key, value_array]) => {
+      const { fieldId, instance } = parseInstanceKey(key)
+      return { job_id: jobId, field_id: fieldId, instance, value: null, value_array }
+    })
     if (valueRows.length) {
-      const { error } = await supabase.from('job_field_values').upsert(valueRows, { onConflict: 'job_id,field_id' })
+      const { error } = await supabase.from('job_field_values').upsert(valueRows, { onConflict: 'job_id,field_id,instance' })
       if (error) throw error
     }
     if (arrayRows.length) {
-      const { error } = await supabase.from('job_field_values').upsert(arrayRows, { onConflict: 'job_id,field_id' })
+      const { error } = await supabase.from('job_field_values').upsert(arrayRows, { onConflict: 'job_id,field_id,instance' })
       if (error) throw error
     }
-    for (const [field_id, signature_data] of Object.entries(draft.signatures)) {
+    for (const [key, signature_data] of Object.entries(draft.signatures)) {
       if (!signature_data) continue
+      const { fieldId, instance } = parseInstanceKey(key)
       const { error } = await supabase.from('job_signatures').upsert(
-        { job_id: jobId, field_id, signature_data, signed_at: new Date().toISOString() },
-        { onConflict: 'job_id,field_id' }
+        { job_id: jobId, field_id: fieldId, instance, signature_data, signed_at: new Date().toISOString() },
+        { onConflict: 'job_id,field_id,instance' }
       )
       if (error) throw error
     }
