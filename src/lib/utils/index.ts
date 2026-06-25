@@ -120,6 +120,7 @@ export function getFieldTypeLabel(type: FieldType): string {
     calculated: 'Calculated',
     photo: 'Photo Upload',
     video_link: 'Video Link',
+    client_select: 'Client (linked)',
     signature: 'Signature',
     heading: 'Section Heading',
     divider: 'Divider',

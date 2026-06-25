@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Info, Plus, X, Video } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
 import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
 import SignaturePad from './SignaturePad'
 
@@ -101,6 +102,16 @@ export default function FieldRenderer({
           />
           {field.unit && <span className="text-sm text-gray-500 flex-shrink-0">{field.unit}</span>}
         </div>
+      )}
+
+      {field.field_type === 'client_select' && (
+        <ClientSelectInput
+          value={value}
+          onChange={onChange}
+          readOnly={readOnly}
+          baseInputClass={baseInputClass}
+          listId={`clients-${field.id}`}
+        />
       )}
 
       {field.field_type === 'textarea' && (
@@ -416,5 +427,45 @@ function VideoLinkInput({ links, onChange, readOnly, baseInputClass }: {
         <Plus className="h-3.5 w-3.5" />Add another link
       </button>
     </div>
+  )
+}
+
+/**
+ * Client-linked field: a text input backed by a <datalist> of the org's active
+ * clients, so the surveyor can pick an existing client OR type a free-text name
+ * (e.g. a commissioning company that isn't a client). Stores the plain name string,
+ * so it renders like any text field on the report. Surveyors can read clients
+ * (same access the offline new-job picklists rely on).
+ */
+function ClientSelectInput({ value, onChange, readOnly, baseInputClass, listId }: {
+  value: string
+  onChange: (v: string) => void
+  readOnly: boolean
+  baseInputClass: string
+  listId: string
+}) {
+  const [names, setNames] = useState<string[]>([])
+  useEffect(() => {
+    let active = true
+    createClient().from('clients').select('name').eq('is_active', true).order('name')
+      .then(({ data }) => { if (active && data) setNames((data as { name: string }[]).map(c => c.name).filter(Boolean)) })
+    return () => { active = false }
+  }, [])
+
+  if (readOnly) return <p className="text-sm text-gray-800">{value || '—'}</p>
+  return (
+    <>
+      <input
+        type="text"
+        list={listId}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Pick a client or type a name"
+        className={baseInputClass}
+      />
+      <datalist id={listId}>
+        {names.map(n => <option key={n} value={n} />)}
+      </datalist>
+    </>
   )
 }

@@ -44,6 +44,7 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'calculated', label: 'Calculated Field', group: 'Special' },
   { value: 'photo', label: 'Photo Upload', group: 'Special' },
   { value: 'video_link', label: 'Video Link', group: 'Special' },
+  { value: 'client_select', label: 'Client (linked)', group: 'Special' },
   { value: 'signature', label: 'Signature', group: 'Special' },
 ]
 

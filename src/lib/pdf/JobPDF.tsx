@@ -393,6 +393,12 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <Text style={styles.jobDetailValue}>{withMvPrefix(job.vessel_name)}</Text>
               </View>
             )}
+            {job.client?.name && (
+              <View style={styles.jobDetailRow}>
+                <Text style={styles.jobDetailLabel}>Client:</Text>
+                <Text style={styles.jobDetailValue}>{job.client.name}</Text>
+              </View>
+            )}
             {dateField && fieldValues[dateField.id] && (
               <View style={styles.jobDetailRow}>
                 <Text style={styles.jobDetailLabel}>Date:</Text>

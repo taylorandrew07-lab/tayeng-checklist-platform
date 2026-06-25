@@ -31,6 +31,7 @@ export type FieldType =
   | 'calculated'
   | 'photo'
   | 'video_link'
+  | 'client_select'
   | 'signature'
   | 'heading'
   | 'divider'

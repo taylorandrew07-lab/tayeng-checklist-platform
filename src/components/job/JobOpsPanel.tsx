@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2 } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
@@ -32,8 +33,8 @@ function activityText(a: ActivityLogRow): string {
   return act
 }
 
-function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; onRemove: () => void; onSaved: () => void
+function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, onRemove, onSaved }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; onRemove: () => void; onSaved: () => void
 }) {
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
@@ -55,6 +56,18 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
     toast.success('Hours saved'); onSaved()
   }
 
+  // Copy the checklist's calculated billable hours into this surveyor's regular
+  // (client-billed) hours, and save it — links the OVID/borescoping hours to the job.
+  async function applyChecklistHours() {
+    if (billableHours == null) return
+    setReg(String(billableHours))
+    setSaving(true)
+    const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: billableHours, overtime_hours: Number(ot) || 0 })
+    setSaving(false)
+    if (h.error) { toast.error(h.error); return }
+    toast.success(`Applied ${billableHours} billable hrs`); onSaved()
+  }
+
   const numCls = 'input-base py-1 text-sm'
   return (
     <div className="rounded-lg border border-gray-200 p-3">
@@ -63,7 +76,15 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, onRemove, onSaved }: {
         {isAdmin && <button onClick={onRemove} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div><label className="text-[11px] text-gray-400">Regular hrs <span className="text-gray-300">· client</span></label><input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} /></div>
+        <div>
+          <label className="text-[11px] text-gray-400 flex items-center justify-between gap-2">
+            <span>Regular hrs <span className="text-gray-300">· client</span></span>
+            {billableHours != null && Number(reg) !== billableHours && (
+              <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
+            )}
+          </label>
+          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
+        </div>
         <div><label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">· OT pay</span></label><input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} /></div>
         {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
@@ -92,6 +113,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [addId, setAddId] = useState('')
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
   const [isOT, setIsOT] = useState(!!job.is_overtime)
+  const [billableHours, setBillableHours] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function toggleOvertime() {
@@ -106,6 +128,21 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     const [s, at] = await Promise.all([listJobSurveyors(job.id), listJobAttachments(job.id)])
     setSurveyors(s); setAttachments(at)
     if (isAdmin) setActivity(await listJobActivity(job.id)) // activity_log is admin/office-only under RLS
+    // The checklist's calculated billable hours (e.g. OVID "Total hours"), so it can
+    // be one-click applied to a surveyor's client-billed regular hours below.
+    if (job.template_id) {
+      const supabase = createClient()
+      const { data: f } = await supabase.from('template_fields')
+        .select('id').eq('template_id', job.template_id).eq('is_billable_hours', true).limit(1).maybeSingle()
+      if (f?.id) {
+        const { data: v } = await supabase.from('job_field_values')
+          .select('value').eq('job_id', job.id).eq('field_id', f.id).maybeSingle()
+        const n = parseFloat(v?.value ?? '')
+        setBillableHours(Number.isFinite(n) && n > 0 ? n : null)
+      } else {
+        setBillableHours(null)
+      }
+    }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void reload(); if (isAdmin) listSurveyorAccounts().then(setAccounts) }, [job.id])
@@ -207,12 +244,17 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           ) : null}
         </div>
         <p className="text-[11px] text-gray-400 mb-3">Regular hours are billed to the client · Overtime hours are paid to the surveyor as OT.</p>
+        {billableHours != null && (
+          <p className="text-[11px] text-brand-700 bg-brand-50/70 rounded-md px-2.5 py-1.5 mb-3">
+            Checklist billable hours: <strong>{billableHours} hrs</strong> — use the <em>“use {billableHours}h”</em> link to set a surveyor&apos;s regular (client-billed) hours.
+          </p>
+        )}
         {surveyors.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
             ))}
           </div>
         )}
