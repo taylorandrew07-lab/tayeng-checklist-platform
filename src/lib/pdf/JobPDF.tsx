@@ -229,25 +229,45 @@ const styles = StyleSheet.create({
     fontSize: 6.5,
     color: '#64748b',
     marginTop: 2,
+    textAlign: 'center',
   },
-  // Letterhead
-  letterhead: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
+  // Letterhead — mirrors the invoice for a consistent, clean header.
   logo: {
-    width: 150,
-    objectFit: 'contain',
-    marginBottom: 2,
+    width: 210,
+    alignSelf: 'center',
+    marginBottom: 4,
   },
-  letterheadName: {
-    fontSize: 11,
+  wordmark: {
+    fontSize: 17,
     fontFamily: 'Helvetica-Bold',
-    color: '#1e3a8a',
+    color: '#1d4ed8',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
-  letterheadMeta: {
-    fontSize: 6.5,
-    color: '#94a3b8',
+  tagline: {
+    fontSize: 7,
+    color: '#64748b',
+    textAlign: 'center',
+    letterSpacing: 1.3,
+    marginTop: 2,
+  },
+  headLine: {
+    fontSize: 7.5,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  headRule: {
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#1d4ed8',
+    marginTop: 7,
+    marginBottom: 8,
+  },
+  reportTitleCentered: {
+    fontSize: 14,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1d4ed8',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   // Per-entry photo pages: 2 columns × 3 rows = 6 per page, started on a fresh page.
   reportPhotoGrid: {
@@ -459,21 +479,22 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
     >
       <Page size="LETTER" style={styles.page}>
 
-        {/* Letterhead — logo + company line */}
-        <View style={styles.letterhead} fixed>
-          {logoSrc ? (
-            // eslint-disable-next-line jsx-a11y/alt-text
-            <Image src={logoSrc} style={styles.logo} />
-          ) : (
-            <Text style={styles.letterheadName}>{COMPANY.name}</Text>
-          )}
-          <Text style={styles.letterheadMeta}>{COMPANY.address} · {COMPANY.phone} · {COMPANY.email}</Text>
-        </View>
+        {/* Letterhead — matches the invoice. First page only (not fixed). */}
+        {logoSrc ? (
+          // eslint-disable-next-line jsx-a11y/alt-text
+          <Image src={logoSrc} style={styles.logo} />
+        ) : (
+          <>
+            <Text style={styles.wordmark}>{COMPANY.name}</Text>
+            <Text style={styles.tagline}>{COMPANY.tagline}</Text>
+          </>
+        )}
+        <Text style={styles.headLine}>{COMPANY.address}</Text>
+        <Text style={styles.headLine}>T {COMPANY.phone}, {COMPANY.phoneAlt}   F {COMPANY.fax}   E {COMPANY.email}</Text>
+        <View style={styles.headRule} />
 
         {/* Report title */}
-        <View style={styles.reportTitleBlock}>
-          <Text style={styles.reportTitle}>{reportTitle}</Text>
-        </View>
+        <Text style={styles.reportTitleCentered}>{reportTitle}</Text>
 
         {/* Job Details — two balanced columns: vessel/date left, port/method right */}
         <View style={styles.jobDetailsBlock}>
@@ -636,9 +657,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>{COMPANY.name} — Confidential</Text>
-          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-          <Text style={styles.footerText}>{job.job_number ?? 'Draft'}</Text>
+          <Text style={[styles.footerText, { flex: 1, textAlign: 'left' }]}>{COMPANY.name} — Confidential</Text>
+          <Text style={[styles.footerText, { flex: 1, textAlign: 'center' }]} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+          <Text style={[styles.footerText, { flex: 1, textAlign: 'right' }]}>{job.job_number ?? 'Draft'}</Text>
         </View>
       </Page>
     </Document>

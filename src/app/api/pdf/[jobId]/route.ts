@@ -135,9 +135,10 @@ export async function GET(
   const surveyors = ((survRows ?? []) as any[]).map(r => r.surveyor?.full_name).filter(Boolean) as string[]
 
   // Letterhead logo as a data URI (reliable in serverless), loaded from the app origin.
+  // Use the same clean letterhead logo the invoice uses.
   let logoSrc: string | undefined
   try {
-    const res = await fetch(new URL('/logo-full.png', new URL(request.url).origin))
+    const res = await fetch(new URL('/logo-invoice.png', new URL(request.url).origin))
     if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
   } catch { /* logo is optional — the report falls back to the company name */ }
 
