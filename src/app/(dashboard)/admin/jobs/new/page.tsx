@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
-import { listJobTypes, listSurveyorAccounts, logActivity, type SurveyorAccount } from '@/lib/jobs/tracker'
+import { listJobTypes, addJobType, listSurveyorAccounts, logActivity, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { titleCaseVesselName } from '@/lib/utils'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
@@ -29,6 +29,8 @@ export default function NewJobPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [jobType, setJobType] = useState('')
+  const [showNewJobType, setShowNewJobType] = useState(false)
+  const [newJobTypeName, setNewJobTypeName] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [vesselName, setVesselName] = useState('')
   const [clientId, setClientId] = useState('')
@@ -63,6 +65,18 @@ export default function NewJobPage() {
   }, [])
 
   function togglePicked(id: string) { setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+
+  async function addNewJobType() {
+    const name = newJobTypeName.trim()
+    if (!name) return
+    const res = await addJobType(name)
+    if (res.error) { toast.error(res.error); return }
+    setJobTypes(await listJobTypes())
+    setJobType(name)
+    setShowNewJobType(false)
+    setNewJobTypeName('')
+    toast.success(`Added job type “${name}”`)
+  }
 
   async function handleSave() {
     if (!jobType) { setError('Please choose a job type'); return }
@@ -132,10 +146,30 @@ export default function NewJobPage() {
       <div className="card p-6 space-y-5">
         <div>
           <label className="label-base">Job type *</label>
-          <select value={jobType} onChange={e => setJobType(e.target.value)} className="input-base">
+          <select
+            value={showNewJobType ? '__new__' : jobType}
+            onChange={e => { if (e.target.value === '__new__') { setShowNewJobType(true); setJobType('') } else { setShowNewJobType(false); setJobType(e.target.value) } }}
+            className="input-base"
+          >
             <option value="">Select a job type…</option>
             {jobTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            <option value="__new__">+ Add new job type…</option>
           </select>
+          {showNewJobType && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={newJobTypeName}
+                onChange={e => setNewJobTypeName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addNewJobType() } }}
+                className="input-base"
+                placeholder="e.g. Borescope Survey"
+                autoFocus
+              />
+              <button type="button" onClick={addNewJobType} className="btn-secondary whitespace-nowrap">Add</button>
+            </div>
+          )}
+          <p className="text-xs text-gray-400 mt-1">Add one here, or manage all job types in <Link href="/admin/settings" className="underline hover:text-gray-600">Settings</Link>.</p>
         </div>
 
         <div>
