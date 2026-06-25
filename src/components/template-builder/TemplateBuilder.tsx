@@ -24,11 +24,69 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Type,
+  Hash,
+  AlignLeft,
+  Calendar,
+  Clock,
+  List,
+  CheckSquare,
+  Calculator,
+  Image as ImageIcon,
+  Video,
+  User,
+  PenLine,
+  Heading1,
+  Minus,
 } from 'lucide-react'
 import FieldEditor from './FieldEditor'
 import { createBlankField, createBlankSection } from './types'
 import type { BuilderSection, BuilderField } from './types'
+import type { FieldType, FieldOption } from '@/lib/types/database'
 import { cn } from '@/lib/utils'
+
+// iAuditor-style "type of response" chip: a small icon + label per field type, with
+// option previews for choice fields. Keeps the builder readable at a glance.
+const TYPE_META: Record<string, { icon: typeof Type; label: string; color: string }> = {
+  text: { icon: Type, label: 'Text answer', color: 'text-orange-500' },
+  textarea: { icon: AlignLeft, label: 'Long text', color: 'text-orange-500' },
+  number: { icon: Hash, label: 'Number', color: 'text-emerald-500' },
+  date: { icon: Calendar, label: 'Date', color: 'text-sky-500' },
+  time: { icon: Clock, label: 'Time', color: 'text-sky-500' },
+  dropdown: { icon: List, label: 'Dropdown', color: 'text-violet-500' },
+  yes_no: { icon: CheckSquare, label: 'Yes / No', color: 'text-violet-500' },
+  yes_no_na: { icon: CheckSquare, label: 'Yes / No / N/A', color: 'text-violet-500' },
+  pass_fail: { icon: CheckSquare, label: 'Pass / Fail', color: 'text-violet-500' },
+  multiple_choice: { icon: CheckSquare, label: 'Multiple choice', color: 'text-violet-500' },
+  calculated: { icon: Calculator, label: 'Calculated', color: 'text-blue-500' },
+  photo: { icon: ImageIcon, label: 'Media', color: 'text-cyan-500' },
+  video_link: { icon: Video, label: 'Video link', color: 'text-cyan-500' },
+  client_select: { icon: User, label: 'Client', color: 'text-orange-500' },
+  signature: { icon: PenLine, label: 'Signature', color: 'text-rose-500' },
+  heading: { icon: Heading1, label: 'Section heading', color: 'text-gray-400' },
+  divider: { icon: Minus, label: 'Divider', color: 'text-gray-400' },
+}
+
+function TypeChip({ type, options }: { type: FieldType; options?: FieldOption[] }) {
+  if ((type === 'multiple_choice' || type === 'dropdown') && options && options.length > 0) {
+    return (
+      <span className="flex items-center gap-1 flex-shrink-0">
+        {options.slice(0, 2).map((o, i) => (
+          <span key={i} className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 whitespace-nowrap max-w-[7rem] truncate">{o.label}</span>
+        ))}
+        {options.length > 2 && <span className="text-[11px] text-gray-400">+{options.length - 2}</span>}
+      </span>
+    )
+  }
+  const meta = TYPE_META[type] ?? { icon: Type, label: type, color: 'text-gray-400' }
+  const Icon = meta.icon
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 flex-shrink-0">
+      <Icon className={cn('h-3.5 w-3.5', meta.color)} />
+      {meta.label}
+    </span>
+  )
+}
 
 interface TemplateBuilderProps {
   sections: BuilderSection[]
@@ -335,7 +393,16 @@ function SortableSection({
           />
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 cursor-pointer select-none" title="Let the surveyor add many entries of this section — one per line/inspection">
+            <input
+              type="checkbox"
+              checked={section.is_repeatable}
+              onChange={(e) => onUpdate({ is_repeatable: e.target.checked })}
+              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            Repeat this section
+          </label>
           <span className="hidden sm:inline text-xs text-gray-400">{section.fields.length} field{section.fields.length !== 1 ? 's' : ''}</span>
           <button
             type="button"
@@ -365,6 +432,12 @@ function SortableSection({
             </>
           ) : (
             <>
+              {/* Column header, iAuditor-style */}
+              <div className="flex items-center justify-between gap-3 pl-9 pr-3 pb-1.5 mb-1 border-b border-gray-100 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                <span>Question</span>
+                <span>Type of response</span>
+              </div>
+
               {/* Top insert button */}
               <InsertFieldButton onClick={() => onAddFieldAt(0)} />
 
@@ -431,6 +504,11 @@ interface SortableFieldProps {
 function SortableField({ field, sections, allFields, displayNumber, onUpdate, onDelete }: SortableFieldProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
 
+  // Compact, iAuditor-style row by default; expand to the full editor on click. A
+  // freshly-added field (still the placeholder label) opens expanded so it's editable.
+  const isPlaceholder = field.label === 'New Field' || field.label === 'Follow-up question' || field.label.trim() === ''
+  const [collapsed, setCollapsed] = useState(!isPlaceholder)
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -438,26 +516,49 @@ function SortableField({ field, sections, allFields, displayNumber, onUpdate, on
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="flex gap-2 mb-3">
-      {/* Fix #2: inline style cursor, slightly darker icon for visibility */}
+    <div ref={setNodeRef} style={style} className="flex gap-2 mb-2">
       <button
         type="button"
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-        className="mt-3 text-gray-400 hover:text-gray-600 touch-none flex-shrink-0"
+        className={cn('text-gray-400 hover:text-gray-600 touch-none flex-shrink-0', collapsed ? 'mt-2' : 'mt-3')}
         {...attributes}
         {...listeners}
       >
         <GripVertical className="h-4 w-4" />
       </button>
       <div className="flex-1 min-w-0">
-        <FieldEditor
-          field={field}
-          sections={sections}
-          allFields={allFields}
-          displayNumber={displayNumber}
-          onChange={onUpdate}
-          onDelete={onDelete}
-        />
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-gray-200 hover:border-brand-300 hover:bg-brand-50/40 transition-colors text-left"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              {displayNumber && <span className="text-brand-600 font-semibold text-xs flex-shrink-0">{displayNumber}</span>}
+              {field.is_required && <span className="text-red-500 flex-shrink-0">*</span>}
+              <span className="text-sm text-gray-800 truncate">{field.label || 'Untitled question'}</span>
+            </span>
+            <TypeChip type={field.field_type} options={field.options} />
+          </button>
+        ) : (
+          <div>
+            <FieldEditor
+              field={field}
+              sections={sections}
+              allFields={allFields}
+              displayNumber={displayNumber}
+              onChange={onUpdate}
+              onDelete={onDelete}
+            />
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="mt-1 text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1"
+            >
+              <ChevronUp className="h-3 w-3" /> Collapse
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

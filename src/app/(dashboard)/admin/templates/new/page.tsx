@@ -112,6 +112,7 @@ export default function NewTemplatePage() {
           description: s.description ?? '',
           order_index: s.order_index,
           conditional_logic: remapConditional(s.conditional_logic, idMap),
+          is_repeatable: s.is_repeatable ?? false,
           fields: (s.fields ?? [])
             .sort((a: any, b: any) => a.order_index - b.order_index)
             .map((f: any) => ({
@@ -212,6 +213,7 @@ export default function NewTemplatePage() {
         description: s.description || null,
         order_index: s.order_index,
         conditional_logic: s.conditional_logic,
+        is_repeatable: s.is_repeatable ?? false,
       }))
       if (sectionRows.length > 0) {
         const { error } = await withTimeout(

@@ -25,6 +25,8 @@ export interface BuilderSection {
   description: string
   order_index: number
   conditional_logic: ConditionalLogic | null
+  /** When true the surveyor can add many entries of this section (one per line/inspection). */
+  is_repeatable: boolean
   fields: BuilderField[]
 }
 
@@ -96,6 +98,7 @@ export function createBlankSection(order_index: number): BuilderSection {
     description: '',
     order_index,
     conditional_logic: null,
+    is_repeatable: false,
     fields: [],
   }
 }

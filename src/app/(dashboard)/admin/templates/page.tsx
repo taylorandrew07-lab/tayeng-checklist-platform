@@ -101,6 +101,7 @@ export default function TemplatesPage() {
           description: section.description,
           order_index: section.order_index,
           conditional_logic: null,
+          is_repeatable: section.is_repeatable ?? false,
         })
         .select()
         .single()
