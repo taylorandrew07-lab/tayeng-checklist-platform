@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,7 +34,7 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
 
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
   const sizeClasses = {
     sm: 'max-w-sm',
@@ -42,7 +43,11 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
     xl: 'max-w-4xl',
   }
 
-  return (
+  // Portal to <body> so the overlay is never trapped inside a transformed/filtered
+  // ancestor — those make `position: fixed` resolve to the ancestor instead of the
+  // viewport, which pushed the dialog into a corner on mobile. From <body> it always
+  // centres in the viewport.
+  return createPortal(
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
@@ -72,6 +77,7 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
