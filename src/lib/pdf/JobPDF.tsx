@@ -452,6 +452,17 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+// A field-row-styled row for injected job-record values (Vessel/Client/Surveyors), so
+// they sit consistently among the real fields in a details section.
+function renderInfoRow(key: string, label: string, value: string): React.ReactElement {
+  return (
+    <View key={key} style={styles.fieldRow}>
+      <View style={styles.fieldLabel}><Text style={styles.fieldLabelText}>{label}</Text></View>
+      <View style={styles.fieldValue}><Text style={styles.fieldValueText}>{value}</Text></View>
+    </View>
+  )
+}
+
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, logoSrc, surveyors = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
@@ -481,15 +492,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // flagged fall through the legacy regex header below, byte-for-byte unchanged.
   const flaggedHeaderIds = allFieldsFlat.filter((f: any) => f.show_in_header).map((f: any) => f.id)
   const useFlagHeader = flaggedHeaderIds.length > 0
-  // Render a header ROW only for flagged fields that have no job-record home; vessel,
-  // client and surveyor come from the job record (job.vessel_name / job.client /
-  // job_surveyors), so those flagged fields are just suppressed from the body.
-  const headerRowFields = allFieldsFlat.filter((f: any) =>
-    f.show_in_header &&
-    !isSurveyedVesselNameField(f.label) &&
-    f.field_type !== 'client_select' &&
-    !/surveyor/i.test(f.label)
-  )
+  // A flagged field whose value comes from the JOB record (vessel name / client /
+  // surveyor) is shown via an injected job row, not its own field row.
+  const isJobBackedField = (f: any) => isSurveyedVesselNameField(f.label) || f.field_type === 'client_select' || /surveyor/i.test(f.label)
 
   // These are shown in the Job Details block — suppress them from the section body
   const suppressedIds = new Set<string>(
@@ -530,52 +535,51 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {/* Report title */}
         <Text style={styles.reportTitleCentered}>{reportTitle}</Text>
 
-        {/* Job Details — top info block. */}
-        <View style={styles.jobDetailsBlock}>
-          {useFlagHeader ? (
-            <>
-              {/* Left = vessel identity (Vessel + non-date flagged fields); right =
-                  commercial/people (Client, Surveyors) + date-type flagged fields, so
-                  the two columns stay balanced. */}
-              <View style={styles.jobDetailCol}>
-                {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
-                {headerRowFields.filter((f: any) => f.field_type !== 'date').map((f: any) => {
-                  const raw = fieldValues[f.id]
-                  if (!raw) return null
-                  // Number fields (e.g. Gross Tonnes) print with thousands separators.
-                  const display = f.field_type === 'number' && !isNaN(Number(raw)) ? Number(raw).toLocaleString('en-US') : raw
-                  return <DetailRow key={f.id} label={f.label} value={`${display}${f.unit ? ` ${f.unit}` : ''}`} />
-                })}
-              </View>
-              <View style={styles.jobDetailCol}>
-                {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
-                {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
-                {headerRowFields.filter((f: any) => f.field_type === 'date').map((f: any) => (
-                  fieldValues[f.id] ? <DetailRow key={f.id} label={f.label} value={fieldValues[f.id]} /> : null
-                ))}
-              </View>
-            </>
-          ) : (
-            <>
-              <View style={styles.jobDetailCol}>
-                {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
-                {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
-                {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
-                {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
-              </View>
-              <View style={styles.jobDetailCol}>
-                {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} />}
-                {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} /> : null}
-                {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} />}
-              </View>
-            </>
-          )}
-        </View>
+        {/* Job Details — legacy top block for templates WITHOUT show_in_header fields
+            (OVID, bunker, UHT…). Flagged templates (e.g. Borescoping) render all of this
+            inside their Title/Job Details section instead — see the section loop. */}
+        {!useFlagHeader && (
+          <View style={styles.jobDetailsBlock}>
+            <View style={styles.jobDetailCol}>
+              {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
+              {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
+              {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
+              {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
+            </View>
+            <View style={styles.jobDetailCol}>
+              {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} />}
+              {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} /> : null}
+              {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} />}
+            </View>
+          </View>
+        )}
 
         {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}
         {sections.map(section => {
           const visibleFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
           const photoFields = (section.fields as any[]).filter((f: any) => f.field_type === 'photo')
+
+          // Details section (flagged template): render the whole job/vessel block here —
+          // Vessel, then spec fields, then Client + Surveyors, then the remaining fields
+          // (Date, Time, Port/Location, Inspection Day Number) in their field order.
+          if (useFlagHeader && (section.fields as any[]).some((f: any) => f.show_in_header)) {
+            const specFields = (section.fields as any[]).filter((f: any) => f.show_in_header && !isJobBackedField(f))
+            const restFields = (section.fields as any[]).filter((f: any) => !f.show_in_header && !['heading', 'divider', 'photo'].includes(f.field_type))
+            return (
+              <View key={section.id} style={styles.sectionContainer}>
+                <View wrap={false}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                  </View>
+                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withMvPrefix(job.vessel_name)) : null}
+                </View>
+                {specFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
+                {job.client?.name ? renderInfoRow('client', 'Client', job.client.name) : null}
+                {surveyors.length > 0 ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', ')) : null}
+                {restFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
+              </View>
+            )
+          }
 
           // Repeatable section: each entry is its own block; that entry's photos follow
           // on a fresh page (6 per page, 2×3), labelled by line — never an anonymous dump.
@@ -802,7 +806,7 @@ function renderField(
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
-              {hasValue ? rawValue : '—'}
+              {hasValue ? (field.field_type === 'number' && !isNaN(Number(rawValue)) ? Number(rawValue).toLocaleString('en-US') : rawValue) : '—'}
             </Text>
             {field.unit && hasValue && <Text style={styles.fieldUnit}>{field.unit}</Text>}
           </View>
