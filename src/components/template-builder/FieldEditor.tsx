@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { Trash2, Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Trash2, Plus, X, ChevronDown, ChevronUp, Bookmark, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from '@/components/ui/toast'
 import type { BuilderField, BuilderSection } from './types'
 import { FIELD_TYPE_OPTIONS, getDefaultYesNoOptions } from './types'
 import type { FieldOption, ConditionalLogic } from '@/lib/types/database'
+import { listResponseSets, createResponseSet, type ResponseSet } from '@/lib/templates/responseSets'
 
 const COLOR_SWATCH: Record<NonNullable<FieldOption['color']>, { bg: string; ring: string; label: string }> = {
   green: { bg: 'bg-green-500', ring: 'ring-green-500', label: 'Green' },
@@ -51,9 +53,31 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
   const [showConditional, setShowConditional] = useState(!!field.conditional_logic)
   // Item 3: help text hidden by default, shown only when the box is checked (or a value already exists)
   const [showHelp, setShowHelp] = useState(!!field.help_text)
+  const [responseSets, setResponseSets] = useState<ResponseSet[]>([])
+  const needsOptions = field.field_type === 'dropdown' || field.field_type === 'multiple_choice'
+  useEffect(() => {
+    if (needsOptions) listResponseSets().then(setResponseSets).catch(() => {})
+  }, [needsOptions])
 
   function update(patch: Partial<BuilderField>) {
     onChange({ ...field, ...patch })
+  }
+
+  // Apply a saved response set's options to this field (copied in — editing the set
+  // later never changes this template).
+  function applyResponseSet(id: string) {
+    const set = responseSets.find(s => s.id === id)
+    if (set) update({ options: set.options.map(o => ({ ...o })) })
+  }
+
+  // Save this field's current options as a new reusable set.
+  async function saveResponseSet() {
+    if (field.options.length === 0) { toast.error('Add some options first'); return }
+    const name = window.prompt('Name this response set (reusable across templates):')?.trim()
+    if (!name) return
+    const res = await createResponseSet(name, field.options)
+    if (res.error) { toast.error(res.error); return }
+    if (res.set) { setResponseSets(prev => [...prev, res.set!].sort((a, b) => a.name.localeCompare(b.name))); toast.success(`Saved “${name}”`) }
   }
 
   function addOption() {
@@ -74,7 +98,6 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
     update({ conditional_logic: logic })
   }
 
-  const needsOptions = field.field_type === 'dropdown' || field.field_type === 'multiple_choice'
   const isLayoutField = field.field_type === 'heading' || field.field_type === 'divider'
   const isYesNo = field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail'
 
@@ -419,6 +442,24 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
               {/* Options for dropdown / multiple_choice */}
               {needsOptions && (
                 <div>
+                  {/* Reusable response sets — apply a saved set, or save these options */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bookmark className="h-3.5 w-3.5 text-brand-500 flex-shrink-0" />
+                    <select
+                      value=""
+                      onChange={(e) => { if (e.target.value) applyResponseSet(e.target.value) }}
+                      className="input-base py-1 text-xs flex-1"
+                      title="Apply a saved response set's options to this field"
+                    >
+                      <option value="">Use a saved response set…</option>
+                      {responseSets.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.options.length})</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={saveResponseSet} className="text-xs btn-secondary py-1 px-2 whitespace-nowrap" title="Save these options as a reusable set">
+                      <Save className="h-3 w-3" />Save set
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="label-base mb-0">Options</label>
                     <button
