@@ -258,6 +258,9 @@ export interface ChecklistTemplate {
   /** Fixed legal boilerplate printed at the end of every generated PDF for this
    *  template (NOT an editable survey field). null prints nothing. */
   pdf_disclaimer: string | null
+  /** Short intro paragraph printed below the Job Details on the report's first page.
+   *  null prints nothing. See migration 105. */
+  pdf_preamble: string | null
   created_by: string
   duplicated_from: string | null
   archived_by: string | null

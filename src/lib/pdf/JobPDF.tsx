@@ -308,6 +308,13 @@ const styles = StyleSheet.create({
   entryBody: {
     padding: '0 6 3 6',
   },
+  preamble: {
+    marginTop: 8,
+    marginBottom: 2,
+    fontSize: 8.5,
+    color: '#374151',
+    lineHeight: 1.45,
+  },
   disclaimer: {
     marginTop: 6,
     padding: 4,
@@ -437,6 +444,8 @@ interface PDFProps {
   photos?: JobPhoto[]
   /** Fixed legal boilerplate printed at the end (template.pdf_disclaimer). */
   disclaimer?: string | null
+  /** Intro paragraph printed below the Job Details (template.pdf_preamble). */
+  preamble?: string | null
   /** Company letterhead logo as a data URI (loaded server-side). */
   logoSrc?: string
   /** Names of the surveyors assigned to the job, printed in the header. */
@@ -463,8 +472,9 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, logoSrc, surveyors = [] }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, surveyors = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
+  const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
   // Photo fields inside a repeatable section render INLINE per entry (above), so keep
   // them out of the end-of-report grid to avoid showing them twice.
@@ -553,6 +563,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
             </View>
           </View>
         )}
+        {!useFlagHeader && preambleNode}
 
         {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}
         {sections.map(section => {
@@ -577,6 +588,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 {job.client?.name ? renderInfoRow('client', 'Client', job.client.name) : null}
                 {surveyors.length > 0 ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', ')) : null}
                 {restFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
+                {preambleNode}
               </View>
             )
           }
@@ -586,7 +598,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           if (section.is_repeatable) {
             const count = instanceCountFor(section, fieldValues, arrayValues, signatures, photos)
             return (
-              <View key={section.id} style={styles.sectionContainer}>
+              // Inspections start on a fresh page (after Job Details + preamble).
+              <View key={section.id} style={styles.sectionContainer} break>
                 <View wrap={false}>
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -607,7 +620,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                           page, up to 6 per page (2×3), then continue. */}
                       {entryPhotos.length > 0 && (
                         <>
-                          <Text style={styles.photoGroupHeading}>{lineName || `Entry ${inst + 1}`} — Photographs</Text>
+                          {/* minPresenceAhead keeps the heading with at least the first
+                              photo row, so it never sits alone at the bottom of a page. */}
+                          <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{lineName || `Entry ${inst + 1}`} — Photographs</Text>
                           <View style={styles.reportPhotoGrid}>
                             {entryPhotos.map((p, i) => (
                               <View key={i} style={styles.reportPhotoItem} wrap={false}>

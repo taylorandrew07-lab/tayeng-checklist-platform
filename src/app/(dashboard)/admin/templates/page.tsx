@@ -73,6 +73,7 @@ export default function TemplatesPage() {
         allow_surveyor_start: template.allow_surveyor_start,
         pdf_include_photos: template.pdf_include_photos ?? false,
         pdf_disclaimer: template.pdf_disclaimer ?? null,
+        pdf_preamble: template.pdf_preamble ?? null,
         created_by: userId,
         duplicated_from: template.id,
       })

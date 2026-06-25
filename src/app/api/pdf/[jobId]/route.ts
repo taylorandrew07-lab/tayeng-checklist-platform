@@ -65,7 +65,7 @@ export async function GET(
   // keyed off it — avoids a second jobs round-trip just to get template_id.
   const { data: job } = await db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer),
+      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer, pdf_preamble),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single()
@@ -172,6 +172,7 @@ export async function GET(
         photoCount,
         photos,
         disclaimer: job.template?.pdf_disclaimer ?? null,
+        preamble: job.template?.pdf_preamble ?? null,
         logoSrc,
         surveyors,
       }) as any

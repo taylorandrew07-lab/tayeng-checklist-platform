@@ -40,6 +40,7 @@ export default function NewTemplatePage() {
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
+  const [pdfPreamble, setPdfPreamble] = useState('')
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +56,7 @@ export default function NewTemplatePage() {
   useEffect(() => {
     if (!loadedRef.current) return
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -190,6 +191,7 @@ export default function NewTemplatePage() {
         allow_surveyor_start: allowSurveyorStart,
         pdf_include_photos: pdfIncludePhotos,
         pdf_disclaimer: pdfDisclaimer.trim() || null,
+        pdf_preamble: pdfPreamble.trim() || null,
         created_by: user.id,
         duplicated_from: duplicateFrom || null,
       })
@@ -374,6 +376,16 @@ export default function NewTemplatePage() {
               </div>
               <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">PDF preamble <span className="font-normal text-gray-400">— short intro printed below the Job Details on page 1 (leave blank for none)</span></label>
+            <textarea
+              value={pdfPreamble}
+              onChange={e => setPdfPreamble(e.target.value)}
+              rows={3}
+              placeholder="e.g. Taylor Engineering attended the above vessel to carry out…"
+              className="input-base text-sm resize-y"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">PDF disclaimer <span className="font-normal text-gray-400">— fixed boilerplate printed at the end of every report (leave blank for none)</span></label>

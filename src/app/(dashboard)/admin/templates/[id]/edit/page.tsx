@@ -23,6 +23,7 @@ export default function EditTemplatePage() {
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
+  const [pdfPreamble, setPdfPreamble] = useState('')
   const [color, setColor] = useState<string | null>(null)
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
@@ -46,7 +47,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, color, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, color, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -70,7 +71,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, color, sections, isDirty],
+    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -94,6 +95,7 @@ export default function EditTemplatePage() {
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
       setPdfIncludePhotos(tmpl.pdf_include_photos ?? false)
       setPdfDisclaimer(tmpl.pdf_disclaimer ?? '')
+      setPdfPreamble(tmpl.pdf_preamble ?? '')
       setColor(tmpl.color ?? null)
       setJobCount(count ?? 0)
 
@@ -214,6 +216,7 @@ export default function EditTemplatePage() {
           allow_surveyor_start: allowSurveyorStart,
           pdf_include_photos: pdfIncludePhotos,
           pdf_disclaimer: pdfDisclaimer.trim() || null,
+          pdf_preamble: pdfPreamble.trim() || null,
           color,
         }).eq('id', templateId),
         15_000, 'Saving template'
@@ -409,6 +412,16 @@ export default function EditTemplatePage() {
               </div>
               <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">PDF preamble <span className="font-normal text-gray-400">— short intro printed below the Job Details on page 1 (leave blank for none)</span></label>
+            <textarea
+              value={pdfPreamble}
+              onChange={e => setPdfPreamble(e.target.value)}
+              rows={3}
+              placeholder="e.g. Taylor Engineering attended the above vessel to carry out…"
+              className="input-base text-sm resize-y"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">PDF disclaimer <span className="font-normal text-gray-400">— fixed boilerplate printed at the end of every report (leave blank for none)</span></label>
