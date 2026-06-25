@@ -304,6 +304,9 @@ export interface TemplateField {
    *  the Finance invoice builder seeds an hourly line's qty from it. One per
    *  template. See migration 089. */
   is_billable_hours: boolean
+  /** When true, the field is promoted to the report's top info block and suppressed
+   *  from the section body (vessel-identity fields). See migration 100. */
+  show_in_header: boolean
   created_at: string
   updated_at: string
 }

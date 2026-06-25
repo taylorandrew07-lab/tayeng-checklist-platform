@@ -281,7 +281,8 @@ const styles = StyleSheet.create({
   reportPhotoImage: {
     width: '100%',
     height: 200,
-    objectFit: 'cover',
+    objectFit: 'contain', // show the WHOLE inspection photo (no cropping)
+    backgroundColor: '#f1f5f9', // neutral mat behind letterboxed images
     borderRadius: 2,
     borderWidth: 0.5,
     borderColor: '#e2e8f0',
@@ -435,6 +436,15 @@ interface PDFProps {
   surveyors?: string[]
 }
 
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.jobDetailRow}>
+      <Text style={styles.jobDetailLabel}>{label}:</Text>
+      <Text style={styles.jobDetailValue}>{value}</Text>
+    </View>
+  )
+}
+
 export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, logoSrc, surveyors = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
@@ -459,9 +469,26 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const portField = allFieldsFlat.find((f: any) => /\bport\b/i.test(f.label)) ?? null
   const methodField = allFieldsFlat.find((f: any) => /method.*delivery|delivery.*method/i.test(f.label)) ?? null
 
+  // Generic header mechanism (cross-template-safe): fields flagged show_in_header are
+  // promoted to the top info block and suppressed from the body. Templates with none
+  // flagged fall through the legacy regex header below, byte-for-byte unchanged.
+  const flaggedHeaderIds = allFieldsFlat.filter((f: any) => f.show_in_header).map((f: any) => f.id)
+  const useFlagHeader = flaggedHeaderIds.length > 0
+  // Render a header ROW only for flagged fields that have no job-record home; vessel,
+  // client and surveyor come from the job record (job.vessel_name / job.client /
+  // job_surveyors), so those flagged fields are just suppressed from the body.
+  const headerRowFields = allFieldsFlat.filter((f: any) =>
+    f.show_in_header &&
+    !isSurveyedVesselNameField(f.label) &&
+    f.field_type !== 'client_select' &&
+    !/surveyor/i.test(f.label)
+  )
+
   // These are shown in the Job Details block — suppress them from the section body
   const suppressedIds = new Set<string>(
-    [vesselField?.id, dateField?.id, portField?.id, methodField?.id, bunkerVesselField?.id]
+    (useFlagHeader
+      ? flaggedHeaderIds
+      : [vesselField?.id, dateField?.id, portField?.id, methodField?.id, bunkerVesselField?.id])
       .filter((id): id is string => !!id)
   )
 
@@ -496,54 +523,37 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {/* Report title */}
         <Text style={styles.reportTitleCentered}>{reportTitle}</Text>
 
-        {/* Job Details — two balanced columns: vessel/date left, port/method right */}
+        {/* Job Details — top info block. */}
         <View style={styles.jobDetailsBlock}>
-          <View style={styles.jobDetailCol}>
-            {job.vessel_name && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Vessel:</Text>
-                <Text style={styles.jobDetailValue}>{withMvPrefix(job.vessel_name)}</Text>
+          {useFlagHeader ? (
+            <>
+              {/* Vessel-identity left; commercial (client/surveyors) + flagged rows right */}
+              <View style={styles.jobDetailCol}>
+                {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
+                {headerRowFields.map((f: any) => (
+                  fieldValues[f.id] ? <DetailRow key={f.id} label={f.label} value={`${fieldValues[f.id]}${f.unit ? ` ${f.unit}` : ''}`} /> : null
+                ))}
               </View>
-            )}
-            {job.client?.name && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Client:</Text>
-                <Text style={styles.jobDetailValue}>{job.client.name}</Text>
+              <View style={styles.jobDetailCol}>
+                {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
+                {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
               </View>
-            )}
-            {dateField && fieldValues[dateField.id] && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Date:</Text>
-                <Text style={styles.jobDetailValue}>{fieldValues[dateField.id]}</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.jobDetailCol}>
+                {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
+                {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
+                {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
+                {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
               </View>
-            )}
-            {surveyors.length > 0 && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Surveyor{surveyors.length > 1 ? 's' : ''}:</Text>
-                <Text style={styles.jobDetailValue}>{surveyors.join(', ')}</Text>
+              <View style={styles.jobDetailCol}>
+                {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} />}
+                {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} /> : null}
+                {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} />}
               </View>
-            )}
-          </View>
-          <View style={styles.jobDetailCol}>
-            {portField && fieldValues[portField.id] && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Port:</Text>
-                <Text style={styles.jobDetailValue}>{fieldValues[portField.id]}</Text>
-              </View>
-            )}
-            {methodDisplay && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Method of Delivery:</Text>
-                <Text style={styles.jobDetailValue}>{methodDisplay}</Text>
-              </View>
-            )}
-            {showBunkerVessel && fieldValues[bunkerVesselField!.id] && (
-              <View style={styles.jobDetailRow}>
-                <Text style={styles.jobDetailLabel}>Bunker Vessel Name:</Text>
-                <Text style={styles.jobDetailValue}>{fieldValues[bunkerVesselField!.id]}</Text>
-              </View>
-            )}
-          </View>
+            </>
+          )}
         </View>
 
         {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}

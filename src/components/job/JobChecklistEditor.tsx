@@ -929,6 +929,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
     }
 
+    // Re-attach an "Additional" (general) photo to a specific repeatable-section line +
+    // entry, so it prints under that cargo line in the report. Fixes photos that were
+    // added to the Additional Photos card by mistake.
+    async function moveGeneralPhotoToLine(photo: any, fieldId: string, inst: number) {
+      const supabase = createClient()
+      const { error } = await supabase.from('job_photos').update({ field_id: fieldId, instance: inst }).eq('id', photo.id)
+      if (error) { setSaveError('Could not move photo: ' + error.message); return }
+      const key = instanceKey(fieldId, inst)
+      const nextGp = generalPhotos.filter(p => p.id !== photo.id)
+      const nextFp = { ...fieldPhotos, [key]: [...(fieldPhotos[key] ?? []), { ...photo, field_id: fieldId, instance: inst }] }
+      setGeneralPhotos(nextGp)
+      setFieldPhotos(nextFp)
+      void cacheServerPhotos(nextFp, nextGp)
+      toast.success('Photo moved to the line')
+    }
+
     function toggleSection(id: string) {
       setCollapsedSections(prev => {
         const next = new Set(prev)
@@ -1197,6 +1213,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             if (field.field_type === 'photo') {
               const photos = fieldPhotos[key] ?? []
               const uploading = uploadingField === key
+              // For a repeatable section, name the line so the surveyor knows these
+              // photos attach HERE (not to the separate "Additional Photos" card).
+              const firstTextField = section.fields.find((x: TemplateField) => x.field_type === 'text')
+              const entryLabel = section.is_repeatable
+                ? ((firstTextField && values[instanceKey(firstTextField.id, inst)]) || `Entry ${inst + 1}`)
+                : ''
               return (
                 <div key={key} className="space-y-1.5">
                   <label className="label-base mb-0">
@@ -1237,7 +1259,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           {uploading ? <Loader2 className="h-6 w-6 mx-auto text-brand-400 animate-spin" /> : (
                             <>
                               <Camera className="h-6 w-6 mx-auto text-gray-300 mb-1" />
-                              <p className="text-sm text-gray-500">Upload photo(s)</p>
+                              <p className="text-sm text-gray-500">Drag &amp; drop or click to add photos{entryLabel ? ` for ${entryLabel}` : ''}</p>
                             </>
                           )}
                         </div>
@@ -1368,7 +1390,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="section-title">Additional Photos</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Extra photos not tied to a specific field — drag &amp; drop or click Upload</p>
+                <p className="text-xs text-gray-500 mt-0.5">Photos NOT tied to an inspection line — rarely needed. Add line photos in each line&apos;s own Photos box above. (Already added one here? Use &ldquo;Move to a line&rdquo;.)</p>
               </div>
               <button
                 onClick={() => generalPhotoRef.current?.click()}
@@ -1393,19 +1415,48 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               />
             </div>
             {generalPhotos.length > 0 ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                {generalPhotos.map(p => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 group">
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 p-1 text-center break-all">{p.filename}</div>
-                    <button
-                      onClick={() => deletePhoto(p.id, p.storage_path, null)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+              (() => {
+                // Targets to re-attach a misfiled general photo to a cargo line + entry.
+                const lineTargets: { fieldId: string; inst: number; label: string }[] = []
+                for (const s of sections) {
+                  if (!s.is_repeatable) continue
+                  const photoFs = s.fields.filter(f => f.field_type === 'photo')
+                  const firstText = s.fields.find(f => f.field_type === 'text')
+                  const cnt = instanceCounts[s.id] ?? 1
+                  for (const pf of photoFs) for (let i = 0; i < cnt; i++) {
+                    const ln = firstText ? (values[instanceKey(firstText.id, i)] || '') : ''
+                    lineTargets.push({ fieldId: pf.id, inst: i, label: `${ln || `Entry ${i + 1}`}${photoFs.length > 1 ? ` · ${pf.label}` : ''}` })
+                  }
+                }
+                return (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    {generalPhotos.map(p => (
+                      <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
+                        <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
+                          <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                          <button
+                            onClick={() => deletePhoto(p.id, p.storage_path, null)}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {lineTargets.length > 0 && (
+                          <select
+                            value=""
+                            onChange={e => { if (e.target.value) { const [fid, ii] = e.target.value.split('|'); void moveGeneralPhotoToLine(p, fid, Number(ii)) } }}
+                            className="input-base text-xs py-1 w-full rounded-none border-0 border-t border-gray-100"
+                            title="Attach this photo to a cargo line so it prints under that line"
+                          >
+                            <option value="">Move to a line…</option>
+                            {lineTargets.map(t => <option key={`${t.fieldId}|${t.inst}`} value={`${t.fieldId}|${t.inst}`}>{t.label}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )
+              })()
             ) : (
               <div
                 onClick={() => generalPhotoRef.current?.click()}
