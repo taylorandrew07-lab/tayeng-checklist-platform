@@ -240,6 +240,9 @@ export interface FieldValidation {
   // Calculated field display options
   display_as?: 'number' | 'percentage'
   thresholds?: Array<{ max?: number; color: 'green' | 'amber' | 'red' }>
+  /** multiple_choice: also let the surveyor add free-text "Other" answers (stored in
+   *  value_array alongside the chosen option values). */
+  allow_other?: boolean
 }
 
 export interface ChecklistTemplate {

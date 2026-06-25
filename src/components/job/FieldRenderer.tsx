@@ -223,30 +223,55 @@ export default function FieldRenderer({
         )
       })()}
 
-      {field.field_type === 'multiple_choice' && (
-        <div className="space-y-2">
-          {field.options?.map(opt => {
-            const checked = (valueArray ?? []).includes(opt.value)
-            return (
-              <label key={opt.value} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-                checked ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
-              } ${readOnly ? 'pointer-events-none' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => {
-                    const current = valueArray ?? []
-                    onArrayChange?.(checked ? current.filter(v => v !== opt.value) : [...current, opt.value])
-                  }}
-                  disabled={readOnly}
-                  className="rounded border-gray-300 text-brand-600"
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
-            )
-          })}
-        </div>
-      )}
+      {field.field_type === 'multiple_choice' && (() => {
+        const selected = valueArray ?? []
+        const options = field.options ?? []
+        const labelFor = (v: string) => options.find(o => o.value === v)?.label ?? v
+        const allowOther = field.validation?.allow_other === true
+        const customValues = selected.filter(v => !options.some(o => o.value === v))
+
+        // Read-only (incl. the in-app report view): show ONLY the chosen answers, as
+        // their labels — not the whole option list.
+        if (readOnly) {
+          if (selected.length === 0) return <p className="text-sm text-gray-400">—</p>
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              {selected.map((v, i) => (
+                <span key={i} className="text-xs px-2 py-1 rounded-md bg-brand-50 text-brand-700 border border-brand-100">{labelFor(v)}</span>
+              ))}
+            </div>
+          )
+        }
+
+        return (
+          <div className="space-y-2">
+            {options.map(opt => {
+              const checked = selected.includes(opt.value)
+              return (
+                <label key={opt.value} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                  checked ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onArrayChange?.(checked ? selected.filter(v => v !== opt.value) : [...selected, opt.value])}
+                    className="rounded border-gray-300 text-brand-600"
+                  />
+                  <span className="text-sm">{opt.label}</span>
+                </label>
+              )
+            })}
+            {allowOther && (
+              <OtherAnswers
+                customValues={customValues}
+                onAdd={(text) => { if (!selected.includes(text)) onArrayChange?.([...selected, text]) }}
+                onRemove={(text) => onArrayChange?.(selected.filter(v => v !== text))}
+                baseInputClass={baseInputClass}
+              />
+            )}
+          </div>
+        )
+      })()}
 
       {field.field_type === 'video_link' && (
         <VideoLinkInput
@@ -359,6 +384,56 @@ function CalculatedField({ field, value, allValues, onChange }: {
 function isHttpUrl(u: string): boolean {
   try { const x = new URL(u.trim()); return x.protocol === 'http:' || x.protocol === 'https:' }
   catch { return false }
+}
+
+/**
+ * "Other" free-text answers for a multiple_choice field (when validation.allow_other).
+ * Custom answers are stored in the same value_array as the chosen option values; they
+ * just don't match any option, so they render as their raw text everywhere.
+ */
+function OtherAnswers({ customValues, onAdd, onRemove, baseInputClass }: {
+  customValues: string[]
+  onAdd: (text: string) => void
+  onRemove: (text: string) => void
+  baseInputClass: string
+}) {
+  const [text, setText] = useState('')
+  function add() {
+    const t = text.trim()
+    if (!t) return
+    onAdd(t)
+    setText('')
+  }
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 p-2.5 space-y-2">
+      <p className="text-xs font-medium text-gray-500">Other (not listed above)</p>
+      {customValues.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {customValues.map((v, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-brand-50 text-brand-700 border border-brand-100">
+              {v}
+              <button type="button" onClick={() => onRemove(v)} className="text-brand-400 hover:text-red-600" aria-label="Remove">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="Type a condition that isn't listed…"
+          className={`${baseInputClass} flex-1`}
+        />
+        <button type="button" onClick={add} className="btn-secondary text-sm py-1.5 px-2.5 whitespace-nowrap">
+          <Plus className="h-3.5 w-3.5" />Add
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function VideoLinkInput({ links, onChange, readOnly, baseInputClass }: {

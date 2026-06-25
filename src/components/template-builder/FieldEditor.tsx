@@ -494,6 +494,19 @@ export default function FieldEditor({ field, sections, allFields, displayNumber,
                       <p className="text-xs text-gray-400 italic">No options yet. Add at least one option.</p>
                     )}
                   </div>
+                  {field.field_type === 'multiple_choice' && (
+                    <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={field.validation?.allow_other === true}
+                        onChange={(e) => update({ validation: { ...field.validation, allow_other: e.target.checked } })}
+                      />
+                      <span className="text-sm text-gray-700">
+                        Allow &ldquo;Other&rdquo; free-text answers
+                        <span className="block text-xs text-gray-400">Surveyor can add a condition that isn&apos;t in the list above.</span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
 

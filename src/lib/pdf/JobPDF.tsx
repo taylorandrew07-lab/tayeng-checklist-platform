@@ -665,8 +665,10 @@ function renderField(
     return <Text key={key} style={styles.inlineHeading}>{field.label}</Text>
   }
 
+  // multiple_choice prints ONLY the chosen answers, as their labels (custom "Other"
+  // entries don't match an option, so they print as their own text).
   const rawValue = field.field_type === 'multiple_choice'
-    ? (arrayValues[key] ?? []).join(', ')
+    ? (arrayValues[key] ?? []).map((v: string) => (field.options ?? []).find((o: any) => o.value === v)?.label ?? v).join(', ')
     : fieldValues[key] ?? ''
 
   const hasValue = !!rawValue
