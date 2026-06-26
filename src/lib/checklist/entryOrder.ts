@@ -45,6 +45,21 @@ export function resolveEntryOrder(present: Set<number>, stored?: number[] | null
   return out.length ? out : [0]
 }
 
+/** Resolve a repeatable section's entry order straight from the data the editor and
+ *  report have on hand — the composite-keyed maps PLUS the photo rows (which carry
+ *  their own `instance`). Single source of truth so the editor and PDF never diverge. */
+export function resolveEntryOrderFromData(
+  fieldIds: string[],
+  maps: Array<Record<string, unknown>>,
+  photos: Array<{ field_id: string | null; instance: number }>,
+  stored?: number[] | null,
+): number[] {
+  const present = presentInstances(fieldIds, maps)
+  const ids = new Set(fieldIds)
+  for (const p of photos) if (p.field_id && ids.has(p.field_id)) present.add(p.instance)
+  return resolveEntryOrder(present, stored)
+}
+
 /** Next free (never-reused) instance id for a section, given its current order. */
 export function nextInstanceId(order: number[]): number {
   return order.length ? Math.max(...order) + 1 : 0

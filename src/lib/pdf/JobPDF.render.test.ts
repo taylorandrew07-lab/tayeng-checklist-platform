@@ -50,4 +50,32 @@ describe('JobPDF render (borescoping-style)', () => {
     const buf = await renderToBuffer(el as any)
     expect(buf.length).toBeGreaterThan(1000)
   }, 25000)
+
+  // Verify jobs.repeatable_order actually drives the report's entry order: the same
+  // data rendered in two different orders must produce different output, and a
+  // non-contiguous order (as left by an insert/remove) must still render.
+  it('renders repeatable entries in the saved order', async () => {
+    const sections = [{
+      id: 's2', title: 'Cargo Line Inspection Entry', is_repeatable: true,
+      fields: [{ id: 'g1', label: 'Cargo Line Name', field_type: 'text', order_index: 0 }],
+    }]
+    const fieldValues = { g1: 'Alpha', 'g1@@1': 'Bravo', 'g1@@2': 'Charlie' }
+    const base = {
+      sections, fieldValues, arrayValues: {}, signatures: {}, photoCount: 0, photos: [] as any[],
+      surveyors: [] as string[],
+    }
+    const mk = (repeatable_order?: Record<string, number[]>) => renderToBuffer(
+      React.createElement(JobPDF as any, {
+        ...base,
+        job: { vessel_name: 'V', title: 'X', job_number: 'N', template: { name: 'T' }, repeatable_order },
+      }) as any
+    )
+    const natural = await mk(undefined)               // 0,1,2 → Alpha, Bravo, Charlie
+    const reordered = await mk({ s2: [2, 0, 1] })      // Charlie, Alpha, Bravo
+    const afterRemove = await mk({ s2: [0, 2] })       // non-contiguous (entry 1 removed)
+    expect(natural.length).toBeGreaterThan(500)
+    expect(afterRemove.length).toBeGreaterThan(500)
+    // Different order ⇒ different bytes (the order prop is genuinely used, not ignored).
+    expect(Buffer.from(reordered).equals(Buffer.from(natural))).toBe(false)
+  }, 25000)
 })

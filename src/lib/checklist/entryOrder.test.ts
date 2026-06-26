@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from './entryOrder'
+import { presentInstances, resolveEntryOrder, resolveEntryOrderFromData, nextInstanceId, moveEntry } from './entryOrder'
 
 describe('entryOrder', () => {
   it('finds instances that carry data (ignoring blanks)', () => {
@@ -38,5 +38,37 @@ describe('entryOrder', () => {
     expect(moveEntry([0, 1, 2, 3], 3, 1)).toEqual([0, 3, 1, 2]) // 9→4 style
     expect(moveEntry([0, 1, 2, 3], 0, 2)).toEqual([1, 2, 0, 3])
     expect(moveEntry([0, 1, 2], 1, 99)).toEqual([0, 2, 1]) // clamp
+  })
+})
+
+// The exact resolution the editor + report use: data maps + photo rows + stored order.
+describe('resolveEntryOrderFromData (editor + report parity)', () => {
+  const fieldIds = ['name', 'photo']
+  const vals = { name: 'A', 'name@@1': 'B', 'name@@2': 'C' } // entries 0,1,2 have a name
+
+  it('natural order for a legacy job (no stored order)', () => {
+    expect(resolveEntryOrderFromData(fieldIds, [vals], [], undefined)).toEqual([0, 1, 2])
+  })
+
+  it('renders entries in the saved (reordered) order', () => {
+    // User dragged so the order is 2,0,1
+    expect(resolveEntryOrderFromData(fieldIds, [vals], [], [2, 0, 1])).toEqual([2, 0, 1])
+  })
+
+  it('counts a photo-only entry that has no field values', () => {
+    // Entry instance 5 has only a photo (no name), inserted then given a photo.
+    const photos = [{ field_id: 'photo', instance: 5 }, { field_id: 'photo', instance: 0 }]
+    expect(resolveEntryOrderFromData(fieldIds, [vals], photos, [0, 1, 2, 5])).toEqual([0, 1, 2, 5])
+  })
+
+  it('handles non-contiguous ids after a middle remove (no gaps assumed)', () => {
+    // Removed entry 1 → data + order keep ids 0 and 2 only.
+    const v = { name: 'A', 'name@@2': 'C' }
+    expect(resolveEntryOrderFromData(fieldIds, [v], [], [0, 2])).toEqual([0, 2])
+  })
+
+  it('ignores photos from OTHER sections fields', () => {
+    const photos = [{ field_id: 'other-section-field', instance: 9 }]
+    expect(resolveEntryOrderFromData(fieldIds, [vals], photos, undefined)).toEqual([0, 1, 2])
   })
 })

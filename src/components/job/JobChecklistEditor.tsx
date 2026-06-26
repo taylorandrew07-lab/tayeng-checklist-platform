@@ -799,7 +799,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       } finally {
         setSaving(false)
       }
-    }, [jobId, values, arrayValues, signatures, sections]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [jobId, values, arrayValues, signatures, sections, entryOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // Date the job by the SURVEY date the surveyor entered (the first answered
     // date field), not the day the job was created. Updates scheduled_date (drives
@@ -1354,7 +1354,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
           // One field's control (input / photo widget) at a given repeatable instance.
           // instance 0 uses the bare field id, so non-repeatable sections are unchanged.
-          const renderFieldControl = (field: TemplateField, inst: number) => {
+          // `inst` is the entry's STABLE instance id (for data); `pos` is its current
+          // display position (0-based) — used only for the "Entry N" label so the
+          // number tracks the visible order after inserts/reorders.
+          const renderFieldControl = (field: TemplateField, inst: number, pos = 0) => {
             if (!checkConditionalLogic(field.conditional_logic, values)) return null
             const key = instanceKey(field.id, inst)
             if (field.field_type === 'photo') {
@@ -1364,7 +1367,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               // photos attach HERE (not to the separate "Additional Photos" card).
               const firstTextField = section.fields.find((x: TemplateField) => x.field_type === 'text')
               const entryLabel = section.is_repeatable
-                ? ((firstTextField && values[instanceKey(firstTextField.id, inst)]) || `Entry ${inst + 1}`)
+                ? ((firstTextField && values[instanceKey(firstTextField.id, inst)]) || `Entry ${pos + 1}`)
                 : ''
               return (
                 <div key={key} className="space-y-1.5">
@@ -1526,6 +1529,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                             const canEdit = !readOnly && entryIds.length > 1
                             return (
                               <Fragment key={inst}>
+                                {/* Insert a new entry in the gap ABOVE this one — covers the
+                                    top gap and every gap between entries (the end is the big
+                                    "Add" button below). */}
+                                {!readOnly && (
+                                  <InsertEntryButton onClick={() => insertEntryAt(section.id, pos)} label={`Insert ${section.title} above`} />
+                                )}
                                 <SortableEntry id={String(inst)} disabled={!canEdit}>
                                   {({ handleRef, handleProps, isDragging }) => (
                                     <div className={`rounded-xl border bg-white shadow-sm overflow-hidden ${isDragging ? 'border-brand-300 ring-2 ring-brand-200' : 'border-gray-200'}`}>
@@ -1553,16 +1562,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                                       </div>
                                       {!entryCollapsed && (
                                         <div className="p-4 space-y-5">
-                                          {section.fields.map(field => renderFieldControl(field, inst))}
+                                          {section.fields.map(field => renderFieldControl(field, inst, pos))}
                                         </div>
                                       )}
                                     </div>
                                   )}
                                 </SortableEntry>
-                                {/* Insert a new entry in the gap before the next one. */}
-                                {!readOnly && pos < entryIds.length - 1 && (
-                                  <InsertEntryButton onClick={() => insertEntryAt(section.id, pos + 1)} label={`Insert ${section.title} here`} />
-                                )}
                               </Fragment>
                             )
                           })}

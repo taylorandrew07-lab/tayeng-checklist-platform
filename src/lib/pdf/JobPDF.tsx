@@ -10,8 +10,8 @@ import {
 } from '@react-pdf/renderer'
 import { format, parseISO } from 'date-fns'
 import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
-import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
-import { resolveEntryOrder } from '@/lib/checklist/entryOrder'
+import { instanceKey } from '@/lib/offline/instanceKeys'
+import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -725,17 +725,9 @@ function orderedInstancesFor(
   signatures: Record<string, string>,
   photos: JobPhoto[]
 ): number[] {
-  const fieldIds = new Set((section.fields ?? []).map((f: any) => f.id))
-  const present = new Set<number>()
-  for (const map of [fieldValues, arrayValues, signatures]) {
-    for (const k of Object.keys(map)) {
-      const { fieldId, instance } = parseInstanceKey(k)
-      if (fieldIds.has(fieldId)) present.add(instance)
-    }
-  }
-  for (const p of photos) if (p.field_id && fieldIds.has(p.field_id)) present.add(p.instance)
+  const fieldIds = (section.fields ?? []).map((f: any) => f.id)
   const stored = (job?.repeatable_order ?? {})[section.id] as number[] | undefined
-  return resolveEntryOrder(present, stored)
+  return resolveEntryOrderFromData(fieldIds, [fieldValues, arrayValues, signatures], photos, stored)
 }
 
 // A short human label for a repeatable entry — the first text field's value (e.g. the
