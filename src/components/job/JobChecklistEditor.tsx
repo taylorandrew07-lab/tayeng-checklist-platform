@@ -1395,18 +1395,19 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               {!collapsed && (
                 <div className="p-5 space-y-5">
                   {section.is_repeatable ? (
-                    <div className="space-y-4">
+                    <div className="space-y-7">
                       {Array.from({ length: count }).map((_, inst) => (
-                        <div key={inst} className="rounded-xl border border-gray-200 bg-gray-50/40 p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm font-semibold text-gray-700">{section.title} — Entry {inst + 1}</span>
+                        <div key={inst} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                          {/* Solid colour bar — clearly marks where each entry starts/ends. */}
+                          <div className="flex items-center justify-between px-4 py-2.5 bg-brand-600 text-white">
+                            <span className="text-sm font-semibold">{section.title} — Entry {inst + 1}</span>
                             {!readOnly && count > 1 && inst === count - 1 && (
-                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs text-red-600 hover:text-red-700 inline-flex items-center gap-1">
+                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1">
                                 <X className="h-3.5 w-3.5" /> Remove
                               </button>
                             )}
                           </div>
-                          <div className="space-y-5">
+                          <div className="p-4 space-y-5">
                             {section.fields.map(field => renderFieldControl(field, inst))}
                           </div>
                         </div>
