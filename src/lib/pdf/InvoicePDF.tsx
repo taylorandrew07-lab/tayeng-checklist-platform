@@ -185,6 +185,7 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
         {/* Footer */}
         <View style={s.footer} fixed>
           <Text style={s.footerTerms}>{COMPANY.invoiceTerms}</Text>
+          <Text style={s.footerPage}>{COMPANY.confidential}</Text>
           <Text style={s.footerPage} render={({ pageNumber, totalPages }) => totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : ''} />
         </View>
       </Page>

@@ -703,7 +703,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text style={[styles.footerText, { flex: 1, textAlign: 'left' }]}>{COMPANY.name} — Confidential</Text>
+          <Text style={[styles.footerText, { flex: 1, textAlign: 'left' }]}>{COMPANY.name} — {COMPANY.confidential}</Text>
           <Text style={[styles.footerText, { flex: 1, textAlign: 'center' }]} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
           <Text style={[styles.footerText, { flex: 1, textAlign: 'right' }]}>{job.job_number ?? 'Draft'}</Text>
         </View>

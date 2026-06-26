@@ -126,7 +126,7 @@ function Footer({ voyage }: { voyage: Voyage }) {
         </View>
       )}
       <View style={styles.footer} fixed>
-        <Text style={styles.footerText}>{COMPANY.name} — Confidential</Text>
+        <Text style={styles.footerText}>{COMPANY.name} — {COMPANY.confidential}</Text>
         <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
         <Text style={styles.footerText}>{voyage.voyageNumber || 'Voyage'}</Text>
       </View>

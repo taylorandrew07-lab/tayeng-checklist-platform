@@ -1,7 +1,7 @@
 export const COMPANY = {
   name: 'Taylor Engineering Agencies Limited',
   tagline: 'INDUSTRIAL & MARINE CONSULTANTS & SURVEYORS',
-  address: 'P.O. Box 1407, Port of Spain, Trinidad',
+  address: '#4 Warren Street, Woodbrook, Port of Spain, Trinidad and Tobago',
   email: 'mail@tayeng.com',
   website: 'www.tayeng.com',
   phone: '(868) 632-0506',
@@ -10,4 +10,6 @@ export const COMPANY = {
   vatRegNo: '100308',
   // Shown at the foot of every invoice.
   invoiceTerms: 'TERMS : PAYMENT ON PRESENTATION OF INVOICE.',
+  // Confidentiality notice shown in document/report footers.
+  confidential: 'Private and Confidential',
 } as const

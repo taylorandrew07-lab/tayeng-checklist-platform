@@ -3,7 +3,7 @@
 
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
+  Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun, Footer, PageNumber,
 } from 'docx'
 import { COMPANY } from '@/lib/company'
 import type { Block } from '@/lib/cargo/dri-report'
@@ -100,6 +100,16 @@ export async function buildDriDocxBlob(blocks: Block[], reportTitle: string, log
     children.push(photoTable(photos))
   }
 
-  const doc = new Document({ creator: COMPANY.name, title: reportTitle, sections: [{ children }] })
+  // Page footer: confidentiality notice + page number, on every page.
+  const footer = new Footer({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new TextRun({ text: `${COMPANY.name} — ${COMPANY.confidential}    `, size: 14, color: '94a3b8' }),
+        new TextRun({ children: ['Page ', PageNumber.CURRENT, ' of ', PageNumber.TOTAL_PAGES], size: 14, color: '94a3b8' }),
+      ],
+    })],
+  })
+  const doc = new Document({ creator: COMPANY.name, title: reportTitle, sections: [{ children, footers: { default: footer } }] })
   return Packer.toBlob(doc)
 }

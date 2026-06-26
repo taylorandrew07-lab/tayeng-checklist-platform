@@ -50,7 +50,7 @@ function chunk2<T>(arr: T[]): T[][] {
 function Footer() {
   return (
     <View style={s.footer} fixed>
-      <Text style={s.footerText}>{COMPANY.name}</Text>
+      <Text style={s.footerText}>{COMPANY.name} — {COMPANY.confidential}</Text>
       <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
     </View>
   )
