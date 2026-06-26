@@ -97,6 +97,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // fieldPhotos: photos keyed by instanceKey(field_id, instance); generalPhotos: extras with no field_id
     const [fieldPhotos, setFieldPhotos] = useState<Record<string, any[]>>({})
     const [generalPhotos, setGeneralPhotos] = useState<any[]>([])
+    // photoUrls: storage_path → short-lived signed URL, so the editor can show real
+    // thumbnails (the job-photos bucket is private). Display-only; never persisted.
+    const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [submitting, setSubmitting] = useState(false)
@@ -235,6 +238,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setSignatures(draft.signatures)
       setFieldPhotos(draft.fieldPhotos ?? {})
       setGeneralPhotos(draft.generalPhotos ?? [])
+      void signPhotos([...Object.values(draft.fieldPhotos ?? {}).flat(), ...(draft.generalPhotos ?? [])])
       // Rebuild repeatable entry counts from the draft's instance keys, so a draft
       // edited offline reopens with all its entries (not just the server's).
       const maxByField: Record<string, number> = {}
@@ -491,6 +495,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setInstanceCounts(counts)
       setFieldPhotos(fPhotos)
       setGeneralPhotos(gPhotos)
+      void signPhotos([...Object.values(fPhotos).flat(), ...gPhotos])
 
       if (!jobData.started_at && !jobData.submitted_at) {
         await supabase.from('jobs').update({ started_at: new Date().toISOString() }).eq('id', jobId)
@@ -862,6 +867,23 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     // --- Photo helpers ---
+    // Generate short-lived signed URLs for a batch of photo rows so they can be shown
+    // as real thumbnails. The bucket is private, so we can't use the path directly.
+    // Merges into photoUrls (path → url); existing entries are kept. Best-effort: if
+    // signing fails (e.g. offline) the UI just falls back to the filename text.
+    async function signPhotos(rows: any[]) {
+      const paths = Array.from(new Set(rows.map(r => r?.storage_path).filter(Boolean))) as string[]
+      if (paths.length === 0) return
+      const supabase = createClient()
+      const { data } = await supabase.storage.from('job-photos').createSignedUrls(paths, 3600)
+      if (!data) return
+      setPhotoUrls(prev => {
+        const next = { ...prev }
+        for (const s of data) if (s.path && s.signedUrl) next[s.path] = s.signedUrl
+        return next
+      })
+    }
+
     async function uploadPhotoForField(fieldId: string, instance: number, file: File) {
       const key = instanceKey(fieldId, instance)
       setUploadingField(key)
@@ -884,6 +906,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
       const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
       setFieldPhotos(nextFp)
+      void signPhotos(fresh ?? [])
       void cacheServerPhotos(nextFp, generalPhotos)
       setUploadingField(null)
     }
@@ -909,6 +932,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
       const nextGp = fresh ?? []
       setGeneralPhotos(nextGp)
+      void signPhotos(nextGp)
       void cacheServerPhotos(fieldPhotos, nextGp)
       setUploadingField(null)
     }
@@ -1270,7 +1294,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                             {photos.map(p => (
                               <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
-                                <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                                {photoUrls[p.storage_path] ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                                )}
                                 <button
                                   onClick={() => deletePhoto(p.id, p.storage_path, key)}
                                   className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1292,7 +1321,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                     </div>
                   )}
                   {readOnly && (
-                    <p className="text-sm text-gray-600">{photos.length} photo{photos.length !== 1 ? 's' : ''} uploaded</p>
+                    photos.length === 0 ? (
+                      <p className="text-sm text-gray-400">No photos</p>
+                    ) : (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {photos.map(p => (
+                          <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                            {photoUrls[p.storage_path] ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               )
@@ -1435,7 +1479,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                     {generalPhotos.map(p => (
                       <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
                         <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
-                          <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                          {photoUrls[p.storage_path] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                          )}
                           <button
                             onClick={() => deletePhoto(p.id, p.storage_path, null)}
                             className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
