@@ -3,6 +3,7 @@
 import {
   useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -100,6 +101,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // photoUrls: storage_path → short-lived signed URL, so the editor can show real
     // thumbnails (the job-photos bucket is private). Display-only; never persisted.
     const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
+    // Clicking a thumbnail opens it full-size in an on-screen lightbox (no download,
+    // no navigation). null = closed.
+    const [lightbox, setLightbox] = useState<{ url: string; filename?: string | null } | null>(null)
+    // Close the lightbox with Escape, for desktop keyboard users.
+    useEffect(() => {
+      if (!lightbox) return
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    }, [lightbox])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [submitting, setSubmitting] = useState(false)
@@ -1295,8 +1306,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                             {photos.map(p => (
                               <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
                                 {photoUrls[p.storage_path] ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                                 ) : (
                                   <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                                 )}
@@ -1328,8 +1338,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         {photos.map(p => (
                           <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
                             {photoUrls[p.storage_path] ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                             ) : (
                               <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                             )}
@@ -1480,8 +1489,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
                         <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
                           {photoUrls[p.storage_path] ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} className="absolute inset-0 w-full h-full object-cover" />
+                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                           ) : (
                             <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                           )}
@@ -1561,6 +1569,24 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download / Share PDF
             </button>
           </div>
+        )}
+
+        {/* Full-size photo lightbox — opens on-screen over everything (portaled to
+            body so no transformed ancestor can clip it), closes on click / ✕ / Esc. */}
+        {lightbox && typeof document !== 'undefined' && createPortal(
+          <div
+            className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4"
+            onClick={() => setLightbox(null)}
+          >
+            <button aria-label="Close" onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/90 hover:text-white">
+              <X className="h-7 w-7" />
+            </button>
+            <div className="max-w-6xl max-h-[92vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+              <img src={lightbox.url} alt={lightbox.filename ?? 'photo'} className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+              {lightbox.filename && <p className="text-white/80 text-center text-sm mt-3 break-all">{lightbox.filename}</p>}
+            </div>
+          </div>,
+          document.body
         )}
 
         {/* Submit confirmation */}
