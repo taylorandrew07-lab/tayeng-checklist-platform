@@ -133,6 +133,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [saveError, setSaveError] = useState<string | null>(null)
     const [lastSaved, setLastSaved] = useState<Date | null>(null)
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+    // Repeatable entries collapsed to just their header bar (key = `${sectionId}:${inst}`),
+    // so you can collapse all entries and expand only the one you want to review.
+    const [collapsedEntries, setCollapsedEntries] = useState<Set<string>>(new Set())
     const [showSubmitDialog, setShowSubmitDialog] = useState(false)
     const [submitError, setSubmitError] = useState<string | null>(null)
     const [showLeaveDialog, setShowLeaveDialog] = useState(false)
@@ -990,6 +993,27 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
+    function toggleEntryCollapse(key: string) {
+      setCollapsedEntries(prev => {
+        const next = new Set(prev)
+        next.has(key) ? next.delete(key) : next.add(key)
+        return next
+      })
+    }
+
+    // Collapse or expand every entry of a repeatable section in one go.
+    function setAllEntriesCollapsed(section: SectionWithFields, collapsed: boolean) {
+      const count = instanceCounts[section.id] ?? 1
+      setCollapsedEntries(prev => {
+        const next = new Set(prev)
+        for (let i = 0; i < count; i++) {
+          const key = `${section.id}:${i}`
+          if (collapsed) next.add(key); else next.delete(key)
+        }
+        return next
+      })
+    }
+
     if (loading) {
       return (
         <div className="flex items-center justify-center py-20">
@@ -1396,24 +1420,48 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <div className="p-5 space-y-5">
                   {section.is_repeatable ? (
                     <div className="space-y-7">
-                      {Array.from({ length: count }).map((_, inst) => (
-                        <div key={inst} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                          {/* Solid colour bar — clearly marks where each entry starts/ends.
-                              On mobile the long title wraps instead of shoving the Remove
-                              button off the edge (min-w-0 + flex-shrink-0). */}
-                          <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-brand-600 text-white">
-                            <span className="text-sm font-semibold min-w-0 flex-1 leading-snug">{section.title} — Entry {inst + 1}</span>
-                            {!readOnly && count > 1 && inst === count - 1 && (
-                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1 flex-shrink-0">
-                                <X className="h-3.5 w-3.5" /> Remove
+                      {count > 1 && (() => {
+                        const anyOpen = Array.from({ length: count }).some((_, i) => !collapsedEntries.has(`${section.id}:${i}`))
+                        return (
+                          <div className="flex justify-end -mb-3">
+                            <button type="button" onClick={() => setAllEntriesCollapsed(section, anyOpen)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+                              {anyOpen ? 'Collapse all' : 'Expand all'}
+                            </button>
+                          </div>
+                        )
+                      })()}
+                      {Array.from({ length: count }).map((_, inst) => {
+                        const entryKey = `${section.id}:${inst}`
+                        const entryCollapsed = collapsedEntries.has(entryKey)
+                        const firstText = section.fields.find(f => f.field_type === 'text')
+                        const entryName = (firstText && values[instanceKey(firstText.id, inst)]) || ''
+                        return (
+                          <div key={inst} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                            {/* Solid colour bar — tap to collapse/expand this entry, so you can
+                                collapse all and open only the one you want. On mobile the title
+                                truncates rather than shoving the buttons off the edge. */}
+                            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-brand-600 text-white">
+                              <button type="button" onClick={() => toggleEntryCollapse(entryKey)} className="flex items-center gap-2 min-w-0 flex-1 text-left" title={entryCollapsed ? 'Expand entry' : 'Collapse entry'}>
+                                {entryCollapsed ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronUp className="h-4 w-4 flex-shrink-0" />}
+                                <span className="text-sm font-semibold min-w-0 truncate leading-snug">
+                                  {section.title} — Entry {inst + 1}
+                                  {entryName ? <span className="font-normal text-white/85"> · {entryName}</span> : ''}
+                                </span>
                               </button>
+                              {!readOnly && count > 1 && inst === count - 1 && (
+                                <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1 flex-shrink-0">
+                                  <X className="h-3.5 w-3.5" /> Remove
+                                </button>
+                              )}
+                            </div>
+                            {!entryCollapsed && (
+                              <div className="p-4 space-y-5">
+                                {section.fields.map(field => renderFieldControl(field, inst))}
+                              </div>
                             )}
                           </div>
-                          <div className="p-4 space-y-5">
-                            {section.fields.map(field => renderFieldControl(field, inst))}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                       {!readOnly && (
                         <button
                           type="button"
