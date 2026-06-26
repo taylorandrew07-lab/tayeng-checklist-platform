@@ -1398,11 +1398,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                     <div className="space-y-7">
                       {Array.from({ length: count }).map((_, inst) => (
                         <div key={inst} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                          {/* Solid colour bar — clearly marks where each entry starts/ends. */}
-                          <div className="flex items-center justify-between px-4 py-2.5 bg-brand-600 text-white">
-                            <span className="text-sm font-semibold">{section.title} — Entry {inst + 1}</span>
+                          {/* Solid colour bar — clearly marks where each entry starts/ends.
+                              On mobile the long title wraps instead of shoving the Remove
+                              button off the edge (min-w-0 + flex-shrink-0). */}
+                          <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-brand-600 text-white">
+                            <span className="text-sm font-semibold min-w-0 flex-1 leading-snug">{section.title} — Entry {inst + 1}</span>
                             {!readOnly && count > 1 && inst === count - 1 && (
-                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1">
+                              <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1 flex-shrink-0">
                                 <X className="h-3.5 w-3.5" /> Remove
                               </button>
                             )}
