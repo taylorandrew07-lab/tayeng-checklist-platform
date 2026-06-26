@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import {
   DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
-import { Upload, Trash2, Maximize2, RefreshCw, Check, Loader2, X, ImageOff } from 'lucide-react'
+import { Upload, Trash2, Maximize2, RefreshCw, Check, Loader2, X, ImageOff, Usb } from 'lucide-react'
+import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import {
   type Voyage, type CargoPhoto, type Period, type Camera, PERIODS, PERIOD_LABELS, CAMERA_LABELS,
 } from '@/lib/cargo/types'
@@ -117,7 +118,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
     }
   }
 
-  async function handleUpload(files: FileList | null) {
+  async function handleUpload(files: FileList | File[] | null) {
     if (!files || !files.length || !userId || !date) return
     const all = Array.from(files)
     const images = all.filter(f => f.type.startsWith('image/'))
@@ -249,6 +250,11 @@ export default function PhotoManager({ voyage, onChange }: Props) {
           <button onClick={() => uploadRef.current?.click()} disabled={busy} className="btn-primary">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             Upload Photos
+          </button>
+          {/* Reaches a plugged-in USB/OTG drive (the gallery picker hides it). */}
+          <button onClick={() => pickImageFiles(images => handleUpload(images))} disabled={busy} className="btn-secondary" title="Import photos from a USB drive or the device's files">
+            <Usb className="h-4 w-4" />
+            <span className="hidden sm:inline">Files / USB</span>
           </button>
         </div>
       </div>

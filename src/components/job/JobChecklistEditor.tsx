@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
-  Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2,
+  Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2, Usb,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
+import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
@@ -983,6 +984,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
+    // Import photos via the device's file picker so a plugged-in USB/OTG drive (where
+    // the borescope saves photos) is reachable — see lib/files/pickImageFiles.
+    function pickFromFiles(onFile: (file: File) => Promise<void> | void) {
+      pickImageFiles(async (images, rejected) => {
+        for (const f of images) await onFile(f)
+        if (rejected.length) setSaveError(`Skipped non-image file${rejected.length > 1 ? 's' : ''}: ${rejected.join(', ')}`)
+      })
+    }
+
     async function uploadPhotoForField(fieldId: string, instance: number, file: File) {
       const key = instanceKey(fieldId, instance)
       setUploadingField(key)
@@ -1441,6 +1451,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           </div>
                         </div>
                       )}
+                      {/* Reaches a plugged-in USB/OTG drive (where the borescope saves
+                          photos) — the camera/gallery picker doesn't show it. */}
+                      <button type="button" onClick={() => pickFromFiles(f => uploadPhotoForField(field.id, inst, f))} disabled={uploading} className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
+                        <Usb className="h-3.5 w-3.5" /> Import from Files / USB
+                      </button>
                     </div>
                   )}
                   {readOnly && (
@@ -1687,6 +1702,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <p className="text-sm text-gray-500">Upload additional photos</p>
               </div>
             )}
+            {/* Reaches a plugged-in USB/OTG drive for additional photos too. */}
+            <button type="button" onClick={() => pickFromFiles(f => uploadGeneralPhoto(f))} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
+              <Usb className="h-3.5 w-3.5" /> Import from Files / USB
+            </button>
           </div>
         )}
 
