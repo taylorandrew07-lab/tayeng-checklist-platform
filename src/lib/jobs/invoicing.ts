@@ -314,10 +314,18 @@ export interface InvoiceableJob {
   id: string; report_number: string | null; vessel_name: string | null
   job_type: string | null; client_id: string | null; client_name: string | null
   scheduled_date: string | null; created_at: string; workflow_status: Job['workflow_status']
+  template_id: string | null
   /** Billable hours for an hourly rate: the checklist's designated billable-hours
    *  field value if present, else the labour ledger (sum of regular_hours). null
    *  when neither is set. The invoice builder seeds an hourly line's qty from it. */
   billable_hours: number | null
+  /** The job's own date from its checklist (first date field), for the invoice line
+   *  description. null → the builder falls back to scheduled_date. */
+  job_date: string | null
+  /** Overall work window from the checklist's time fields (earliest → latest), e.g.
+   *  OVID's depart-base → arrive-back-at-base. Just the total span, not each leg. */
+  time_from: string | null
+  time_to: string | null
 }
 
 /** Jobs whose work is done (report-ready or approved) and not yet on an invoice —
@@ -328,7 +336,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
   let q = supabase.from('jobs')
-    .select('id, report_number, vessel_name, job_type, client_id, scheduled_date, created_at, workflow_status, client:clients(name)')
+    .select('id, report_number, vessel_name, job_type, client_id, template_id, scheduled_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
     .in('workflow_status', ['report_ready', 'approved'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
@@ -336,9 +344,10 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const { data } = await q
   let rows = ((data ?? []) as any[]).map(j => ({
     id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, job_type: j.job_type,
-    client_id: j.client_id, client_name: j.client?.name ?? null,
+    client_id: j.client_id, client_name: j.client?.name ?? null, template_id: j.template_id ?? null,
     scheduled_date: j.scheduled_date, created_at: j.created_at, workflow_status: j.workflow_status,
     billable_hours: null as number | null,
+    job_date: null as string | null, time_from: null as string | null, time_to: null as string | null,
   })) as InvoiceableJob[]
   if (opts.month) rows = rows.filter(r => (r.scheduled_date ?? r.created_at ?? '').slice(0, 7) === opts.month)
 
@@ -348,18 +357,45 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   // the jobs we're about to show — avoids an embed filter and keeps each query flat.
   const ids = rows.map(r => r.id)
   if (ids.length) {
-    const [{ data: bhFields }, { data: surv }] = await Promise.all([
+    const templateIds = [...new Set(rows.map(r => r.template_id).filter(Boolean))] as string[]
+    // In parallel: the billable-hours field(s), the labour ledger, and every date/time
+    // field on the jobs' templates (for the line description's date + work window).
+    const [{ data: bhFields }, { data: surv }, { data: dtFields }] = await Promise.all([
       supabase.from('template_fields').select('id').eq('is_billable_hours', true),
       supabase.from('job_surveyors').select('job_id, regular_hours').in('job_id', ids),
+      templateIds.length
+        ? supabase.from('template_fields').select('id, field_type, order_index').in('template_id', templateIds).in('field_type', ['date', 'time'])
+        : Promise.resolve({ data: [] as any[] }),
     ])
     const bhIds = ((bhFields ?? []) as any[]).map(f => f.id)
+    const bhSet = new Set<string>(bhIds)
+    // field_id → {type, order} for the date/time fields we want values for.
+    const dtMeta = new Map<string, { type: string; order: number }>()
+    for (const f of (dtFields ?? []) as any[]) dtMeta.set(f.id, { type: f.field_type, order: f.order_index ?? 0 })
+
+    // One values query covers billable-hours + date + time fields.
+    const wantedIds = [...new Set([...bhIds, ...dtMeta.keys()])]
     const fromChecklist: Record<string, number> = {}
-    if (bhIds.length) {
+    const bestDate: Record<string, { order: number; value: string }> = {} // lowest-order date field with a value
+    const timesByJob: Record<string, string[]> = {}
+    if (wantedIds.length) {
       const { data: fv } = await supabase.from('job_field_values')
-        .select('job_id, value').in('job_id', ids).in('field_id', bhIds)
+        .select('job_id, field_id, value').in('job_id', ids).in('field_id', wantedIds)
       for (const v of (fv ?? []) as any[]) {
-        const n = parseFloat(v.value ?? '')
-        if (Number.isFinite(n) && n > 0) fromChecklist[v.job_id] = n
+        const val = (v.value ?? '').trim()
+        if (bhSet.has(v.field_id)) {
+          const n = parseFloat(v.value ?? '')
+          if (Number.isFinite(n) && n > 0) fromChecklist[v.job_id] = n
+        }
+        const meta = dtMeta.get(v.field_id)
+        if (meta && val) {
+          if (meta.type === 'date') {
+            const prev = bestDate[v.job_id]
+            if (!prev || meta.order < prev.order) bestDate[v.job_id] = { order: meta.order, value: val }
+          } else if (meta.type === 'time') {
+            ;(timesByJob[v.job_id] ??= []).push(val)
+          }
+        }
       }
     }
     const fromLedger: Record<string, number> = {}
@@ -368,6 +404,10 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     }
     rows.forEach(r => {
       r.billable_hours = fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null)
+      r.job_date = bestDate[r.id]?.value ?? null
+      const times = (timesByJob[r.id] ?? []).slice().sort()
+      r.time_from = times[0] ?? null
+      r.time_to = times.length > 1 ? times[times.length - 1] : null
     })
   }
   return rows

@@ -73,10 +73,19 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const active = clientRates.filter(r => r.is_active)
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type) ?? null
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
+    const hourly = rate?.rate_type === 'hourly'
     // Hourly rate → bill hours × rate: seed qty with the job's billable hours (from
     // the checklist, else the labour ledger). Fixed / per-unit rates stay qty 1.
-    const qty = rate?.rate_type === 'hourly' && job.billable_hours && job.billable_hours > 0 ? job.billable_hours : 1
-    return { description: job.job_type ? `${label} — ${job.job_type}` : label, qty, unit_price: rate ? Number(rate.rate) : 0 }
+    const qty = hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours : 1
+    // Second description line spells out the job: its date, the overall work window
+    // (time from–to, not each leg) and — when hourly — the hours being billed. The
+    // PDF shows the live "qty × unit price" beneath, so the maths stays correct.
+    const dateStr = job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null)
+    const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
+    const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
+    const detail = [dateStr, span, hoursStr].filter(Boolean).join(' · ')
+    const head = job.job_type ? `${label} — ${job.job_type}` : label
+    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate ? Number(rate.rate) : 0 }
   }, [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
@@ -259,11 +268,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           {j.workflow_status === 'report_ready' && <span className="text-amber-600">· awaiting approval</span>}
                         </div>
                         {sel ? (
-                          <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-center">
-                            <input value={ls.description} onChange={e => setLine(j.id, { description: e.target.value })} className={cell} />
+                          <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
+                            <textarea rows={2} value={ls.description} onChange={e => setLine(j.id, { description: e.target.value })} className={`${cell} resize-y leading-snug`} />
                             <input type="number" min={0} step="0.5" value={ls.qty} onChange={e => setLine(j.id, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
                             <input type="number" min={0} step="0.01" value={ls.unit_price} onChange={e => setLine(j.id, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
-                            <span className="text-sm text-gray-700 text-right tnum">{((Number(ls.qty) || 0) * (Number(ls.unit_price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-sm text-gray-700 text-right tnum pt-1.5">{((Number(ls.qty) || 0) * (Number(ls.unit_price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         ) : (
                           <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>

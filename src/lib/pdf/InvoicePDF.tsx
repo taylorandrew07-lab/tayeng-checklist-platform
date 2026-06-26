@@ -49,6 +49,7 @@ const s = StyleSheet.create({
   bodyText: { color: INK },
 
   lineLabel: { fontFamily: 'Helvetica-Bold' },
+  qtyNote: { fontSize: 9, color: MUTE, marginTop: 1 },
   totalRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: INK },
   tdTotalLabel: { flex: 1, padding: '5 8', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
   tdTotalAmt: { width: 130, padding: '5 8', textAlign: 'right', fontFamily: 'Helvetica-Bold', borderLeftWidth: 1, borderLeftColor: INK },
@@ -82,10 +83,13 @@ export interface InvoicePDFProps {
   invoice: Invoice
   lines: InvoiceLineItem[]
   taxes: InvoiceTax[]
-  client: { name: string | null; address: string | null; contact_phone: string | null } | null
+  client: { name: string | null; contact_name?: string | null; address: string | null; contact_phone: string | null } | null
   reportNumber: string | null
   logoSrc?: string
 }
+
+// Trim a quantity for display: 11 → "11", 10.5 → "10.5" (no forced decimals).
+const qtyStr = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })
 
 export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSrc }: InvoicePDFProps) {
   const cur = invoice.currency
@@ -119,7 +123,7 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
           {client?.address ? (
             <View style={s.billRow}><Text style={s.billLabel}>Address:</Text><View style={s.billVal}><MultiLine text={client.address} /></View></View>
           ) : null}
-          {invoice.attention ? <View style={s.billRow}><Text style={s.billLabel}> </Text><Text style={s.billVal}>{invoice.attention}</Text></View> : null}
+          {(invoice.attention || client?.contact_name) ? <View style={s.billRow}><Text style={s.billLabel}>Attention:</Text><Text style={s.billVal}>{invoice.attention || client?.contact_name}</Text></View> : null}
           {client?.contact_phone ? <View style={s.billRow}><Text style={s.billLabel}>Tel#</Text><Text style={s.billVal}>{client.contact_phone}</Text></View> : null}
           {invoice.reference ? <View style={s.billRow}><Text style={s.billLabel}>Your Ref:</Text><Text style={s.billVal}>{invoice.reference}</Text></View> : null}
         </View>
@@ -137,7 +141,13 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
 
           {lines.map(li => (
             <View key={li.id} style={s.bodyRow} wrap={false}>
-              <View style={s.tdDesc}><Text style={s.lineLabel}>{li.description}</Text></View>
+              <View style={s.tdDesc}>
+                <MultiLine text={li.description} firstBold style={s.bodyText} />
+                {/* Show the live qty × unit-price breakdown (e.g. an hourly job:
+                    "11 × US$ 650.00") whenever the quantity isn't a plain 1, so an
+                    hourly/multi-unit total is spelled out rather than just a lump sum. */}
+                {Number(li.qty) !== 1 ? <Text style={s.qtyNote}>{qtyStr(Number(li.qty))} × {fmt(Number(li.unit_price), cur)}</Text> : null}
+              </View>
               <Text style={s.tdAmt}>{fmt(Number(li.amount), cur)}</Text>
             </View>
           ))}

@@ -33,7 +33,7 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
     db.from('invoice_line_items').select('*').eq('invoice_id', invoiceId).order('sort'),
     db.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
     recipientClientId ? db.from('clients').select('name').eq('id', recipientClientId).single() : Promise.resolve({ data: null }),
-    recipientClientId ? db.from('client_billing').select('address, contact_phone, contact_email, ap_email').eq('client_id', recipientClientId).maybeSingle() : Promise.resolve({ data: null }),
+    recipientClientId ? db.from('client_billing').select('contact_name, address, contact_phone, contact_email, ap_email').eq('client_id', recipientClientId).maybeSingle() : Promise.resolve({ data: null }),
     invoice.job_id ? db.from('jobs').select('report_number').eq('id', invoice.job_id).single() : Promise.resolve({ data: null }),
   ])
 
@@ -41,6 +41,7 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
   // accounts-payable address when set, else the general contact email.
   const client = recipientClientId ? {
     name: (clientRow as any)?.name ?? null,
+    contact_name: (billing as any)?.contact_name ?? null,
     address: (billing as any)?.address ?? null,
     contact_phone: (billing as any)?.contact_phone ?? null,
   } : null
