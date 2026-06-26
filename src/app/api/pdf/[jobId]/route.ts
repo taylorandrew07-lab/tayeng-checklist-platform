@@ -210,9 +210,33 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to render the report.' }, { status: 500 })
   }
 
-  // Guard against a null/empty title so the filename never throws.
-  const safeTitle = (job.title ?? 'report').replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'report'
-  const filename = `${job.job_number ?? 'job'}_${safeTitle}.pdf`
+  // Saved report filename, e.g.
+  //   "M.V. Guyana Hero - Borescope Survey 25.06.2026 - TEAL C-l 1000.pdf"
+  // Format: "M.V. <vessel> - <job type> <dd.mm.yyyy> - <job number>". Each part is
+  // omitted when absent, and the whole thing is sanitised to a valid cross-platform
+  // filename (e.g. a "/" in the job number can't appear in a filename, so it→"-").
+  const ddmmyyyy = (iso: string | null | undefined): string => {
+    const m = (iso ?? '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
+  }
+  // Prefer the date shown on the report itself (the checklist's own date field),
+  // then the job's scheduled date, then its creation date.
+  let checklistDate = ''
+  for (const sec of processedSections) {
+    const f = (sec.fields ?? []).find((x: any) => x.field_type === 'date' && vals[instanceKey(x.id, 0)])
+    if (f) { checklistDate = vals[instanceKey(f.id, 0)]; break }
+  }
+  const vesselPart = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.title ?? 'Report')
+  const middlePart = [job.job_type, ddmmyyyy(checklistDate || job.scheduled_date || job.created_at)].filter(Boolean).join(' ')
+  const refPart = job.job_number ?? job.report_number ?? ''
+  const displayName = [vesselPart, middlePart, refPart].filter(Boolean).join(' - ')
+  const filename = `${displayName
+    .replace(/[\\/:*?"<>|]+/g, '-')  // characters not allowed in filenames → dash
+    .replace(/[^\x20-\x7E]/g, '')    // strip non-ASCII so the header stays valid
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')           // Windows dislikes trailing dots/spaces
+    || 'Report'}.pdf`
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,
