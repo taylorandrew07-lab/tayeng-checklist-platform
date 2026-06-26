@@ -211,10 +211,11 @@ export async function GET(
   }
 
   // Saved report filename, e.g.
-  //   "M.V. Guyana Hero - Borescope Survey 25.06.2026 - TEAL C-l 1000.pdf"
-  // Format: "M.V. <vessel> - <job type> <dd.mm.yyyy> - <job number>". Each part is
-  // omitted when absent, and the whole thing is sanitised to a valid cross-platform
-  // filename (e.g. a "/" in the job number can't appear in a filename, so it→"-").
+  //   "M.V. Guyana Hero - Daily Borescoping Report - 25.06.2026 - TEAL C-L #1065.pdf"
+  // Format: "M.V. <vessel> - <report title> - <dd.mm.yyyy> - <job number>", matching
+  // what's shown in the app: the title is the report/template name, and the job number
+  // is verbatim. Each part is omitted when absent, and the whole thing is sanitised to
+  // a valid cross-platform filename (a "/" can't appear in a filename, so it → "-").
   const ddmmyyyy = (iso: string | null | undefined): string => {
     const m = (iso ?? '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
@@ -226,10 +227,12 @@ export async function GET(
     const f = (sec.fields ?? []).find((x: any) => x.field_type === 'date' && vals[instanceKey(x.id, 0)])
     if (f) { checklistDate = vals[instanceKey(f.id, 0)]; break }
   }
-  const vesselPart = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.title ?? 'Report')
-  const middlePart = [job.job_type, ddmmyyyy(checklistDate || job.scheduled_date || job.created_at)].filter(Boolean).join(' ')
-  const refPart = job.job_number ?? job.report_number ?? ''
-  const displayName = [vesselPart, middlePart, refPart].filter(Boolean).join(' - ')
+  const displayName = [
+    job.vessel_name ? `M.V. ${job.vessel_name}` : null,
+    job.template?.name ?? job.title ?? null,
+    ddmmyyyy(checklistDate || job.scheduled_date || job.created_at) || null,
+    job.job_number ?? job.report_number ?? null,
+  ].filter(Boolean).join(' - ')
   const filename = `${displayName
     .replace(/[\\/:*?"<>|]+/g, '-')  // characters not allowed in filenames → dash
     .replace(/[^\x20-\x7E]/g, '')    // strip non-ASCII so the header stays valid
