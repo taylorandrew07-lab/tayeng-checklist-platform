@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
-import { formatDate, titleCaseVesselName } from '@/lib/utils'
+import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
@@ -225,7 +225,9 @@ export default function JobsTrackerPage() {
         case 'client': return (r.client_name ?? '').toLowerCase()
         case 'hours': return r.regular_hours + r.overtime_hours
         case 'status': return WORKFLOW_ORDER.indexOf(r.workflow_status)
-        case 'date': default: return r.scheduled_date ?? r.created_at
+        // Compare by the local calendar day actually shown in the Date column, so the
+        // order matches the displayed dates (raw date-vs-timestamp strings don't).
+        case 'date': default: return dayKey(r.scheduled_date ?? r.created_at)
       }
     }
     const dir = sort.dir === 'asc' ? 1 : -1

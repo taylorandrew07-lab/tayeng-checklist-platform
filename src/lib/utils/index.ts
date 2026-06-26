@@ -16,6 +16,22 @@ export function formatDate(dateStr: string | null | undefined): string {
   }
 }
 
+/** A sortable local-calendar-day key ('yyyy-MM-dd') for a date OR timestamp, matching
+ * exactly what formatDate() displays. Sorting a job list by the raw value is wrong:
+ * a pure DATE (e.g. scheduled_date '2026-06-22') and a UTC TIMESTAMP (e.g. created_at
+ * '2026-06-21T02:00:00Z') don't compare correctly as strings — a late-night-UTC
+ * timestamp shows as the previous local day but its raw string sorts as the next day,
+ * and a date-only string sorts before any same-day timestamp. Normalising both to the
+ * local calendar day makes the sort order match the visible dates. */
+export function dayKey(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  try {
+    return format(parseISO(dateStr), 'yyyy-MM-dd')
+  } catch {
+    return dateStr
+  }
+}
+
 export function formatDateTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   try {
