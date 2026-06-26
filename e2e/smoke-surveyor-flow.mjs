@@ -90,9 +90,11 @@ try {
   const answers = []
   if (textF) answers.push({ job_id: jobId, field_id: textF.id, value: 'M.T. Smoke Vessel', value_array: null })
   if (numF) answers.push({ job_id: jobId, field_id: numF.id, value: '1234', value_array: null })
-  if (answers.length) check(await sb.from('job_field_values').upsert(answers, { onConflict: 'job_id,field_id' }).select('field_id'), `save ${answers.length} answer(s)`)
+  // Repeatable sections (migration 094) moved the unique key to (job_id, field_id,
+  // instance); instance defaults to 0. The upsert arbiter must match that constraint.
+  if (answers.length) check(await sb.from('job_field_values').upsert(answers, { onConflict: 'job_id,field_id,instance' }).select('field_id'), `save ${answers.length} answer(s)`)
 
-  if (sigF) check(await sb.from('job_signatures').upsert({ job_id: jobId, field_id: sigF.id, signature_data: 'data:image/png;base64,iVBORw0KGgo=', signed_at: new Date().toISOString() }, { onConflict: 'job_id,field_id' }).select('id'), 'capture a signature')
+  if (sigF) check(await sb.from('job_signatures').upsert({ job_id: jobId, field_id: sigF.id, signature_data: 'data:image/png;base64,iVBORw0KGgo=', signed_at: new Date().toISOString() }, { onConflict: 'job_id,field_id,instance' }).select('id'), 'capture a signature')
 
   check(await sb.from('job_photos').insert({ job_id: jobId, field_id: photoF?.id ?? null, storage_path: `${jobId}/smoke.jpg`, filename: 'smoke.jpg', uploaded_by: userId }).select('id'), 'attach a photo')
 
