@@ -11,6 +11,7 @@ import {
 import { format, parseISO } from 'date-fns'
 import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
 import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
+import { resolveEntryOrder } from '@/lib/checklist/entryOrder'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -596,7 +597,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           // Repeatable section: each entry is its own block; that entry's photos follow
           // on a fresh page (6 per page, 2×3), labelled by line — never an anonymous dump.
           if (section.is_repeatable) {
-            const count = instanceCountFor(section, fieldValues, arrayValues, signatures, photos)
+            const ids = orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos)
             return (
               // Inspections start on a fresh page (after Job Details + preamble).
               <View key={section.id} style={styles.sectionContainer} break>
@@ -605,13 +606,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                     <Text style={styles.sectionTitle}>{section.title}</Text>
                   </View>
                 </View>
-                {Array.from({ length: count }).map((_, inst) => {
+                {ids.map((inst, pos) => {
                   const lineName = entryName(section, inst, fieldValues)
                   const entryPhotos = photoFields.flatMap((pf: any) => photos.filter(p => p.field_id === pf.id && p.instance === inst))
                   return (
                     <React.Fragment key={inst}>
                       <View style={styles.entryBlock} wrap={false}>
-                        <Text style={styles.entryHeading}>Entry {inst + 1}{lineName ? ` — ${lineName}` : ''}</Text>
+                        <Text style={styles.entryHeading}>Entry {pos + 1}{lineName ? ` — ${lineName}` : ''}</Text>
                         <View style={styles.entryBody}>
                           {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
                         </View>
@@ -622,13 +623,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                         <>
                           {/* minPresenceAhead keeps the heading with at least the first
                               photo row, so it never sits alone at the bottom of a page. */}
-                          <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{lineName || `Entry ${inst + 1}`} — Photographs</Text>
+                          <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{lineName || `Entry ${pos + 1}`} — Photographs</Text>
                           <View style={styles.reportPhotoGrid}>
                             {entryPhotos.map((p, i) => (
                               <View key={i} style={styles.reportPhotoItem} wrap={false}>
                                 {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                 <Image src={p.url} style={styles.reportPhotoImage} />
-                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${inst + 1}`} — Photo ${i + 1}`}</Text>
+                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${pos + 1}`} — Photo ${i + 1}`}</Text>
                               </View>
                             ))}
                           </View>
@@ -713,23 +714,28 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
 // How many entries a repeatable section has = 1 + the highest instance seen across
 // any of its fields' values / signatures / photos.
-function instanceCountFor(
+// The display order of a repeatable section's entry instance ids: the saved order
+// (job.repeatable_order, migration 106) reconciled with the instances that actually
+// have data; absent ⇒ natural ascending order (legacy reports unchanged).
+function orderedInstancesFor(
   section: any,
+  job: any,
   fieldValues: Record<string, string>,
   arrayValues: Record<string, string[]>,
   signatures: Record<string, string>,
   photos: JobPhoto[]
-): number {
+): number[] {
   const fieldIds = new Set((section.fields ?? []).map((f: any) => f.id))
-  let max = 0
+  const present = new Set<number>()
   for (const map of [fieldValues, arrayValues, signatures]) {
     for (const k of Object.keys(map)) {
       const { fieldId, instance } = parseInstanceKey(k)
-      if (fieldIds.has(fieldId) && instance > max) max = instance
+      if (fieldIds.has(fieldId)) present.add(instance)
     }
   }
-  for (const p of photos) if (p.field_id && fieldIds.has(p.field_id) && p.instance > max) max = p.instance
-  return max + 1
+  for (const p of photos) if (p.field_id && fieldIds.has(p.field_id)) present.add(p.instance)
+  const stored = (job?.repeatable_order ?? {})[section.id] as number[] | undefined
+  return resolveEntryOrder(present, stored)
 }
 
 // A short human label for a repeatable entry — the first text field's value (e.g. the

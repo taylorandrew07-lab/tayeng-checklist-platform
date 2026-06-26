@@ -139,6 +139,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       if (error) throw error
     }
 
+    // Repeatable-entry display order (migration 106), carried on the cached job.
+    // Best-effort — a hiccup here must not block syncing the actual answers.
+    const order = (draft.job as any)?.repeatable_order
+    if (order && typeof order === 'object' && Object.keys(order).length) {
+      try { await supabase.from('jobs').update({ repeatable_order: order }).eq('id', jobId) } catch { /* re-syncs next time */ }
+    }
+
     // Queued photos (phase 2; no-op in phase 1). Idempotent via client_local_id.
     for (const p of await getPhotosForJob(user.id, jobId)) {
       if (p.uploaded) continue

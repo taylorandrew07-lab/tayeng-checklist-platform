@@ -1,7 +1,7 @@
 'use client'
 
 import {
-  useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback,
+  useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback, Fragment, type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
@@ -9,8 +9,16 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Loader2, Save, Send, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
-  Cloud, CloudOff, RefreshCw, Plus,
+  Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2,
 } from 'lucide-react'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
 import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
@@ -27,6 +35,37 @@ import type { OfflineDraft } from '@/lib/offline/types'
 
 interface SectionWithFields extends TemplateSection {
   fields: TemplateField[]
+}
+
+// One drag-sortable repeatable entry. The drag listeners go ONLY on the handle
+// (not the whole card) so the entry's inputs stay scrollable/usable on touch.
+function SortableEntry({ id, disabled, children }: {
+  id: string
+  disabled?: boolean
+  children: (h: { handleRef: (el: HTMLElement | null) => void; handleProps: Record<string, any>; isDragging: boolean }) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform), transition,
+    opacity: isDragging ? 0.55 : 1, zIndex: isDragging ? 10 : undefined, position: 'relative',
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ handleRef: setActivatorNodeRef, handleProps: { ...attributes, ...listeners }, isDragging })}
+    </div>
+  )
+}
+
+// Slim "insert a new entry in this gap" affordance shown between entries.
+function InsertEntryButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <div className="flex justify-center">
+      <button type="button" onClick={onClick} title={label}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 bg-white border border-brand-200 hover:border-brand-400 hover:bg-brand-50 rounded-full px-2.5 py-1 shadow-sm transition-colors">
+        <Plus className="h-3 w-3" /> Insert here
+      </button>
+    </div>
+  )
 }
 
 export interface JobChecklistEditorHandle {
@@ -93,8 +132,17 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [values, setValues] = useState<Record<string, string>>({})
     const [arrayValues, setArrayValues] = useState<Record<string, string[]>>({})
     const [signatures, setSignatures] = useState<Record<string, string>>({})
-    // How many entries each repeatable section currently shows (sectionId → count ≥ 1).
-    const [instanceCounts, setInstanceCounts] = useState<Record<string, number>>({})
+    // Display order of each repeatable section's entries (sectionId → STABLE instance
+    // ids). Only this list changes on insert/reorder — saved answers/photos never move.
+    // See lib/checklist/entryOrder.ts + migration 106. orderFor() = the live order,
+    // defaulting to a single empty entry.
+    const [entryOrder, setEntryOrder] = useState<Record<string, number[]>>({})
+    const orderFor = (sectionId: string): number[] => entryOrder[sectionId] ?? [0]
+    // Drag-to-reorder sensors: a small drag threshold so taps still work, plus keyboard.
+    const dndSensors = useSensors(
+      useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+      useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    )
     // fieldPhotos: photos keyed by instanceKey(field_id, instance); generalPhotos: extras with no field_id
     const [fieldPhotos, setFieldPhotos] = useState<Record<string, any[]>>({})
     const [generalPhotos, setGeneralPhotos] = useState<any[]>([])
@@ -253,23 +301,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setFieldPhotos(draft.fieldPhotos ?? {})
       setGeneralPhotos(draft.generalPhotos ?? [])
       void signPhotos([...Object.values(draft.fieldPhotos ?? {}).flat(), ...(draft.generalPhotos ?? [])])
-      // Rebuild repeatable entry counts from the draft's instance keys, so a draft
-      // edited offline reopens with all its entries (not just the server's).
-      const maxByField: Record<string, number> = {}
-      for (const map of [draft.values, draft.arrayValues, draft.signatures, draft.fieldPhotos ?? {}] as Record<string, any>[]) {
-        for (const k of Object.keys(map)) {
-          const { fieldId, instance } = parseInstanceKey(k)
-          if (instance > (maxByField[fieldId] ?? 0)) maxByField[fieldId] = instance
-        }
-      }
-      const counts: Record<string, number> = {}
+      // Rebuild each repeatable section's entry order from the draft's instance keys +
+      // the saved order on the cached job, so a draft edited offline reopens with all
+      // its entries in the order they were left.
+      const maps = [draft.values, draft.arrayValues, draft.signatures, draft.fieldPhotos ?? {}] as Record<string, any>[]
+      const savedOrder = (draft.job?.repeatable_order ?? {}) as Record<string, number[]>
+      const order: Record<string, number[]> = {}
       for (const s of (draft.sections ?? []) as any[]) {
         if (!s.is_repeatable) continue
-        let m = 0
-        for (const f of (s.fields ?? [])) m = Math.max(m, maxByField[f.id] ?? 0)
-        counts[s.id] = m + 1
+        const present = presentInstances((s.fields ?? []).map((f: any) => f.id), maps)
+        order[s.id] = resolveEntryOrder(present, savedOrder[s.id])
       }
-      setInstanceCounts(counts)
+      setEntryOrder(order)
       serverBaselineRef.current = {
         values: draft.serverValues ?? {},
         arrayValues: draft.serverArrayValues ?? {},
@@ -286,7 +329,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
       const offlineNow = typeof navigator !== 'undefined' && !navigator.onLine
       await putDraft({
-        key: '', jobId, userId: currentUserId, job, sections, values, arrayValues, signatures,
+        // Fold the live repeatable-entry order into the cached job so an offline
+        // reopen (and the next sync) restore the entries in the order left.
+        key: '', jobId, userId: currentUserId, job: job ? { ...job, repeatable_order: entryOrder } : job,
+        sections, values, arrayValues, signatures,
         fieldPhotos, generalPhotos,
         serverValues: serverBaselineRef.current.values,
         serverArrayValues: serverBaselineRef.current.arrayValues,
@@ -438,18 +484,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
       const vals: Record<string, string> = {}
       const arrVals: Record<string, string[]> = {}
-      // For repeatable sections: the highest instance seen for each field, so we know
-      // how many entry blocks to render. instance 0 is the bare field id (unchanged).
-      const maxInstanceByField: Record<string, number> = {}
-      const noteInstance = (fieldId: string, inst: number) => {
-        if (inst > (maxInstanceByField[fieldId] ?? 0)) maxInstanceByField[fieldId] = inst
-      }
+      // Repeatable-section entry order is resolved later from which instances carry
+      // data (presentInstances) + the saved order; the bare field id is instance 0.
       for (const v of (valData ?? [])) {
         const inst = (v as any).instance ?? 0
         const key = instanceKey(v.field_id, inst)
         if (v.value_array) arrVals[key] = v.value_array
         else vals[key] = v.value ?? ''
-        noteInstance(v.field_id, inst)
       }
       for (const section of processedSections) {
         for (const field of section.fields) {
@@ -477,7 +518,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       for (const sig of (sigData ?? [])) {
         const inst = (sig as any).instance ?? 0
         sigs[instanceKey(sig.field_id, inst)] = sig.signature_data
-        noteInstance(sig.field_id, inst)
       }
 
       // Split photos by field (keyed per instance); field-less ones are "general".
@@ -488,17 +528,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           const inst = (p as any).instance ?? 0
           const key = instanceKey(p.field_id, inst)
           fPhotos[key] = [...(fPhotos[key] ?? []), p]
-          noteInstance(p.field_id, inst)
         } else gPhotos.push(p)
       }
 
-      // How many entry blocks each repeatable section starts with (≥ 1).
-      const counts: Record<string, number> = {}
+      // Resolve each repeatable section's entry order from its present instance ids +
+      // the saved order (jobs.repeatable_order). Absent order ⇒ natural ascending, i.e.
+      // exactly as before, so legacy jobs are unchanged.
+      const order: Record<string, number[]> = {}
+      const savedOrder = (jobData.repeatable_order ?? {}) as Record<string, number[]>
       for (const section of processedSections) {
         if (!section.is_repeatable) continue
-        let maxInst = 0
-        for (const f of section.fields) maxInst = Math.max(maxInst, maxInstanceByField[f.id] ?? 0)
-        counts[section.id] = maxInst + 1
+        const present = presentInstances(section.fields.map((f: any) => f.id), [vals, arrVals, sigs, fPhotos])
+        order[section.id] = resolveEntryOrder(present, savedOrder[section.id])
       }
 
       setJob(jobData)
@@ -506,7 +547,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setValues(vals)
       setArrayValues(arrVals)
       setSignatures(sigs)
-      setInstanceCounts(counts)
+      setEntryOrder(order)
       setFieldPhotos(fPhotos)
       setGeneralPhotos(gPhotos)
       void signPhotos([...Object.values(fPhotos).flat(), ...gPhotos])
@@ -566,18 +607,56 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setIsDirty(true)
     }, [])
 
-    // --- Repeatable-section entries ---
-    const addInstance = useCallback((sectionId: string) => {
-      setInstanceCounts(prev => ({ ...prev, [sectionId]: (prev[sectionId] ?? 1) + 1 }))
+    // --- Repeatable-section entries (stable ids + a separate display order) ---
+    // Persist a section's new order to jobs.repeatable_order (online); always update
+    // local state + mark dirty so the offline draft and next save carry it too.
+    async function persistOrder(sectionId: string, next: number[]) {
+      const merged = { ...entryOrder, [sectionId]: next }
+      setEntryOrder(merged)
       setIsDirty(true)
-    }, [])
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      const supabase = createClient()
+      try { await supabase.from('jobs').update({ repeatable_order: merged }).eq('id', jobId) } catch { /* best effort — draft + next save still carry it */ }
+    }
 
-    // Remove the LAST entry of a repeatable section: delete its saved rows/photos and
-    // drop its in-memory keys. Only the last entry is removable, so no renumbering.
-    const removeLastInstance = useCallback(async (section: SectionWithFields) => {
-      const count = instanceCounts[section.id] ?? 1
-      if (count <= 1) return
-      const inst = count - 1
+    // Add a new empty entry at the end.
+    function addInstance(sectionId: string) {
+      const order = orderFor(sectionId)
+      void persistOrder(sectionId, [...order, nextInstanceId(order)])
+    }
+
+    // Insert a new empty entry at display position `pos` (e.g. between 4 and 5). The
+    // new entry gets a fresh, never-reused instance id — nothing else moves.
+    function insertEntryAt(sectionId: string, pos: number) {
+      const order = orderFor(sectionId)
+      const next = order.slice()
+      next.splice(Math.max(0, Math.min(pos, next.length)), 0, nextInstanceId(order))
+      void persistOrder(sectionId, next)
+    }
+
+    // Reorder: move the entry at display position `from` to `to` (drag-and-drop).
+    function moveEntryTo(sectionId: string, from: number, to: number) {
+      if (from === to) return
+      void persistOrder(sectionId, moveEntry(orderFor(sectionId), from, to))
+    }
+
+    // dnd-kit drag end → translate the dragged/over instance ids into a move.
+    function handleEntryDragEnd(sectionId: string, event: DragEndEvent) {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const order = orderFor(sectionId)
+      const from = order.findIndex(id => String(id) === active.id)
+      const to = order.findIndex(id => String(id) === over.id)
+      if (from !== -1 && to !== -1) moveEntryTo(sectionId, from, to)
+    }
+
+    // Remove the entry at display position `pos`: delete its saved rows/photos (keyed
+    // by its STABLE instance id) and drop it from the order. Any entry is removable.
+    async function removeEntryAt(section: SectionWithFields, pos: number) {
+      const order = orderFor(section.id)
+      if (order.length <= 1) return
+      const inst = order[pos]
+      if (inst == null) return
       const fieldIds = section.fields.map(f => f.id)
       const online = typeof navigator === 'undefined' || navigator.onLine
       if (online && fieldIds.length) {
@@ -601,9 +680,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setArrayValues(prev => drop(prev))
       setSignatures(prev => drop(prev))
       setFieldPhotos(prev => drop(prev))
-      setInstanceCounts(prev => ({ ...prev, [section.id]: count - 1 }))
-      setIsDirty(true)
-    }, [instanceCounts, jobId])
+      setCollapsedEntries(prev => { const n = new Set(prev); n.delete(`${section.id}:${inst}`); return n })
+      void persistOrder(section.id, order.filter((_, i) => i !== pos))
+    }
 
     // --- Save (returns true on success) ---
     const handleSave = useCallback(async (): Promise<boolean> => {
@@ -691,6 +770,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           )
           if (error) { console.error('[save:arrayValues]', error); throw error }
         }
+        // Persist the repeatable-entry order alongside answers (safety net for any
+        // immediate persistOrder() write that didn't land). Best-effort — never block
+        // a save on it. No-op when there are no repeatable sections.
+        if (Object.keys(entryOrder).length) {
+          try { await supabase.from('jobs').update({ repeatable_order: entryOrder }).eq('id', jobId) } catch { /* order re-saves on the next save */ }
+        }
         for (const [key, signature_data] of Object.entries(signatures)) {
           if (!signature_data) continue
           const { fieldId, instance } = parseInstanceKey(key)
@@ -750,13 +835,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         const missing: string[] = []
         for (const section of sections) {
           if (!checkConditionalLogic(section.conditional_logic, values)) continue
-          const count = section.is_repeatable ? (instanceCounts[section.id] ?? 1) : 1
-          for (let inst = 0; inst < count; inst++) {
+          const ids = section.is_repeatable ? orderFor(section.id) : [0]
+          ids.forEach((inst, pos) => {
             for (const field of section.fields) {
               if (!field.is_required) continue
               if (!checkConditionalLogic(field.conditional_logic, values)) continue
               const key = instanceKey(field.id, inst)
-              const label = count > 1 ? `${field.label} (entry ${inst + 1})` : field.label
+              const label = ids.length > 1 ? `${field.label} (entry ${pos + 1})` : field.label
               if (field.field_type === 'signature' && !signatures[key]) {
                 missing.push(label)
               } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[key]?.length)) {
@@ -771,7 +856,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 if (!answerPart.trim()) missing.push(label)
               }
             }
-          }
+          })
         }
 
         if (missing.length > 0) {
@@ -1001,13 +1086,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
-    // Collapse or expand every entry of a repeatable section in one go.
+    // Collapse or expand every entry of a repeatable section in one go (keyed by the
+    // entry's stable instance id, so the state follows the entry through reorders).
     function setAllEntriesCollapsed(section: SectionWithFields, collapsed: boolean) {
-      const count = instanceCounts[section.id] ?? 1
       setCollapsedEntries(prev => {
         const next = new Set(prev)
-        for (let i = 0; i < count; i++) {
-          const key = `${section.id}:${i}`
+        for (const inst of orderFor(section.id)) {
+          const key = `${section.id}:${inst}`
           if (collapsed) next.add(key); else next.delete(key)
         }
         return next
@@ -1253,7 +1338,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // conditional logic can never be filled, so including it makes the counter
           // stick at e.g. "4/5" and never read complete.
           const dataFields = section.fields.filter(f => !['heading', 'divider'].includes(f.field_type) && checkConditionalLogic(f.conditional_logic, values))
-          const count = section.is_repeatable ? (instanceCounts[section.id] ?? 1) : 1
+          // Entry instance ids in display order (repeatable), else the single instance 0.
+          const entryIds = section.is_repeatable ? orderFor(section.id) : [0]
           // Completion counts every entry of a repeatable section.
           const isFilled = (f: TemplateField, inst: number) => {
             const k = instanceKey(f.id, inst)
@@ -1264,7 +1350,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           }
           let completedCount = 0
           let totalCount = 0
-          for (let inst = 0; inst < count; inst++) for (const f of dataFields) { totalCount++; if (isFilled(f, inst)) completedCount++ }
+          for (const inst of entryIds) for (const f of dataFields) { totalCount++; if (isFilled(f, inst)) completedCount++ }
 
           // One field's control (input / photo widget) at a given repeatable instance.
           // instance 0 uses the bare field id, so non-repeatable sections are unchanged.
@@ -1419,49 +1505,69 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               {!collapsed && (
                 <div className="p-5 space-y-5">
                   {section.is_repeatable ? (
-                    <div className="space-y-7">
-                      {count > 1 && (() => {
-                        const anyOpen = Array.from({ length: count }).some((_, i) => !collapsedEntries.has(`${section.id}:${i}`))
+                    <div className="space-y-3">
+                      {entryIds.length > 1 && (() => {
+                        const anyOpen = entryIds.some(id => !collapsedEntries.has(`${section.id}:${id}`))
                         return (
-                          <div className="flex justify-end -mb-3">
+                          <div className="flex justify-end">
                             <button type="button" onClick={() => setAllEntriesCollapsed(section, anyOpen)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
                               {anyOpen ? 'Collapse all' : 'Expand all'}
                             </button>
                           </div>
                         )
                       })()}
-                      {Array.from({ length: count }).map((_, inst) => {
-                        const entryKey = `${section.id}:${inst}`
-                        const entryCollapsed = collapsedEntries.has(entryKey)
-                        const firstText = section.fields.find(f => f.field_type === 'text')
-                        const entryName = (firstText && values[instanceKey(firstText.id, inst)]) || ''
-                        return (
-                          <div key={inst} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                            {/* Solid colour bar — tap to collapse/expand this entry, so you can
-                                collapse all and open only the one you want. On mobile the title
-                                truncates rather than shoving the buttons off the edge. */}
-                            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-brand-600 text-white">
-                              <button type="button" onClick={() => toggleEntryCollapse(entryKey)} className="flex items-center gap-2 min-w-0 flex-1 text-left" title={entryCollapsed ? 'Expand entry' : 'Collapse entry'}>
-                                {entryCollapsed ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronUp className="h-4 w-4 flex-shrink-0" />}
-                                <span className="text-sm font-semibold min-w-0 truncate leading-snug">
-                                  {section.title} — Entry {inst + 1}
-                                  {entryName ? <span className="font-normal text-white/85"> · {entryName}</span> : ''}
-                                </span>
-                              </button>
-                              {!readOnly && count > 1 && inst === count - 1 && (
-                                <button type="button" onClick={() => removeLastInstance(section)} className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1 flex-shrink-0">
-                                  <X className="h-3.5 w-3.5" /> Remove
-                                </button>
-                              )}
-                            </div>
-                            {!entryCollapsed && (
-                              <div className="p-4 space-y-5">
-                                {section.fields.map(field => renderFieldControl(field, inst))}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={e => handleEntryDragEnd(section.id, e)}>
+                        <SortableContext items={entryIds.map(String)} strategy={verticalListSortingStrategy}>
+                          {entryIds.map((inst, pos) => {
+                            const entryKey = `${section.id}:${inst}`
+                            const entryCollapsed = collapsedEntries.has(entryKey)
+                            const firstText = section.fields.find(f => f.field_type === 'text')
+                            const entryName = (firstText && values[instanceKey(firstText.id, inst)]) || ''
+                            const canEdit = !readOnly && entryIds.length > 1
+                            return (
+                              <Fragment key={inst}>
+                                <SortableEntry id={String(inst)} disabled={!canEdit}>
+                                  {({ handleRef, handleProps, isDragging }) => (
+                                    <div className={`rounded-xl border bg-white shadow-sm overflow-hidden ${isDragging ? 'border-brand-300 ring-2 ring-brand-200' : 'border-gray-200'}`}>
+                                      {/* Colour bar: drag handle (reorder) · tap title to collapse · remove. */}
+                                      <div className="flex items-center justify-between gap-1.5 px-3 py-2.5 bg-brand-600 text-white">
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                          {canEdit && (
+                                            <button ref={handleRef} {...handleProps} type="button" title="Drag to reorder" aria-label="Drag to reorder" className="flex-shrink-0 cursor-grab touch-none text-white/75 hover:text-white p-0.5">
+                                              <GripVertical className="h-4 w-4" />
+                                            </button>
+                                          )}
+                                          <button type="button" onClick={() => toggleEntryCollapse(entryKey)} className="flex items-center gap-2 min-w-0 flex-1 text-left" title={entryCollapsed ? 'Expand entry' : 'Collapse entry'}>
+                                            {entryCollapsed ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronUp className="h-4 w-4 flex-shrink-0" />}
+                                            <span className="text-sm font-semibold min-w-0 truncate leading-snug">
+                                              {section.title} — Entry {pos + 1}
+                                              {entryName ? <span className="font-normal text-white/85"> · {entryName}</span> : ''}
+                                            </span>
+                                          </button>
+                                        </div>
+                                        {canEdit && (
+                                          <button type="button" onClick={() => removeEntryAt(section, pos)} title="Remove this entry" className="text-xs font-medium text-white/85 hover:text-white inline-flex items-center gap-1 flex-shrink-0">
+                                            <Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Remove</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                      {!entryCollapsed && (
+                                        <div className="p-4 space-y-5">
+                                          {section.fields.map(field => renderFieldControl(field, inst))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </SortableEntry>
+                                {/* Insert a new entry in the gap before the next one. */}
+                                {!readOnly && pos < entryIds.length - 1 && (
+                                  <InsertEntryButton onClick={() => insertEntryAt(section.id, pos + 1)} label={`Insert ${section.title} here`} />
+                                )}
+                              </Fragment>
+                            )
+                          })}
+                        </SortableContext>
+                      </DndContext>
                       {!readOnly && (
                         <button
                           type="button"
@@ -1528,11 +1634,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   if (!s.is_repeatable) continue
                   const photoFs = s.fields.filter(f => f.field_type === 'photo')
                   const firstText = s.fields.find(f => f.field_type === 'text')
-                  const cnt = instanceCounts[s.id] ?? 1
-                  for (const pf of photoFs) for (let i = 0; i < cnt; i++) {
-                    const ln = firstText ? (values[instanceKey(firstText.id, i)] || '') : ''
-                    lineTargets.push({ fieldId: pf.id, inst: i, label: `${ln || `Entry ${i + 1}`}${photoFs.length > 1 ? ` · ${pf.label}` : ''}` })
-                  }
+                  const ids = orderFor(s.id)
+                  for (const pf of photoFs) ids.forEach((inst, pos) => {
+                    const ln = firstText ? (values[instanceKey(firstText.id, inst)] || '') : ''
+                    lineTargets.push({ fieldId: pf.id, inst, label: `${ln || `Entry ${pos + 1}`}${photoFs.length > 1 ? ` · ${pf.label}` : ''}` })
+                  })
                 }
                 return (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">

@@ -348,6 +348,9 @@ export interface Job {
   closed_by: string | null
   // Consolidated invoicing (migration 075): which invoice this job was billed on.
   invoice_id: string | null
+  // Display order of repeatable-section entries (migration 106): { sectionId: instance[] }.
+  // Absent → natural ascending instance order. See lib/checklist/entryOrder.ts.
+  repeatable_order?: Record<string, number[]> | null
   created_at: string
   updated_at: string
 }
