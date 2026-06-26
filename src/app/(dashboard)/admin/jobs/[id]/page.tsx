@@ -62,7 +62,18 @@ export default function AdminChecklistDetailPage() {
       setSharing(false)
     }
   }
-  const [tab, setTab] = useState<DetailTab>('overview')
+  const [tab, setTabState] = useState<DetailTab>('overview')
+  // Persist the active tab in the URL (?tab=) so reopening or reloading this job —
+  // e.g. a mobile/desktop PWA returning from the background, or navigating away and
+  // back — restores the same tab instead of snapping to Overview.
+  function setTab(t: DetailTab) {
+    setTabState(t)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (t === 'overview') url.searchParams.delete('tab')
+    else url.searchParams.set('tab', t)
+    window.history.replaceState(window.history.state, '', url)
+  }
   const [editForm, setEditForm] = useState({
     title: '',
     vessel_name: '',
@@ -72,6 +83,11 @@ export default function AdminChecklistDetailPage() {
   })
 
   useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Restore the tab from the URL on first mount (mirrors setTab above).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t && TABS.some(x => x.id === t)) setTabState(t as DetailTab)
+  }, [])
 
   async function load() {
     const supabase = createClient()

@@ -66,10 +66,16 @@ export default function ServiceWorkerRegister({ enabled }: { enabled: boolean })
     // A long-open PWA never reloads on its own, so it can sit on a stale version for
     // a day+. Poll for a new one when the app regains focus and every 15 min, then
     // apply it when safe. This closes the staleness window with no manual reinstall.
+    //
+    // CRITICAL: only reload when a new worker is ACTUALLY waiting — never just because
+    // the app regained focus. An unconditional reload here throws the user off whatever
+    // page/tab they were on every time they switch back from another app or browser tab.
+    // A genuinely-new version is applied via the `statechange` handler above (and, if one
+    // was already waiting from a prior check, by the `reg.waiting` guard here).
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return
       regRef.current?.update().catch(() => {})
-      applyUpdate()
+      if (regRef.current?.waiting) applyUpdate()
     }
     document.addEventListener('visibilitychange', onVisible)
     const interval = setInterval(() => { regRef.current?.update().catch(() => {}) }, 15 * 60 * 1000)
