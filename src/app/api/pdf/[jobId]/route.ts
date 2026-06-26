@@ -3,6 +3,8 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { JobPDF } from '@/lib/pdf/JobPDF'
 import React from 'react'
+import sharp from 'sharp'
+import exifr from 'exifr'
 import { checkConditionalLogic } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 
@@ -125,9 +127,31 @@ export async function GET(
       : []
     const urlByPath = new Map<string, string>()
     for (const s of signed) if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl)
-    photos = usable
-      .map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, url: urlByPath.get(p.storage_path) ?? '', caption: p.caption, filename: p.filename }))
+    const built = usable
+      .map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, url: urlByPath.get(p.storage_path) ?? '', storage_path: p.storage_path, caption: p.caption, filename: p.filename }))
       .filter(p => p.url)
+
+    // EXIF-orientation fix: @react-pdf ignores the EXIF orientation flag, so a phone
+    // "portrait" photo (landscape pixels + a rotate flag) prints sideways. For any
+    // photo whose flag says it needs rotating, bake the orientation into the pixels —
+    // sharp.rotate() auto-orients from EXIF and strips the flag, rotating ONLY (it
+    // never resizes, so the aspect ratio is unchanged). Upright photos (orientation
+    // 1/none) keep their signed URL untouched, so we don't re-encode or inline them.
+    // Only the rotated ones are downloaded + processed, keeping memory/time in check.
+    photos = await Promise.all(built.map(async (p) => {
+      try {
+        const head = await fetch(p.url, { headers: { Range: 'bytes=0-131071' } })
+        const orientation = head.ok ? await exifr.orientation(Buffer.from(await head.arrayBuffer())).catch(() => undefined) : undefined
+        if (orientation && orientation !== 1) {
+          const { data: blob } = await db.storage.from('job-photos').download(p.storage_path)
+          if (blob) {
+            const rotated = await sharp(Buffer.from(await blob.arrayBuffer())).rotate().jpeg({ quality: 92 }).toBuffer()
+            return { ...p, url: `data:image/jpeg;base64,${rotated.toString('base64')}` }
+          }
+        }
+      } catch { /* on any failure, fall back to the signed URL as-is */ }
+      return p
+    }))
   }
 
   // Assigned surveyors (printed in the report header). job_surveyors has two FKs to
