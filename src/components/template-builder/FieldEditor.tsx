@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Trash2, Plus, X, ChevronDown, ChevronUp, Bookmark, Save } from 'lucide-react'
+import { Trash2, Plus, X, Bookmark, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import type { BuilderField } from './types'
@@ -47,8 +47,8 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
 }
 
 export default function FieldEditor({ field, allFields, displayNumber, onChange, onDelete }: FieldEditorProps) {
-  // Item 6: fields start collapsed; expand on click to edit
-  const [expanded, setExpanded] = useState(false)
+  // Collapse is owned by the parent SortableField (chip row ↔ editor); this editor
+  // always renders its body when mounted, so opening a field takes a single click.
   const [showConditional, setShowConditional] = useState(!!field.conditional_logic)
   // Item 3: help text hidden by default, shown only when the box is checked (or a value already exists)
   const [showHelp, setShowHelp] = useState(!!field.help_text)
@@ -102,11 +102,8 @@ export default function FieldEditor({ field, allFields, displayNumber, onChange,
 
   return (
     <div className="border border-gray-200 rounded-xl bg-white shadow-sm">
-      {/* Field header */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
+      {/* Field header (static — collapse is handled by the parent row) */}
+      <div className="flex items-center gap-3 px-4 py-3 select-none border-b border-gray-100">
         {displayNumber && (
           <span className="flex-shrink-0 w-6 h-6 rounded-md bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center">
             {displayNumber}
@@ -134,16 +131,10 @@ export default function FieldEditor({ field, allFields, displayNumber, onChange,
           >
             <Trash2 className="h-4 w-4" />
           </button>
-          {expanded ? (
-            <ChevronUp className="h-4 w-4 text-gray-400" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-gray-400" />
-          )}
         </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-gray-100 px-4 py-4 space-y-4">
+      <div className="px-4 py-4 space-y-4">
           {/* Item number + field type + label */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -152,9 +143,16 @@ export default function FieldEditor({ field, allFields, displayNumber, onChange,
                 value={field.field_type}
                 onChange={(e) => {
                   const newType = e.target.value as BuilderField['field_type']
+                  // Switching between yes/no variants MERGES: keep any existing option
+                  // (with its custom colour) whose value still applies, and only add the
+                  // variant's new values (e.g. 'na') — so flipping yes_no→yes_no_na to
+                  // add N/A no longer wipes admin-customised colours.
                   const newOptions =
                     newType === 'yes_no' || newType === 'yes_no_na' || newType === 'pass_fail'
-                      ? getDefaultYesNoOptions(newType)
+                      ? (() => {
+                          const byValue = new Map(field.options.map(o => [o.value, o]))
+                          return getDefaultYesNoOptions(newType).map(d => byValue.get(d.value) ?? d)
+                        })()
                       : (newType === 'dropdown' || newType === 'multiple_choice') ? field.options : []
                   update({ field_type: newType, options: newOptions })
                 }}
@@ -544,7 +542,6 @@ export default function FieldEditor({ field, allFields, displayNumber, onChange,
             </>
           )}
         </div>
-      )}
     </div>
   )
 }

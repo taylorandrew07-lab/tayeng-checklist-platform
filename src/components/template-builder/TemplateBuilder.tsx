@@ -162,7 +162,8 @@ function isDescendantOf(
 // A sensible default trigger value when creating a follow-up.
 function defaultTriggerValue(parent: BuilderField): string {
   if (parent.field_type === 'yes_no' || parent.field_type === 'yes_no_na') return 'no'
-  if (parent.field_type === 'dropdown') return parent.options[0]?.value ?? ''
+  if (parent.field_type === 'pass_fail') return 'fail'
+  if (parent.field_type === 'dropdown' || parent.field_type === 'multiple_choice') return parent.options[0]?.value ?? ''
   return ''
 }
 
