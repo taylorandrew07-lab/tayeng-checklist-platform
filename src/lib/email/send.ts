@@ -2,17 +2,16 @@
 // document-reminder cron. If RESEND_API_KEY is unset, sends are skipped (logged),
 // so the app still works in environments without email configured.
 
+import { escapeHtml as escapeHtmlRaw } from '@/lib/escape-html'
+
 const FROM = 'Tayeng App <noreply@tayeng.com>'
 
-/** Escape user-supplied values before interpolating into notification HTML. */
+/** Escape user-supplied values before interpolating into notification HTML,
+ *  mapping null/empty to an em-dash. Delegates the actual escaping to the
+ *  canonical escapeHtml so the HTML-injection defence stays in one place. */
 export function escapeHtml(value: string | undefined | null): string {
   if (!value) return '—'
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+  return escapeHtmlRaw(value)
 }
 
 /** Single-line, header-safe text for email subjects. */

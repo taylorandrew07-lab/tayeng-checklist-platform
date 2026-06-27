@@ -8,7 +8,7 @@ import {
   Image,
   Link,
 } from '@react-pdf/renderer'
-import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
+import { formatDiffPercentage, isSurveyedVesselNameField, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
 import { COMPANY } from '@/lib/company'
@@ -331,17 +331,6 @@ const styles = StyleSheet.create({
   },
 })
 
-/**
- * Ensures a vessel name is displayed with exactly one "M.V. " prefix.
- * Strips any existing M.V./MV prefix (any casing, optional dots/spaces) before
- * adding a canonical one — prevents "M.V. M.V. ..." double-prefix.
- */
-function withMvPrefix(name: string | null | undefined): string {
-  if (!name) return ''
-  const stripped = name.replace(/^(m\.?\s*v\.?\s*)+/i, '').trim()
-  return stripped ? `M.V. ${stripped}` : ''
-}
-
 // Resolve {uuid} tokens in labels to the selected option label (human-readable)
 function resolvePdfLabel(label: string, fieldValues: Record<string, string>, allFields: any[]): string {
   return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
@@ -551,7 +540,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {!useFlagHeader && (
           <View style={styles.jobDetailsBlock}>
             <View style={styles.jobDetailCol}>
-              {job.vessel_name && <DetailRow label="Vessel" value={withMvPrefix(job.vessel_name)} />}
+              {job.vessel_name && <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} />}
               {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
               {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
               {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
@@ -582,7 +571,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
                   </View>
-                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withMvPrefix(job.vessel_name)) : null}
+                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name)) : null}
                 </View>
                 {specFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
                 {job.client?.name ? renderInfoRow('client', 'Client', job.client.name) : null}

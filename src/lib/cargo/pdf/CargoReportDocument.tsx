@@ -1,6 +1,7 @@
 import React from 'react'
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer'
 import { COMPANY } from '@/lib/company'
+import { withVesselPrefix } from '@/lib/utils'
 import type { Voyage, ReadingType } from '../types'
 import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
 import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
@@ -110,12 +111,6 @@ const styles = StyleSheet.create({
   draftText: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#991b1b', letterSpacing: 0.5 },
 })
 
-function withMvPrefix(name: string | null | undefined): string {
-  if (!name) return ''
-  const stripped = name.replace(/^(m\.?\s*v\.?\s*)+/i, '').trim()
-  return stripped ? `M.V. ${stripped}` : ''
-}
-
 function Footer({ voyage }: { voyage: Voyage }) {
   const draft = (voyage.status ?? 'in_progress') !== 'finalized'
   return (
@@ -137,7 +132,7 @@ function Footer({ voyage }: { voyage: Voyage }) {
 function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; dateISO: string; period: Period; holdRange?: string }) {
   return (
     <View style={styles.smallHeader}>
-      <Text style={styles.smallHeaderTitle}>{withMvPrefix(voyage.vesselName)}</Text>
+      <Text style={styles.smallHeaderTitle}>{withVesselPrefix(voyage.vesselName)}</Text>
       <Text style={styles.smallHeaderText}>
         {formatVoyageDate(dateISO)} · {PERIOD_LABELS[period]}{holdRange ? ` · ${holdRange}` : ''}
       </Text>
@@ -147,7 +142,7 @@ function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; d
 
 function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: string | null }) {
   const rows: Array<[string, string]> = [
-    ['Vessel', withMvPrefix(voyage.vesselName)],
+    ['Vessel', withVesselPrefix(voyage.vesselName)],
     ['Voyage Number', voyage.voyageNumber],
     ['Cargo', voyage.cargoType],
     ['Loading Port', voyage.loadingPort],
@@ -168,7 +163,7 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
         <Text style={styles.coverTagline}>{COMPANY.tagline}</Text>
 
         <Text style={styles.coverTitle}>Cargo Hold Monitoring Report</Text>
-        <Text style={styles.coverSubtitle}>{withMvPrefix(voyage.vesselName)}{voyage.voyageNumber ? ` — Voyage ${voyage.voyageNumber}` : ''}</Text>
+        <Text style={styles.coverSubtitle}>{withVesselPrefix(voyage.vesselName)}{voyage.voyageNumber ? ` — Voyage ${voyage.voyageNumber}` : ''}</Text>
 
         <View style={styles.coverBox}>
           {rows.filter(([, v]) => !!v).map(([label, value]) => (

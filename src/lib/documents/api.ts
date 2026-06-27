@@ -2,6 +2,11 @@
 // (enforced by RLS). Documents live in the private 'vessel-documents' bucket.
 
 import { createClient } from '@/lib/supabase/client'
+import { formatBytes, sanitizeStorageName } from '@/lib/utils'
+
+// Re-exported so existing consumers (e.g. the document views) can keep importing
+// formatBytes from this module's public surface.
+export { formatBytes }
 
 export interface Vessel {
   id: string
@@ -28,18 +33,6 @@ export interface DocumentHit extends VesselDocument {
 export const DOC_CATEGORIES = ['Sounding Tables', 'Hydrostatic Tables', 'General Arrangement', 'Stability', 'Capacity Plan', 'Other']
 
 const BUCKET = 'vessel-documents'
-
-export function formatBytes(n: number | null | undefined): string {
-  if (!n) return '—'
-  const u = ['B', 'KB', 'MB', 'GB']
-  let i = 0, v = n
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
-}
-
-function safeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
-}
 
 // --- Vessels (folders) ---
 export async function listVessels(): Promise<Vessel[]> {
@@ -89,7 +82,7 @@ export async function listDocuments(vesselId: string): Promise<VesselDocument[]>
 export async function uploadDocument(vesselId: string, file: File, category: string): Promise<{ error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const path = `${vesselId}/${crypto.randomUUID()}_${safeName(file.name)}`
+  const path = `${vesselId}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
   const { error: upErr } = await supabase.storage.from(BUCKET)
     .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
   if (upErr) return { error: upErr.message }

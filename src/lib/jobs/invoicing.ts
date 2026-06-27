@@ -4,6 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
+import { sanitizeStorageName } from '@/lib/utils'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
 } from '@/lib/types/database'
@@ -490,7 +491,7 @@ export async function updateInvoice(invoiceId: string, data: {
 // ── Receipt attachments (private invoice-receipts bucket) ─────────────────────
 export async function uploadInvoiceReceipt(file: File): Promise<{ path?: string; error?: string }> {
   const supabase = createClient()
-  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const safe = sanitizeStorageName(file.name)
   const path = `${crypto.randomUUID()}-${safe}`
   const { error } = await supabase.storage.from('invoice-receipts').upload(path, file, { contentType: file.type, upsert: false })
   if (error) return { error: error.message }

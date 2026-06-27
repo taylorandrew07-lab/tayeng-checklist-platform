@@ -112,6 +112,36 @@ export function titleCaseVesselName(raw: string): string {
   return v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
 }
 
+/** Human-readable byte size ('—' for null/0/undefined). */
+export function formatBytes(n: number | null | undefined): string {
+  if (!n) return '—'
+  const u = ['B', 'KB', 'MB', 'GB']
+  let i = 0, v = n
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
+}
+
+/** Sanitise a filename for use as a storage object key (keeps the allowlist of
+ *  alphanumerics, dot, underscore, hyphen; everything else → '_'). */
+export function sanitizeStorageName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+/**
+ * Vessel name with exactly one canonical prefix for display, e.g.
+ * "M.V. Delta Titan" / "M.T. Bunker One". Reuses titleCaseVesselName (which
+ * strips any existing M.V./M.T. prefix the user typed and Title-Cases the rest),
+ * then re-applies the requested prefix. Returns '' for empty / prefix-only input.
+ */
+export function withVesselPrefix(
+  name: string | null | undefined,
+  prefix: 'M.V.' | 'M.T.' = 'M.V.',
+): string {
+  if (!name) return ''
+  const titled = titleCaseVesselName(name)
+  return titled ? `${prefix} ${titled}` : ''
+}
+
 export function getFieldTypeLabel(type: FieldType): string {
   const labels: Record<FieldType, string> = {
     text: 'Text',

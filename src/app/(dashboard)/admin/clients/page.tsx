@@ -10,7 +10,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import Tabs from '@/components/ui/Tabs'
 import ClientRates from '@/components/clients/ClientRates'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
-import { formatDate, withTimeout } from '@/lib/utils'
+import { formatDate, withTimeout, sanitizeStorageName } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { listClientBilling, upsertClientBilling } from '@/lib/clients/billing'
@@ -139,7 +139,7 @@ export default function ClientsPage() {
     // Upload a newly-selected logo first; keep the existing path otherwise.
     let logo_path: string | null = form.logo_path || null
     if (logoFile) {
-      const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const safeName = sanitizeStorageName(logoFile.name)
       const path = `${crypto.randomUUID()}-${safeName}`
       let upErr
       try {

@@ -3,7 +3,12 @@
 // report/VOS attachments, and an activity trail on top of the jobs table.
 
 import { createClient } from '@/lib/supabase/client'
+import { formatBytes, sanitizeStorageName } from '@/lib/utils'
 import type { WorkflowStatus, JobType, JobAttachment, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
+
+// Re-exported so existing consumers (e.g. JobOpsPanel) keep importing formatBytes
+// from this module's public surface.
+export { formatBytes }
 
 const FILES_BUCKET = 'job-files'
 
@@ -32,14 +37,6 @@ export const ATTACHMENT_KINDS: { kind: JobAttachmentKind; label: string }[] = [
   { kind: 'other', label: 'Other' },
 ]
 export const attachmentLabel = (k: JobAttachmentKind) => ATTACHMENT_KINDS.find(a => a.kind === k)?.label ?? k
-
-export function formatBytes(n: number | null | undefined): string {
-  if (!n) return '—'
-  const u = ['B', 'KB', 'MB', 'GB']; let i = 0, v = n
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
-}
-const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, '_')
 
 export const CURRENCIES = ['USD', 'TTD', 'EUR', 'GBP'] as const
 export function money(n: number, currency = 'USD'): string {
@@ -228,7 +225,7 @@ export async function uploadJobAttachment(jobId: string, kind: JobAttachmentKind
   if (file.type && !UPLOAD_ALLOWED_MIME.includes(file.type)) return { error: 'Only PDF or image files (JPG, PNG, WebP) are allowed.' }
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const path = `${jobId}/${crypto.randomUUID()}_${safeName(file.name)}`
+  const path = `${jobId}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
   const { error: upErr } = await supabase.storage.from(FILES_BUCKET).upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
   if (upErr) return { error: upErr.message }
   const { error } = await supabase.from('job_attachments').insert({

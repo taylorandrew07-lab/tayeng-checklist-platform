@@ -4,7 +4,11 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { differenceInCalendarDays, parseISO, isValid } from 'date-fns'
+import { formatBytes, sanitizeStorageName } from '@/lib/utils'
 import type { PersonalDocument, CredentialKey } from '@/lib/types/database'
+
+// Re-exported so existing consumers can keep importing formatBytes from here.
+export { formatBytes }
 
 export const DOC_TYPES = [
   'Port Pass', 'Medical', 'Safety Training', 'Reference', 'Other',
@@ -31,17 +35,6 @@ export function credentialDef(key: CredentialKey): CredentialDef {
 }
 
 const BUCKET = 'personal-documents'
-
-export function formatBytes(n: number | null | undefined): string {
-  if (!n) return '—'
-  const u = ['B', 'KB', 'MB', 'GB']
-  let i = 0, v = n
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
-}
-function safeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
-}
 
 export type ExpiryStatus = 'expired' | 'expiring' | 'ok' | 'none'
 
@@ -123,7 +116,7 @@ export async function saveCredential(
   let size_bytes = existing?.size_bytes ?? null
   let oldPath: string | null = null
   if (file) {
-    const newPath = `${profileId}/${crypto.randomUUID()}_${safeName(file.name)}`
+    const newPath = `${profileId}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type || 'application/octet-stream', upsert: false })
     if (upErr) return { error: upErr.message }
     oldPath = existing?.storage_path ?? null
@@ -178,7 +171,7 @@ export async function addDocument(profileId: string, meta: DocInput, file: File 
   let size_bytes: number | null = null
 
   if (file) {
-    storage_path = `${profileId}/${crypto.randomUUID()}_${safeName(file.name)}`
+    storage_path = `${profileId}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
     content_type = file.type || 'application/octet-stream'
     size_bytes = file.size
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(storage_path, file, { contentType: content_type, upsert: false })
@@ -215,7 +208,7 @@ export async function updateDocument(doc: PersonalDocument, meta: DocInput, file
   }
   let oldPath: string | null = null
   if (file) {
-    const newPath = `${doc.profile_id}/${crypto.randomUUID()}_${safeName(file.name)}`
+    const newPath = `${doc.profile_id}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type || 'application/octet-stream', upsert: false })
     if (upErr) return { error: upErr.message }
     oldPath = doc.storage_path
