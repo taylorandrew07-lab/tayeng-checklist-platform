@@ -42,11 +42,3 @@ export async function fetchMyOfficePermissions(
   if (error || !data) return new Set()
   return new Set(data.map((r: { permission_key: string }) => r.permission_key))
 }
-
-/** Convenience: does this set grant any of the given keys? */
-export function hasAnyOfficePermission(
-  granted: Set<string>,
-  ...keys: OfficePermissionKey[]
-): boolean {
-  return keys.some(k => granted.has(k))
-}

@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
 import { pickImageFiles } from '@/lib/files/pickImageFiles'
-import { formatDate, checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
+import { checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'

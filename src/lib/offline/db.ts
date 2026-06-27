@@ -5,7 +5,6 @@ import { draftKey, type OfflineDraft, type QueuedPhoto } from './types'
 export interface CachedNewJobData {
   templates: any[] // active, surveyor-startable templates incl. sections + fields
   clients: any[]
-  surveyors: any[]
   cachedAt: number
 }
 

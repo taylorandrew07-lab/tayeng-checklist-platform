@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, parseISO } from 'date-fns'
-import type { TemplateStatus, FieldType } from '@/lib/types/database'
+import type { FieldType } from '@/lib/types/database'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -110,15 +110,6 @@ export function titleCaseVesselName(raw: string): string {
   v = v.replace(/^(?:m\.?\s*[vt]\.?[\s.]+)+/i, '').trim()
   if (!v) return ''
   return v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
-}
-
-export function getTemplateStatusColor(status: TemplateStatus): string {
-  const colors: Record<TemplateStatus, string> = {
-    draft: 'bg-gray-100 text-gray-700',
-    active: 'bg-green-100 text-green-700',
-    archived: 'bg-red-100 text-red-700',
-  }
-  return colors[status] ?? 'bg-gray-100 text-gray-700'
 }
 
 export function getFieldTypeLabel(type: FieldType): string {
@@ -275,10 +266,6 @@ export function checkConditionalLogic(
   return logic.operator === 'and'
     ? results.every(Boolean)
     : results.some(Boolean)
-}
-
-export function generateId(): string {
-  return crypto.randomUUID()
 }
 
 /**

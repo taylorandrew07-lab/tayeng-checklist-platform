@@ -8,7 +8,6 @@ import { cacheNewJobData, getCachedNewJobData, type CachedNewJobData } from './d
 export interface NewJobData {
   templates: any[]
   clients: any[]
-  surveyors: any[]
   fromCache: boolean
 }
 
@@ -33,17 +32,14 @@ export async function loadNewJobData(): Promise<NewJobData> {
         .map((s: any) => ({ ...s, fields: [...(s.fields ?? [])].sort((a: any, b: any) => a.order_index - b.order_index) })),
     }))
 
-    // Surveyors are no longer picked on the new-job form (a surveyor IS the
-    // surveyor on their own jobs), so no surveyor list is cached.
-    const payload: CachedNewJobData = { templates, clients: cls ?? [], surveyors: [], cachedAt: Date.now() }
+    const payload: CachedNewJobData = { templates, clients: cls ?? [], cachedAt: Date.now() }
     await cacheNewJobData(payload).catch(() => {})
-    return { templates: payload.templates, clients: payload.clients, surveyors: payload.surveyors, fromCache: false }
+    return { templates: payload.templates, clients: payload.clients, fromCache: false }
   } catch {
     const cached = await getCachedNewJobData().catch(() => undefined)
     return {
       templates: cached?.templates ?? [],
       clients: cached?.clients ?? [],
-      surveyors: cached?.surveyors ?? [],
       fromCache: true,
     }
   }

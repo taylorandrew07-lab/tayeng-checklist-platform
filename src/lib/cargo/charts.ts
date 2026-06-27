@@ -20,8 +20,6 @@ export const SERIES_COLORS = [
 export function seriesColor(i: number): string {
   return SERIES_COLORS[i % SERIES_COLORS.length]
 }
-/** Back-compat alias. */
-export const holdColor = (hold: number) => seriesColor(hold - 1)
 
 export interface ChartFilter {
   /** Specific holds, or 'all' (default = every hold the reading type applies to). */

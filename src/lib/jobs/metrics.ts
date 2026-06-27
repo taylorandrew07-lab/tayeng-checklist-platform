@@ -41,33 +41,6 @@ export function aggregateBilling(invoices: any[]): Map<string, BillingTotals> {
   return m
 }
 
-// ── Labour per surveyor ────────────────────────────────────────────────────
-export interface LabourTotals {
-  surveyor_id: string
-  name: string
-  jobs: Set<string>
-  regular_hours: number
-  overtime_hours: number
-  pay: Map<string, number> // currency → total pay
-}
-
-export function aggregateLabour(rows: any[]): Map<string, LabourTotals> {
-  const m = new Map<string, LabourTotals>()
-  for (const r of rows ?? []) {
-    let l = m.get(r.surveyor_id)
-    if (!l) {
-      l = { surveyor_id: r.surveyor_id, name: r.surveyor?.full_name ?? 'Unknown', jobs: new Set(), regular_hours: 0, overtime_hours: 0, pay: new Map() }
-      m.set(r.surveyor_id, l)
-    }
-    if (r.job_id) l.jobs.add(r.job_id)
-    l.regular_hours += Number(r.regular_hours ?? 0)
-    l.overtime_hours += Number(r.overtime_hours ?? 0)
-    const total = Number(r.regular_pay ?? 0) + Number(r.overtime_pay ?? 0)
-    if (total) l.pay.set(r.pay_currency ?? 'TTD', (l.pay.get(r.pay_currency ?? 'TTD') ?? 0) + total)
-  }
-  return m
-}
-
 // ── Jobs pipeline by workflow stage ────────────────────────────────────────
 export function aggregatePipeline(jobs: { workflow_status: WorkflowStatus }[]): {
   byStatus: { status: WorkflowStatus; count: number }[]

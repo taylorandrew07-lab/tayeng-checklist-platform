@@ -470,7 +470,6 @@ function SortableSection({
                         >
                           <SortableField
                             field={field}
-                            sections={[]}
                             allFields={allFields}
                             displayNumber={computeDisplayNumber(section.fields, i)}
                             onUpdate={(updated) => onUpdateField(field.id, updated)}
@@ -502,14 +501,13 @@ function SortableSection({
 
 interface SortableFieldProps {
   field: BuilderField
-  sections: BuilderSection[]
   allFields: BuilderField[]
   displayNumber: string
   onUpdate: (field: BuilderField) => void
   onDelete: () => void
 }
 
-function SortableField({ field, sections, allFields, displayNumber, onUpdate, onDelete }: SortableFieldProps) {
+function SortableField({ field, allFields, displayNumber, onUpdate, onDelete }: SortableFieldProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
 
   // Compact, iAuditor-style row by default; expand to the full editor on click. A
@@ -552,7 +550,6 @@ function SortableField({ field, sections, allFields, displayNumber, onUpdate, on
           <div>
             <FieldEditor
               field={field}
-              sections={sections}
               allFields={allFields}
               displayNumber={displayNumber}
               onChange={onUpdate}

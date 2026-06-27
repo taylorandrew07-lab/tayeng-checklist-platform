@@ -8,7 +8,6 @@ import {
   Image,
   Link,
 } from '@react-pdf/renderer'
-import { format, parseISO } from 'date-fns'
 import { formatDiffPercentage, isSurveyedVesselNameField } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'

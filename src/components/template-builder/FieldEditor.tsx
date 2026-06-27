@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Trash2, Plus, X, ChevronDown, ChevronUp, Bookmark, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
-import type { BuilderField, BuilderSection } from './types'
+import type { BuilderField } from './types'
 import { FIELD_TYPE_OPTIONS, getDefaultYesNoOptions } from './types'
 import type { FieldOption, ConditionalLogic } from '@/lib/types/database'
 import { listResponseSets, createResponseSet, type ResponseSet } from '@/lib/templates/responseSets'
@@ -21,7 +21,6 @@ const METADATA_PATTERNS = ['vessel', 'date', 'port', 'berth', 'surveyor']
 
 interface FieldEditorProps {
   field: BuilderField
-  sections: BuilderSection[]
   allFields: BuilderField[]
   /** Auto sequential number for this field within its section (read-only). '' for layout fields. */
   displayNumber: string
@@ -47,7 +46,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
   )
 }
 
-export default function FieldEditor({ field, sections, allFields, displayNumber, onChange, onDelete }: FieldEditorProps) {
+export default function FieldEditor({ field, allFields, displayNumber, onChange, onDelete }: FieldEditorProps) {
   // Item 6: fields start collapsed; expand on click to edit
   const [expanded, setExpanded] = useState(false)
   const [showConditional, setShowConditional] = useState(!!field.conditional_logic)

@@ -27,8 +27,3 @@ export async function createResponseSet(name: string, options: FieldOption[]): P
   if (error) return { error: error.message }
   return { set: data as ResponseSet }
 }
-
-export async function deleteResponseSet(id: string): Promise<{ error?: string }> {
-  const { error } = await createClient().from('response_sets').delete().eq('id', id)
-  return { error: error?.message }
-}
