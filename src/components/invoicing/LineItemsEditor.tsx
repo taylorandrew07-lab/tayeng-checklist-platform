@@ -73,8 +73,10 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
               <button onClick={() => remove(l.key)} disabled={!!l.job_id} title={l.job_id ? 'Linked to a job — edit on the job instead' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"><X className="h-3.5 w-3.5" /></button>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                <input type="checkbox" checked={l.is_expense} onChange={e => patch(l.key, { is_expense: e.target.checked })} /> Reimbursable expense
+              {/* A vessel's job-linked survey-fee line can't be flipped to an expense
+                  (it would mis-bill it); only standalone/manual lines are toggleable. */}
+              <label className={`flex items-center gap-1.5 text-xs ${l.job_id ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 cursor-pointer'}`} title={l.job_id ? 'Linked to a job — not an expense' : undefined}>
+                <input type="checkbox" checked={l.is_expense} disabled={!!l.job_id} onChange={e => patch(l.key, { is_expense: e.target.checked })} /> Reimbursable expense
               </label>
               {l.is_expense && (l.receipt_path ? (
                 <span className="inline-flex items-center gap-1.5 text-xs">

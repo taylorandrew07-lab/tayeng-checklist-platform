@@ -1860,6 +1860,38 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <div className="p-6 space-y-5">
                   {sections.map(section => {
                     if (!checkConditionalLogic(section.conditional_logic, values)) return null
+                    // Iterate every entry of a repeatable section (instance ids in display
+                    // order) — not just instance 0 — so the Preview matches the report.
+                    const entryIds = section.is_repeatable ? orderFor(section.id) : [0]
+                    const renderPreviewField = (field: TemplateField, inst: number) => {
+                      if (!checkConditionalLogic(field.conditional_logic, values)) return null
+                      const key = instanceKey(field.id, inst)
+                      if (field.field_type === 'photo') {
+                        const count = (fieldPhotos[key] ?? []).length
+                        return (
+                          <div key={key} className="space-y-1">
+                            <p className="text-xs font-medium text-gray-500">
+                              {field.item_number && <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>}
+                              {resolveLabel(field.label)}
+                            </p>
+                            <p className="text-sm text-gray-700">{count} photo{count !== 1 ? 's' : ''} uploaded</p>
+                          </div>
+                        )
+                      }
+                      return (
+                        <FieldRenderer
+                          key={key}
+                          field={field}
+                          resolvedLabel={resolveLabel(field.label)}
+                          value={values[key] ?? ''}
+                          valueArray={arrayValues[key]}
+                          signature={signatures[key]}
+                          allValues={values}
+                          onChange={() => {}}
+                          readOnly
+                        />
+                      )
+                    }
                     return (
                       <div key={section.id} className="card overflow-hidden">
                         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
@@ -1867,32 +1899,14 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           {section.description && <p className="text-xs text-gray-500 mt-0.5">{section.description}</p>}
                         </div>
                         <div className="p-5 space-y-4">
-                          {section.fields.map(field => {
-                            if (!checkConditionalLogic(field.conditional_logic, values)) return null
-                            if (field.field_type === 'photo') {
-                              const count = (fieldPhotos[field.id] ?? []).length
-                              return (
-                                <div key={field.id} className="space-y-1">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    {field.item_number && <span className="text-brand-600 font-semibold mr-1.5">{field.item_number}</span>}
-                                    {resolveLabel(field.label)}
-                                  </p>
-                                  <p className="text-sm text-gray-700">{count} photo{count !== 1 ? 's' : ''} uploaded</p>
-                                </div>
-                              )
-                            }
+                          {entryIds.map((inst, pos) => {
+                            const block = section.fields.map(field => renderPreviewField(field, inst))
+                            if (!section.is_repeatable) return <div key={inst} className="space-y-4">{block}</div>
                             return (
-                              <FieldRenderer
-                                key={field.id}
-                                field={field}
-                                resolvedLabel={resolveLabel(field.label)}
-                                value={values[field.id] ?? ''}
-                                valueArray={arrayValues[field.id]}
-                                signature={signatures[field.id]}
-                                allValues={values}
-                                onChange={() => {}}
-                                readOnly
-                              />
+                              <div key={inst} className="rounded-lg border border-gray-200 overflow-hidden">
+                                <div className="px-3 py-1.5 bg-brand-50 text-xs font-semibold text-brand-700">{section.title} — Entry {pos + 1}</div>
+                                <div className="p-3 space-y-4">{block}</div>
+                              </div>
                             )
                           })}
                         </div>

@@ -54,7 +54,7 @@ export default function ClientPhotoGallery({ voyage, photos }: { voyage: Voyage;
 
       {preview && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreview(null)}>
-          <button className="absolute top-4 right-4 text-white"><X className="h-7 w-7" /></button>
+          <button onClick={() => setPreview(null)} aria-label="Close" className="absolute top-4 right-4 text-white"><X className="h-7 w-7" /></button>
           <div className="max-w-5xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <img src={preview.url} alt={preview.filename} className="max-w-full max-h-[85vh] object-contain" />
             <p className="text-white text-center text-sm mt-2">Hold {preview.holdNumber} – {CAMERA_LABELS[preview.camera]}{preview.actualTime ? ` · ${preview.actualTime} hrs` : ''}</p>
