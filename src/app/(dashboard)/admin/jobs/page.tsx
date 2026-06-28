@@ -8,7 +8,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock } from 'lucide-react'
+import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
@@ -37,6 +37,12 @@ const INV_PILL: Record<string, string> = {
 // Shared look for an editable cell's resting (button) state.
 const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'
 const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-200'
+
+// CSV-escape one value: quote-wrap when it holds a comma/quote/newline; double quotes.
+function csv(v: string | number | null | undefined): string {
+  const s = v == null ? '' : String(v)
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
 
 // ── Inline-edit cells ────────────────────────────────────────────────────────
 function EditableText({ value, onSave, mono, placeholder }: { value: string | null; onSave: (v: string | null) => void; mono?: boolean; placeholder?: string }) {
@@ -257,6 +263,31 @@ export default function JobsTrackerPage() {
   const otCount = rows.filter(r => r.is_overtime).length
   const filtersActive = !!typeFilter || !!surveyorFilter || otOnly
 
+  // Download the currently-shown rows (current filters + sort + month/year) as CSV.
+  function exportCsv() {
+    const headers = ['Report #', 'Type', 'Stage', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    const lines = [headers.join(',')]
+    for (const r of visible) {
+      lines.push([
+        csv(r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.vessel_name), csv(r.title),
+        csv(r.client_name), csv(r.surveyors.join('; ')),
+        csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
+        csv(formatDate(r.scheduled_date ?? r.created_at)),
+        csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.is_overtime ? 'Yes' : ''),
+        csv(r.invoice_number), csv(r.invoice_status), csv(r.invoice_total ?? ''), csv(r.invoice_currency),
+        csv(r.notes),
+      ].join(','))
+    }
+    // BOM + CRLF so Excel opens the UTF-8 cleanly.
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const d = new Date()
+    a.href = url
+    a.download = `jobs-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.csv`
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-5 animate-rise">
       <datalist id="jobTypeOptions">{typeOptions.map(t => <option key={t} value={t} />)}</datalist>
@@ -270,6 +301,9 @@ export default function JobsTrackerPage() {
           {missingCount > 0 && (
             <button onClick={() => setNumberOpen(true)} className="btn-secondary"><Hash className="h-4 w-4" /><span className="hidden sm:inline">Number reports</span></button>
           )}
+          <button onClick={exportCsv} disabled={loading || visible.length === 0} className="btn-secondary" title="Download the shown jobs as a CSV (respects filters)">
+            <Download className="h-4 w-4" /><span className="hidden sm:inline">Export CSV</span>
+          </button>
           <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
         </div>
       </div>
