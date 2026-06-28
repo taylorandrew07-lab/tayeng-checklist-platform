@@ -75,16 +75,21 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type) ?? null
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
     const hourly = rate?.rate_type === 'hourly'
-    // Hourly rate → bill hours × rate: seed qty with the job's billable hours (from
-    // the checklist, else the labour ledger). Fixed / per-unit rates stay qty 1.
-    const qty = hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours : 1
+    const perUnit = rate?.rate_type === 'per_unit'
+    // Hourly rate → bill hours × rate (qty = billable hours). Per-unit rate → bill
+    // qty × rate where qty is the job's billable quantity (e.g. UHT holds/bilges).
+    // Fixed rates stay qty 1.
+    const qty = hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
+      : perUnit && job.billable_quantity && job.billable_quantity > 0 ? job.billable_quantity
+      : 1
     // Second description line spells out the job: its date, the overall work window
     // (time from–to, not each leg) and — when hourly — the hours being billed. The
     // PDF shows the live "qty × unit price" beneath, so the maths stays correct.
     const dateStr = job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null)
     const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
     const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
-    const detail = [dateStr, span, hoursStr].filter(Boolean).join(' · ')
+    const unitStr = perUnit && job.billable_quantity && job.billable_quantity > 0 ? `${job.billable_quantity} ${rate?.unit_label || 'units'}` : null
+    const detail = [dateStr, span, hoursStr, unitStr].filter(Boolean).join(' · ')
     const head = job.job_type ? `${label} — ${job.job_type}` : label
     return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate ? Number(rate.rate) : 0 }
   }, [])
@@ -146,6 +151,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   function hoursHintFor(job: InvoiceableJob): string | null {
     const active = rates.filter(r => r.is_active)
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type)
+    if (rate?.rate_type === 'per_unit') {
+      const unit = rate.unit_label || 'unit'
+      if (!job.billable_quantity || job.billable_quantity <= 0) return `Per-${unit} rate — no count on this job yet; enter the qty manually.`
+      return `${job.billable_quantity} ${unit} × ${money(Number(rate.rate), rate.currency)}/${unit}`
+    }
     if (rate?.rate_type !== 'hourly') return null
     if (!job.billable_hours || job.billable_hours <= 0) return 'Hourly rate — no billable hours found on this job yet; enter the qty (hours) manually.'
     return `${job.billable_hours} billable hrs × ${money(Number(rate.rate), rate.currency)}/hr`

@@ -214,6 +214,10 @@ export interface InvoiceableJob {
    *  field value if present, else the labour ledger (sum of regular_hours). null
    *  when neither is set. The invoice builder seeds an hourly line's qty from it. */
   billable_hours: number | null
+  /** Billable quantity for a per-unit rate: the value of the checklist field flagged
+   *  is_billable_quantity (e.g. UHT "Number of holds" = holds/bilges). The invoice
+   *  builder seeds a per-unit line's qty from it; null when not set. */
+  billable_quantity: number | null
   /** The job's own date from its checklist (first date field), for the invoice line
    *  description. null → the builder falls back to scheduled_date. */
   job_date: string | null
@@ -242,6 +246,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     client_id: j.client_id, client_name: j.client?.name ?? null, template_id: j.template_id ?? null,
     scheduled_date: j.scheduled_date, created_at: j.created_at, workflow_status: j.workflow_status,
     billable_hours: null as number | null,
+    billable_quantity: null as number | null,
     job_date: null as string | null, time_from: null as string | null, time_to: null as string | null,
   })) as InvoiceableJob[]
   if (opts.month) rows = rows.filter(r => (r.scheduled_date ?? r.created_at ?? '').slice(0, 7) === opts.month)
@@ -255,8 +260,9 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     const templateIds = [...new Set(rows.map(r => r.template_id).filter(Boolean))] as string[]
     // In parallel: the billable-hours field(s), the labour ledger, and every date/time
     // field on the jobs' templates (for the line description's date + work window).
-    const [{ data: bhFields }, { data: surv }, { data: dtFields }] = await Promise.all([
+    const [{ data: bhFields }, { data: bqFields }, { data: surv }, { data: dtFields }] = await Promise.all([
       supabase.from('template_fields').select('id').eq('is_billable_hours', true),
+      supabase.from('template_fields').select('id').eq('is_billable_quantity', true),
       supabase.from('job_surveyors').select('job_id, regular_hours').in('job_id', ids),
       templateIds.length
         ? supabase.from('template_fields').select('id, field_type, order_index').in('template_id', templateIds).in('field_type', ['date', 'time'])
@@ -264,13 +270,16 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     ])
     const bhIds = ((bhFields ?? []) as any[]).map(f => f.id)
     const bhSet = new Set<string>(bhIds)
+    const bqIds = ((bqFields ?? []) as any[]).map(f => f.id)
+    const bqSet = new Set<string>(bqIds)
     // field_id → {type, order} for the date/time fields we want values for.
     const dtMeta = new Map<string, { type: string; order: number }>()
     for (const f of (dtFields ?? []) as any[]) dtMeta.set(f.id, { type: f.field_type, order: f.order_index ?? 0 })
 
     // One values query covers billable-hours + date + time fields.
-    const wantedIds = [...new Set([...bhIds, ...dtMeta.keys()])]
+    const wantedIds = [...new Set([...bhIds, ...bqIds, ...dtMeta.keys()])]
     const fromChecklist: Record<string, number> = {}
+    const qtyByJob: Record<string, number> = {}
     const bestDate: Record<string, { order: number; value: string }> = {} // lowest-order date field with a value
     const timesByJob: Record<string, string[]> = {}
     if (wantedIds.length) {
@@ -281,6 +290,10 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
         if (bhSet.has(v.field_id)) {
           const n = parseFloat(v.value ?? '')
           if (Number.isFinite(n) && n > 0) fromChecklist[v.job_id] = n
+        }
+        if (bqSet.has(v.field_id)) {
+          const n = parseFloat(v.value ?? '')
+          if (Number.isFinite(n) && n > 0) qtyByJob[v.job_id] = n
         }
         const meta = dtMeta.get(v.field_id)
         if (meta && val) {
@@ -299,6 +312,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     }
     rows.forEach(r => {
       r.billable_hours = fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null)
+      r.billable_quantity = qtyByJob[r.id] ?? null
       r.job_date = bestDate[r.id]?.value ?? null
       const times = (timesByJob[r.id] ?? []).slice().sort()
       r.time_from = times[0] ?? null
