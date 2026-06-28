@@ -73,6 +73,7 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
   async function persistHours(otValue: number, regValue = Number(reg) || 0): Promise<boolean> {
     const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: regValue, overtime_hours: otValue })
     if (h.error) { toast.error(h.error); return false }
+    savedRef.current = { reg: regValue, ot: otValue }
     return true
   }
 
@@ -87,6 +88,17 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
     setSaving(false)
     if (err) { if (err !== 'x') toast.error(err); return }
     toast.success('Hours saved'); onSaved()
+  }
+
+  // Auto-save the hours when a field loses focus, so the value sticks without having
+  // to find the row's Save button (mirrors the app's auto-save elsewhere). Tracks the
+  // last-saved values in a ref to avoid redundant writes on every blur.
+  const savedRef = useRef({ reg: Number(row.regular_hours) || 0, ot: Number(row.overtime_hours) || 0 })
+  async function autoSaveHours() {
+    const regVal = Number(reg) || 0
+    const otVal = otFromLog ? otTotal : Number(ot) || 0
+    if (regVal === savedRef.current.reg && otVal === savedRef.current.ot) return
+    if (await persistHours(otVal, regVal)) toast.success('Hours saved')
   }
 
   async function applyChecklistHours() {
@@ -140,13 +152,13 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
               <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
             )}
           </label>
-          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
+          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} onBlur={autoSaveHours} className={numCls} />
         </div>
         <div>
           <label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
-            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
+            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} onBlur={autoSaveHours} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
         </div>
         {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
