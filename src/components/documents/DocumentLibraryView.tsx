@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Folder, FolderPlus, Loader2, Search, ChevronRight, FileText } from 'lucide-react'
-import { listVessels, createVessel, searchDocuments, signedUrl, formatBytes, type Vessel, type DocumentHit } from '@/lib/documents/api'
+import { listVesselFolders, createVessel, searchDocuments, signedUrl, formatBytes, type VesselFolder, type DocumentHit } from '@/lib/documents/api'
 
 export default function DocumentLibraryView() {
   const pathname = usePathname()
   const base = pathname.startsWith('/admin') ? '/admin/documents' : '/surveyor/documents'
 
-  const [vessels, setVessels] = useState<Vessel[]>([])
+  const [vessels, setVessels] = useState<VesselFolder[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [docHits, setDocHits] = useState<DocumentHit[]>([])
@@ -19,7 +19,7 @@ export default function DocumentLibraryView() {
   const [error, setError] = useState<string | null>(null)
 
   async function reload() {
-    setVessels(await listVessels())
+    setVessels(await listVesselFolders())
     setLoading(false)
   }
   useEffect(() => { reload() }, [])

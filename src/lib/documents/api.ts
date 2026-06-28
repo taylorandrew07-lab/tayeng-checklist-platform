@@ -8,7 +8,7 @@ import { formatBytes, sanitizeStorageName } from '@/lib/utils'
 // formatBytes from this module's public surface.
 export { formatBytes }
 
-export interface Vessel {
+export interface VesselFolder {
   id: string
   name: string
   created_at?: string
@@ -35,7 +35,7 @@ export const DOC_CATEGORIES = ['Sounding Tables', 'Hydrostatic Tables', 'General
 const BUCKET = 'vessel-documents'
 
 // --- Vessels (folders) ---
-export async function listVessels(): Promise<Vessel[]> {
+export async function listVesselFolders(): Promise<VesselFolder[]> {
   const supabase = createClient()
   const [{ data: vessels }, { data: docs }] = await Promise.all([
     supabase.from('vessels').select('id, name, created_at').order('name'),
@@ -46,7 +46,7 @@ export async function listVessels(): Promise<Vessel[]> {
   return (vessels ?? []).map(v => ({ ...v, docCount: counts.get(v.id) ?? 0 }))
 }
 
-export async function getVessel(id: string): Promise<Vessel | null> {
+export async function getVessel(id: string): Promise<VesselFolder | null> {
   const { data } = await createClient().from('vessels').select('id, name, created_at').eq('id', id).single()
   return data ?? null
 }
@@ -63,7 +63,7 @@ export async function renameVessel(id: string, name: string): Promise<{ error?: 
   return { error: error?.message }
 }
 
-export async function deleteVessel(id: string): Promise<{ error?: string }> {
+export async function deleteVesselFolder(id: string): Promise<{ error?: string }> {
   const supabase = createClient()
   const docs = await listDocuments(id)
   const paths = docs.map(d => d.storage_path).filter(Boolean)

@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Upload, Download, Trash2, FileText, Pencil, Search } from 'lucide-react'
 import {
-  getVessel, listDocuments, uploadDocument, deleteDocument, renameVessel, deleteVessel,
-  signedUrl, formatBytes, DOC_CATEGORIES, type Vessel, type VesselDocument,
+  getVessel, listDocuments, uploadDocument, deleteDocument, renameVessel, deleteVesselFolder,
+  signedUrl, formatBytes, DOC_CATEGORIES, type VesselFolder, type VesselDocument,
 } from '@/lib/documents/api'
 import { withTimeout } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 
 export default function VesselFolderView({ id, basePath }: { id: string; basePath: string }) {
-  const [vessel, setVessel] = useState<Vessel | null>(null)
+  const [vessel, setVessel] = useState<VesselFolder | null>(null)
   const [docs, setDocs] = useState<VesselDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -73,7 +73,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
 
   async function removeFolder() {
     if (!(await confirmDialog({ title: 'Delete vessel folder', message: `Delete the vessel folder "${vessel?.name}" and ALL its documents? This cannot be undone.`, danger: true, confirmLabel: 'Delete folder' }))) return
-    await deleteVessel(id)
+    await deleteVesselFolder(id)
     window.location.href = basePath
   }
 
