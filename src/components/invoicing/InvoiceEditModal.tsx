@@ -9,11 +9,11 @@ import { Loader2, Check } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import { CURRENCIES } from '@/lib/jobs/tracker'
-import { getInvoiceForEdit, updateInvoice, type TaxDraft } from '@/lib/jobs/invoicing'
+import { getInvoiceForEdit, updateInvoice, listBankAccounts, type TaxDraft } from '@/lib/jobs/invoicing'
 import LineItemsEditor, { type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
 import { useAutoSave } from '@/lib/useAutoSave'
-import type { Currency } from '@/lib/types/database'
+import type { Currency, BankAccount } from '@/lib/types/database'
 
 export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invoiceId: string; onClose: () => void; onSaved: () => void }) {
   const [loading, setLoading] = useState(true)
@@ -25,6 +25,8 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
   const [reference, setReference] = useState('')
   const [description, setDescription] = useState('')
   const [bankDetails, setBankDetails] = useState('')
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccountId, setBankAccountId] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
@@ -56,6 +58,14 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
       setLoading(false)
     })
   }, [invoiceId, onClose])
+
+  // Saved bank accounts for the picker (active only) — same as the create flow.
+  useEffect(() => { listBankAccounts(true).then(setBankAccounts) }, [])
+  function pickBank(id: string) {
+    setBankAccountId(id)
+    const a = bankAccounts.find(x => x.id === id)
+    if (a) setBankDetails(a.details)
+  }
 
   const drafts = lines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price }))
 
@@ -133,7 +143,16 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
 
           <TotalsSummary lines={drafts} taxes={taxes} currency={currency} />
 
-          <div><label className="text-[11px] text-gray-400">Bank details</label><textarea value={bankDetails} onChange={e => setBankDetails(e.target.value)} rows={2} className="input-base text-sm resize-y" /></div>
+          <div>
+            <label className="text-[11px] text-gray-400">Bank account <span className="text-gray-300">— shown on the invoice</span></label>
+            {bankAccounts.length > 0 && (
+              <select value={bankAccountId} onChange={e => pickBank(e.target.value)} className="input-base text-sm">
+                <option value="">Custom / keep current</option>
+                {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
+              </select>
+            )}
+            <textarea value={bankDetails} onChange={e => { setBankDetails(e.target.value); setBankAccountId('') }} rows={2} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
+          </div>
           <div><label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base text-sm resize-none" /></div>
         </div>
       )}
