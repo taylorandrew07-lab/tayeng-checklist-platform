@@ -330,6 +330,9 @@ export interface Job {
   surveyor_name: string | null
   created_by: string
   scheduled_date: string | null
+  // End of a multi-day job (migration 111). scheduled_date is the start ("from"),
+  // end_date is the "to"; null = single-day job.
+  end_date: string | null
   started_at: string | null
   submitted_at: string | null
   completed_at: string | null
@@ -371,6 +374,20 @@ export interface JobSurveyor {
   regular_hours: number; overtime_hours: number
   pay_rate: number | null; overtime_rate: number | null; pay_currency: Currency
   regular_pay: number; overtime_pay: number
+}
+
+// One overtime time-entry for a surveyor on a job (migration 111). entry_date + a
+// start/end time and the computed hours; entries roll up into JobSurveyor.overtime_hours.
+export interface JobSurveyorOvertime {
+  id: string
+  job_surveyor_id: string
+  entry_date: string | null
+  start_time: string | null
+  end_time: string | null
+  hours: number
+  note: string | null
+  created_by: string | null
+  created_at: string
 }
 
 export interface ClientRate {
