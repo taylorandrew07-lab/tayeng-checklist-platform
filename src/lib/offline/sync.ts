@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getDraft, putDraft, deleteDraft, getPhotosForJob, putPhoto, deletePhoto } from './db'
 import { instanceKey, parseInstanceKey } from './instanceKeys'
+import { findOrCreateVessel } from '@/lib/vessels/api'
 
 export type SyncResult =
   | { ok: true; submitted: boolean; nothing?: boolean }
@@ -41,16 +42,22 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // UUID, so a retried/interrupted flush never duplicates it. RLS requires the
     // template's allow_surveyor_start — same as the online create path.
     const j: any = draft.job ?? {}
+    // Link to the vessels directory (idempotent ilike match → create). We're online
+    // here (this is the sync), so every synced job lands linked, not just admin ones.
+    const vesselId = j.vessel_id ?? (j.vessel_name ? await findOrCreateVessel(j.vessel_name) : null)
     const { error: createErr } = await supabase.from('jobs').upsert({
       id: jobId,
       title: j.title,
       template_id: j.template_id,
       vessel_name: j.vessel_name ?? null,
+      vessel_id: vesselId,
       surveyor_name: j.surveyor_name ?? null,
       client_id: j.client_id ?? null,
       created_by: user.id,
       assigned_to: user.id,
       workflow_status: 'in_progress',
+      notes: j.notes ?? null,
+      scheduled_date: j.scheduled_date ?? null,
       started_at: j.started_at ?? new Date().toISOString(),
     }, { onConflict: 'id' })
     if (createErr) {

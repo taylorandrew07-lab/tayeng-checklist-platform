@@ -10,10 +10,15 @@ import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { titleCaseVesselName } from '@/lib/utils'
 
-function formatDateDMY(date: Date): string {
-  const d = String(date.getDate()).padStart(2, '0')
+// Local yyyy-mm-dd for the <input type=date> default (avoids the UTC off-by-one).
+function isoDateLocal(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0')
-  return `${d}-${m}-${date.getFullYear()}`
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${m}-${d}`
+}
+function dmyFromISO(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}-${m}-${y}`
 }
 
 export default function SurveyorNewChecklistPage() {
@@ -30,13 +35,15 @@ export default function SurveyorNewChecklistPage() {
   const [templateId, setTemplateId] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [vesselName, setVesselName] = useState('')
+  const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
   const [clientId, setClientId] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
+  const [notes, setNotes] = useState('')
 
-  const today = formatDateDMY(new Date())
   const autoTitle = vesselName.trim() && selectedTemplate
-    ? `M.V. ${titleCaseVesselName(vesselName)} - ${selectedTemplate.name} - ${today}`
+    ? `M.V. ${titleCaseVesselName(vesselName)} - ${selectedTemplate.name} - ${dmyFromISO(scheduledDate)}`
     : ''
 
   useEffect(() => {
@@ -62,6 +69,14 @@ export default function SurveyorNewChecklistPage() {
       setClients(d.clients)
       setFromCache(d.fromCache)
       setLoading(false)
+      // Vessel datalist — online only; offline you just type (still linked on sync).
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        try {
+          const supabase = createClient()
+          const { data: vsl } = await supabase.from('vessels').select('id, name').eq('is_active', true).order('name')
+          if (vsl) setVessels(vsl as { id: string; name: string }[])
+        } catch { /* offline / not permitted — datalist stays empty */ }
+      }
     }
     load()
     return () => { window.removeEventListener('online', onStatus); window.removeEventListener('offline', onStatus) }
@@ -79,6 +94,7 @@ export default function SurveyorNewChecklistPage() {
   async function handleCreate() {
     if (!templateId || !selectedTemplate) return setError('Please select a template')
     if (!vesselName.trim()) return setError('Vessel name is required')
+    if (!scheduledDate) return setError('Please choose a survey date')
     const finalSurveyor = myName.trim()
     if (!finalSurveyor) return setError('Could not read your name — reconnect once so your profile loads.')
 
@@ -100,12 +116,13 @@ export default function SurveyorNewChecklistPage() {
         finalClientId = null
       }
       const id = crypto.randomUUID()
-      const now = new Date().toISOString()
+      const startedAt = new Date(`${scheduledDate}T12:00:00`).toISOString()
       const job = {
         id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
         vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
-        workflow_status: 'in_progress', created_by: userId, assigned_to: userId, started_at: now, job_number: null,
+        workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
+        started_at: startedAt, scheduled_date: scheduledDate, notes: notes.trim() || null, job_number: null,
       }
 
       // Create the job locally first (works with no signal). It syncs — creating
@@ -171,8 +188,16 @@ export default function SurveyorNewChecklistPage() {
           <label className="label-base">Vessel Name *</label>
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
-            <input type="text" value={vesselName} onChange={(e) => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
+            <input type="text" list="vesselList" value={vesselName} onChange={(e) => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
+            <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
+          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s linked to the Vessels directory automatically.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Survey date *</label>
+          <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="input-base" />
+          <p className="text-xs text-gray-400 mt-1">Sets the checklist name and the job&apos;s date. Defaults to today.</p>
         </div>
 
         {autoTitle && (
@@ -201,6 +226,11 @@ export default function SurveyorNewChecklistPage() {
           <label className="label-base">Surveyor</label>
           <div className="input-base bg-gray-50 text-gray-700 flex items-center">{myName || 'Your account'}</div>
           <p className="text-xs text-gray-400 mt-1">This job is created under your account.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="input-base resize-y" placeholder="e.g. call number, special instructions…" />
         </div>
 
         {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
