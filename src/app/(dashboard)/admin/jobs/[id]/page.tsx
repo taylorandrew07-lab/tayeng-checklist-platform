@@ -80,7 +80,15 @@ export default function AdminChecklistDetailPage() {
     surveyor_id: '',
     client_id: '',
     scheduled_date: '',
+    job_stage: '',
+    notes: '',
   })
+  // Conditional Stage qualifier — only the broad survey types carry one.
+  const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
+    'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
+    'Cargo Survey': { label: 'Direction', options: ['Loaded', 'Discharge'] },
+    'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
+  }
 
   useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
   // Restore the tab from the URL on first mount (mirrors setTab above).
@@ -129,6 +137,8 @@ export default function AdminChecklistDetailPage() {
       surveyor_id: surveyorId,
       client_id: jobData.client_id ?? '',
       scheduled_date: jobData.scheduled_date ?? '',
+      job_stage: jobData.job_stage ?? '',
+      notes: jobData.notes ?? '',
     })
     setLoading(false)
   }
@@ -160,6 +170,8 @@ export default function AdminChecklistDetailPage() {
           assigned_to: assignedToVal,
           client_id: editForm.client_id || null,
           scheduled_date: editForm.scheduled_date || null,
+          job_stage: editForm.job_stage || null,
+          notes: editForm.notes || null,
         }).eq('id', jobId).select('id'),
         15_000, 'Saving job'
       )
@@ -241,6 +253,7 @@ export default function AdminChecklistDetailPage() {
           <p className="text-gray-500 mt-0.5 text-sm">
             {job.report_number && <span className="font-medium text-gray-700 tnum">{job.report_number}</span>}
             {job.job_type ? `${job.report_number ? ' · ' : ''}${job.job_type}` : ''}
+            {job.job_stage ? ` · ${job.job_stage}` : ''}
             {job.template?.name ? ` · ${job.template.name}` : ''}
           </p>
         </div>
@@ -332,6 +345,19 @@ export default function AdminChecklistDetailPage() {
                     <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
                     <p className="text-[11px] text-gray-400 mt-1">Sets where the job sits on the calendar.</p>
                   </div>
+                  {STAGE_OPTIONS[job.job_type ?? ''] && (
+                    <div>
+                      <label className="label-base">{STAGE_OPTIONS[job.job_type ?? ''].label}</label>
+                      <select value={editForm.job_stage} onChange={(e) => setEditForm(p => ({ ...p, job_stage: e.target.value }))} className="input-base">
+                        <option value="">— None —</option>
+                        {STAGE_OPTIONS[job.job_type ?? ''].options.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="label-base">Notes</label>
+                  <textarea value={editForm.notes} onChange={(e) => setEditForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="input-base resize-y" placeholder="e.g. call number, gang count, special instructions…" />
                 </div>
               </div>
             ) : (
@@ -360,6 +386,12 @@ export default function AdminChecklistDetailPage() {
                   <dt className="text-xs font-medium text-gray-500">Template</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.template?.name}</dd>
                 </div>
+                {job.job_stage && (
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">{STAGE_OPTIONS[job.job_type ?? '']?.label ?? 'Stage'}</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{job.job_stage}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Created by</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.creator?.full_name}</dd>
@@ -376,6 +408,12 @@ export default function AdminChecklistDetailPage() {
                   <dt className="text-xs font-medium text-gray-500">Submitted</dt>
                   <dd className="mt-1 text-sm text-gray-900">{formatDateTime(job.submitted_at)}</dd>
                 </div>
+                {job.notes && (
+                  <div className="col-span-2">
+                    <dt className="text-xs font-medium text-gray-500">Notes</dt>
+                    <dd className="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{job.notes}</dd>
+                  </div>
+                )}
               </dl>
             )}
           </div>

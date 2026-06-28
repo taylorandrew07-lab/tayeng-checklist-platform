@@ -349,7 +349,10 @@ export default function JobsTrackerPage() {
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
                   <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
-                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[120px]">
+                    <EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} />
+                    {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.job_stage}</span>}
+                  </td>
                   <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /></td>
                   <td className="px-3 py-1.5">
                     {r.client_name
