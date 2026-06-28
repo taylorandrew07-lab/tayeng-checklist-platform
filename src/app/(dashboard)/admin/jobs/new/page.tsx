@@ -11,10 +11,24 @@ import { findOrCreateVessel } from '@/lib/vessels/api'
 import { titleCaseVesselName } from '@/lib/utils'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
-function formatDateDMY(date: Date): string {
-  const d = String(date.getDate()).padStart(2, '0')
+// Local yyyy-mm-dd (for the <input type=date> default — avoids the UTC off-by-one
+// that toISOString() causes around midnight in Trinidad, UTC-4).
+function isoDateLocal(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0')
-  return `${d}-${m}-${date.getFullYear()}`
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${m}-${d}`
+}
+function dmyFromISO(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}-${m}-${y}`
+}
+
+// Conditional Stage picker: the broad survey types carry a qualifier (jobs.job_stage).
+// Other types show no picker.
+const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
+  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
+  'Cargo Survey': { label: 'Direction', options: ['Loaded', 'Discharge'] },
+  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
 }
 
 export default function NewJobPage() {
@@ -38,11 +52,15 @@ export default function NewJobPage() {
   const [showNewClient, setShowNewClient] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [isOvertime, setIsOvertime] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
+  const [jobStage, setJobStage] = useState('')
+  const [notes, setNotes] = useState('')
 
-  const today = formatDateDMY(new Date())
   const selectedTemplate = templates.find(t => t.id === templateId) ?? null
   const label = selectedTemplate?.name ?? jobType
-  const autoTitle = vesselName.trim() && label ? `M.V. ${titleCaseVesselName(vesselName)} - ${label} - ${today}` : ''
+  const stageConfig = STAGE_OPTIONS[jobType] ?? null
+  const labelWithStage = label && jobStage ? `${label} (${jobStage})` : label
+  const autoTitle = vesselName.trim() && label ? `M.V. ${titleCaseVesselName(vesselName)} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}` : ''
 
   useEffect(() => {
     async function loadData() {
@@ -81,6 +99,7 @@ export default function NewJobPage() {
   async function handleSave() {
     if (!jobType) { setError('Please choose a job type'); return }
     if (!vesselName.trim()) { setError('Vessel name is required'); return }
+    if (!scheduledDate) { setError('Please choose a survey date'); return }
     setSaving(true); setError(null)
 
     const supabase = createClient()
@@ -97,7 +116,7 @@ export default function NewJobPage() {
     const ids = Array.from(picked)
     const primary = surveyors.find(s => s.id === ids[0])
     const vessel = titleCaseVesselName(vesselName)
-    const title = autoTitle || `M.V. ${vessel} - ${label} - ${today}`
+    const title = autoTitle || `M.V. ${vessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
 
     // Link to the vessels directory (create on first use), keeping vessel_name as snapshot.
     const vesselId = await findOrCreateVessel(vessel)
@@ -114,7 +133,10 @@ export default function NewJobPage() {
       assigned_to: primary?.id ?? null,
       workflow_status: ids.length ? 'assigned' : 'new',
       is_overtime: isOvertime,
-      started_at: new Date().toISOString(),
+      notes: notes.trim() || null,
+      job_stage: jobStage || null,
+      scheduled_date: scheduledDate,
+      started_at: new Date(`${scheduledDate}T12:00:00`).toISOString(),
     }).select().single()
 
     if (jobErr || !job) { setError(jobErr?.message ?? 'Failed to create job'); setSaving(false); return }
@@ -148,7 +170,7 @@ export default function NewJobPage() {
           <label className="label-base">Job type *</label>
           <select
             value={showNewJobType ? '__new__' : jobType}
-            onChange={e => { if (e.target.value === '__new__') { setShowNewJobType(true); setJobType('') } else { setShowNewJobType(false); setJobType(e.target.value) } }}
+            onChange={e => { setJobStage(''); if (e.target.value === '__new__') { setShowNewJobType(true); setJobType('') } else { setShowNewJobType(false); setJobType(e.target.value) } }}
             className="input-base"
           >
             <option value="">Select a job type…</option>
@@ -172,6 +194,16 @@ export default function NewJobPage() {
           <p className="text-xs text-gray-400 mt-1">Add one here, or manage all job types in <Link href="/admin/settings" className="underline hover:text-gray-600">Settings</Link>.</p>
         </div>
 
+        {stageConfig && (
+          <div>
+            <label className="label-base">{stageConfig.label}</label>
+            <select value={jobStage} onChange={e => setJobStage(e.target.value)} className="input-base">
+              <option value="">Select {stageConfig.label.toLowerCase()}…</option>
+              {stageConfig.options.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        )}
+
         <div>
           <label className="label-base">Checklist template <span className="text-gray-400 font-normal">(optional — leave empty for a report-only job)</span></label>
           <select value={templateId} onChange={e => setTemplateId(e.target.value)} className="input-base">
@@ -188,6 +220,12 @@ export default function NewJobPage() {
             <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
           <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Survey date *</label>
+          <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="input-base" />
+          <p className="text-xs text-gray-400 mt-1">Drives the job name, the report date and the start date. Defaults to today — change it to back-date a job.</p>
         </div>
 
         <label className="flex items-center gap-2.5 cursor-pointer">
@@ -234,6 +272,11 @@ export default function NewJobPage() {
             </div>
           )}
           <p className="text-xs text-gray-400 mt-1">You can assign more, or change them, on the job afterwards.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base resize-y" placeholder="e.g. call number, gang count, special instructions…" />
         </div>
       </div>
 
