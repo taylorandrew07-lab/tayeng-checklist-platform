@@ -37,7 +37,12 @@ export default function OfflineSyncManager() {
       running = true
       try {
         const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } } as any))
+        // Read the session LOCALLY (getSession, no network) rather than getUser (a
+        // network token validation) — this runs on mount/focus/online/60s and must
+        // stay offline-first. The reachable() probe below gates the actual push, and
+        // syncDraft fails safely if the token is genuinely stale.
+        const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } } as any))
+        const user = session?.user
         if (!user || cancelled) return
         const pending = await getPendingDrafts(user.id).catch(() => [])
         if (!pending.length) { backoff = 0; return }

@@ -986,64 +986,78 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     // Import photos via the device's file picker so a plugged-in USB/OTG drive (where
     // the borescope saves photos) is reachable — see lib/files/pickImageFiles.
-    function pickFromFiles(onFile: (file: File) => Promise<void> | void) {
-      pickImageFiles(async (images, rejected) => {
-        for (const f of images) await onFile(f)
+    function pickFromFiles(onFiles: (files: File[]) => void) {
+      pickImageFiles((images, rejected) => {
+        if (images.length) onFiles(images)
         if (rejected.length) setSaveError(`Skipped non-image file${rejected.length > 1 ? 's' : ''}: ${rejected.join(', ')}`)
       })
     }
 
-    async function uploadPhotoForField(fieldId: string, instance: number, file: File) {
+    // Upload one or more photos to a field/instance in a single pass: authenticate
+    // ONCE, upload each file (a per-file failure is reported but doesn't drop the
+    // others), then ONE batch insert + ONE re-select/sign/cache — instead of the old
+    // per-file N+1 (re-auth + re-select every file) that was costly on flaky wifi.
+    async function uploadPhotosForField(fieldId: string, instance: number, files: File[]) {
+      if (!files.length) return
       const key = instanceKey(fieldId, instance)
       setUploadingField(key)
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setUploadingField(null); return }
-
-      const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${file.name}`
-      let upErr: any = null
-      try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
-      catch { setSaveError('Photo upload timed out — check your connection and try the photo again.'); setUploadingField(null); return }
-      if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
-
-      const { error: dbErr } = await supabase.from('job_photos').insert({
-        job_id: jobId, field_id: fieldId, instance, storage_path: path,
-        filename: file.name, uploaded_by: user.id,
-      })
-      if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
-
-      const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
-      const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
-      setFieldPhotos(nextFp)
-      void signPhotos(fresh ?? [])
-      void cacheServerPhotos(nextFp, generalPhotos)
-      setUploadingField(null)
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
+        const rows: any[] = []
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${i}_${file.name}`
+          let upErr: any = null
+          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
+          catch { setSaveError('A photo upload timed out — check your connection and try again.'); continue }
+          if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); continue }
+          rows.push({ job_id: jobId, field_id: fieldId, instance, storage_path: path, filename: file.name, uploaded_by: user.id })
+        }
+        if (rows.length) {
+          const { error: dbErr } = await supabase.from('job_photos').insert(rows)
+          if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); return }
+        }
+        const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
+        const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
+        setFieldPhotos(nextFp)
+        void signPhotos(fresh ?? [])
+        void cacheServerPhotos(nextFp, generalPhotos)
+      } finally {
+        setUploadingField(null)
+      }
     }
 
-    async function uploadGeneralPhoto(file: File) {
+    async function uploadGeneralPhotos(files: File[]) {
+      if (!files.length) return
       setUploadingField('general')
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setUploadingField(null); return }
-
-      const path = `${jobId}/general/${Date.now()}_${file.name}`
-      let upErr: any = null
-      try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
-      catch { setSaveError('Photo upload timed out — check your connection and try the photo again.'); setUploadingField(null); return }
-      if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); setUploadingField(null); return }
-
-      const { error: dbErr } = await supabase.from('job_photos').insert({
-        job_id: jobId, field_id: null, storage_path: path,
-        filename: file.name, uploaded_by: user.id,
-      })
-      if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); setUploadingField(null); return }
-
-      const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
-      const nextGp = fresh ?? []
-      setGeneralPhotos(nextGp)
-      void signPhotos(nextGp)
-      void cacheServerPhotos(fieldPhotos, nextGp)
-      setUploadingField(null)
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
+        const rows: any[] = []
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const path = `${jobId}/general/${Date.now()}_${i}_${file.name}`
+          let upErr: any = null
+          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
+          catch { setSaveError('A photo upload timed out — check your connection and try again.'); continue }
+          if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); continue }
+          rows.push({ job_id: jobId, field_id: null, storage_path: path, filename: file.name, uploaded_by: user.id })
+        }
+        if (rows.length) {
+          const { error: dbErr } = await supabase.from('job_photos').insert(rows)
+          if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); return }
+        }
+        const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
+        const nextGp = fresh ?? []
+        setGeneralPhotos(nextGp)
+        void signPhotos(nextGp)
+        void cacheServerPhotos(fieldPhotos, nextGp)
+      } finally {
+        setUploadingField(null)
+      }
     }
 
     async function deletePhoto(photoId: string, storagePath: string, fieldKey?: string | null) {
@@ -1395,7 +1409,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         e.preventDefault()
                         const fs = e.dataTransfer?.files
                         if (!fs || !fs.length) return
-                        for (const f of Array.from(fs)) await uploadPhotoForField(field.id, inst, f)
+                        await uploadPhotosForField(field.id, inst, Array.from(fs))
                       }}
                     >
                       <input
@@ -1407,7 +1421,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         onChange={async e => {
                           const files = e.target.files
                           if (!files) return
-                          for (const f of Array.from(files)) await uploadPhotoForField(field.id, inst, f)
+                          await uploadPhotosForField(field.id, inst, Array.from(files))
                           if (fieldPhotoRefs.current[key]) fieldPhotoRefs.current[key]!.value = ''
                         }}
                       />
@@ -1453,7 +1467,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       )}
                       {/* Reaches a plugged-in USB/OTG drive (where the borescope saves
                           photos) — the camera/gallery picker doesn't show it. */}
-                      <button type="button" onClick={() => pickFromFiles(f => uploadPhotoForField(field.id, inst, f))} disabled={uploading} className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
+                      <button type="button" onClick={() => pickFromFiles(files => uploadPhotosForField(field.id, inst, files))} disabled={uploading} className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
                         <Usb className="h-3.5 w-3.5" /> Import from Files / USB
                       </button>
                     </div>
@@ -1616,7 +1630,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               e.preventDefault()
               const fs = e.dataTransfer?.files
               if (!fs || !fs.length) return
-              for (const f of Array.from(fs)) await uploadGeneralPhoto(f)
+              await uploadGeneralPhotos(Array.from(fs))
             }}
           >
             <div className="flex items-center justify-between mb-3">
@@ -1641,7 +1655,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 onChange={async e => {
                   const files = e.target.files
                   if (!files) return
-                  for (const f of Array.from(files)) await uploadGeneralPhoto(f)
+                  await uploadGeneralPhotos(Array.from(files))
                   if (generalPhotoRef.current) generalPhotoRef.current.value = ''
                 }}
               />
@@ -1703,7 +1717,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               </div>
             )}
             {/* Reaches a plugged-in USB/OTG drive for additional photos too. */}
-            <button type="button" onClick={() => pickFromFiles(f => uploadGeneralPhoto(f))} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
+            <button type="button" onClick={() => pickFromFiles(files => uploadGeneralPhotos(files))} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
               <Usb className="h-3.5 w-3.5" /> Import from Files / USB
             </button>
           </div>
