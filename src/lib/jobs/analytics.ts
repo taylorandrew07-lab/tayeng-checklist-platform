@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { isOverdue } from '@/lib/jobs/invoicing'
 import { aggregateBilling, aggregatePipeline } from '@/lib/jobs/metrics'
+import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface MoneyByCurrency { currency: string; amount: number }
@@ -21,7 +22,71 @@ export interface Analytics {
   overtimeHours: number
 }
 
+// Map the metrics_labour RPC rows to the Analytics labour shape (shared by both paths).
+function mapLabour(rows: any[]): Analytics['labour'] {
+  return (rows ?? [])
+    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: Number(l.jobs), regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours), pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, amount]) => ({ currency, amount: Number(amount) })) }))
+    .sort((a, b) => b.jobs - a.jobs)
+}
+
+/**
+ * Company-wide analytics. Fast path: server-side aggregation via RPCs
+ * (metrics_analytics for job KPIs/by-type/by-month/top-clients, plus the proven
+ * metrics_pipeline / metrics_billing / metrics_labour) so whole tables never reach
+ * the browser. Falls back to the in-browser computation (getAnalyticsClient) if the
+ * RPC is unavailable or errors — so the dashboard never breaks.
+ */
 export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
+  const supabase = createClient()
+  try {
+    const [aRes, pipeRes, billRes, labourRes] = await Promise.all([
+      supabase.rpc('metrics_analytics', { p_months_back: monthsBack }),
+      supabase.rpc('metrics_pipeline'),
+      supabase.rpc('metrics_billing'),
+      supabase.rpc('metrics_labour'),
+    ])
+    const a = aRes.data as any
+    if (aRes.error || !a || !a.kpis) throw aRes.error ?? new Error('analytics rpc empty')
+
+    // byStatus in WORKFLOW_ORDER (identical to aggregatePipeline), from the pipeline RPC.
+    const statusCount = new Map<string, number>()
+    for (const r of (pipeRes.data ?? []) as any[]) statusCount.set(r.workflow_status, Number(r.count))
+    const byStatus = WORKFLOW_ORDER.map(status => ({ status, count: statusCount.get(status) ?? 0 }))
+
+    // billing per currency (proven definition), sorted by outstanding desc.
+    const billing: CurrencyBilling[] = ((billRes.data ?? []) as any[])
+      .map(b => ({ currency: b.currency, invoiced: Number(b.invoiced), paid: Number(b.paid), outstanding: Number(b.outstanding), overdue: Number(b.overdue) }))
+      .sort((x, y) => y.outstanding - x.outstanding)
+
+    // byMonth: build the same N-month skeleton + labels as before, fill from RPC counts.
+    const now = new Date()
+    const monthCounts = new Map<string, number>()
+    for (const r of (a.byMonth ?? []) as any[]) monthCounts.set(String(r.ym), Number(r.count))
+    const byMonth: { label: string; count: number }[] = []
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      byMonth.push({ label: `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getFullYear()).slice(-2)}`, count: monthCounts.get(key) ?? 0 })
+    }
+
+    const labour = mapLabour((labourRes.data ?? []) as any[])
+    return {
+      kpis: a.kpis,
+      byStatus,
+      byType: (a.byType ?? []) as { type: string; count: number }[],
+      byMonth,
+      topClients: (a.topClients ?? []) as Analytics['topClients'],
+      billing,
+      labour,
+      overtimeHours: labour.reduce((s, l) => s + l.overtime_hours, 0),
+    }
+  } catch {
+    return getAnalyticsClient(monthsBack)
+  }
+}
+
+// In-browser fallback (the original implementation): used only if the RPC path fails.
+async function getAnalyticsClient(monthsBack = 12): Promise<Analytics> {
   const supabase = createClient()
   const [{ data: jobs }, labourRes, { data: invoices }] = await Promise.all([
     supabase.from('jobs').select('id, job_type, client_id, workflow_status, is_overtime, scheduled_date, created_at, client:clients(name)'),
