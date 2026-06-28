@@ -30,7 +30,7 @@ export default function AnalyticsPage() {
             <Kpi label="This month" value={data.kpis.thisMonth} icon={CalendarDays} />
             <Kpi label="Awaiting invoice" value={data.kpis.awaitingInvoice} icon={Receipt} tone="amber" href="/admin/invoicing" />
             <Kpi label="Overdue" value={data.kpis.overdueCount} icon={AlertTriangle} tone={data.kpis.overdueCount > 0 ? 'red' : 'gray'} href="/admin/invoicing" />
-            <Kpi label="Overtime jobs" value={data.kpis.otJobs} icon={Clock} tone="amber" />
+            <Kpi label="Overtime jobs" value={data.kpis.otJobs} icon={Clock} tone="amber" href="/admin/overtime" />
           </div>
 
           {/* Pipeline + types */}
@@ -104,7 +104,10 @@ export default function AnalyticsPage() {
 
           {/* Labour & overtime */}
           <section>
-            <h2 className="section-title mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime <span className="text-xs font-normal text-gray-400">· {data.overtimeHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} OT hrs total</span></h2>
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <h2 className="section-title flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime <span className="text-xs font-normal text-gray-400">· {data.overtimeHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} OT hrs total</span></h2>
+              <Link href="/admin/overtime" className="text-sm text-brand-700 hover:underline whitespace-nowrap">Overtime by month →</Link>
+            </div>
             {data.labour.length === 0 ? (
               <div className="card p-8 text-center text-sm text-gray-400">No hours logged yet.</div>
             ) : (
