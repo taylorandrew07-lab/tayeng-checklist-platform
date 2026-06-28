@@ -507,6 +507,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               vals[field.id] = jobData.surveyor_name
             }
           }
+          // A client_select field defaults to the job's client, and the survey Date
+          // field to the job's scheduled date — both stay editable. This stops the
+          // surveyor re-entering what the job already knows (the everyday double entry).
+          if (field.field_type === 'client_select' && !vals[field.id] && jobData.client?.name) {
+            vals[field.id] = jobData.client.name
+          }
+          if (field.field_type === 'date' && !vals[field.id] && jobData.scheduled_date
+              && /date of survey|survey date|^date$|date of inspection|conducted on/i.test(field.label)) {
+            vals[field.id] = jobData.scheduled_date
+          }
           // Normalise vessel-name fields to canonical "M.V./M.T. Title Case"
           if (field.field_type === 'text' && vals[field.id]) {
             const prefix = vesselPrefixForLabel(field.label)
