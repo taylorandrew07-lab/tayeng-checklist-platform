@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "node e2e/smoke-surveyor-flow.mjs",
-    "analytics-parity": "node e2e/analytics-parity.mjs"
+    "analytics-parity": "node e2e/analytics-parity.mjs",
+    "checklist-audit": "node e2e/checklist-audit.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
