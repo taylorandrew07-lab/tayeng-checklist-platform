@@ -53,6 +53,7 @@ export default function NewJobPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [isOvertime, setIsOvertime] = useState(false)
   const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
+  const [endDate, setEndDate] = useState('')
   const [jobStage, setJobStage] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -100,6 +101,7 @@ export default function NewJobPage() {
     if (!jobType) { setError('Please choose a job type'); return }
     if (!vesselName.trim()) { setError('Vessel name is required'); return }
     if (!scheduledDate) { setError('Please choose a survey date'); return }
+    if (endDate && endDate < scheduledDate) { setError('The end date can’t be before the start date'); return }
     setSaving(true); setError(null)
 
     const supabase = createClient()
@@ -136,6 +138,7 @@ export default function NewJobPage() {
       notes: notes.trim() || null,
       job_stage: jobStage || null,
       scheduled_date: scheduledDate,
+      end_date: endDate || null,
       started_at: new Date(`${scheduledDate}T12:00:00`).toISOString(),
     }).select().single()
 
@@ -222,10 +225,17 @@ export default function NewJobPage() {
           <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically.</p>
         </div>
 
-        <div>
-          <label className="label-base">Survey date *</label>
-          <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="input-base" />
-          <p className="text-xs text-gray-400 mt-1">Drives the job name, the report date and the start date. Defaults to today — change it to back-date a job.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label-base">Survey date *</label>
+            <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Start date — drives the job name, report date and start. Defaults to today.</p>
+          </div>
+          <div>
+            <label className="label-base">End date <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="date" value={endDate} min={scheduledDate} onChange={e => setEndDate(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">For multi-day jobs (e.g. a 7-day loadout). Leave blank for a single day.</p>
+          </div>
         </div>
 
         <label className="flex items-center gap-2.5 cursor-pointer">

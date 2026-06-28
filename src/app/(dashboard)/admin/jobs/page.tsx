@@ -265,14 +265,14 @@ export default function JobsTrackerPage() {
 
   // Download the currently-shown rows (current filters + sort + month/year) as CSV.
   function exportCsv() {
-    const headers = ['Report #', 'Type', 'Stage', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    const headers = ['Report #', 'Type', 'Stage', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
         csv(r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.vessel_name), csv(r.title),
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
-        csv(formatDate(r.scheduled_date ?? r.created_at)),
+        csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),
         csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.is_overtime ? 'Yes' : ''),
         csv(r.invoice_number), csv(r.invoice_status), csv(r.invoice_total ?? ''), csv(r.invoice_currency),
         csv(r.notes),
@@ -418,7 +418,10 @@ export default function JobsTrackerPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></td>
-                  <td className="py-1.5 pr-2 min-w-[120px]"><EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[120px]">
+                    <EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
+                    {r.end_date && <span className="block px-2 text-[11px] text-gray-400 leading-tight">→ {formatDate(r.end_date)}</span>}
+                  </td>
                 </tr>
                 )
               })}

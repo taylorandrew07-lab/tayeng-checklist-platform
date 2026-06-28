@@ -80,6 +80,7 @@ export default function AdminChecklistDetailPage() {
     surveyor_id: '',
     client_id: '',
     scheduled_date: '',
+    end_date: '',
     job_stage: '',
     notes: '',
   })
@@ -137,6 +138,7 @@ export default function AdminChecklistDetailPage() {
       surveyor_id: surveyorId,
       client_id: jobData.client_id ?? '',
       scheduled_date: jobData.scheduled_date ?? '',
+      end_date: jobData.end_date ?? '',
       job_stage: jobData.job_stage ?? '',
       notes: jobData.notes ?? '',
     })
@@ -170,6 +172,7 @@ export default function AdminChecklistDetailPage() {
           assigned_to: assignedToVal,
           client_id: editForm.client_id || null,
           scheduled_date: editForm.scheduled_date || null,
+          end_date: editForm.end_date || null,
           job_stage: editForm.job_stage || null,
           notes: editForm.notes || null,
         }).eq('id', jobId).select('id'),
@@ -341,9 +344,14 @@ export default function AdminChecklistDetailPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="label-base">Scheduled date</label>
+                    <label className="label-base">Start date</label>
                     <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
                     <p className="text-[11px] text-gray-400 mt-1">Sets where the job sits on the calendar.</p>
+                  </div>
+                  <div>
+                    <label className="label-base">End date <span className="text-gray-400 font-normal">(multi-day)</span></label>
+                    <input type="date" value={editForm.end_date} min={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, end_date: e.target.value }))} className="input-base" />
+                    <p className="text-[11px] text-gray-400 mt-1">Leave blank for a single-day job.</p>
                   </div>
                   {STAGE_OPTIONS[job.job_type ?? ''] && (
                     <div>
@@ -397,8 +405,10 @@ export default function AdminChecklistDetailPage() {
                   <dd className="mt-1 text-sm text-gray-900">{job.creator?.full_name}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium text-gray-500">Scheduled</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</dd>
+                  <dt className="text-xs font-medium text-gray-500">{job.end_date ? 'Dates' : 'Scheduled'}</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{job.scheduled_date
+                    ? (job.end_date ? `${formatDate(job.scheduled_date)} – ${formatDate(job.end_date)}` : formatDate(job.scheduled_date))
+                    : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Started</dt>
