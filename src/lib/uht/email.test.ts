@@ -1,23 +1,28 @@
 import { describe, it, expect } from 'vitest'
 import { generateUhtEmail, holdList, formatLongDate, formatTime } from './email'
-import { UHT_DETAILS, UHT_ROUNDS } from './fields'
+import { UHT_DETAILS, UHT_ROUND } from './fields'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 
-// Helper: build a job_field_values map from a compact round spec.
+// Helper: build a job_field_values map from a compact round spec. Rounds are now
+// INSTANCES of the one repeatable section: initial = instance 0, re-tests = 1/2/3.
 type RoundSpec = { date?: string; start?: string; end?: string; pass?: number[]; fail?: number[]; bilges?: 'yes' | 'no'; furtherRetest?: boolean }
+const ROUND_INSTANCE: Record<'initial' | 'retest1' | 'retest2' | 'retest3', number> = { initial: 0, retest1: 1, retest2: 2, retest3: 3 }
 function values(holds: number, hatches: number, rounds: Partial<Record<'initial' | 'retest1' | 'retest2' | 'retest3', RoundSpec>>, location?: string) {
   const v: Record<string, string> = { [UHT_DETAILS.holds]: String(holds), [UHT_DETAILS.hatches]: String(hatches) }
   if (location) v[UHT_DETAILS.location] = location
-  for (const r of UHT_ROUNDS) {
-    const spec = rounds[r.key]
+  for (const key of Object.keys(rounds) as (keyof typeof rounds)[]) {
+    const spec = rounds[key]
     if (!spec) continue
-    if (spec.date) v[r.date] = spec.date
-    if (spec.start) v[r.start] = spec.start
-    if (spec.end) v[r.end] = spec.end
+    const inst = ROUND_INSTANCE[key]
+    const at = (fid: string) => instanceKey(fid, inst)
+    if (spec.date) v[at(UHT_ROUND.date)] = spec.date
+    if (spec.start) v[at(UHT_ROUND.start)] = spec.start
+    if (spec.end) v[at(UHT_ROUND.end)] = spec.end
     // Holds + bilges are 'pass_fail' fields (stored 'pass'/'fail'); re-test toggle is yes_no.
-    for (const h of spec.pass ?? []) v[r.holds[h - 1]] = 'pass'
-    for (const h of spec.fail ?? []) v[r.holds[h - 1]] = 'fail'
-    if (spec.bilges) v[r.bilges] = spec.bilges === 'yes' ? 'pass' : 'fail'
-    if (spec.furtherRetest && r.retestRequired) v[r.retestRequired] = 'yes'
+    for (const h of spec.pass ?? []) v[at(UHT_ROUND.holds[h - 1])] = 'pass'
+    for (const h of spec.fail ?? []) v[at(UHT_ROUND.holds[h - 1])] = 'fail'
+    if (spec.bilges) v[at(UHT_ROUND.bilges)] = spec.bilges === 'yes' ? 'pass' : 'fail'
+    if (spec.furtherRetest && UHT_ROUND.retestRequired) v[at(UHT_ROUND.retestRequired)] = 'yes'
   }
   return v
 }

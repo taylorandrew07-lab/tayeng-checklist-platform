@@ -7,6 +7,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateUhtEmail, formatLongDate, formatTime, holdList, type UhtResult } from '@/lib/uht/email'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 import { toast } from '@/components/ui/toast'
 import { Copy, Mail, RefreshCw, CheckCircle2, Clock, FileText, Loader2 } from 'lucide-react'
 
@@ -18,9 +19,9 @@ export default function UhtSummary({ jobId, vesselName, clientName }: { jobId: s
   const load = useCallback(async () => {
     setLoading(true)
     const sb = createClient()
-    const { data } = await sb.from('job_field_values').select('field_id, value').eq('job_id', jobId)
+    const { data } = await sb.from('job_field_values').select('field_id, value, instance').eq('job_id', jobId)
     const values: Record<string, string> = {}
-    for (const r of (data ?? []) as { field_id: string; value: string | null }[]) values[r.field_id] = r.value ?? ''
+    for (const r of (data ?? []) as { field_id: string; value: string | null; instance: number | null }[]) values[instanceKey(r.field_id, r.instance ?? 0)] = r.value ?? ''
     setResult(generateUhtEmail({ vesselName, clientName, values }))
     setLoading(false)
   }, [jobId, vesselName, clientName])
@@ -58,7 +59,7 @@ export default function UhtSummary({ jobId, vesselName, clientName }: { jobId: s
       {hasData ? (
         <div className="space-y-2">
           {result.rounds.map(r => (
-            <div key={r.key} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+            <div key={r.instance} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
               <div className="flex items-center justify-between flex-wrap gap-x-3">
                 <span className="font-medium text-gray-800">{r.label}</span>
                 <span className="text-xs text-gray-500 tnum">{formatLongDate(r.date) || '—'}{r.start && r.end ? ` · ${formatTime(r.start)}–${formatTime(r.end)}` : ''}</span>

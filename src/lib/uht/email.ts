@@ -3,7 +3,8 @@
 // job record, and produces the plain-text summary the team already sends by hand.
 // Pure + deterministic so it's unit-tested against real samples (./email.test.ts).
 
-import { UHT_DETAILS, UHT_ROUNDS, type UhtRound } from './fields'
+import { UHT_DETAILS, UHT_ROUND, type UhtRound } from './fields'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 
 export interface UhtInput {
   vesselName?: string | null
@@ -13,8 +14,9 @@ export interface UhtInput {
 }
 
 export interface UhtRoundResult {
-  key: UhtRound['key']
+  key: 'initial' | 'retest'
   label: string
+  instance: number      // repeatable-entry instance (0 = initial test)
   date: string          // raw ISO 'YYYY-MM-DD'
   start: string         // raw 'HH:MM'
   end: string
@@ -75,22 +77,42 @@ const num = (raw: string | undefined): number => { const n = parseInt((raw ?? ''
 const isPass = (a: string): boolean => a === 'pass' || a === 'yes'
 const isFail = (a: string): boolean => a === 'fail' || a === 'no'
 
-function summarizeRound(round: UhtRound, values: Record<string, string>): UhtRoundResult | null {
-  const date = (values[round.date] ?? '').trim()
-  const start = (values[round.start] ?? '').trim()
-  const end = (values[round.end] ?? '').trim()
+// Each round is one INSTANCE of the single repeatable section: instance 0 = initial
+// test, 1+ = re-tests. Field values are keyed by instanceKey(fieldId, instance).
+function summarizeRound(round: UhtRound, values: Record<string, string>, instance: number): UhtRoundResult | null {
+  const at = (fid: string) => values[instanceKey(fid, instance)]
+  const date = (at(round.date) ?? '').trim()
+  const start = (at(round.start) ?? '').trim()
+  const end = (at(round.end) ?? '').trim()
   const passed: number[] = [], failed: number[] = []
   round.holds.forEach((fid, i) => {
-    const a = answer(values[fid])
+    const a = answer(at(fid))
     if (isPass(a)) passed.push(i + 1)
     else if (isFail(a)) failed.push(i + 1)
   })
   const tested = [...passed, ...failed].sort((a, b) => a - b)
   // A round "happened" only if it has a date or any tested hold (so blank re-tests are ignored).
   if (!date && tested.length === 0) return null
-  const b = answer(values[round.bilges])
+  const b = answer(at(round.bilges))
   const bilges: UhtRoundResult['bilges'] = isPass(b) ? 'pass' : isFail(b) ? 'fail' : ''
-  return { key: round.key, label: round.label, date, start, end, tested, passed, failed, bilges }
+  const key = instance === 0 ? 'initial' : 'retest'
+  const label = instance === 0 ? 'Initial test' : `Re-test ${instance}`
+  return { key, label, instance, date, start, end, tested, passed, failed, bilges }
+}
+
+// The instances present for the round's fields, from the value keys (always incl. 0).
+function roundInstances(values: Record<string, string>, round: UhtRound): number[] {
+  const ids = new Set([round.date, round.start, round.end, ...round.holds, round.bilges, round.retestRequired]
+    .filter((x): x is string => !!x))
+  const insts = new Set<number>([0])
+  for (const key of Object.keys(values)) {
+    const sep = key.indexOf('@@')
+    if (sep === -1) continue
+    if (!ids.has(key.slice(0, sep))) continue
+    const nn = parseInt(key.slice(sep + 2), 10)
+    if (Number.isFinite(nn) && nn > 0) insts.add(nn)
+  }
+  return [...insts].sort((a, b) => a - b)
 }
 
 function roundParagraphs(r: UhtRoundResult, ctx: { holds: number; hatches: number; client: string | null; location: string }): string[] {
@@ -120,7 +142,9 @@ export function generateUhtEmail(input: UhtInput): UhtResult {
   const client = (input.clientName ?? '').trim() || null
   const vessel = (input.vesselName ?? '').trim() || null
 
-  const rounds = UHT_ROUNDS.map(r => summarizeRound(r, v)).filter((r): r is UhtRoundResult => r !== null)
+  const rounds = roundInstances(v, UHT_ROUND)
+    .map(inst => summarizeRound(UHT_ROUND, v, inst))
+    .filter((r): r is UhtRoundResult => r !== null)
 
   const ctx = { holds, hatches, client, location }
   const body = rounds.flatMap(r => roundParagraphs(r, ctx)).join('\n\n')
