@@ -10,8 +10,9 @@ import {
   WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, updateJobField, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
+  listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
-  type JobSurveyorRow, type SurveyorAccount,
+  type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry,
 } from '@/lib/jobs/tracker'
 import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
 
@@ -33,8 +34,18 @@ function activityText(a: ActivityLogRow): string {
   return act
 }
 
-function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, onRemove, onSaved }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; onRemove: () => void; onSaved: () => void
+// Hours between two 'HH:MM' times, rolling past midnight if end <= start (a night shift).
+function otHours(start: string, end: string): number {
+  if (!start || !end) return 0
+  const mins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0) }
+  let d = mins(end) - mins(start)
+  if (d < 0) d += 24 * 60
+  return Math.round((d / 60) * 100) / 100
+}
+const fmtEntryDate = (iso: string | null) => iso ? iso.split('-').reverse().join('/') : '—'
+
+function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void
 }) {
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
@@ -43,29 +54,75 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, onRemove
   const [cur, setCur] = useState(row.pay_currency || 'TTD')
   const [saving, setSaving] = useState(false)
 
+  // Overtime time-log (migration 111). When entries exist they ARE the OT hours.
+  const [entries, setEntries] = useState<OvertimeEntry[]>([])
+  const [logOpen, setLogOpen] = useState(false)
+  const [nDate, setNDate] = useState(defaultDate ?? '')
+  const [nStart, setNStart] = useState('')
+  const [nEnd, setNEnd] = useState('')
+  const [nNote, setNNote] = useState('')
+  const [logBusy, setLogBusy] = useState(false)
+  const otTotal = Math.round(entries.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+  const otFromLog = entries.length > 0
+
+  async function loadEntries() { setEntries(await listSurveyorOvertime(row.id)) }
+  useEffect(() => { void loadEntries() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist OT hours = log total (when logged) else the typed number. Keeps the one
+  // job_surveyors.overtime_hours that billing reads in sync with the detail log.
+  async function persistHours(otValue: number, regValue = Number(reg) || 0): Promise<boolean> {
+    const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: regValue, overtime_hours: otValue })
+    if (h.error) { toast.error(h.error); return false }
+    return true
+  }
+
   async function save() {
     setSaving(true)
-    const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: Number(reg) || 0, overtime_hours: Number(ot) || 0 })
-    let err = h.error
-    if (!err && isAdmin) {
+    const ok = await persistHours(otFromLog ? otTotal : Number(ot) || 0)
+    let err = ok ? undefined : 'x'
+    if (ok && isAdmin) {
       const r = await updateJobSurveyorRates(row.id, jobId, { pay_rate: payRate === '' ? null : Number(payRate), overtime_rate: otRate === '' ? null : Number(otRate), pay_currency: cur })
       err = r.error
     }
     setSaving(false)
-    if (err) { toast.error(err); return }
+    if (err) { if (err !== 'x') toast.error(err); return }
     toast.success('Hours saved'); onSaved()
   }
 
-  // Copy the checklist's calculated billable hours into this surveyor's regular
-  // (client-billed) hours, and save it — links the OVID/borescoping hours to the job.
   async function applyChecklistHours() {
     if (billableHours == null) return
     setReg(String(billableHours))
     setSaving(true)
-    const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: billableHours, overtime_hours: Number(ot) || 0 })
+    const ok = await persistHours(otFromLog ? otTotal : Number(ot) || 0, billableHours)
     setSaving(false)
-    if (h.error) { toast.error(h.error); return }
+    if (!ok) return
     toast.success(`Applied ${billableHours} billable hrs`); onSaved()
+  }
+
+  async function addEntry() {
+    const hrs = otHours(nStart, nEnd)
+    if (!nStart || !nEnd) { toast.error('Enter a start and end time'); return }
+    setLogBusy(true)
+    const res = await addSurveyorOvertime(row.id, { entry_date: nDate || null, start_time: nStart, end_time: nEnd, hours: hrs, note: nNote.trim() || null })
+    if (res.error) { setLogBusy(false); toast.error(res.error); return }
+    const next = await listSurveyorOvertime(row.id)
+    setEntries(next)
+    const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+    await persistHours(total)
+    setOt(String(total)); setNStart(''); setNEnd(''); setNNote('')
+    setLogBusy(false); onSaved()
+  }
+
+  async function removeEntry(id: string) {
+    setLogBusy(true)
+    const res = await deleteSurveyorOvertime(id)
+    if (res.error) { setLogBusy(false); toast.error(res.error); return }
+    const next = await listSurveyorOvertime(row.id)
+    setEntries(next)
+    const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+    await persistHours(total)
+    setOt(String(total))
+    setLogBusy(false); onSaved()
   }
 
   const numCls = 'input-base py-1 text-sm'
@@ -85,11 +142,47 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, onRemove
           </label>
           <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
         </div>
-        <div><label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">· OT pay</span></label><input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} /></div>
+        <div>
+          <label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
+          {otFromLog
+            ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
+            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
+        </div>
         {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
       </div>
+
+      {/* Overtime time-log */}
+      <div className="mt-2">
+        <button type="button" onClick={() => setLogOpen(o => !o)} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800">
+          <Clock className="h-3 w-3" />OT time-log{entries.length ? ` · ${entries.length} shift${entries.length === 1 ? '' : 's'} · ${otTotal}h` : ''}
+          <ChevronRight className={`h-3 w-3 transition-transform ${logOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {logOpen && (
+          <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 space-y-1.5">
+            {entries.map(e => (
+              <div key={e.id} className="flex items-center gap-2 text-xs text-gray-700">
+                <span className="tnum text-gray-500 w-16">{fmtEntryDate(e.entry_date)}</span>
+                <span className="tnum">{e.start_time}–{e.end_time}</span>
+                <span className="font-medium tnum">{e.hours}h</span>
+                {e.note && <span className="text-gray-400 truncate flex-1">{e.note}</span>}
+                <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600"><X className="h-3 w-3" /></button>
+              </div>
+            ))}
+            {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet — add each day&apos;s overtime below.</p>}
+            <div className="flex flex-wrap items-end gap-1.5 pt-1.5 border-t border-gray-200">
+              <div><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nDate} onChange={e => setNDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
+              <div><label className="block text-[10px] text-gray-400">Start</label><input type="time" value={nStart} onChange={e => setNStart(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
+              <div><label className="block text-[10px] text-gray-400">End</label><input type="time" value={nEnd} onChange={e => setNEnd(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
+              <span className="text-xs text-gray-500 pb-1.5">= <span className="font-medium tnum">{otHours(nStart, nEnd)}h</span></span>
+              <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
+              <button onClick={addEntry} disabled={logBusy} className="btn-secondary py-1 px-2 text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between gap-2 mt-2">
         <p className="text-xs text-gray-500">OT pay: <span className="font-medium text-gray-700 tnum">{money(row.overtime_pay, row.pay_currency)}</span>{isAdmin && row.regular_pay > 0 ? ` · reg ${money(row.regular_pay, row.pay_currency)}` : ''}</p>
         <button onClick={save} disabled={saving} className="btn-secondary py-1 px-2.5 text-xs">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save</button>
@@ -255,7 +348,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
             ))}
           </div>
         )}

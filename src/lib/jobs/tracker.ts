@@ -182,6 +182,34 @@ export async function updateJobSurveyorHours(rowId: string, jobId: string, hours
   return {}
 }
 
+// ── Per-surveyor overtime time-log (migration 111) ───────────────────────────
+// Each entry is one shift (date + start/end + computed hours) for a surveyor on a
+// job. The caller sums the entries and writes the total to job_surveyors.overtime_hours
+// (which bills at the OT rate), so the log is the detail behind that one number.
+export interface OvertimeEntry { id: string; entry_date: string | null; start_time: string | null; end_time: string | null; hours: number; note: string | null }
+
+export async function listSurveyorOvertime(jobSurveyorId: string): Promise<OvertimeEntry[]> {
+  const { data } = await createClient().from('job_surveyor_overtime')
+    .select('id, entry_date, start_time, end_time, hours, note')
+    .eq('job_surveyor_id', jobSurveyorId)
+    .order('entry_date', { ascending: true }).order('start_time', { ascending: true })
+  return ((data ?? []) as any[]).map(r => ({ id: r.id, entry_date: r.entry_date, start_time: r.start_time, end_time: r.end_time, hours: Number(r.hours ?? 0), note: r.note }))
+}
+
+export async function addSurveyorOvertime(jobSurveyorId: string, e: { entry_date: string | null; start_time: string | null; end_time: string | null; hours: number; note: string | null }): Promise<{ error?: string; id?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase.from('job_surveyor_overtime')
+    .insert({ job_surveyor_id: jobSurveyorId, ...e, created_by: user?.id ?? null }).select('id').single()
+  if (error) return { error: error.message }
+  return { id: data?.id }
+}
+
+export async function deleteSurveyorOvertime(id: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_surveyor_overtime').delete().eq('id', id)
+  return error ? { error: error.message } : {}
+}
+
 /** Admin only (trigger-enforced): set a surveyor's pay rates on a job. */
 export async function updateJobSurveyorRates(rowId: string, jobId: string, rates: { pay_rate: number | null; overtime_rate: number | null; pay_currency: string }): Promise<{ error?: string }> {
   const { data, error } = await createClient().from('job_surveyors')
