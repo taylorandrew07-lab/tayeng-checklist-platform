@@ -375,11 +375,12 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
 }
 
 // Handles both percentage-display calculated fields (shows "<diff> USG: <pct>%") and plain numbers
-function CalcDiffCell({ rawValue, validation, formula, fieldValues }: {
+function CalcDiffCell({ rawValue, validation, formula, fieldValues, instance = 0 }: {
   rawValue: string
   validation: any
   formula?: string
   fieldValues: Record<string, string>
+  instance?: number
 }) {
   const num = parseFloat(rawValue)
   if (isNaN(num)) return <Text style={{ fontSize: 8, color: '#94a3b8' }}>—</Text>
@@ -387,7 +388,9 @@ function CalcDiffCell({ rawValue, validation, formula, fieldValues }: {
   if (validation?.display_as === 'percentage') {
     const tokens = Array.from((formula ?? '').matchAll(/\{([^}]+)\}/g), m => m[1])
     const denominatorId = tokens[tokens.length - 1]
-    const { display, pct } = formatDiffPercentage(num, denominatorId ? fieldValues[denominatorId] : undefined)
+    // Resolve the denominator for THIS entry instance (falls back to the bare id).
+    const denominator = denominatorId ? (fieldValues[instanceKey(denominatorId, instance)] ?? fieldValues[denominatorId]) : undefined
+    const { display, pct } = formatDiffPercentage(num, denominator)
 
     if (pct === null) {
       return <Text style={styles.fieldValueText}>{display}</Text>
@@ -785,6 +788,7 @@ function renderField(
             validation={field.validation}
             formula={field.calculation_formula}
             fieldValues={fieldValues}
+            instance={inst}
           />
         ) : field.field_type === 'dropdown' ? (
           <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>

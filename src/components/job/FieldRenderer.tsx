@@ -6,6 +6,7 @@ import type { TemplateField } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { getCachedNewJobData } from '@/lib/offline/db'
 import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 import SignaturePad from './SignaturePad'
 
 interface FieldRendererProps {
@@ -22,6 +23,9 @@ interface FieldRendererProps {
   readOnly?: boolean
   /** Pre-computed label with {uuid} tokens already substituted. Falls back to field.label. */
   resolvedLabel?: string
+  /** Repeatable-section entry instance (0 = bare/non-repeatable). Drives calc-field
+   *  token resolution so each entry computes from its own inputs. */
+  instance?: number
 }
 
 export default function FieldRenderer({
@@ -36,6 +40,7 @@ export default function FieldRenderer({
   onBlur,
   readOnly = false,
   resolvedLabel,
+  instance = 0,
 }: FieldRendererProps) {
   // Check conditional visibility
   const isVisible = checkConditionalLogic(field.conditional_logic, allValues)
@@ -287,6 +292,7 @@ export default function FieldRenderer({
           field={field}
           value={value}
           allValues={allValues}
+          instance={instance}
           onChange={onChange}
         />
       )}
@@ -312,14 +318,15 @@ export default function FieldRenderer({
   )
 }
 
-function CalculatedField({ field, value, allValues, onChange }: {
+function CalculatedField({ field, value, allValues, instance = 0, onChange }: {
   field: TemplateField
   value: string
   allValues: Record<string, string>
+  instance?: number
   onChange: (v: string) => void
 }) {
   const computed = field.calculation_formula
-    ? evaluateCalculation(field.calculation_formula, allValues)
+    ? evaluateCalculation(field.calculation_formula, allValues, instance)
     : ''
 
   // The result is derived, but it must still be PERSISTED so it lands in the PDF
@@ -345,7 +352,7 @@ function CalculatedField({ field, value, allValues, onChange }: {
     const denominatorId = tokens[tokens.length - 1]
     const { display, pct } = formatDiffPercentage(
       numVal,
-      denominatorId ? allValues[denominatorId] : undefined
+      denominatorId ? (allValues[instanceKey(denominatorId, instance)] ?? allValues[denominatorId]) : undefined
     )
     // If the denominator isn't available (e.g. showing a persisted fallback
     // without live inputs), keep the plain figure rather than collapsing to "—".

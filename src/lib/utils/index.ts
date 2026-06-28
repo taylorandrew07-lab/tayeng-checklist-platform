@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, parseISO } from 'date-fns'
+import { instanceKey } from '@/lib/offline/instanceKeys'
 import type { FieldType } from '@/lib/types/database'
 
 export function cn(...inputs: ClassValue[]) {
@@ -179,14 +180,23 @@ function fieldNumericValue(value: string): number {
 
 export function evaluateCalculation(
   formula: string,
-  values: Record<string, string>
+  values: Record<string, string>,
+  instance = 0
 ): string {
   try {
-    let expr = formula
-    for (const [fieldId, value] of Object.entries(values)) {
-      const num = fieldNumericValue(value)
-      expr = expr.replace(new RegExp(`\\{${fieldId}\\}`, 'g'), isNaN(num) ? '0' : String(num))
-    }
+    // Resolve each {fieldId} token against THIS repeatable-entry instance, so a calc
+    // in entry 2 uses entry 2's inputs — not entry 1's. instanceKey(id, 0) is the bare
+    // id, so the common (non-repeatable) path is byte-identical to before. An absent
+    // token leaves the formula unresolvable → '' (same as the old behaviour); a
+    // present-but-non-numeric value counts as 0.
+    let unresolved = false
+    const expr = formula.replace(/\{([^}]+)\}/g, (_m, rawId: string) => {
+      const key = instanceKey(rawId.trim(), instance)
+      if (!(key in values)) { unresolved = true; return '0' }
+      const num = fieldNumericValue(values[key])
+      return isNaN(num) ? '0' : String(num)
+    })
+    if (unresolved) return ''
     // Only allow safe math expressions
     if (!/^[\d\s+\-*/().]+$/.test(expr)) return ''
     // Evaluate WITHOUT eval()/Function(): those need CSP 'unsafe-eval', which we

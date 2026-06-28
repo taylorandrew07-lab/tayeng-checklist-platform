@@ -735,10 +735,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         // "Difference" even though the figures are filled.)
         const computed: Record<string, string> = {}
         for (const section of sections) {
+          const instIds = section.is_repeatable ? (entryOrder[section.id] ?? [0]) : [0]
           for (const field of section.fields) {
             if (field.field_type !== 'calculated' || !field.calculation_formula) continue
-            const result = evaluateCalculation(field.calculation_formula, valuesToSave)
-            if (result !== (valuesToSave[field.id] ?? '')) computed[field.id] = result
+            // Recompute the calc for EACH entry against that entry's own inputs.
+            for (const inst of instIds) {
+              const k = instanceKey(field.id, inst)
+              const result = evaluateCalculation(field.calculation_formula, valuesToSave, inst)
+              if (result !== (valuesToSave[k] ?? '')) computed[k] = result
+            }
           }
         }
         if (Object.keys(computed).length > 0) {
@@ -1501,6 +1506,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 valueArray={arrayValues[key]}
                 signature={signatures[key]}
                 allValues={values}
+                instance={inst}
                 onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(key, v) : v => updateValue(key, v)}
                 onArrayChange={v => updateArrayValue(key, v)}
                 onSignatureChange={data => updateSignature(key, data)}
@@ -1901,6 +1907,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           valueArray={arrayValues[key]}
                           signature={signatures[key]}
                           allValues={values}
+                          instance={inst}
                           onChange={() => {}}
                           readOnly
                         />

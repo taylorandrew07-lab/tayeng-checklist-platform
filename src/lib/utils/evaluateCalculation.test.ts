@@ -53,6 +53,26 @@ describe('evaluateCalculation (CSP-safe, no eval())', () => {
   })
 })
 
+describe('evaluateCalculation — repeatable-section instances', () => {
+  const A = 'aaaaaaaa-0000-4000-8000-000000000001'
+  const B = 'aaaaaaaa-0000-4000-8000-000000000002'
+  const F = `{${A}} - {${B}}`
+
+  it('resolves each token against its own entry instance', () => {
+    const values = {
+      [A]: '10', [B]: '3',                 // entry 0 → 7
+      [`${A}@@1`]: '20', [`${B}@@1`]: '5', // entry 1 → 15
+    }
+    expect(evaluateCalculation(F, values, 0)).toBe('7')
+    expect(evaluateCalculation(F, values, 1)).toBe('15')
+  })
+
+  it('an entry missing an input is empty — no bleed from entry 0', () => {
+    const values = { [A]: '10', [B]: '3', [`${A}@@1`]: '20' } // entry 1 has no B
+    expect(evaluateCalculation(F, values, 1)).toBe('') // NOT 20 - 3
+  })
+})
+
 describe('evalArithmetic (safe parser, no eval())', () => {
   it('basic operators', () => {
     expect(evalArithmetic('9795 - 10000')).toBe(-205)
