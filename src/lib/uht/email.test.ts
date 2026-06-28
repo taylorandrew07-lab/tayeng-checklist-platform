@@ -21,7 +21,8 @@ function values(holds: number, hatches: number, rounds: Partial<Record<'initial'
     // Holds + bilges are 'pass_fail' fields (stored 'pass'/'fail'); re-test toggle is yes_no.
     for (const h of spec.pass ?? []) v[at(UHT_ROUND.holds[h - 1])] = 'pass'
     for (const h of spec.fail ?? []) v[at(UHT_ROUND.holds[h - 1])] = 'fail'
-    if (spec.bilges) v[at(UHT_ROUND.bilges)] = spec.bilges === 'yes' ? 'pass' : 'fail'
+    // One bilge per hold: apply the bilge result to each hold's bilge.
+    if (spec.bilges) for (let i = 0; i < holds; i++) v[at(UHT_ROUND.bilges[i])] = spec.bilges === 'yes' ? 'pass' : 'fail'
     if (spec.furtherRetest && UHT_ROUND.retestRequired) v[at(UHT_ROUND.retestRequired)] = 'yes'
   }
   return v
@@ -110,6 +111,16 @@ describe('generateUhtEmail — acceptance cases', () => {
     expect(r.body).toContain('Holds 1 and 4 passed ultrasonic testing.')
     expect(r.rounds).toHaveLength(2)
     expect(r.status).toBe('passed')
+  })
+
+  it('6. per-hold bilges — failed bilges are named, status stays open', () => {
+    const r = generateUhtEmail({
+      vesselName: 'Bay Pearl', clientName: 'Nu Iron',
+      values: values(5, 5, { initial: { date: '2026-06-19', start: '07:45', end: '09:15', pass: [1, 2, 3, 4, 5], bilges: 'no' } }),
+    })
+    expect(r.body).toContain('Holds 1, 2, 3, 4, 5 passed ultrasonic testing.')
+    expect(r.body).toContain('Bilges 1, 2, 3, 4, 5 were not clean and dry.')
+    expect(r.status).toBe('open')
   })
 
   it('empty job → empty status, no body', () => {

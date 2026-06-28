@@ -23,7 +23,8 @@ export interface UhtRoundResult {
   tested: number[]      // hold numbers with a pass/fail answer
   passed: number[]
   failed: number[]
-  bilges: 'pass' | 'fail' | ''
+  bilgesPassed: number[] // bilge numbers clean & dry (one bilge per hold)
+  bilgesFailed: number[] // bilge numbers not clean & dry
 }
 
 export interface UhtResult {
@@ -93,11 +94,16 @@ function summarizeRound(round: UhtRound, values: Record<string, string>, instanc
   const tested = [...passed, ...failed].sort((a, b) => a - b)
   // A round "happened" only if it has a date or any tested hold (so blank re-tests are ignored).
   if (!date && tested.length === 0) return null
-  const b = answer(at(round.bilges))
-  const bilges: UhtRoundResult['bilges'] = isPass(b) ? 'pass' : isFail(b) ? 'fail' : ''
+  // One bilge per hold (migration 112): read each Bilge field like a hold.
+  const bilgesPassed: number[] = [], bilgesFailed: number[] = []
+  round.bilges.forEach((fid, i) => {
+    const a = answer(at(fid))
+    if (isPass(a)) bilgesPassed.push(i + 1)
+    else if (isFail(a)) bilgesFailed.push(i + 1)
+  })
   const key = instance === 0 ? 'initial' : 'retest'
   const label = instance === 0 ? 'Initial test' : `Re-test ${instance}`
-  return { key, label, instance, date, start, end, tested, passed, failed, bilges }
+  return { key, label, instance, date, start, end, tested, passed, failed, bilgesPassed, bilgesFailed }
 }
 
 // The instances present for the round's fields, from the value keys (always incl. 0).
@@ -129,8 +135,10 @@ function roundParagraphs(r: UhtRoundResult, ctx: { holds: number; hatches: numbe
   }
   if (r.passed.length) paras.push(`Hold${r.passed.length === 1 ? '' : 's'} ${holdList(r.passed)} passed ultrasonic testing.`)
   if (r.failed.length) paras.push(`Hold${r.failed.length === 1 ? '' : 's'} ${holdList(r.failed)} failed ultrasonic testing.`)
-  if (r.bilges === 'pass') paras.push('Bilges clean and dry.')
-  else if (r.bilges === 'fail') paras.push('Bilges were not clean and dry.')
+  // One bilge per hold: if any failed, name them; otherwise (all clean) keep the
+  // familiar single line.
+  if (r.bilgesFailed.length) paras.push(`Bilge${r.bilgesFailed.length === 1 ? '' : 's'} ${holdList(r.bilgesFailed)} ${r.bilgesFailed.length === 1 ? 'was' : 'were'} not clean and dry.`)
+  else if (r.bilgesPassed.length) paras.push('Bilges clean and dry.')
   return paras
 }
 
@@ -154,7 +162,7 @@ export function generateUhtEmail(input: UhtInput): UhtResult {
   let status: UhtResult['status'] = 'empty'
   if (rounds.length) {
     const last = rounds[rounds.length - 1]
-    status = (last.tested.length > 0 && last.failed.length === 0 && last.bilges !== 'fail') ? 'passed' : 'open'
+    status = (last.tested.length > 0 && last.failed.length === 0 && last.bilgesFailed.length === 0) ? 'passed' : 'open'
   }
 
   const subject = `Ultrasonic Hatch Testing${vessel ? ` — ${vessel}` : ''}`

@@ -5,8 +5,9 @@
 // Migration 109 collapsed the original four test sections (Initial + Re-test 1/2/3)
 // into ONE repeatable "Test round" section, so rounds are now INSTANCES of this
 // single field set: instance 0 is the initial test, 1+ are re-tests (encoded
-// `${fieldId}@@${n}`). The email generator (./email.ts) reads job_field_values by
-// these ids across instances, so renaming a field's LABEL in the builder is safe.
+// `${fieldId}@@${n}`). Migration 112 split the single bilges field into Bilge 1..9
+// (one per hold, billed per bilge). The email generator (./email.ts) reads
+// job_field_values by these ids across instances, so renaming a LABEL is safe.
 
 export const UHT_TEMPLATE_ID = '75480000-0000-4000-8000-000000000001'
 
@@ -15,7 +16,7 @@ export interface UhtRound {
   start: string
   end: string
   holds: string[]        // 9 pass_fail field ids, Hold 1..9
-  bilges: string
+  bilges: string[]       // 9 pass_fail field ids, Bilge 1..9 (one per hold)
   retestRequired: string | null
 }
 
@@ -41,6 +42,16 @@ export const UHT_ROUND: UhtRound = {
     '75480000-0000-4000-8000-000000000017',
     '75480000-0000-4000-8000-000000000018'
   ],
-  bilges: '75480000-0000-4000-8000-000000000019',
+  bilges: [
+    '75480000-0000-4000-8000-000000000019',
+    '75480000-0000-4000-8000-000000000065',
+    '75480000-0000-4000-8000-000000000066',
+    '75480000-0000-4000-8000-000000000067',
+    '75480000-0000-4000-8000-000000000068',
+    '75480000-0000-4000-8000-000000000069',
+    '75480000-0000-4000-8000-000000000070',
+    '75480000-0000-4000-8000-000000000071',
+    '75480000-0000-4000-8000-000000000072'
+  ],
   retestRequired: '75480000-0000-4000-8000-000000000020'
 }
