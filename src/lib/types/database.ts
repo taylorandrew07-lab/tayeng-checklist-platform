@@ -337,6 +337,11 @@ export interface Job {
   pdf_storage_path: string | null
   // Job tracker (migration 042)
   job_type: string | null
+  // Broad-type qualifier (migration 108): Draught {Initial/Interim/Final}, Cargo
+  // {Loaded/Discharge}, Hire {On/Off}. Free text; null when the type has no stage.
+  job_stage: string | null
+  // Free-text note on the job (migration 108) — e.g. call numbers / gang counts.
+  notes: string | null
   report_number: string | null
   workflow_status: WorkflowStatus
   // Overtime job flag (migration 048)
