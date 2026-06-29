@@ -82,6 +82,7 @@ export default function AdminChecklistDetailPage() {
     scheduled_date: '',
     end_date: '',
     job_stage: '',
+    cargo_type: '',
     notes: '',
   })
   // Conditional Stage qualifier — only the broad survey types carry one.
@@ -90,6 +91,10 @@ export default function AdminChecklistDetailPage() {
     'Cargo Survey': { label: 'Direction', options: ['Loaded', 'Discharge'] },
     'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
   }
+  // Cargo Loading / Cargo Discharging jobs carry a "what's the cargo?" question.
+  const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+  const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+  const showCargoType = CARGO_JOB_TYPES.has(job?.job_type ?? '')
 
   useEffect(() => { load() }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
   // Restore the tab from the URL on first mount (mirrors setTab above).
@@ -140,6 +145,7 @@ export default function AdminChecklistDetailPage() {
       scheduled_date: jobData.scheduled_date ?? '',
       end_date: jobData.end_date ?? '',
       job_stage: jobData.job_stage ?? '',
+      cargo_type: jobData.cargo_type ?? '',
       notes: jobData.notes ?? '',
     })
     setLoading(false)
@@ -174,6 +180,7 @@ export default function AdminChecklistDetailPage() {
           scheduled_date: editForm.scheduled_date || null,
           end_date: editForm.end_date || null,
           job_stage: editForm.job_stage || null,
+          cargo_type: showCargoType ? (editForm.cargo_type.trim() || null) : null,
           notes: editForm.notes || null,
         }).eq('id', jobId).select('id'),
         15_000, 'Saving job'
@@ -362,6 +369,13 @@ export default function AdminChecklistDetailPage() {
                       </select>
                     </div>
                   )}
+                  {showCargoType && (
+                    <div>
+                      <label className="label-base">Cargo type</label>
+                      <input type="text" list="cargoList" value={editForm.cargo_type} onChange={(e) => setEditForm(p => ({ ...p, cargo_type: e.target.value }))} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
+                      <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="label-base">Notes</label>
@@ -398,6 +412,12 @@ export default function AdminChecklistDetailPage() {
                   <div>
                     <dt className="text-xs font-medium text-gray-500">{STAGE_OPTIONS[job.job_type ?? '']?.label ?? 'Stage'}</dt>
                     <dd className="mt-1 text-sm text-gray-900">{job.job_stage}</dd>
+                  </div>
+                )}
+                {job.cargo_type && (
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">Cargo type</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{job.cargo_type}</dd>
                   </div>
                 )}
                 <div>

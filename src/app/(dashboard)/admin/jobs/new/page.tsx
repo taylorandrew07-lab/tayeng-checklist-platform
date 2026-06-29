@@ -31,6 +31,11 @@ const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
   'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
 }
 
+// Cargo Loading / Cargo Discharging jobs carry a "what's the cargo?" question.
+const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+// Common cargoes — a datalist of suggestions; the field stays free text.
+const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+
 export default function NewJobPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
@@ -55,6 +60,7 @@ export default function NewJobPage() {
   const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
   const [endDate, setEndDate] = useState('')
   const [jobStage, setJobStage] = useState('')
+  const [cargoType, setCargoType] = useState('')
   const [notes, setNotes] = useState('')
 
   const selectedTemplate = templates.find(t => t.id === templateId) ?? null
@@ -137,6 +143,7 @@ export default function NewJobPage() {
       is_overtime: isOvertime,
       notes: notes.trim() || null,
       job_stage: jobStage || null,
+      cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
       scheduled_date: scheduledDate,
       end_date: endDate || null,
       started_at: new Date(`${scheduledDate}T12:00:00`).toISOString(),
@@ -173,7 +180,7 @@ export default function NewJobPage() {
           <label className="label-base">Job type *</label>
           <select
             value={showNewJobType ? '__new__' : jobType}
-            onChange={e => { setJobStage(''); if (e.target.value === '__new__') { setShowNewJobType(true); setJobType('') } else { setShowNewJobType(false); setJobType(e.target.value) } }}
+            onChange={e => { setJobStage(''); setCargoType(''); if (e.target.value === '__new__') { setShowNewJobType(true); setJobType('') } else { setShowNewJobType(false); setJobType(e.target.value) } }}
             className="input-base"
           >
             <option value="">Select a job type…</option>
@@ -204,6 +211,15 @@ export default function NewJobPage() {
               <option value="">Select {stageConfig.label.toLowerCase()}…</option>
               {stageConfig.options.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
+          </div>
+        )}
+
+        {CARGO_JOB_TYPES.has(jobType) && (
+          <div>
+            <label className="label-base">Cargo type</label>
+            <input type="text" list="cargoList" value={cargoType} onChange={e => setCargoType(e.target.value)} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
+            <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
+            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' ? 'discharged' : 'loaded'}.</p>
           </div>
         )}
 

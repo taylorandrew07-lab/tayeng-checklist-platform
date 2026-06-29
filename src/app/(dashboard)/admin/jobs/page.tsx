@@ -265,11 +265,11 @@ export default function JobsTrackerPage() {
 
   // Download the currently-shown rows (current filters + sort + month/year) as CSV.
   function exportCsv() {
-    const headers = ['Report #', 'Type', 'Stage', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
-        csv(r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.vessel_name), csv(r.title),
+        csv(r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.cargo_type), csv(r.vessel_name), csv(r.title),
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
         csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),

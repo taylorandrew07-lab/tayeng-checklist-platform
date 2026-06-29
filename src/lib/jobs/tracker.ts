@@ -285,6 +285,7 @@ export interface TrackerRow {
   report_number: string | null
   job_type: string | null
   job_stage: string | null
+  cargo_type: string | null
   notes: string | null
   vessel_name: string | null
   title: string
@@ -314,7 +315,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, job_type, job_stage, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
@@ -342,7 +343,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
     // jobs assigned the old way still show their surveyor.
     const surveyors = s?.names.length ? s.names : (j.surveyor_name ? [j.surveyor_name] : [])
     return {
-      id: j.id, report_number: j.report_number, job_type: j.job_type, job_stage: j.job_stage ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
+      id: j.id, report_number: j.report_number, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
       client_color: j.client?.color ?? null, template_color: j.template?.color ?? null, template_name: j.template?.name ?? null,
       workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,

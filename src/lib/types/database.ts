@@ -345,6 +345,9 @@ export interface Job {
   job_stage: string | null
   // Free-text note on the job (migration 108) — e.g. call numbers / gang counts.
   notes: string | null
+  // Product being loaded/discharged (migration 112) — e.g. Methanol, Crude Oil, Urea.
+  // Used by the Cargo Loading / Cargo Discharging job types. Free text; null otherwise.
+  cargo_type: string | null
   report_number: string | null
   workflow_status: WorkflowStatus
   // Overtime job flag (migration 048)
