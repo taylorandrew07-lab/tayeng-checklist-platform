@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 112: generalise "Extended Cargo Loadout" into Cargo Loading /
+-- Migration 114: generalise "Extended Cargo Loadout" into Cargo Loading /
 -- Cargo Discharging, with a cargo-type question. Idempotent.
 --
 -- The old "Extended Cargo Loadout" type was too specific. We:
