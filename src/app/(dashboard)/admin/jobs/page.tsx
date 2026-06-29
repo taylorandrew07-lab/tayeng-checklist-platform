@@ -386,6 +386,7 @@ export default function JobsTrackerPage() {
                   <td className="py-1.5 pr-2 min-w-[120px]">
                     <EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} />
                     {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.job_stage}</span>}
+                    {r.cargo_type && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.cargo_type}</span>}
                   </td>
                   <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /></td>
                   <td className="px-3 py-1.5">
