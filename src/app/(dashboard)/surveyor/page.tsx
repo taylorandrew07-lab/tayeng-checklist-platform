@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import { WORKFLOW } from '@/lib/jobs/tracker'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
@@ -21,6 +22,10 @@ export default function SurveyorDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // Timeframe for the work summary + CSV. Defaults to this month (pay cycle).
+  const [period, setPeriod] = useState<'this_month' | 'last_month' | 'this_year' | 'all' | 'custom'>('this_month')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const tick = useRealtimeRefresh('jobs')
   // Your own documents expired or expiring soon.
   const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
@@ -69,7 +74,7 @@ export default function SurveyorDashboard() {
         const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
-              id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
+              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, vessel_name, surveyor_name,
               template:checklist_templates(name),
               client:clients(name)
             `)
@@ -105,12 +110,55 @@ export default function SurveyorDashboard() {
   // started later with no signal. Refreshes once per dashboard open (when online).
   useEffect(() => { void loadNewJobData().catch(() => {}) }, [])
 
-  // Bucket by the unified workflow status (kept in sync with the checklist phase).
-  const active = jobs.filter(j => ['new', 'assigned', 'in_progress'].includes(j.workflow_status))
-  const submitted = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+  // ── Timeframe filter for the work summary + CSV ─────────────────────────────
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const monthLabel = (d: Date) => d.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+  const now = new Date()
+  let range: { from: string | null; to: string | null; label: string }
+  if (period === 'this_month') range = { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0)), label: monthLabel(now) }
+  else if (period === 'last_month') { const d = new Date(now.getFullYear(), now.getMonth() - 1, 1); range = { from: ymd(d), to: ymd(new Date(d.getFullYear(), d.getMonth() + 1, 0)), label: monthLabel(d) } }
+  else if (period === 'this_year') range = { from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31`, label: String(now.getFullYear()) }
+  else if (period === 'custom') range = { from: customFrom || null, to: customTo || null, label: customFrom || customTo ? `${customFrom || '…'} → ${customTo || '…'}` : 'Custom range' }
+  else range = { from: null, to: null, label: 'All time' }
 
-  // Totals across all jobs, so the surveyor can sanity-check their pay at a glance.
-  const totals = Object.values(mine).reduce((a, m) => ({ reg: a.reg + m.reg, ot: a.ot + m.ot, km: a.km + m.km }), { reg: 0, ot: 0, km: 0 })
+  // Each job's date for filtering = its survey (scheduled) date, falling back to created.
+  const jobDate = (j: any) => (j.scheduled_date ?? j.created_at ?? '').slice(0, 10)
+  const inRange = (j: any) => { const d = jobDate(j); return (!range.from || d >= range.from) && (!range.to || d <= range.to) }
+
+  // Bucket by the unified workflow status (kept in sync with the checklist phase).
+  // Active = live to-do queue (always shown, all-time). Submitted/Completed history
+  // and the summary totals + CSV are scoped to the selected timeframe.
+  const active = jobs.filter(j => ['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+  const submittedAll = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+  const submitted = submittedAll.filter(inRange)
+
+  // Totals for the selected timeframe across ALL the surveyor's jobs in range.
+  const periodJobs = jobs.filter(inRange)
+  const totals = periodJobs.reduce((a, j) => { const m = mine[j.id]; return m ? { reg: a.reg + m.reg, ot: a.ot + m.ot, km: a.km + m.km } : a }, { reg: 0, ot: 0, km: 0 })
+
+  // Download the selected timeframe's work as CSV (one row per job + a totals row).
+  function downloadCsv() {
+    const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+    const headers = ['Report #', 'Job #', 'Date', 'Vessel', 'Job type', 'Client', 'Status', 'Regular hours', 'Overtime hours', 'Distance (km)']
+    const lines = [headers.join(',')]
+    for (const j of periodJobs) {
+      const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
+      lines.push([
+        j.report_number, j.job_number, jobDate(j), j.vessel_name, j.job_type, j.client?.name,
+        WORKFLOW[j.workflow_status as keyof typeof WORKFLOW]?.label ?? j.workflow_status,
+        m.reg || '', m.ot || '', m.km || '',
+      ].map(esc).join(','))
+    }
+    lines.push(['', '', '', '', '', '', 'TOTAL', totals.reg || '', totals.ot || '', totals.km || ''].map(esc).join(','))
+    // BOM + CRLF so Excel opens the UTF-8 cleanly.
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `my-work-${range.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   // The surveyor's own hours + km on a job, shown under the card title for pay tracking.
   function MyLine({ jobId }: { jobId: string }) {
@@ -158,7 +206,7 @@ export default function SurveyorDashboard() {
               <p className="text-sm text-gray-500 mt-1">Active</p>
             </div>
             <div className="card p-4 text-center">
-              <p className="text-3xl font-bold text-purple-600 tnum">{submitted.length}</p>
+              <p className="text-3xl font-bold text-purple-600 tnum">{submittedAll.length}</p>
               <p className="text-sm text-gray-500 mt-1">Submitted</p>
             </div>
             <div className="card p-4 text-center">
@@ -167,14 +215,28 @@ export default function SurveyorDashboard() {
             </div>
           </div>
 
-          {(totals.reg > 0 || totals.ot > 0 || totals.km > 0) && (
-            <div className="card p-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-              <span className="font-medium text-gray-700">My hours &amp; travel</span>
+          <div className="card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
+                  <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                ))}
+              </div>
+              <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
+            </div>
+            {period === 'custom' && (
+              <div className="flex flex-wrap items-end gap-2 mt-3">
+                <div><label className="block text-[11px] text-gray-400">From</label><input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input-base py-1 text-sm" /></div>
+                <div><label className="block text-[11px] text-gray-400">To</label><input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input-base py-1 text-sm" /></div>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm mt-3 pt-3 border-t border-gray-100">
+              <span className="font-medium text-gray-700">{range.label} · {periodJobs.length} job{periodJobs.length === 1 ? '' : 's'}</span>
               <span className="text-gray-500">Regular: <strong className="text-gray-800 tnum">{totals.reg}h</strong></span>
               <span className="text-gray-500">Overtime: <strong className="text-gray-800 tnum">{totals.ot}h</strong></span>
               <span className="text-gray-500">Distance: <strong className="text-gray-800 tnum">{totals.km} km</strong></span>
             </div>
-          )}
+          </div>
 
           <AttentionCard items={docAttention} />
 
@@ -222,7 +284,7 @@ export default function SurveyorDashboard() {
 
           {submitted.length > 0 && (
             <div>
-              <h2 className="section-title mb-3">Submitted / Completed</h2>
+              <h2 className="section-title mb-3">Submitted / Completed{period !== 'all' ? ` · ${range.label}` : ''}</h2>
               <div className="space-y-3">
                 {submitted.map(job => (
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
