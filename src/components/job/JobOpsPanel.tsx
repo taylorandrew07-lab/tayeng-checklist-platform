@@ -44,8 +44,8 @@ function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_
   return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
 }
 
-function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; billingMode: 'overtime' | 'regular' | 'fixed'; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; onKm?: (rowId: string, entries: KmEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
+function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; billingMode: 'overtime' | 'regular' | 'fixed'; locked?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; onKm?: (rowId: string, entries: KmEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
 }) {
   const isOTMode = billingMode === 'overtime'
   const isRegMode = billingMode === 'regular'
@@ -125,6 +125,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
   // Write any changed fields. Quiet (no toast) — the panel-level Save button + status
   // indicator own the feedback. Used by both the debounced autosave and the Save button.
   async function flush(): Promise<void> {
+    if (locked) return // closed job — RLS blocks writes; don't even try
     const otValue = otFromLog ? otTotal : Number(ot) || 0
     const regValue = Number(reg) || 0
     const needHours = regValue !== savedRef.current.reg || otValue !== savedRef.current.ot
@@ -216,7 +217,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
               <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
             )}
           </label>
-          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
+          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} disabled={locked} className={numCls} />
         </div>
         )}
         {isOTMode && (
@@ -224,7 +225,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
           <label className="text-[11px] text-amber-600 font-medium">Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
-            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ring-1 ring-amber-300 border-amber-300`} />}
+            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} disabled={locked} className={`${numCls} ring-1 ring-amber-300 border-amber-300`} />}
         </div>
         )}
         {isAdmin && isRegMode && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
@@ -248,10 +249,11 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
                 <span className="font-medium tnum flex-shrink-0">{e.hours}h</span>
                 {e.location && <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100">{e.location}</span>}
                 {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
-                <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>
+                {!locked && <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
               </div>
             ))}
-            {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet — add each shift below (a shift can run from one day into the next).</p>}
+            {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet{locked ? '.' : ' — add each shift below (a shift can run from one day into the next).'}</p>}
+            {!locked && (
             <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
               <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
                 <div><label className="block text-[10px] text-gray-400">Start date</label><input type="date" value={nStartDate} onChange={e => { const v = e.target.value; setNStartDate(v); if (!nEndDate || nEndDate < v) setNEndDate(v) }} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
@@ -267,6 +269,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
                 <button onClick={addEntry} disabled={logBusy} className="btn-secondary py-1 px-2 text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
               </div>
             </div>
+            )}
           </div>
         )}
       </div>
@@ -285,16 +288,18 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultD
                 <span className="tnum text-gray-600 flex-shrink-0">{fmtDay(e.trip_date)}</span>
                 <span className="font-medium tnum flex-shrink-0">{e.km} km</span>
                 {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
-                <button onClick={() => removeKm(e.id)} disabled={kmBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>
+                {!locked && <button onClick={() => removeKm(e.id)} disabled={kmBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
               </div>
             ))}
-            {kmEntries.length === 0 && <p className="text-[11px] text-gray-400">No trips logged yet — add each drive ({KM_MIN}–{KM_MAX} km, whole numbers).</p>}
+            {kmEntries.length === 0 && <p className="text-[11px] text-gray-400">No trips logged yet{locked ? '.' : ` — add each drive (${KM_MIN}–${KM_MAX} km, whole numbers).`}</p>}
+            {!locked && (
             <div className="pt-1.5 border-t border-gray-200 flex flex-wrap items-end gap-x-2 gap-y-1.5">
               <div><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nKmDate} onChange={e => setNKmDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
               <div><label className="block text-[10px] text-gray-400">Distance (km)</label><input type="number" min={KM_MIN} max={KM_MAX} step={1} value={nKm} onChange={e => setNKm(e.target.value)} placeholder={`${KM_MIN}–${KM_MAX}`} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
               <input type="text" value={nKmNote} onChange={e => setNKmNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
               <button onClick={addKm} disabled={kmBusy} className="btn-secondary py-1 px-2 text-xs">{kmBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
             </div>
+            )}
           </div>
         )}
       </div>
@@ -404,6 +409,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   useEffect(() => { void reload(); if (isAdmin) listSurveyorAccounts().then(setAccounts) }, [job.id])
 
   const current = job.workflow_status
+  // Once an admin closes a job, surveyors can no longer edit it (RLS enforces this;
+  // this just makes the UI read-only so they see the lock instead of hitting errors).
+  const surveyorLocked = !isAdmin && current === 'closed'
   const idx = WORKFLOW_ORDER.indexOf(current)
   const next = idx >= 0 && idx < WORKFLOW_ORDER.length - 1 ? WORKFLOW_ORDER[idx + 1] : null
 
@@ -523,6 +531,11 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             )}
           </div>
         </div>
+        {surveyorLocked && (
+          <p className="text-xs text-gray-700 bg-gray-100 border border-gray-200 rounded-md px-2.5 py-1.5 mb-3 flex items-center gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 text-gray-500" />This job is closed — your hours, overtime and distance are locked for payment and can no longer be edited.
+          </p>
+        )}
         <p className="text-[11px] text-gray-400 mb-3">
           {billingMode === 'overtime' ? 'Overtime hours are paid to the surveyor as OT and billed to the client.'
             : billingMode === 'fixed' ? 'Fixed-price job — no hours; only distance is logged per surveyor.'
@@ -551,7 +564,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} billingMode={billingMode} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} onKm={(rowId, es) => setKmByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} billingMode={billingMode} locked={surveyorLocked} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} onKm={(rowId, es) => setKmByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
             ))}
           </div>
         )}
@@ -575,7 +588,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             {ATTACHMENT_KINDS.map(k => <option key={k.kind} value={k.kind}>{k.label}</option>)}
           </select>
           <input ref={fileRef} type="file" className="hidden" onChange={e => upload(e.target.files?.[0] ?? null)} />
-          <button onClick={() => fileRef.current?.click()} disabled={busy} className="btn-secondary text-sm">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}Upload</button>
+          <button onClick={() => fileRef.current?.click()} disabled={busy || surveyorLocked} className="btn-secondary text-sm">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}Upload</button>
         </div>
         {attachments.length === 0 ? (
           <p className="text-sm text-gray-400">No files uploaded yet.</p>

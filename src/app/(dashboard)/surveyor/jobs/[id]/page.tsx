@@ -55,6 +55,12 @@ export default function SurveyorJobPage() {
         </div>
       </div>
 
+      {job.workflow_status === 'closed' && (
+        <div className="rounded-lg bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
+          This job is closed. Your hours, overtime, distance and checklist are locked and can no longer be edited.
+        </div>
+      )}
+
       {/* Surveyor ops: read-only status + their own assignment + report/VOS upload. */}
       <JobOpsPanel job={job} isAdmin={false} onChanged={load} />
 

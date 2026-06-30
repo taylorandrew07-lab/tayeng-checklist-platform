@@ -1149,6 +1149,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     if (!job) return null
 
     const isSubmitted = !!job.submitted_at
+    // A closed job is frozen for surveyors too (payments are settled against it). It
+    // behaves like a submitted job: read-only for everyone except a privileged re-open.
+    const isClosed = job.workflow_status === 'closed'
+    const isLocked = isSubmitted || isClosed
 
     // --- Profile-based edit rights ---
     // INVARIANT (read before changing): this UI edit-rule must never be BROADER than
@@ -1166,16 +1170,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     // A privileged user (admin/super admin) who is NOT the assigned/creator can take
     // over editing via an explicit confirmed override. Submitted jobs stay locked for all.
-    const canOverride = isPrivileged && !canEditByIdentity && !isSubmitted
+    const canOverride = isPrivileged && !canEditByIdentity && !isLocked
     const editingDenied = !canEditByIdentity && !adminOverride
 
-    // A privileged user can re-open a submitted/completed checklist to correct mistakes
-    // via an explicit confirmed action. Saving preserves the job's current status (it is
-    // NOT re-submitted), so e.g. a completed job stays completed.
-    const adminEditingSubmitted = isPrivileged && isSubmitted && editSubmitted
+    // A privileged user can re-open a submitted/completed/closed checklist to correct
+    // mistakes via an explicit confirmed action. Saving preserves the job's current
+    // status (it is NOT re-submitted), so e.g. a closed job stays closed.
+    const adminEditingSubmitted = isPrivileged && isLocked && editSubmitted
 
     const readOnly = forceReadOnly || (
-      isSubmitted ? !adminEditingSubmitted : editingDenied
+      isLocked ? !adminEditingSubmitted : editingDenied
     )
 
     // Flat list of all fields for token substitution
@@ -1235,9 +1239,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit as admin</span>
               </button>
             )}
-            {isSubmitted && isPrivileged && !editSubmitted && !forceReadOnly && (
+            {isLocked && isPrivileged && !editSubmitted && !forceReadOnly && (
               <button onClick={() => setShowEditSubmittedDialog(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
-                <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit submitted</span>
+                <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">{isClosed && !isSubmitted ? 'Edit closed' : 'Edit submitted'}</span>
               </button>
             )}
             {!readOnly && (
@@ -1282,8 +1286,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           </div>
         )}
 
+        {/* Closed jobs are locked for surveyors (payments settled against them). */}
+        {readOnly && isClosed && !isPrivileged && (
+          <div className="rounded-lg bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700 flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />
+            <span>This job is closed — the checklist is locked and can no longer be edited.</span>
+          </div>
+        )}
+
         {/* Read-only notice for users who are not the assigned surveyor/creator */}
-        {readOnly && !isSubmitted && editingDenied && (
+        {readOnly && !isLocked && editingDenied && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
