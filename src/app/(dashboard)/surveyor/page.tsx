@@ -34,17 +34,31 @@ export default function SurveyorDashboard() {
         const { data: { session } } = await withTimeout(supabase.auth.getSession(), 12_000, 'Loading')
         if (!session) { if (active) setLoading(false); return }
 
-        const [pRes, jRes] = await withTimeout(Promise.all([
+        // Fetch the profile and the IDs of every job this surveyor is linked to via
+        // the job_surveyors join table (multi-surveyor jobs). A secondary surveyor is
+        // NOT in jobs.assigned_to, so without this they'd never see jobs they share.
+        const [pRes, sRes] = await withTimeout(Promise.all([
           supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+          supabase.from('job_surveyors').select('job_id').eq('surveyor_id', session.user.id),
+        ]), 12_000, 'Loading')
+
+        const linkedIds = Array.from(new Set((sRes.data ?? []).map((r: any) => r.job_id)))
+        const orParts = [
+          `created_by.eq.${session.user.id}`,
+          `assigned_to.eq.${session.user.id}`,
+          ...(linkedIds.length ? [`id.in.(${linkedIds.join(',')})`] : []),
+        ]
+
+        const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
               id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
               template:checklist_templates(name),
               client:clients(name)
             `)
-            .or(`created_by.eq.${session.user.id},assigned_to.eq.${session.user.id}`)
+            .or(orParts.join(','))
             .order('created_at', { ascending: false }),
-        ]), 15_000, 'Loading your jobs')
+          15_000, 'Loading your jobs')
         if (jRes.error) throw jRes.error
         if (!active) return
 
