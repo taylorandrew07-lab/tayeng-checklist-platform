@@ -43,15 +43,14 @@ function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_
   return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
 }
 
-function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved, onEntries }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void
+function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved, onEntries, registerFlush, onDirty }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
 }) {
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
   const [payRate, setPayRate] = useState(row.pay_rate != null ? String(row.pay_rate) : '')
   const [otRate, setOtRate] = useState(row.overtime_rate != null ? String(row.overtime_rate) : '')
   const [cur, setCur] = useState(row.pay_currency || 'TTD')
-  const [saving, setSaving] = useState(false)
 
   // Overtime time-log (migration 111/115). When entries exist they ARE the OT hours.
   // Each entry is a start date/time → stop date/time span (may cross midnight/days).
@@ -76,42 +75,63 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
   async function persistHours(otValue: number, regValue = Number(reg) || 0): Promise<boolean> {
     const h = await updateJobSurveyorHours(row.id, jobId, { regular_hours: regValue, overtime_hours: otValue })
     if (h.error) { toast.error(h.error); return false }
-    savedRef.current = { reg: regValue, ot: otValue }
+    savedRef.current.reg = regValue; savedRef.current.ot = otValue
     return true
   }
 
-  async function save() {
-    setSaving(true)
-    const ok = await persistHours(otFromLog ? otTotal : Number(ot) || 0)
-    let err = ok ? undefined : 'x'
-    if (ok && isAdmin) {
+  // Last-saved snapshot of every editable field, so we only write what actually changed
+  // and can tell the parent whether this row is "dirty" (has unsaved edits).
+  const savedRef = useRef({
+    reg: Number(row.regular_hours) || 0,
+    ot: Number(row.overtime_hours) || 0,
+    payRate: row.pay_rate != null ? String(row.pay_rate) : '',
+    otRate: row.overtime_rate != null ? String(row.overtime_rate) : '',
+    cur: row.pay_currency || 'TTD',
+  })
+
+  // Write any changed fields. Quiet (no toast) — the panel-level Save button + status
+  // indicator own the feedback. Used by both the debounced autosave and the Save button.
+  async function flush(): Promise<void> {
+    const otValue = otFromLog ? otTotal : Number(ot) || 0
+    const regValue = Number(reg) || 0
+    const needHours = regValue !== savedRef.current.reg || otValue !== savedRef.current.ot
+    const needRates = isAdmin && (payRate !== savedRef.current.payRate || otRate !== savedRef.current.otRate || cur !== savedRef.current.cur)
+    if (!needHours && !needRates) return
+    if (needHours && !(await persistHours(otValue, regValue))) return
+    if (needRates) {
       const r = await updateJobSurveyorRates(row.id, jobId, { pay_rate: payRate === '' ? null : Number(payRate), overtime_rate: otRate === '' ? null : Number(otRate), pay_currency: cur })
-      err = r.error
+      if (r.error) { toast.error(r.error); return }
+      savedRef.current.payRate = payRate; savedRef.current.otRate = otRate; savedRef.current.cur = cur
     }
-    setSaving(false)
-    if (err) { if (err !== 'x') toast.error(err); return }
-    toast.success('Hours saved'); onSaved()
+    onDirty?.(row.id, false); onSaved()
   }
 
-  // Auto-save the hours when a field loses focus, so the value sticks without having
-  // to find the row's Save button (mirrors the app's auto-save elsewhere). Tracks the
-  // last-saved values in a ref to avoid redundant writes on every blur.
-  const savedRef = useRef({ reg: Number(row.regular_hours) || 0, ot: Number(row.overtime_hours) || 0 })
-  async function autoSaveHours() {
-    const regVal = Number(reg) || 0
-    const otVal = otFromLog ? otTotal : Number(ot) || 0
-    if (regVal === savedRef.current.reg && otVal === savedRef.current.ot) return
-    if (await persistHours(otVal, regVal)) toast.success('Hours saved')
-  }
+  // Register this row's flush with the parent so the single Save button can persist it.
+  // flushRef always points at the latest closure (updated after each commit) so the
+  // registered + debounced calls read current field values.
+  const flushRef = useRef(flush)
+  useEffect(() => { flushRef.current = flush })
+  useEffect(() => {
+    registerFlush?.(row.id, () => flushRef.current())
+    return () => registerFlush?.(row.id, null)
+  }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function applyChecklistHours() {
+  // Debounced autosave: ~1.2s after the last edit the row saves itself, silently. This
+  // is what keeps the "unsaved changes" prompt from ever really showing.
+  useEffect(() => {
+    const otValue = otFromLog ? otTotal : Number(ot) || 0
+    const regValue = Number(reg) || 0
+    const dirty = regValue !== savedRef.current.reg || otValue !== savedRef.current.ot ||
+      (isAdmin && (payRate !== savedRef.current.payRate || otRate !== savedRef.current.otRate || cur !== savedRef.current.cur))
+    onDirty?.(row.id, dirty)
+    if (!dirty) return
+    const t = setTimeout(() => { void flushRef.current() }, 1200)
+    return () => clearTimeout(t)
+  }, [reg, ot, otTotal, payRate, otRate, cur]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function applyChecklistHours() {
     if (billableHours == null) return
-    setReg(String(billableHours))
-    setSaving(true)
-    const ok = await persistHours(otFromLog ? otTotal : Number(ot) || 0, billableHours)
-    setSaving(false)
-    if (!ok) return
-    toast.success(`Applied ${billableHours} billable hrs`); onSaved()
+    setReg(String(billableHours)) // the debounced autosave persists it
   }
 
   async function addEntry() {
@@ -159,13 +179,13 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
               <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
             )}
           </label>
-          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} onBlur={autoSaveHours} className={numCls} />
+          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
         </div>
         <div>
           <label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
-            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} onBlur={autoSaveHours} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
+            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
         </div>
         {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
@@ -209,9 +229,8 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 mt-2">
+      <div className="mt-2">
         <p className="text-xs text-gray-500">OT pay: <span className="font-medium text-gray-700 tnum">{money(row.overtime_pay, row.pay_currency)}</span>{isAdmin && row.regular_pay > 0 ? ` · reg ${money(row.regular_pay, row.pay_currency)}` : ''}</p>
-        <button onClick={save} disabled={saving} className="btn-secondary py-1 px-2.5 text-xs">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save</button>
       </div>
     </div>
   )
@@ -235,6 +254,30 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [billableHours, setBillableHours] = useState<number | null>(null)
   const [otByRow, setOtByRow] = useState<Record<string, OvertimeEntry[]>>({})
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // One Save for all surveyor rows. Each row autosaves ~1.2s after an edit and reports
+  // its dirty state + a flush() here; the button just flushes everything now, and the
+  // unsaved-changes guard only fires in the rare window before an autosave lands.
+  const flushers = useRef<Map<string, () => Promise<void>>>(new Map())
+  const [dirtyRows, setDirtyRows] = useState<Set<string>>(new Set())
+  const [savingAll, setSavingAll] = useState(false)
+  const registerFlush = (id: string, fn: (() => Promise<void>) | null) => { if (fn) flushers.current.set(id, fn); else flushers.current.delete(id) }
+  const markDirty = (id: string, dirty: boolean) => setDirtyRows(prev => {
+    if (dirty === prev.has(id)) return prev
+    const n = new Set(prev); if (dirty) n.add(id); else n.delete(id); return n
+  })
+  async function saveAll() {
+    setSavingAll(true)
+    try { await Promise.all([...flushers.current.values()].map(f => f())); toast.success('Saved') }
+    finally { setSavingAll(false) }
+  }
+  // Warn before leaving (reload/close) while edits are still in flight — should be rare.
+  useEffect(() => {
+    if (dirtyRows.size === 0) return
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [dirtyRows.size])
 
   // Job-level overtime roll-up across every surveyor (each row reports its own entries
   // up via onEntries; RLS means a surveyor only contributes their own). Coverage is the
@@ -366,15 +409,31 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
       {showOps && (
       <div className="card p-5">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <h3 className="font-medium text-gray-900">Surveyors &amp; hours</h3>
-          {isAdmin ? (
-            <button onClick={toggleOvertime} title="Mark this as an overtime job"
-              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${isOT ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
-              <Clock className="h-3.5 w-3.5" />Overtime job{isOT ? ' · on' : ''}
-            </button>
-          ) : isOT ? (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700"><Clock className="h-3.5 w-3.5" />Overtime job</span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            <h3 className="font-medium text-gray-900">Surveyors &amp; hours</h3>
+            {surveyors.length > 0 && (savingAll ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>
+            ) : dirtyRows.size > 0 ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-amber-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Unsaved changes</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><CheckCircle2 className="h-3 w-3 text-emerald-500" />Saved</span>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <button onClick={toggleOvertime} title="Mark this as an overtime job"
+                className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${isOT ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                <Clock className="h-3.5 w-3.5" />Overtime job{isOT ? ' · on' : ''}
+              </button>
+            ) : isOT ? (
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700"><Clock className="h-3.5 w-3.5" />Overtime job</span>
+            ) : null}
+            {surveyors.length > 0 && (
+              <button onClick={saveAll} disabled={savingAll || dirtyRows.size === 0} className="btn-secondary py-1 px-2.5 text-xs">
+                {savingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save
+              </button>
+            )}
+          </div>
         </div>
         <p className="text-[11px] text-gray-400 mb-3">Regular hours are billed to the client · Overtime hours are paid to the surveyor as OT.</p>
         {billableHours != null && (
@@ -395,7 +454,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
             ))}
           </div>
         )}
