@@ -24,6 +24,8 @@ export interface DraftLine {
   job_id: string | null
   vessel_name?: string | null
   report_number?: string | null
+  /** Auto-seeded mileage line (per_km rate × job km); replaced on each reload. */
+  auto_mileage?: boolean
 }
 
 export function blankLine(is_expense = false): DraftLine {

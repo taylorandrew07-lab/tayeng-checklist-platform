@@ -108,11 +108,12 @@ export default function ClientRates() {
   )
 }
 
-const RATE_TYPES: [ClientRate['rate_type'], string][] = [['fixed', 'Fixed'], ['hourly', 'Hourly'], ['per_unit', 'Per unit']]
+const RATE_TYPES: [ClientRate['rate_type'], string][] = [['fixed', 'Fixed'], ['hourly', 'Hourly'], ['per_unit', 'Per unit'], ['per_km', 'Per km (mileage)']]
 
 function rateSummary(r: ClientRate): string {
   const base = money(Number(r.rate), r.currency)
   if (r.rate_type === 'hourly') return `${base} / hr`
+  if (r.rate_type === 'per_km') return `${base} / km`
   if (r.rate_type === 'per_unit') return `${base} / ${r.unit_label || 'unit'}`
   return base
 }
@@ -152,7 +153,7 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
 
   async function save() {
     setSaving(true)
-    const payload = { client_id: clientId, job_type: jobType || null, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : null, currency, notes: notes.trim() || null }
+    const payload = { client_id: clientId, job_type: jobType || null, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : rateType === 'per_km' ? 'km' : null, currency, notes: notes.trim() || null }
     const res = existing ? await updateClientRate(existing.id, payload) : await addClientRate(payload as any)
     setSaving(false)
     if (res.error) { toast.error(res.error); return }

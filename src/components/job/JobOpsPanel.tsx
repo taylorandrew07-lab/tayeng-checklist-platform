@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2 } from 'lucide-react'
+import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2, MapPin } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -11,8 +11,9 @@ import {
   setWorkflowStatus, updateJobField, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
+  listSurveyorKm, addSurveyorKm, deleteSurveyorKm, KM_MIN, KM_MAX,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
-  type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry,
+  type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type KmEntry,
 } from '@/lib/jobs/tracker'
 import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
 
@@ -43,9 +44,12 @@ function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_
   return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
 }
 
-function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved, onEntries, registerFlush, onDirty }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
+function SurveyorRow({ row, jobId, isAdmin, billingMode, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; billingMode: 'overtime' | 'regular' | 'fixed'; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; onKm?: (rowId: string, entries: KmEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
 }) {
+  const isOTMode = billingMode === 'overtime'
+  const isRegMode = billingMode === 'regular'
+  const isFixed = billingMode === 'fixed'
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
   const [payRate, setPayRate] = useState(row.pay_rate != null ? String(row.pay_rate) : '')
@@ -67,8 +71,37 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
   const otFromLog = entries.length > 0
   const preview = shiftHours(nStartDate, nStartTime, nEndDate || nStartDate, nEndTime)
 
+  // Kilometre log (migration 116) — one trip per drive, 10–140 km. Shown for every
+  // job regardless of billing mode; the per-surveyor total rolls up to the job total.
+  const [kmEntries, setKmEntries] = useState<KmEntry[]>([])
+  const [kmOpen, setKmOpen] = useState(false)
+  const [nKmDate, setNKmDate] = useState(defaultDate ?? '')
+  const [nKm, setNKm] = useState('')
+  const [nKmNote, setNKmNote] = useState('')
+  const [kmBusy, setKmBusy] = useState(false)
+  const kmTotal = kmEntries.reduce((s, e) => s + (e.km || 0), 0)
+
   async function loadEntries() { const next = await listSurveyorOvertime(row.id); setEntries(next); onEntries?.(row.id, next) }
-  useEffect(() => { void loadEntries() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  async function loadKm() { const next = await listSurveyorKm(row.id); setKmEntries(next); onKm?.(row.id, next) }
+  useEffect(() => { void loadEntries(); void loadKm() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function addKm() {
+    const n = Number(nKm)
+    if (!Number.isInteger(n) || n < KM_MIN || n > KM_MAX) { toast.error(`Distance must be a whole number between ${KM_MIN} and ${KM_MAX} km`); return }
+    setKmBusy(true)
+    const res = await addSurveyorKm(row.id, { trip_date: nKmDate || defaultDate || null, km: n, note: nKmNote.trim() || null })
+    if (res.error) { setKmBusy(false); toast.error(res.error); return }
+    await loadKm()
+    setNKm(''); setNKmNote('')
+    setKmBusy(false); onSaved()
+  }
+  async function removeKm(id: string) {
+    setKmBusy(true)
+    const res = await deleteSurveyorKm(id)
+    if (res.error) { setKmBusy(false); toast.error(res.error); return }
+    await loadKm()
+    setKmBusy(false); onSaved()
+  }
 
   // Persist OT hours = log total (when logged) else the typed number. Keeps the one
   // job_surveyors.overtime_hours that billing reads in sync with the detail log.
@@ -171,7 +204,11 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
         <span className="text-sm font-medium text-gray-800">{row.full_name}{row.display_title ? <span className="font-normal text-gray-400"> · {row.display_title}</span> : null}{row.role === 'admin' ? ' (admin)' : ''}</span>
         {isAdmin && <button onClick={onRemove} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>}
       </div>
+      {isFixed ? (
+        <p className="text-xs text-gray-400 italic">Fixed-price job — no hours to log.</p>
+      ) : (
       <div className="grid grid-cols-2 gap-2">
+        {isRegMode && (
         <div>
           <label className="text-[11px] text-gray-400 flex items-center justify-between gap-2">
             <span>Regular hrs <span className="text-gray-300">· client</span></span>
@@ -181,18 +218,23 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
           </label>
           <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} className={numCls} />
         </div>
+        )}
+        {isOTMode && (
         <div>
-          <label className={`text-[11px] ${highlightOT ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
+          <label className="text-[11px] text-amber-600 font-medium">Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
-            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ${highlightOT ? 'ring-1 ring-amber-300 border-amber-300' : ''}`} />}
+            : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} className={`${numCls} ring-1 ring-amber-300 border-amber-300`} />}
         </div>
-        {isAdmin && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
-        {isAdmin && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
+        )}
+        {isAdmin && isRegMode && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && isOTMode && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
       </div>
+      )}
 
-      {/* Overtime time-log */}
+      {/* Overtime time-log — only in overtime mode */}
+      {isOTMode && (
       <div className="mt-2">
         <button type="button" onClick={() => setLogOpen(o => !o)} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800">
           <Clock className="h-3 w-3" />OT time-log{entries.length ? ` · ${entries.length} shift${entries.length === 1 ? '' : 's'} · ${otTotal}h` : ''}
@@ -228,10 +270,44 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
           </div>
         )}
       </div>
+      )}
 
+      {/* Kilometre log — shown for every job (all billing modes) */}
       <div className="mt-2">
-        <p className="text-xs text-gray-500">OT pay: <span className="font-medium text-gray-700 tnum">{money(row.overtime_pay, row.pay_currency)}</span>{isAdmin && row.regular_pay > 0 ? ` · reg ${money(row.regular_pay, row.pay_currency)}` : ''}</p>
+        <button type="button" onClick={() => setKmOpen(o => !o)} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800">
+          <MapPin className="h-3 w-3" />Distance{kmEntries.length ? ` · ${kmEntries.length} trip${kmEntries.length === 1 ? '' : 's'} · ${kmTotal} km` : ''}
+          <ChevronRight className={`h-3 w-3 transition-transform ${kmOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {kmOpen && (
+          <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 space-y-1.5">
+            {kmEntries.map(e => (
+              <div key={e.id} className="flex items-center gap-2 text-xs text-gray-700">
+                <span className="tnum text-gray-600 flex-shrink-0">{fmtDay(e.trip_date)}</span>
+                <span className="font-medium tnum flex-shrink-0">{e.km} km</span>
+                {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
+                <button onClick={() => removeKm(e.id)} disabled={kmBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>
+              </div>
+            ))}
+            {kmEntries.length === 0 && <p className="text-[11px] text-gray-400">No trips logged yet — add each drive ({KM_MIN}–{KM_MAX} km, whole numbers).</p>}
+            <div className="pt-1.5 border-t border-gray-200 flex flex-wrap items-end gap-x-2 gap-y-1.5">
+              <div><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nKmDate} onChange={e => setNKmDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
+              <div><label className="block text-[10px] text-gray-400">Distance (km)</label><input type="number" min={KM_MIN} max={KM_MAX} step={1} value={nKm} onChange={e => setNKm(e.target.value)} placeholder={`${KM_MIN}–${KM_MAX}`} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
+              <input type="text" value={nKmNote} onChange={e => setNKmNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
+              <button onClick={addKm} disabled={kmBusy} className="btn-secondary py-1 px-2 text-xs">{kmBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {!isFixed && (
+      <div className="mt-2">
+        <p className="text-xs text-gray-500">
+          {isOTMode
+            ? <>OT pay: <span className="font-medium text-gray-700 tnum">{money(row.overtime_pay, row.pay_currency)}</span></>
+            : <>Reg pay: <span className="font-medium text-gray-700 tnum">{money(row.regular_pay, row.pay_currency)}</span></>}
+        </p>
+      </div>
+      )}
     </div>
   )
 }
@@ -250,9 +326,10 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [busy, setBusy] = useState(false)
   const [addId, setAddId] = useState('')
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
-  const [isOT, setIsOT] = useState(!!job.is_overtime)
+  const [billingMode, setBillingMode] = useState<'overtime' | 'regular' | 'fixed'>(job.billing_mode ?? 'regular')
   const [billableHours, setBillableHours] = useState<number | null>(null)
   const [otByRow, setOtByRow] = useState<Record<string, OvertimeEntry[]>>({})
+  const [kmByRow, setKmByRow] = useState<Record<string, KmEntry[]>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
   // One Save for all surveyor rows. Each row autosaves ~1.2s after an edit and reports
@@ -284,6 +361,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   // earliest start → latest stop across all logged shifts — the actual job coverage.
   const allOt = Object.values(otByRow).flat()
   const otAllTotal = Math.round(allOt.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+  const kmAllTotal = Object.values(kmByRow).flat().reduce((s, e) => s + (e.km || 0), 0)
   const startKey = (e: OvertimeEntry) => `${e.entry_date ?? ''}T${e.start_time ?? ''}`
   const stopKey = (e: OvertimeEntry) => `${e.end_date || e.entry_date || ''}T${e.end_time ?? ''}`
   const startable = allOt.filter(e => e.entry_date && e.start_time)
@@ -291,11 +369,13 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const earliest = startable.length ? startable.reduce((a, e) => (startKey(e) < startKey(a) ? e : a)) : null
   const latest = stoppable.length ? stoppable.reduce((a, e) => (stopKey(e) > stopKey(a) ? e : a)) : null
 
-  async function toggleOvertime() {
-    const next = !isOT
-    setIsOT(next)
-    const res = await updateJobField(job.id, { is_overtime: next })
-    if (res.error) { setIsOT(!next); toast.error(res.error); return }
+  async function setMode(mode: 'overtime' | 'regular' | 'fixed') {
+    const prev = billingMode
+    if (mode === prev) return
+    setBillingMode(mode)
+    // Keep is_overtime in lockstep so the jobs-list OT filter/badge/CSV stay correct.
+    const res = await updateJobField(job.id, { billing_mode: mode, is_overtime: mode === 'overtime' })
+    if (res.error) { setBillingMode(prev); toast.error(res.error); return }
     onChanged()
   }
 
@@ -421,13 +501,21 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           </div>
           <div className="flex items-center gap-2">
             {isAdmin ? (
-              <button onClick={toggleOvertime} title="Mark this as an overtime job"
-                className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${isOT ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
-                <Clock className="h-3.5 w-3.5" />Overtime job{isOT ? ' · on' : ''}
-              </button>
-            ) : isOT ? (
-              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700"><Clock className="h-3.5 w-3.5" />Overtime job</span>
-            ) : null}
+              <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-0.5 text-xs font-medium" role="group" aria-label="Billing mode">
+                {([
+                  { mode: 'regular' as const, label: 'Regular' },
+                  { mode: 'overtime' as const, label: 'Overtime' },
+                  { mode: 'fixed' as const, label: 'Fixed' },
+                ]).map(o => (
+                  <button key={o.mode} onClick={() => setMode(o.mode)} title={`Bill this job as ${o.label.toLowerCase()}`}
+                    className={`px-2.5 py-1 rounded-full transition-colors ${billingMode === o.mode ? (o.mode === 'overtime' ? 'bg-amber-100 text-amber-700' : 'bg-white text-gray-800 shadow-sm') : 'text-gray-500 hover:text-gray-700'}`}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${billingMode === 'overtime' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}><Clock className="h-3.5 w-3.5" />{billingMode === 'overtime' ? 'Overtime job' : billingMode === 'fixed' ? 'Fixed-price job' : 'Regular-hours job'}</span>
+            )}
             {surveyors.length > 0 && (
               <button onClick={saveAll} disabled={savingAll || dirtyRows.size === 0} className="btn-secondary py-1 px-2.5 text-xs">
                 {savingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save
@@ -435,7 +523,11 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             )}
           </div>
         </div>
-        <p className="text-[11px] text-gray-400 mb-3">Regular hours are billed to the client · Overtime hours are paid to the surveyor as OT.</p>
+        <p className="text-[11px] text-gray-400 mb-3">
+          {billingMode === 'overtime' ? 'Overtime hours are paid to the surveyor as OT and billed to the client.'
+            : billingMode === 'fixed' ? 'Fixed-price job — no hours; only distance is logged per surveyor.'
+            : 'Regular hours are billed to the client.'} Distance (km) is logged per surveyor on every job.
+        </p>
         {billableHours != null && (
           <p className="text-[11px] text-brand-700 bg-brand-50/70 rounded-md px-2.5 py-1.5 mb-3">
             Checklist billable hours: <strong>{billableHours} hrs</strong> — use the <em>“use {billableHours}h”</em> link to set a surveyor&apos;s regular (client-billed) hours.
@@ -449,12 +541,17 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             )}
           </div>
         )}
+        {kmAllTotal > 0 && (
+          <div className="mb-3 rounded-md bg-gray-50 border border-gray-200 px-2.5 py-1.5 text-[11px] text-gray-600 flex items-center gap-1.5">
+            <MapPin className="h-3 w-3 text-gray-400" />Total distance (all surveyors): <strong className="tnum">{kmAllTotal} km</strong>
+          </div>
+        )}
         {surveyors.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} billingMode={billingMode} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} onKm={(rowId, es) => setKmByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
             ))}
           </div>
         )}

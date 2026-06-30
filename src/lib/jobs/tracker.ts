@@ -232,6 +232,45 @@ export async function deleteSurveyorOvertime(id: string): Promise<{ error?: stri
   return error ? { error: error.message } : {}
 }
 
+// ── Per-surveyor kilometre log (migration 116) ───────────────────────────────
+// Each entry is one trip a surveyor drove to a job: a date + the distance (10–140 km,
+// whole numbers) + an optional note. Surveyors log km on every job (all billing modes);
+// the sum per job is the mileage that feeds a per_km invoice line.
+export const KM_MIN = 10
+export const KM_MAX = 140
+
+export interface KmEntry {
+  id: string
+  trip_date: string | null
+  km: number
+  note: string | null
+}
+
+export async function listSurveyorKm(jobSurveyorId: string): Promise<KmEntry[]> {
+  const { data } = await createClient().from('job_surveyor_km')
+    .select('id, trip_date, km, note')
+    .eq('job_surveyor_id', jobSurveyorId)
+    .order('trip_date', { ascending: true }).order('created_at', { ascending: true })
+  return ((data ?? []) as any[]).map(r => ({ id: r.id, trip_date: r.trip_date, km: Number(r.km ?? 0), note: r.note }))
+}
+
+export async function addSurveyorKm(jobSurveyorId: string, e: { trip_date: string | null; km: number; note: string | null }): Promise<{ error?: string; id?: string }> {
+  if (!Number.isInteger(e.km) || e.km < KM_MIN || e.km > KM_MAX) {
+    return { error: `Distance must be a whole number between ${KM_MIN} and ${KM_MAX} km.` }
+  }
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase.from('job_surveyor_km')
+    .insert({ job_surveyor_id: jobSurveyorId, ...e, created_by: user?.id ?? null }).select('id').single()
+  if (error) return { error: error.message }
+  return { id: data?.id }
+}
+
+export async function deleteSurveyorKm(id: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_surveyor_km').delete().eq('id', id)
+  return error ? { error: error.message } : {}
+}
+
 /** Admin only (trigger-enforced): set a surveyor's pay rates on a job. */
 export async function updateJobSurveyorRates(rowId: string, jobId: string, rates: { pay_rate: number | null; overtime_rate: number | null; pay_currency: string }): Promise<{ error?: string }> {
   const { data, error } = await createClient().from('job_surveyors')
@@ -319,12 +358,15 @@ export interface TrackerRow {
   template_name: string | null
   workflow_status: WorkflowStatus
   is_overtime: boolean
+  billing_mode: 'overtime' | 'regular' | 'fixed'
   scheduled_date: string | null
   end_date: string | null
   created_at: string
   surveyors: string[]
   regular_hours: number
   overtime_hours: number
+  /** Total kilometres driven across all surveyors on the job (migration 116). */
+  total_km: number
   invoice_number: string | null
   invoice_status: string | null
   invoice_total: number | null
@@ -337,12 +379,25 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
-      .select('job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
+      .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
     supabase.from('invoices').select('id, job_id, invoice_number, status, total, currency, sent_at'),
   ])
+
+  // Sum km per job via the job_surveyor → job_surveyor_km chain (one flat query).
+  const jsToJob = new Map<string, string>()
+  for (const r of (js ?? []) as any[]) jsToJob.set(r.id, r.job_id)
+  const kmByJob = new Map<string, number>()
+  const jsIds = (js ?? []).map((r: any) => r.id)
+  if (jsIds.length) {
+    const { data: kmRows } = await supabase.from('job_surveyor_km').select('job_surveyor_id, km').in('job_surveyor_id', jsIds)
+    for (const k of (kmRows ?? []) as any[]) {
+      const jobId = jsToJob.get(k.job_surveyor_id); if (!jobId) continue
+      kmByJob.set(jobId, (kmByJob.get(jobId) ?? 0) + Number(k.km ?? 0))
+    }
+  }
 
   const sMap = new Map<string, { names: string[]; reg: number; ot: number }>()
   for (const r of (js ?? []) as any[]) {
@@ -368,8 +423,8 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
       id: j.id, report_number: j.report_number, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
       client_color: j.client?.color ?? null, template_color: j.template?.color ?? null, template_name: j.template?.name ?? null,
-      workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
-      surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0,
+      workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, billing_mode: (j.billing_mode ?? 'regular') as 'overtime' | 'regular' | 'fixed', scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
+      surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0, total_km: kmByJob.get(j.id) ?? 0,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
       invoice_sent_at: inv?.sent_at ?? null,

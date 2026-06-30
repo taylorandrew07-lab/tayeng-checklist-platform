@@ -350,8 +350,12 @@ export interface Job {
   cargo_type: string | null
   report_number: string | null
   workflow_status: WorkflowStatus
-  // Overtime job flag (migration 048)
+  // Overtime job flag (migration 048). Kept in lockstep with billing_mode === 'overtime'.
   is_overtime: boolean
+  // How the job is billed (migration 116): 'overtime' (surveyor hours logged as OT),
+  // 'regular' (plain billable hours) or 'fixed' (flat fee — no hours entry). Source of
+  // truth for which hours UI shows on the job.
+  billing_mode: 'overtime' | 'regular' | 'fixed'
   report_approved_at: string | null
   report_approved_by: string | null
   paid_at: string | null
@@ -386,8 +390,25 @@ export interface JobSurveyorOvertime {
   job_surveyor_id: string
   entry_date: string | null
   start_time: string | null
+  // Stop date + where the surveyor was (migration 115). end_date may be later than
+  // entry_date for a shift that runs into the next day(s).
+  end_date: string | null
   end_time: string | null
+  location: string | null
   hours: number
+  note: string | null
+  created_by: string | null
+  created_at: string
+}
+
+// One kilometre trip for a surveyor on a job (migration 116). Each trip is 10–140 km
+// (whole numbers). Surveyors log a trip per drive; the sum is the job's mileage and
+// feeds a per_km invoice line.
+export interface JobSurveyorKm {
+  id: string
+  job_surveyor_id: string
+  trip_date: string | null
+  km: number
   note: string | null
   created_by: string | null
   created_at: string
@@ -395,7 +416,7 @@ export interface JobSurveyorOvertime {
 
 export interface ClientRate {
   id: string; client_id: string; job_type: string | null
-  rate_type: 'fixed' | 'hourly' | 'per_unit'; rate: number
+  rate_type: 'fixed' | 'hourly' | 'per_unit' | 'per_km'; rate: number
   unit_label: string | null; currency: Currency; is_active: boolean
   /** Free-text note, e.g. "initial $X, final $Y" for a draught survey (migration 082). */
   notes: string | null

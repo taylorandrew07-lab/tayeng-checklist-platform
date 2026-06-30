@@ -15,7 +15,7 @@ import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
-import LineItemsEditor, { type DraftLine } from '@/components/invoicing/LineItemsEditor'
+import LineItemsEditor, { blankLine, type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
 import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 
@@ -108,6 +108,18 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const seeded: Record<string, LineState> = {}
     js.forEach(j => { seeded[j.id] = seedLine(j, rs) })
     setLines(seeded)
+    // Auto-add a mileage line per job when the client carries a per_km rate and the
+    // job has km logged. Editable/removable; previous auto-mileage lines are dropped
+    // on reload, while any manual/expense lines the user added are kept.
+    const perKm = rs.filter(r => r.is_active && r.rate_type === 'per_km')
+    const mileageLines: DraftLine[] = perKm.length ? js.flatMap(j => {
+      if (!j.billable_km || j.billable_km <= 0) return []
+      const rate = perKm.find(r => r.job_type === j.job_type) ?? perKm.find(r => !r.job_type)
+      if (!rate) return []
+      const label = j.vessel_name ? `M.V. ${j.vessel_name}` : (j.report_number ?? 'Survey')
+      return [{ ...blankLine(false), description: `${label} — Mileage\n${j.billable_km} km`, qty: j.billable_km, unit_price: Number(rate.rate), auto_mileage: true }]
+    }) : []
+    setExtra(prev => [...prev.filter(l => !l.auto_mileage), ...mileageLines])
     const firstRate = rs.find(r => r.is_active)
     if (firstRate) setCurrency(firstRate.currency)
     setLoadingJobs(false)

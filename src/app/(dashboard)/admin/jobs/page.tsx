@@ -265,7 +265,7 @@ export default function JobsTrackerPage() {
 
   // Download the currently-shown rows (current filters + sort + month/year) as CSV.
   function exportCsv() {
-    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Overtime', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Billing mode', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
@@ -273,7 +273,7 @@ export default function JobsTrackerPage() {
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
         csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),
-        csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.is_overtime ? 'Yes' : ''),
+        csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.billing_mode ?? ''), csv(r.total_km || ''),
         csv(r.invoice_number), csv(r.invoice_status), csv(r.invoice_total ?? ''), csv(r.invoice_currency),
         csv(r.notes),
       ].join(','))

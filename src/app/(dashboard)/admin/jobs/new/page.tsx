@@ -56,7 +56,7 @@ export default function NewJobPage() {
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [isOvertime, setIsOvertime] = useState(false)
+  const [billingMode, setBillingMode] = useState<'overtime' | 'regular' | 'fixed'>('regular')
   const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
   const [endDate, setEndDate] = useState('')
   const [jobStage, setJobStage] = useState('')
@@ -140,7 +140,8 @@ export default function NewJobPage() {
       created_by: user.id,
       assigned_to: primary?.id ?? null,
       workflow_status: ids.length ? 'assigned' : 'new',
-      is_overtime: isOvertime,
+      billing_mode: billingMode,
+      is_overtime: billingMode === 'overtime',
       notes: notes.trim() || null,
       job_stage: jobStage || null,
       cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
@@ -254,10 +255,27 @@ export default function NewJobPage() {
           </div>
         </div>
 
-        <label className="flex items-center gap-2.5 cursor-pointer">
-          <input type="checkbox" checked={isOvertime} onChange={e => setIsOvertime(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-          <span className="text-sm text-gray-700">Overtime job <span className="text-gray-400">— surveyors&apos; hours count as overtime (OT pay)</span></span>
-        </label>
+        <div>
+          <label className="label-base">How is this job billed?</label>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { mode: 'regular' as const, label: 'Regular hours', hint: 'Billable hours' },
+              { mode: 'overtime' as const, label: 'Overtime', hint: 'Hours logged as OT' },
+              { mode: 'fixed' as const, label: 'Fixed', hint: 'Flat fee, no hours' },
+            ]).map(o => (
+              <button
+                key={o.mode}
+                type="button"
+                onClick={() => setBillingMode(o.mode)}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${billingMode === o.mode ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className={`block text-sm font-medium ${billingMode === o.mode ? 'text-brand-800' : 'text-gray-700'}`}>{o.label}</span>
+                <span className="block text-xs text-gray-400 mt-0.5">{o.hint}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Overtime and Regular show the matching hours boxes per surveyor; Fixed shows none. You can change this on the job later.</p>
+        </div>
 
         {autoTitle && (
           <div className="rounded-lg bg-brand-50 border border-brand-200 px-4 py-3">

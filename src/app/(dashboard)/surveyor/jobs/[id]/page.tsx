@@ -22,7 +22,7 @@ export default function SurveyorJobPage() {
   async function load() {
     const { data } = await createClient()
       .from('jobs')
-      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, client:clients(name)')
+      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, is_overtime, billing_mode, client:clients(name)')
       .eq('id', jobId).single()
     setJob(data ?? null)
     setLoading(false)

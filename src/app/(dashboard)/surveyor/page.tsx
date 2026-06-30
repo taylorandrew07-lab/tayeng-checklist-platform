@@ -15,6 +15,8 @@ import { useDocumentAttention } from '@/components/dashboard/useDocumentAttentio
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
   const [jobs, setJobs] = useState<any[]>([])
+  // jobId → this surveyor's own regular/OT hours + km on that job (for pay tracking).
+  const [mine, setMine] = useState<Record<string, { reg: number; ot: number; km: number }>>({})
   const [localJobs, setLocalJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,10 +41,25 @@ export default function SurveyorDashboard() {
         // NOT in jobs.assigned_to, so without this they'd never see jobs they share.
         const [pRes, sRes] = await withTimeout(Promise.all([
           supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-          supabase.from('job_surveyors').select('job_id').eq('surveyor_id', session.user.id),
+          supabase.from('job_surveyors').select('id, job_id, regular_hours, overtime_hours').eq('surveyor_id', session.user.id),
         ]), 12_000, 'Loading')
 
-        const linkedIds = Array.from(new Set((sRes.data ?? []).map((r: any) => r.job_id)))
+        const myRows = (sRes.data ?? []) as any[]
+        const linkedIds = Array.from(new Set(myRows.map((r: any) => r.job_id)))
+
+        // This surveyor's km per job (their own rows only — RLS already scopes it).
+        const myJsIds = myRows.map(r => r.id)
+        const kmByJs: Record<string, number> = {}
+        if (myJsIds.length) {
+          const { data: kmRows } = await withTimeout(
+            supabase.from('job_surveyor_km').select('job_surveyor_id, km').in('job_surveyor_id', myJsIds),
+            12_000, 'Loading').catch(() => ({ data: [] as any[] }))
+          for (const k of (kmRows ?? []) as any[]) kmByJs[k.job_surveyor_id] = (kmByJs[k.job_surveyor_id] ?? 0) + Number(k.km ?? 0)
+        }
+        const mineMap: Record<string, { reg: number; ot: number; km: number }> = {}
+        for (const r of myRows) {
+          mineMap[r.job_id] = { reg: Number(r.regular_hours ?? 0), ot: Number(r.overtime_hours ?? 0), km: kmByJs[r.id] ?? 0 }
+        }
         const orParts = [
           `created_by.eq.${session.user.id}`,
           `assigned_to.eq.${session.user.id}`,
@@ -64,6 +81,7 @@ export default function SurveyorDashboard() {
 
         setProfile(pRes.data)
         setJobs(jRes.data ?? [])
+        setMine(mineMap)
 
         // Jobs started offline live only on this device until they sync — surface
         // them so the surveyor can reopen them (server list won't include them yet).
@@ -90,6 +108,20 @@ export default function SurveyorDashboard() {
   // Bucket by the unified workflow status (kept in sync with the checklist phase).
   const active = jobs.filter(j => ['new', 'assigned', 'in_progress'].includes(j.workflow_status))
   const submitted = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+
+  // Totals across all jobs, so the surveyor can sanity-check their pay at a glance.
+  const totals = Object.values(mine).reduce((a, m) => ({ reg: a.reg + m.reg, ot: a.ot + m.ot, km: a.km + m.km }), { reg: 0, ot: 0, km: 0 })
+
+  // The surveyor's own hours + km on a job, shown under the card title for pay tracking.
+  function MyLine({ jobId }: { jobId: string }) {
+    const m = mine[jobId]
+    if (!m || (!m.reg && !m.ot && !m.km)) return null
+    const parts: string[] = []
+    if (m.reg) parts.push(`${m.reg}h reg`)
+    if (m.ot) parts.push(`${m.ot}h OT`)
+    if (m.km) parts.push(`${m.km} km`)
+    return <p className="text-xs text-brand-700 mt-0.5 tnum">{parts.join(' · ')}</p>
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
@@ -135,6 +167,15 @@ export default function SurveyorDashboard() {
             </div>
           </div>
 
+          {(totals.reg > 0 || totals.ot > 0 || totals.km > 0) && (
+            <div className="card p-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+              <span className="font-medium text-gray-700">My hours &amp; travel</span>
+              <span className="text-gray-500">Regular: <strong className="text-gray-800 tnum">{totals.reg}h</strong></span>
+              <span className="text-gray-500">Overtime: <strong className="text-gray-800 tnum">{totals.ot}h</strong></span>
+              <span className="text-gray-500">Distance: <strong className="text-gray-800 tnum">{totals.km} km</strong></span>
+            </div>
+          )}
+
           <AttentionCard items={docAttention} />
 
           {localJobs.length > 0 && (
@@ -170,6 +211,7 @@ export default function SurveyorDashboard() {
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
                         {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
                       </p>
+                      <MyLine jobId={job.id} />
                     </div>
                     <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>
@@ -192,6 +234,7 @@ export default function SurveyorDashboard() {
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
                         {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
                       </p>
+                      <MyLine jobId={job.id} />
                     </div>
                     <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>

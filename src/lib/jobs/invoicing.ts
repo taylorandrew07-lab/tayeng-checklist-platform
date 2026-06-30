@@ -218,6 +218,9 @@ export interface InvoiceableJob {
    *  is_billable_quantity (e.g. UHT "Number of holds" = holds/bilges). The invoice
    *  builder seeds a per-unit line's qty from it; null when not set. */
   billable_quantity: number | null
+  /** Total kilometres driven across all surveyors on the job (migration 116). The
+   *  builder auto-adds a mileage line when the client has a per_km rate. null/0 = none. */
+  billable_km: number | null
   /** The job's own date from its checklist (first date field), for the invoice line
    *  description. null → the builder falls back to scheduled_date. */
   job_date: string | null
@@ -247,6 +250,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     scheduled_date: j.scheduled_date, created_at: j.created_at, workflow_status: j.workflow_status,
     billable_hours: null as number | null,
     billable_quantity: null as number | null,
+    billable_km: null as number | null,
     job_date: null as string | null, time_from: null as string | null, time_to: null as string | null,
   })) as InvoiceableJob[]
   if (opts.month) rows = rows.filter(r => (r.scheduled_date ?? r.created_at ?? '').slice(0, 7) === opts.month)
@@ -263,7 +267,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     const [{ data: bhFields }, { data: bqFields }, { data: surv }, { data: dtFields }] = await Promise.all([
       supabase.from('template_fields').select('id').eq('is_billable_hours', true),
       supabase.from('template_fields').select('id').eq('is_billable_quantity', true),
-      supabase.from('job_surveyors').select('job_id, regular_hours').in('job_id', ids),
+      supabase.from('job_surveyors').select('id, job_id, regular_hours').in('job_id', ids),
       templateIds.length
         ? supabase.from('template_fields').select('id, field_type, order_index').in('template_id', templateIds).in('field_type', ['date', 'time'])
         : Promise.resolve({ data: [] as any[] }),
@@ -307,12 +311,25 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
       }
     }
     const fromLedger: Record<string, number> = {}
+    const jsToJob = new Map<string, string>()
     for (const s of (surv ?? []) as any[]) {
       fromLedger[s.job_id] = (fromLedger[s.job_id] ?? 0) + Number(s.regular_hours || 0)
+      jsToJob.set(s.id, s.job_id)
+    }
+    // Total km per job via the job_surveyor → job_surveyor_km chain (migration 116).
+    const kmByJob: Record<string, number> = {}
+    const jsIds = [...jsToJob.keys()]
+    if (jsIds.length) {
+      const { data: kmRows } = await supabase.from('job_surveyor_km').select('job_surveyor_id, km').in('job_surveyor_id', jsIds)
+      for (const k of (kmRows ?? []) as any[]) {
+        const jobId = jsToJob.get(k.job_surveyor_id); if (!jobId) continue
+        kmByJob[jobId] = (kmByJob[jobId] ?? 0) + Number(k.km ?? 0)
+      }
     }
     rows.forEach(r => {
       r.billable_hours = fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null)
       r.billable_quantity = qtyByJob[r.id] ?? null
+      r.billable_km = kmByJob[r.id] || null
       r.job_date = bestDate[r.id]?.value ?? null
       const times = (timesByJob[r.id] ?? []).slice().sort()
       r.time_from = times[0] ?? null
