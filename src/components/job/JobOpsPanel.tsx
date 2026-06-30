@@ -10,7 +10,7 @@ import {
   WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, updateJobField, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
-  listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime,
+  listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry,
 } from '@/lib/jobs/tracker'
@@ -34,18 +34,17 @@ function activityText(a: ActivityLogRow): string {
   return act
 }
 
-// Hours between two 'HH:MM' times, rolling past midnight if end <= start (a night shift).
-function otHours(start: string, end: string): number {
-  if (!start || !end) return 0
-  const mins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0) }
-  let d = mins(end) - mins(start)
-  if (d < 0) d += 24 * 60
-  return Math.round((d / 60) * 100) / 100
+// dd/mm — compact day shown beside a shift time.
+const fmtDay = (iso: string | null) => iso ? iso.split('-').reverse().slice(0, 2).join('/') : '—'
+// A shift line: "27/06 08:00 → 28/06 02:00", collapsing the stop day when same as start.
+function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_date: string | null; end_time: string | null }): string {
+  const start = `${fmtDay(e.entry_date)} ${e.start_time ?? '--:--'}`
+  const stopDay = e.end_date && e.end_date !== e.entry_date ? `${fmtDay(e.end_date)} ` : ''
+  return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
 }
-const fmtEntryDate = (iso: string | null) => iso ? iso.split('-').reverse().join('/') : '—'
 
-function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void
+function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultDate, onRemove, onSaved, onEntries }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; highlightOT?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void
 }) {
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
@@ -54,18 +53,22 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
   const [cur, setCur] = useState(row.pay_currency || 'TTD')
   const [saving, setSaving] = useState(false)
 
-  // Overtime time-log (migration 111). When entries exist they ARE the OT hours.
+  // Overtime time-log (migration 111/115). When entries exist they ARE the OT hours.
+  // Each entry is a start date/time → stop date/time span (may cross midnight/days).
   const [entries, setEntries] = useState<OvertimeEntry[]>([])
   const [logOpen, setLogOpen] = useState(false)
-  const [nDate, setNDate] = useState(defaultDate ?? '')
-  const [nStart, setNStart] = useState('')
-  const [nEnd, setNEnd] = useState('')
+  const [nStartDate, setNStartDate] = useState(defaultDate ?? '')
+  const [nStartTime, setNStartTime] = useState('')
+  const [nEndDate, setNEndDate] = useState(defaultDate ?? '')
+  const [nEndTime, setNEndTime] = useState('')
+  const [nLocation, setNLocation] = useState('')
   const [nNote, setNNote] = useState('')
   const [logBusy, setLogBusy] = useState(false)
   const otTotal = Math.round(entries.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
   const otFromLog = entries.length > 0
+  const preview = shiftHours(nStartDate, nStartTime, nEndDate || nStartDate, nEndTime)
 
-  async function loadEntries() { setEntries(await listSurveyorOvertime(row.id)) }
+  async function loadEntries() { const next = await listSurveyorOvertime(row.id); setEntries(next); onEntries?.(row.id, next) }
   useEffect(() => { void loadEntries() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist OT hours = log total (when logged) else the typed number. Keeps the one
@@ -112,16 +115,20 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
   }
 
   async function addEntry() {
-    const hrs = otHours(nStart, nEnd)
-    if (!nStart || !nEnd) { toast.error('Enter a start and end time'); return }
+    const sd = nStartDate || defaultDate || ''
+    const ed = nEndDate || sd
+    if (!sd || !nStartTime || !nEndTime) { toast.error('Enter a start date, start time and stop time'); return }
+    const hrs = shiftHours(sd, nStartTime, ed, nEndTime)
+    if (hrs <= 0) { toast.error('The stop date/time must be after the start'); return }
     setLogBusy(true)
-    const res = await addSurveyorOvertime(row.id, { entry_date: nDate || null, start_time: nStart, end_time: nEnd, hours: hrs, note: nNote.trim() || null })
+    const res = await addSurveyorOvertime(row.id, { entry_date: sd, start_time: nStartTime, end_date: ed, end_time: nEndTime, hours: hrs, location: nLocation.trim() || null, note: nNote.trim() || null })
     if (res.error) { setLogBusy(false); toast.error(res.error); return }
     const next = await listSurveyorOvertime(row.id)
-    setEntries(next)
+    setEntries(next); onEntries?.(row.id, next)
     const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
     await persistHours(total)
-    setOt(String(total)); setNStart(''); setNEnd(''); setNNote('')
+    // Keep the dates (next shift is usually the same day); clear the times + per-shift fields.
+    setOt(String(total)); setNStartTime(''); setNEndTime(''); setNLocation(''); setNNote('')
     setLogBusy(false); onSaved()
   }
 
@@ -130,7 +137,7 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
     const res = await deleteSurveyorOvertime(id)
     if (res.error) { setLogBusy(false); toast.error(res.error); return }
     const next = await listSurveyorOvertime(row.id)
-    setEntries(next)
+    setEntries(next); onEntries?.(row.id, next)
     const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
     await persistHours(total)
     setOt(String(total))
@@ -175,21 +182,28 @@ function SurveyorRow({ row, jobId, isAdmin, highlightOT, billableHours, defaultD
           <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 space-y-1.5">
             {entries.map(e => (
               <div key={e.id} className="flex items-center gap-2 text-xs text-gray-700">
-                <span className="tnum text-gray-500 w-16">{fmtEntryDate(e.entry_date)}</span>
-                <span className="tnum">{e.start_time}–{e.end_time}</span>
-                <span className="font-medium tnum">{e.hours}h</span>
-                {e.note && <span className="text-gray-400 truncate flex-1">{e.note}</span>}
-                <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600"><X className="h-3 w-3" /></button>
+                <span className="tnum text-gray-600 flex-shrink-0">{fmtSpan(e)}</span>
+                <span className="font-medium tnum flex-shrink-0">{e.hours}h</span>
+                {e.location && <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100">{e.location}</span>}
+                {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
+                <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>
               </div>
             ))}
-            {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet — add each day&apos;s overtime below.</p>}
-            <div className="flex flex-wrap items-end gap-1.5 pt-1.5 border-t border-gray-200">
-              <div><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nDate} onChange={e => setNDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
-              <div><label className="block text-[10px] text-gray-400">Start</label><input type="time" value={nStart} onChange={e => setNStart(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
-              <div><label className="block text-[10px] text-gray-400">End</label><input type="time" value={nEnd} onChange={e => setNEnd(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
-              <span className="text-xs text-gray-500 pb-1.5">= <span className="font-medium tnum">{otHours(nStart, nEnd)}h</span></span>
-              <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
-              <button onClick={addEntry} disabled={logBusy} className="btn-secondary py-1 px-2 text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+            {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet — add each shift below (a shift can run from one day into the next).</p>}
+            <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
+              <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
+                <div><label className="block text-[10px] text-gray-400">Start date</label><input type="date" value={nStartDate} onChange={e => { const v = e.target.value; setNStartDate(v); if (!nEndDate || nEndDate < v) setNEndDate(v) }} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
+                <div><label className="block text-[10px] text-gray-400">Start time</label><input type="time" value={nStartTime} onChange={e => setNStartTime(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
+                <span className="text-gray-300 pb-1.5">→</span>
+                <div><label className="block text-[10px] text-gray-400">Stop date</label><input type="date" value={nEndDate} min={nStartDate || undefined} onChange={e => setNEndDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
+                <div><label className="block text-[10px] text-gray-400">Stop time</label><input type="time" value={nEndTime} onChange={e => setNEndTime(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
+                <span className="text-xs text-gray-500 pb-1.5">= <span className="font-medium tnum">{preview}h</span></span>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
+                <div><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`oloc-${row.id}`} value={nLocation} onChange={e => setNLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base py-0.5 px-1.5 text-xs w-36" /><datalist id={`oloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
+                <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
+                <button onClick={addEntry} disabled={logBusy} className="btn-secondary py-1 px-2 text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+              </div>
             </div>
           </div>
         )}
@@ -219,7 +233,20 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
   const [isOT, setIsOT] = useState(!!job.is_overtime)
   const [billableHours, setBillableHours] = useState<number | null>(null)
+  const [otByRow, setOtByRow] = useState<Record<string, OvertimeEntry[]>>({})
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Job-level overtime roll-up across every surveyor (each row reports its own entries
+  // up via onEntries; RLS means a surveyor only contributes their own). Coverage is the
+  // earliest start → latest stop across all logged shifts — the actual job coverage.
+  const allOt = Object.values(otByRow).flat()
+  const otAllTotal = Math.round(allOt.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+  const startKey = (e: OvertimeEntry) => `${e.entry_date ?? ''}T${e.start_time ?? ''}`
+  const stopKey = (e: OvertimeEntry) => `${e.end_date || e.entry_date || ''}T${e.end_time ?? ''}`
+  const startable = allOt.filter(e => e.entry_date && e.start_time)
+  const stoppable = allOt.filter(e => (e.end_date || e.entry_date) && e.end_time)
+  const earliest = startable.length ? startable.reduce((a, e) => (startKey(e) < startKey(a) ? e : a)) : null
+  const latest = stoppable.length ? stoppable.reduce((a, e) => (stopKey(e) > stopKey(a) ? e : a)) : null
 
   async function toggleOvertime() {
     const next = !isOT
@@ -355,12 +382,20 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             Checklist billable hours: <strong>{billableHours} hrs</strong> — use the <em>“use {billableHours}h”</em> link to set a surveyor&apos;s regular (client-billed) hours.
           </p>
         )}
+        {allOt.length > 0 && (
+          <div className="mb-3 rounded-md bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 text-[11px] text-amber-800 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span>Total OT (all surveyors): <strong className="tnum">{otAllTotal}h</strong></span>
+            {earliest && latest && (
+              <span>Coverage: <strong className="tnum">{fmtDay(earliest.entry_date)} {earliest.start_time}</strong> → <strong className="tnum">{fmtDay(latest.end_date || latest.entry_date)} {latest.end_time}</strong></span>
+            )}
+          </div>
+        )}
         {surveyors.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} highlightOT={isOT} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} />
             ))}
           </div>
         )}

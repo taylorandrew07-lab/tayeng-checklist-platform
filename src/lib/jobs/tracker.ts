@@ -183,20 +183,42 @@ export async function updateJobSurveyorHours(rowId: string, jobId: string, hours
 }
 
 // ── Per-surveyor overtime time-log (migration 111) ───────────────────────────
-// Each entry is one shift (date + start/end + computed hours) for a surveyor on a
-// job. The caller sums the entries and writes the total to job_surveyors.overtime_hours
+// Each entry is one shift for a surveyor on a job: a start date/time → stop date/time
+// (which may cross midnight or span several days), a location, and the computed hours.
+// The caller sums the entries and writes the total to job_surveyors.overtime_hours
 // (which bills at the OT rate), so the log is the detail behind that one number.
-export interface OvertimeEntry { id: string; entry_date: string | null; start_time: string | null; end_time: string | null; hours: number; note: string | null }
+export interface OvertimeEntry {
+  id: string
+  entry_date: string | null   // START date (YYYY-MM-DD)
+  start_time: string | null   // START time (HH:MM)
+  end_date: string | null     // STOP date (YYYY-MM-DD); may be a later day than entry_date
+  end_time: string | null     // STOP time (HH:MM)
+  hours: number
+  location: string | null
+  note: string | null
+}
+
+// Hours between a start date+time and a stop date+time. Handles shifts that cross
+// midnight or run over several days. Returns 0 for an incomplete or non-positive span.
+// Pure + timezone-free (Trinidad has no DST, but we avoid local-time parsing anyway).
+export function shiftHours(startDate: string | null, startTime: string | null, endDate: string | null, endTime: string | null): number {
+  if (!startDate || !startTime || !endTime) return 0
+  const stop = endDate || startDate
+  const toDay = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return Date.UTC(y, (m || 1) - 1, dd || 1) / 86_400_000 }
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+  const totalMin = (toDay(stop) - toDay(startDate)) * 1440 + toMin(endTime) - toMin(startTime)
+  return totalMin > 0 ? Math.round((totalMin / 60) * 100) / 100 : 0
+}
 
 export async function listSurveyorOvertime(jobSurveyorId: string): Promise<OvertimeEntry[]> {
   const { data } = await createClient().from('job_surveyor_overtime')
-    .select('id, entry_date, start_time, end_time, hours, note')
+    .select('id, entry_date, start_time, end_date, end_time, hours, location, note')
     .eq('job_surveyor_id', jobSurveyorId)
     .order('entry_date', { ascending: true }).order('start_time', { ascending: true })
-  return ((data ?? []) as any[]).map(r => ({ id: r.id, entry_date: r.entry_date, start_time: r.start_time, end_time: r.end_time, hours: Number(r.hours ?? 0), note: r.note }))
+  return ((data ?? []) as any[]).map(r => ({ id: r.id, entry_date: r.entry_date, start_time: r.start_time, end_date: r.end_date, end_time: r.end_time, hours: Number(r.hours ?? 0), location: r.location, note: r.note }))
 }
 
-export async function addSurveyorOvertime(jobSurveyorId: string, e: { entry_date: string | null; start_time: string | null; end_time: string | null; hours: number; note: string | null }): Promise<{ error?: string; id?: string }> {
+export async function addSurveyorOvertime(jobSurveyorId: string, e: { entry_date: string | null; start_time: string | null; end_date: string | null; end_time: string | null; hours: number; location: string | null; note: string | null }): Promise<{ error?: string; id?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase.from('job_surveyor_overtime')
