@@ -352,6 +352,8 @@ export interface Job {
   // Used by the Cargo Loading / Cargo Discharging job types. Free text; null otherwise.
   cargo_type: string | null
   report_number: string | null
+  // When true the job does not require a report — no report number, shown as "N/A" (migration 119).
+  report_not_required: boolean
   workflow_status: WorkflowStatus
   // Overtime job flag (migration 048). Kept in lockstep with billing_mode === 'overtime'.
   is_overtime: boolean

@@ -344,6 +344,9 @@ export async function jobFileUrl(path: string | null): Promise<string | null> {
 export interface TrackerRow {
   id: string
   report_number: string | null
+  /** True when this job doesn't require a report — shows "N/A", never counted as
+   *  "missing a report number" and skipped by the auto-numbering (migration 119). */
+  report_not_required: boolean
   job_type: string | null
   job_stage: string | null
   cargo_type: string | null
@@ -379,7 +382,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
@@ -420,7 +423,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
     // jobs assigned the old way still show their surveyor.
     const surveyors = s?.names.length ? s.names : (j.surveyor_name ? [j.surveyor_name] : [])
     return {
-      id: j.id, report_number: j.report_number, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
+      id: j.id, report_number: j.report_number, report_not_required: !!j.report_not_required, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
       client_color: j.client?.color ?? null, template_color: j.template?.color ?? null, template_name: j.template?.name ?? null,
       workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, billing_mode: (j.billing_mode ?? 'regular') as 'overtime' | 'regular' | 'fixed', scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
@@ -462,12 +465,12 @@ export function highestReportSeq(rows: { report_number: string | null }[]): numb
 
 /** Assign report numbers (date order) to jobs missing one, from a starting seq. */
 export async function fillReportNumbers(
-  rows: { id: string; scheduled_date: string | null; created_at: string; report_number: string | null }[],
+  rows: { id: string; scheduled_date: string | null; created_at: string; report_number: string | null; report_not_required?: boolean }[],
   startSeq: number,
 ): Promise<{ error?: string; count: number }> {
   const supabase = createClient()
   const missing = rows
-    .filter(r => !r.report_number)
+    .filter(r => !r.report_number && !r.report_not_required)
     .sort((a, b) => {
       const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at
       return da < db ? -1 : da > db ? 1 : 0

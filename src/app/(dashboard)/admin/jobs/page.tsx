@@ -62,6 +62,32 @@ function EditableText({ value, onSave, mono, placeholder }: { value: string | nu
   )
 }
 
+// Report number cell with an N/A selector. Many jobs don't require a report; picking
+// "N/A" marks report_not_required (report_number stays null, so no unique-number clash)
+// and the job stops counting as "missing a report number".
+function ReportCell({ reportNumber, notRequired, onSaveNumber, onSetNA }: {
+  reportNumber: string | null; notRequired: boolean
+  onSaveNumber: (v: string | null) => void; onSetNA: (na: boolean) => void
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {notRequired
+        ? <span className="flex-1 px-2 text-xs italic text-gray-400 tnum">N/A</span>
+        : <span className="flex-1"><EditableText value={reportNumber} mono placeholder="—" onSave={onSaveNumber} /></span>}
+      <select
+        value={notRequired ? 'na' : 'num'}
+        onChange={e => onSetNA(e.target.value === 'na')}
+        title="Report number, or N/A if the job doesn't require a report"
+        aria-label="Report number or N/A"
+        className="shrink-0 cursor-pointer rounded bg-transparent px-0.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+      >
+        <option value="num">#</option>
+        <option value="na">N/A</option>
+      </select>
+    </div>
+  )
+}
+
 function EditableCombo({ value, listId, onSave }: { value: string | null; listId: string; onSave: (v: string | null) => void }) {
   const [editing, setEditing] = useState(false)
   const [v, setV] = useState(value ?? '')
@@ -251,7 +277,7 @@ export default function JobsTrackerPage() {
     clientName: r.client_name, clientColor: r.client_color, typeName: r.template_name, typeColor: r.template_color,
   }))), [view.colorMode, visible])
 
-  const missingCount = rows.filter(r => !r.report_number).length
+  const missingCount = rows.filter(r => !r.report_number && !r.report_not_required).length
   const typeOptions = useMemo(
     () => Array.from(new Set([...jobTypes, ...rows.map(r => r.job_type).filter(Boolean) as string[]])).sort(),
     [jobTypes, rows],
@@ -269,7 +295,7 @@ export default function JobsTrackerPage() {
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
-        csv(r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.cargo_type), csv(r.vessel_name), csv(r.title),
+        csv(r.report_not_required ? 'N/A' : r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.cargo_type), csv(r.vessel_name), csv(r.title),
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
         csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),
@@ -382,7 +408,17 @@ export default function JobsTrackerPage() {
                   <td className="px-2 py-1.5" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
-                  <td className="py-1.5 pr-2"><EditableText value={r.report_number} mono placeholder="—" onSave={v => patchRow(r.id, { report_number: v }, { report_number: v })} /></td>
+                  <td className="py-1.5 pr-2 min-w-[110px]">
+                    <ReportCell
+                      reportNumber={r.report_number}
+                      notRequired={r.report_not_required}
+                      onSaveNumber={v => patchRow(r.id, { report_number: v }, { report_number: v })}
+                      onSetNA={na => {
+                        const p = na ? { report_not_required: true, report_number: null } : { report_not_required: false }
+                        patchRow(r.id, p, p)
+                      }}
+                    />
+                  </td>
                   <td className="py-1.5 pr-2 min-w-[120px]">
                     <EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} />
                     {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.job_stage}</span>}
@@ -445,7 +481,7 @@ export default function JobsTrackerPage() {
 }
 
 function NumberReportsModal({ open, onClose, rows, onDone }: { open: boolean; onClose: () => void; rows: TrackerRow[]; onDone: () => void }) {
-  const missing = rows.filter(r => !r.report_number)
+  const missing = rows.filter(r => !r.report_number && !r.report_not_required)
     .sort((a, b) => { const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at; return da < db ? -1 : da > db ? 1 : 0 })
   const [start, setStart] = useState('')
   const [busy, setBusy] = useState(false)

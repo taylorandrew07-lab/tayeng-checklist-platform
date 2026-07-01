@@ -62,6 +62,7 @@ export default function NewJobPage() {
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
   const [notes, setNotes] = useState('')
+  const [reportNotRequired, setReportNotRequired] = useState(false)
 
   const selectedTemplate = templates.find(t => t.id === templateId) ?? null
   const label = selectedTemplate?.name ?? jobType
@@ -145,6 +146,7 @@ export default function NewJobPage() {
       notes: notes.trim() || null,
       job_stage: jobStage || null,
       cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
+      report_not_required: reportNotRequired,
       scheduled_date: scheduledDate,
       end_date: endDate || null,
       started_at: new Date(`${scheduledDate}T12:00:00`).toISOString(),
@@ -322,6 +324,11 @@ export default function NewJobPage() {
           <label className="label-base">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base resize-y" placeholder="e.g. call number, gang count, special instructions…" />
         </div>
+
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={reportNotRequired} onChange={e => setReportNotRequired(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+          <span className="text-sm text-gray-700">No report required <span className="text-gray-400">— skips the report number (shows N/A on the jobs list)</span></span>
+        </label>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 animate-rise">{error}</div>}
