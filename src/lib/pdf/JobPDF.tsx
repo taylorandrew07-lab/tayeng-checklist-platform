@@ -364,12 +364,17 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
   const optColor = (options ?? []).find((o: any) => o.value === answerKey)?.color as string | undefined
   const fallback = answerKey === 'yes' ? 'green' : answerKey === 'no' ? 'red' : 'gray'
   const c = optColor ?? fallback
+  // Answer and its remark sit in TWO columns on ONE line (fixed-width answer badge,
+  // remark beside it) so a comment never pushes the row onto a second line — keeps the
+  // whole checklist compact / single-page. alignSelf keeps the coloured pill tight.
   return (
-    <View>
-      <Text style={[styles.yesNoValue, { backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
-        {answerKey ? answerKey.toUpperCase() : '—'}
-      </Text>
-      {remarks ? <Text style={{ fontSize: 7.5, color: '#64748b', marginTop: 2 }}>{remarks}</Text> : null}
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ width: 40 }}>
+        <Text style={[styles.yesNoValue, { alignSelf: 'flex-start', backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
+          {answerKey ? answerKey.toUpperCase() : '—'}
+        </Text>
+      </View>
+      {remarks ? <Text style={{ flex: 1, fontSize: 7.5, color: '#64748b', marginLeft: 4 }}>{remarks}</Text> : null}
     </View>
   )
 }
