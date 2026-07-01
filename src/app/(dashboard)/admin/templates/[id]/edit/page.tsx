@@ -416,15 +416,17 @@ export default function EditTemplatePage() {
               <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
             </label>
           </div>
+          {/* Bound to the INVERSE of pdf_hide_logo: switch ON = letterhead shown,
+              switch OFF = clean look (no logo/address, just the report title). */}
           <div className="flex items-center gap-3 sm:col-span-2">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <div
-                onClick={() => setPdfHideLogo(!pdfHideLogo)}
-                className={`relative w-10 h-6 rounded-full transition-colors ${pdfHideLogo ? 'bg-brand-600' : 'bg-gray-300'}`}
+                onClick={() => setPdfHideLogo(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${!pdfHideLogo ? 'bg-brand-600' : 'bg-gray-300'}`}
               >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfHideLogo ? 'translate-x-5' : 'translate-x-1'}`} />
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${!pdfHideLogo ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
-              <span className="text-sm font-medium text-gray-700">Hide logo on the PDF report <span className="font-normal text-gray-400">— shows the company-name text header instead</span></span>
+              <span className="text-sm font-medium text-gray-700">Show company letterhead on the report <span className="font-normal text-gray-400">— logo + address at the top; turn OFF to show just the report title</span></span>
             </label>
           </div>
           <div className="sm:col-span-2">

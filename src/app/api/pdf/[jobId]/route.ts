@@ -205,6 +205,7 @@ export async function GET(
         disclaimer: job.template?.pdf_disclaimer ?? null,
         preamble: job.template?.pdf_preamble ?? null,
         logoSrc,
+        hideLogo: job.template?.pdf_hide_logo === true,
         surveyors,
       }) as any
     )

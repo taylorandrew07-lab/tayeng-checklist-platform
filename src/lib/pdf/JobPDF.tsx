@@ -445,6 +445,9 @@ interface PDFProps {
   preamble?: string | null
   /** Company letterhead logo as a data URI (loaded server-side). */
   logoSrc?: string
+  /** When true the template opted out of the logo — render no top graphic/wordmark
+   *  at all (just the address line), rather than the company-name fallback. */
+  hideLogo?: boolean
   /** Names of the surveyors assigned to the job, printed in the header. */
   surveyors?: string[]
 }
@@ -469,7 +472,7 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, surveyors = [] }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
@@ -525,22 +528,33 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
     >
       <Page size="LETTER" style={styles.page}>
 
-        {/* Letterhead — matches the invoice. First page only (not fixed). */}
-        {logoSrc ? (
-          // eslint-disable-next-line jsx-a11y/alt-text
-          <Image src={logoSrc} style={styles.logo} />
+        {hideLogo ? (
+          /* Logo toggled off → NO letterhead at all (no logo, no company name, no
+             address block). Restores the original clean look: just the left-aligned
+             report title with its underline, then the Job Details. */
+          <View style={styles.reportTitleBlock}>
+            <Text style={styles.reportTitle}>{reportTitle}</Text>
+          </View>
         ) : (
           <>
-            <Text style={styles.wordmark}>{COMPANY.name}</Text>
-            <Text style={styles.tagline}>{COMPANY.tagline}</Text>
+            {/* Letterhead — matches the invoice. First page only (not fixed).
+                logoSrc present → the graphic logo (unchanged original);
+                absent (logo failed to load) → company-name text as a safety net. */}
+            {logoSrc ? (
+              // eslint-disable-next-line jsx-a11y/alt-text
+              <Image src={logoSrc} style={styles.logo} />
+            ) : (
+              <>
+                <Text style={styles.wordmark}>{COMPANY.name}</Text>
+                <Text style={styles.tagline}>{COMPANY.tagline}</Text>
+              </>
+            )}
+            <Text style={styles.headLine}>{COMPANY.address}</Text>
+            <Text style={styles.headLine}>T {COMPANY.phone}, {COMPANY.phoneAlt}   F {COMPANY.fax}   E {COMPANY.email}</Text>
+            <View style={styles.headRule} />
+            <Text style={styles.reportTitleCentered}>{reportTitle}</Text>
           </>
         )}
-        <Text style={styles.headLine}>{COMPANY.address}</Text>
-        <Text style={styles.headLine}>T {COMPANY.phone}, {COMPANY.phoneAlt}   F {COMPANY.fax}   E {COMPANY.email}</Text>
-        <View style={styles.headRule} />
-
-        {/* Report title */}
-        <Text style={styles.reportTitleCentered}>{reportTitle}</Text>
 
         {/* Job Details — legacy top block for templates WITHOUT show_in_header fields
             (OVID, bunker, UHT…). Flagged templates (e.g. Borescoping) render all of this
