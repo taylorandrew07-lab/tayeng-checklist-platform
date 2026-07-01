@@ -22,6 +22,7 @@ export default function EditTemplatePage() {
   const [status, setStatus] = useState<TemplateStatus>('draft')
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
+  const [pdfHideLogo, setPdfHideLogo] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [color, setColor] = useState<string | null>(null)
@@ -47,7 +48,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, color, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfDisclaimer, pdfPreamble, color, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -71,7 +72,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
+    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -94,6 +95,7 @@ export default function EditTemplatePage() {
       setStatus(tmpl.status)
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
       setPdfIncludePhotos(tmpl.pdf_include_photos ?? false)
+      setPdfHideLogo(tmpl.pdf_hide_logo ?? false)
       setPdfDisclaimer(tmpl.pdf_disclaimer ?? '')
       setPdfPreamble(tmpl.pdf_preamble ?? '')
       setColor(tmpl.color ?? null)
@@ -215,6 +217,7 @@ export default function EditTemplatePage() {
           status,
           allow_surveyor_start: allowSurveyorStart,
           pdf_include_photos: pdfIncludePhotos,
+          pdf_hide_logo: pdfHideLogo,
           pdf_disclaimer: pdfDisclaimer.trim() || null,
           pdf_preamble: pdfPreamble.trim() || null,
           color,
@@ -411,6 +414,17 @@ export default function EditTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfIncludePhotos ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Include photos in the PDF report <span className="font-normal text-gray-400">— captioned grid, grouped by field</span></span>
+            </label>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setPdfHideLogo(!pdfHideLogo)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${pdfHideLogo ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfHideLogo ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Hide logo on the PDF report <span className="font-normal text-gray-400">— shows the company-name text header instead</span></span>
             </label>
           </div>
           <div className="sm:col-span-2">

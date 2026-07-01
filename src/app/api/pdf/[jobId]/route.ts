@@ -71,7 +71,7 @@ export async function GET(
   // keyed off it — avoids a second jobs round-trip just to get template_id.
   const { data: job } = await db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos, pdf_disclaimer, pdf_preamble),
+      template:checklist_templates(name, pdf_include_photos, pdf_hide_logo, pdf_disclaimer, pdf_preamble),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single()
@@ -163,12 +163,15 @@ export async function GET(
   const surveyors = ((survRows ?? []) as any[]).map(r => r.surveyor?.full_name).filter(Boolean) as string[]
 
   // Letterhead logo as a data URI (reliable in serverless), loaded from the app origin.
-  // Use the same clean letterhead logo the invoice uses.
+  // Use the same clean letterhead logo the invoice uses. Templates that opt out
+  // (pdf_hide_logo) skip it and fall back to the company-name text header.
   let logoSrc: string | undefined
-  try {
-    const res = await fetch(new URL('/logo-invoice.png', new URL(request.url).origin))
-    if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
-  } catch { /* logo is optional — the report falls back to the company name */ }
+  if (job.template?.pdf_hide_logo !== true) {
+    try {
+      const res = await fetch(new URL('/logo-invoice.png', new URL(request.url).origin))
+      if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
+    } catch { /* logo is optional — the report falls back to the company name */ }
+  }
 
   // Process sections — sort and evaluate conditional logic
   const processedSections = (sections ?? []).map((s: any) => ({
