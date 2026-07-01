@@ -62,6 +62,13 @@ function EditableText({ value, onSave, mono, placeholder }: { value: string | nu
   )
 }
 
+// Does this typed value mean "no report required"? (so it maps to the flag, not a
+// literal report_number that would collide on the unique index).
+function isNaText(v: string | null): boolean {
+  const t = (v ?? '').trim().toLowerCase().replace(/[^a-z]/g, '')
+  return t === 'na' || t === 'notapplicable' || t === 'noreport' || t === 'none'
+}
+
 // Report number cell with an N/A selector. Many jobs don't require a report; picking
 // "N/A" marks report_not_required (report_number stays null, so no unique-number clash)
 // and the job stops counting as "missing a report number".
@@ -412,7 +419,12 @@ export default function JobsTrackerPage() {
                     <ReportCell
                       reportNumber={r.report_number}
                       notRequired={r.report_not_required}
-                      onSaveNumber={v => patchRow(r.id, { report_number: v }, { report_number: v })}
+                      onSaveNumber={v => {
+                        // Typing "N/A" (any casing) means "no report" — set the flag and
+                        // keep report_number NULL so it never hits the unique index.
+                        if (isNaText(v)) { const p = { report_not_required: true, report_number: null }; return patchRow(r.id, p, p) }
+                        patchRow(r.id, { report_number: v, report_not_required: false }, { report_number: v, report_not_required: false })
+                      }}
                       onSetNA={na => {
                         const p = na ? { report_not_required: true, report_number: null } : { report_not_required: false }
                         patchRow(r.id, p, p)
