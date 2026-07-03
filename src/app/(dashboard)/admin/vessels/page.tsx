@@ -81,6 +81,7 @@ export default function VesselsPage() {
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50/50">
@@ -114,6 +115,7 @@ export default function VesselsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

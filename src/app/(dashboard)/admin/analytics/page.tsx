@@ -78,7 +78,7 @@ export default function AnalyticsPage() {
           {data.topClients.length > 0 && (
             <section>
               <h2 className="section-title mb-3">Top clients</h2>
-              <div className="card overflow-hidden">
+              <div className="card overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                     <th className="font-medium px-4 py-2.5">Client</th>
@@ -111,7 +111,7 @@ export default function AnalyticsPage() {
             {data.labour.length === 0 ? (
               <div className="card p-8 text-center text-sm text-gray-400">No hours logged yet.</div>
             ) : (
-              <div className="card overflow-hidden">
+              <div className="card overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                     <th className="font-medium px-4 py-2.5">Surveyor</th>

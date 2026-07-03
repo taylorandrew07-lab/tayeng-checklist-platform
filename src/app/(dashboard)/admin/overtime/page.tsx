@@ -91,7 +91,7 @@ export default function OvertimePage() {
           {bySurveyor.length === 0 ? (
             <div className="card p-8 text-center text-sm text-gray-400">No overtime logged for {periodLabel}.</div>
           ) : (
-            <div className="card overflow-hidden">
+            <div className="card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                   <th className="font-medium px-4 py-2.5">Surveyor</th>

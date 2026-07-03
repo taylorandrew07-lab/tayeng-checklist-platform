@@ -32,7 +32,7 @@ export default function CargoOperationsView() {
   }, [])
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-7xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="page-title">Cargo Monitoring</h1>
@@ -52,6 +52,7 @@ export default function CargoOperationsView() {
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
@@ -98,6 +99,7 @@ export default function CargoOperationsView() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

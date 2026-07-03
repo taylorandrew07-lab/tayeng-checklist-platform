@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Receipt, Lock } from 'lucide-react'
+import { Receipt, Lock, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ export default function OfficeInvoicing() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<InvoiceListRow[] | null>(null)
   const [filter, setFilter] = useState<StatusFilter>('open')
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -29,7 +30,10 @@ export default function OfficeInvoicing() {
     load()
   }, [])
 
+  const term = query.trim().toLowerCase()
   const filtered = (rows ?? []).filter(r => {
+    if (term && ![r.invoice_number, r.client_name, r.vessel_name, r.report_number]
+      .some(v => (v ?? '').toLowerCase().includes(term))) return false
     if (filter === 'all') return true
     if (filter === 'open') return r.status !== 'paid' && r.status !== 'void'
     if (filter === 'overdue') return isOverdue(r)
@@ -57,6 +61,10 @@ export default function OfficeInvoicing() {
         </div>
       ) : (
         <div className="space-y-4">
+          <div className="relative">
+            <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input className="input-base pl-9" placeholder="Search by invoice #, client, vessel or report #…" value={query} onChange={e => setQuery(e.target.value)} />
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {filters.map(([k, label]) => (
               <button key={k} onClick={() => setFilter(k)}
