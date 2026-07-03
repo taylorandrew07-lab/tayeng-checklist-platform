@@ -155,7 +155,11 @@ export default function NewJobPage() {
     if (jobErr || !job) { setError(jobErr?.message ?? 'Failed to create job'); setSaving(false); return }
 
     if (ids.length) {
-      await supabase.from('job_surveyors').insert(ids.map(id => ({ job_id: job.id, surveyor_id: id, created_by: user.id })))
+      // Upsert: the mig-124 trigger already added the primary (assigned_to) row on
+      // job insert — a plain insert would trip UNIQUE(job_id, surveyor_id).
+      const { error: jsErr } = await supabase.from('job_surveyors')
+        .upsert(ids.map(id => ({ job_id: job.id, surveyor_id: id, created_by: user.id })), { onConflict: 'job_id,surveyor_id', ignoreDuplicates: true })
+      if (jsErr) toast.error(`Job created, but assigning surveyors failed: ${jsErr.message} — add them on the job page.`)
     }
     if (finalClientId) {
       await supabase.from('client_job_permissions').insert({ client_id: finalClientId, job_id: job.id, can_view_status: true, can_view_pdf: false, can_view_checklist_details: false })

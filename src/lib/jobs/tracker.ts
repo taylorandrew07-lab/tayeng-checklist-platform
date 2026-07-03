@@ -284,7 +284,10 @@ export async function updateJobSurveyorRates(rowId: string, jobId: string, rates
 export async function addJobSurveyor(jobId: string, surveyorId: string): Promise<{ error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { error } = await supabase.from('job_surveyors').insert({ job_id: jobId, surveyor_id: surveyorId, created_by: user?.id ?? null })
+  // Upsert-ignore: the mig-124 auto-assign trigger may have already added this
+  // surveyor (as the job's assignee) — treat "already on the job" as success.
+  const { error } = await supabase.from('job_surveyors')
+    .upsert({ job_id: jobId, surveyor_id: surveyorId, created_by: user?.id ?? null }, { onConflict: 'job_id,surveyor_id', ignoreDuplicates: true })
   if (error) return { error: error.message }
   await logActivity('job', jobId, 'surveyor:add', { surveyor_id: surveyorId })
   return {}

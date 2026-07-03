@@ -511,12 +511,15 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             ))}
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin ? (
+            {isAdmin || (!surveyorLocked && billingMode !== 'fixed') ? (
+              // Admins pick all three modes; surveyors flip Regular/Overtime on their
+              // own OPEN jobs (they know which jobs are OT — mig 124 gates the rest:
+              // closed jobs and 'fixed' stay admin-only).
               <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-0.5 text-xs font-medium" role="group" aria-label="Billing mode">
                 {([
                   { mode: 'regular' as const, label: 'Regular' },
                   { mode: 'overtime' as const, label: 'Overtime' },
-                  { mode: 'fixed' as const, label: 'Fixed' },
+                  ...(isAdmin ? [{ mode: 'fixed' as const, label: 'Fixed' }] : []),
                 ]).map(o => (
                   <button key={o.mode} onClick={() => setMode(o.mode)} title={`Bill this job as ${o.label.toLowerCase()}`}
                     className={`px-2.5 py-1 rounded-full transition-colors ${billingMode === o.mode ? (o.mode === 'overtime' ? 'bg-amber-100 text-amber-700' : 'bg-white text-gray-800 shadow-sm') : 'text-gray-500 hover:text-gray-700'}`}>
