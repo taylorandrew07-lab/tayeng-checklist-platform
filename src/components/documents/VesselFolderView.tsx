@@ -11,6 +11,9 @@ import { withTimeout } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 
 export default function VesselFolderView({ id, basePath }: { id: string; basePath: string }) {
+  // Surveyors reach this view read-only (search/open/download). Upload, rename and
+  // the vessel-destroying folder delete are admin-only — they live on /admin.
+  const isAdmin = basePath.startsWith('/admin')
   const [vessel, setVessel] = useState<VesselFolder | null>(null)
   const [docs, setDocs] = useState<VesselDocument[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +94,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
     <div className="max-w-4xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
         <Link href={basePath} className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
-        {renaming ? (
+        {isAdmin && renaming ? (
           <div className="flex items-center gap-2 flex-1">
             <input className="input-base" value={name} autoFocus onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveRename() }} />
             <button onClick={saveRename} className="btn-primary">Save</button>
@@ -100,24 +103,30 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
         ) : (
           <>
             <h1 className="page-title flex-1 truncate">{vessel.name}</h1>
-            <button onClick={() => setRenaming(true)} className="btn-ghost py-2 px-3" title="Rename"><Pencil className="h-4 w-4" /></button>
-            <button onClick={removeFolder} className="btn-ghost py-2 px-3 text-red-600 hover:bg-red-50" title="Delete folder"><Trash2 className="h-4 w-4" /></button>
+            {isAdmin && (
+              <>
+                <button onClick={() => setRenaming(true)} className="btn-ghost py-2 px-3" title="Rename"><Pencil className="h-4 w-4" /></button>
+                <button onClick={removeFolder} className="btn-ghost py-2 px-3 text-red-600 hover:bg-red-50" title="Delete folder"><Trash2 className="h-4 w-4" /></button>
+              </>
+            )}
           </>
         )}
       </div>
 
-      {/* Upload */}
-      <div className="card p-4 flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[180px]">
-          <label className="label-base">Category (optional)</label>
-          <input className="input-base" list="doc-categories" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Sounding Tables" />
-          <datalist id="doc-categories">{DOC_CATEGORIES.map(c => <option key={c} value={c} />)}</datalist>
+      {/* Upload — admin only */}
+      {isAdmin && (
+        <div className="card p-4 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[180px]">
+            <label className="label-base">Category (optional)</label>
+            <input className="input-base" list="doc-categories" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Sounding Tables" />
+            <datalist id="doc-categories">{DOC_CATEGORIES.map(c => <option key={c} value={c} />)}</datalist>
+          </div>
+          <input ref={uploadRef} type="file" multiple className="hidden" onChange={e => handleUpload(e.target.files)} />
+          <button onClick={() => uploadRef.current?.click()} disabled={busy} className="btn-primary">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{busy ? 'Uploading…' : 'Upload Documents'}
+          </button>
         </div>
-        <input ref={uploadRef} type="file" multiple className="hidden" onChange={e => handleUpload(e.target.files)} />
-        <button onClick={() => uploadRef.current?.click()} disabled={busy} className="btn-primary">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{busy ? 'Uploading…' : 'Upload Documents'}
-        </button>
-      </div>
+      )}
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
 
       {docs.length > 3 && (
@@ -130,7 +139,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
       {/* Documents */}
       {docs.length === 0 ? (
         <div className="card p-12 text-center text-gray-400">
-          <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />No documents yet. Upload sounding tables, hydrostatic tables, spreadsheets…
+          <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />{isAdmin ? 'No documents yet. Upload sounding tables, hydrostatic tables, spreadsheets…' : 'No documents yet.'}
         </div>
       ) : (
         <div className="space-y-2">
@@ -142,7 +151,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
                 <p className="text-xs text-gray-500">{d.category ? `${d.category} · ` : ''}{formatBytes(d.size_bytes)} · {d.created_at?.slice(0, 10)}</p>
               </div>
               <button onClick={() => download(d)} className="btn-secondary py-1.5 px-3 text-xs"><Download className="h-3.5 w-3.5" />Open</button>
-              <button onClick={() => removeDoc(d)} className="btn-ghost py-1.5 px-2 text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+              {isAdmin && <button onClick={() => removeDoc(d)} className="btn-ghost py-1.5 px-2 text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>}
             </div>
           ))}
           {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No documents match your search.</p>}

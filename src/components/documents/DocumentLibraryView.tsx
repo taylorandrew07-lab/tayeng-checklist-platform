@@ -8,7 +8,11 @@ import { listVesselFolders, createVessel, searchDocuments, signedUrl, formatByte
 
 export default function DocumentLibraryView() {
   const pathname = usePathname()
-  const base = pathname.startsWith('/admin') ? '/admin/documents' : '/surveyor/documents'
+  const isAdmin = pathname.startsWith('/admin')
+  const base = isAdmin ? '/admin/documents' : '/surveyor/documents'
+  // Surveyors read this library in the field; vessel lifecycle (create/rename/
+  // delete) belongs to admins on /admin/vessels, so surveyors get a search-and-
+  // open view only.
 
   const [vessels, setVessels] = useState<VesselFolder[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,10 +63,12 @@ export default function DocumentLibraryView() {
           <h1 className="page-title">Vessel Documents</h1>
           <p className="text-gray-500 mt-0.5">Reference documents organised by vessel — sounding/hydrostatic tables, spreadsheets and more.</p>
         </div>
-        <button onClick={() => setCreating(c => !c)} className="btn-primary whitespace-nowrap"><FolderPlus className="h-4 w-4" />New Vessel</button>
+        {isAdmin && (
+          <button onClick={() => setCreating(c => !c)} className="btn-primary whitespace-nowrap"><FolderPlus className="h-4 w-4" />New Vessel</button>
+        )}
       </div>
 
-      {creating && (
+      {isAdmin && creating && (
         <div className="card p-4 flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[200px]">
             <label className="label-base">Vessel name</label>
@@ -106,7 +112,7 @@ export default function DocumentLibraryView() {
             {filteredVessels.length === 0 ? (
               <div className="card p-12 text-center text-gray-400">
                 <Folder className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                {vessels.length === 0 ? 'No vessel folders yet. Create one to start uploading documents.' : 'No vessels match your search.'}
+                {vessels.length === 0 ? (isAdmin ? 'No vessel folders yet. Create one to start uploading documents.' : 'No vessel documents yet.') : 'No vessels match your search.'}
               </div>
             ) : filteredVessels.map(v => (
               <Link key={v.id} href={`${base}/${v.id}`} className="card p-4 flex items-center gap-4 hover:bg-gray-50">

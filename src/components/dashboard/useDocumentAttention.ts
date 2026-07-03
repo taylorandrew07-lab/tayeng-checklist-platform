@@ -11,7 +11,9 @@ type Context = 'self' | 'admin' | 'office'
 function hrefFor(context: Context, profileId: string): string {
   if (context === 'self') return '/profile'
   if (context === 'admin') return `/admin/users/${profileId}/documents`
-  return '/office/documents'
+  // Office expiry alerts land on the canonical Credentials page (/personnel),
+  // which shows the same data as a filterable matrix with downloads + CSV.
+  return '/personnel'
 }
 
 /**
