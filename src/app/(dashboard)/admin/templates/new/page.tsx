@@ -315,12 +315,6 @@ export default function NewTemplatePage() {
           <h1 className="page-title">{duplicateFrom ? 'Duplicate Template' : 'New Template'}</h1>
           <p className="text-gray-500 mt-0.5">Design the checklist structure</p>
         </div>
-        {isDirty && (
-          <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        )}
       </div>
 
       {/* Template metadata */}
@@ -412,26 +406,21 @@ export default function NewTemplatePage() {
         </div>
       )}
 
-      {/* Save actions */}
-      <div className="flex items-center justify-end gap-3 pb-6">
-        <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
-          Cancel
-        </button>
-        <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving…' : 'Save Template'}
-        </button>
-      </div>
-
-      {/* Sticky bottom save bar */}
+      {/* Single persistent save bar (this page has no autosave). Appears once the
+          builder has unsaved changes; Cancel + Save live here, no duplicates. */}
       {isDirty && (
         <div className="sticky bottom-4 z-10">
           <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
             <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
-            <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving…' : 'Save Template'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
+                Cancel
+              </button>
+              <button onClick={() => handleSave()} disabled={saving} className="btn-primary">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? 'Saving…' : 'Save Template'}
+              </button>
+            </div>
           </div>
         </div>
       )}

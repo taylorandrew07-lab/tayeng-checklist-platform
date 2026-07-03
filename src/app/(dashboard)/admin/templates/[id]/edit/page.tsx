@@ -461,28 +461,8 @@ export default function EditTemplatePage() {
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
       )}
 
-      <div className="flex items-center justify-end gap-3 pb-6">
-        <button type="button" onClick={() => requestNavigate('/admin/templates')} className="btn-secondary">
-          Cancel
-        </button>
-        <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-      </div>
-
-      {/* Sticky bottom save bar */}
-      {isDirty && (
-        <div className="sticky bottom-4 z-10">
-          <div className="card p-3 flex items-center justify-between shadow-lg gap-3 max-w-4xl mx-auto">
-            <p className="text-xs text-amber-600 font-medium">Unsaved changes</p>
-            <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Edits autosave (debounced); the header carries the single manual "Save"
+          flush + status, so no bottom row or sticky save bar is needed here. */}
 
       {/* Leave dialog */}
       {showLeaveDialog && (

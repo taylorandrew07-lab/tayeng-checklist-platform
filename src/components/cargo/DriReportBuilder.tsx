@@ -5,7 +5,7 @@
 // selection is saved to Voyage.dri.reportConfig so a report is reproducible.
 
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, FileText, Loader2, Printer, AlertTriangle, Hash } from 'lucide-react'
+import { FileDown, FileText, Loader2, AlertTriangle, Hash } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { COMPANY } from '@/lib/company'
 import type { Voyage, CargoPhoto, Camera, Period } from '@/lib/cargo/types'
@@ -199,7 +199,6 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
         <div className="card p-4 space-y-2">
           <button onClick={downloadPdf} disabled={!!busy} className="btn-primary w-full justify-center text-sm">{busy === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}Download PDF</button>
           <button onClick={downloadDocx} disabled={!!busy} className="btn-secondary w-full justify-center text-sm">{busy === 'docx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}Download .docx</button>
-          <button onClick={() => window.print()} className="btn-ghost w-full justify-center text-sm"><Printer className="h-4 w-4" />Print preview</button>
         </div>
       </div>
 
