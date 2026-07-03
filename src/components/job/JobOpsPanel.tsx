@@ -20,6 +20,8 @@ import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLog
 function activityText(a: ActivityLogRow): string {
   const act = a.action
   if (act === 'created') return 'Job created'
+  if (act === 'hours:update') return 'Hours updated'
+  if (act === 'rates:update') return 'Pay rates updated'
   if (act === 'surveyor:add') return 'Surveyor added'
   if (act === 'surveyor:remove') return 'Surveyor removed'
   if (act === 'attachment:delete') return 'Attachment removed'
@@ -328,6 +330,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [accounts, setAccounts] = useState<SurveyorAccount[]>([])
   const [attachments, setAttachments] = useState<JobAttachment[]>([])
   const [activity, setActivity] = useState<(ActivityLogRow & { actor_name: string | null })[]>([])
+  const [activityOpen, setActivityOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [addId, setAddId] = useState('')
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
@@ -608,15 +611,24 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
       </div>
       )}
 
-      {/* Activity (admin/office only) */}
+      {/* Activity (admin/office only) — collapsed to the latest entry; expand for
+          the full history so a busy job doesn't stretch the page. */}
       {showOps && isAdmin && (
       <div className="card p-5">
-        <h3 className="font-medium text-gray-900 mb-3">Activity</h3>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h3 className="font-medium text-gray-900">Activity{activity.length > 0 ? <span className="font-normal text-gray-400 text-sm"> · {activity.length}</span> : null}</h3>
+          {activity.length > 1 && (
+            <button type="button" onClick={() => setActivityOpen(o => !o)} className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800">
+              {activityOpen ? 'Show latest only' : `Show all (${activity.length})`}
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${activityOpen ? '-rotate-90' : 'rotate-90'}`} />
+            </button>
+          )}
+        </div>
         {activity.length === 0 ? (
           <p className="text-sm text-gray-400">No activity yet.</p>
         ) : (
           <ol className="space-y-3">
-            {activity.map(a => (
+            {(activityOpen ? activity : activity.slice(0, 1)).map(a => (
               <li key={a.id} className="flex gap-3 text-sm">
                 <Clock className="h-4 w-4 text-gray-300 flex-shrink-0 mt-0.5" />
                 <div className="min-w-0">

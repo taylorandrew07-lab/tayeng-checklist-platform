@@ -19,7 +19,7 @@ import {
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
-import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
+import { getInvoicingDashboard, metricsLabour, type InvoicingDashboard, type SurveyorLabour } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
@@ -65,9 +65,33 @@ export default function AdminInvoicingPage() {
 }
 
 // ── Overview: cross-ledger dashboard ─────────────────────────────────────────
+const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+
 function OverviewTab() {
   const [data, setData] = useState<InvoicingDashboard | null>(null)
   useEffect(() => { getInvoicingDashboard().then(setData) }, [])
+
+  // Labour window — we pay monthly, so it opens on the current month; switch to a
+  // whole year or all time. Jobs count in the month they're scheduled.
+  const [labourMode, setLabourMode] = useState<'month' | 'year' | 'all'>('month')
+  const [labourMonth, setLabourMonth] = useState(thisMonth) // YYYY-MM
+  const [labourYear, setLabourYear] = useState(String(new Date().getFullYear()))
+  const [labour, setLabour] = useState<SurveyorLabour[] | null>(null)
+  useEffect(() => {
+    let from: string | null = null, to: string | null = null
+    if (labourMode === 'month' && labourMonth) {
+      const [y, m] = labourMonth.split('-').map(Number)
+      from = `${labourMonth}-01`
+      to = `${labourMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    } else if (labourMode === 'year') {
+      from = `${labourYear}-01-01`; to = `${labourYear}-12-31`
+    }
+    let active = true
+    setLabour(null)
+    metricsLabour(from, to).then(l => { if (active) setLabour(l) })
+    return () => { active = false }
+  }, [labourMode, labourMonth, labourYear])
+  const yearOptions = Array.from({ length: new Date().getFullYear() - 2024 + 1 }, (_, i) => String(2024 + i)).reverse()
 
   if (!data) return <div className="space-y-3">{[0, 1].map(i => <div key={i} className="skeleton h-28 w-full" />)}</div>
 
@@ -125,11 +149,33 @@ function OverviewTab() {
         </div>
       </section>
 
-      {/* Labour — hours & overtime per surveyor (for pay) */}
+      {/* Labour — hours, overtime & distance per surveyor (for pay), windowed */}
       <section>
-        <h2 className="section-title mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime</h2>
-        {data.labour.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-gray-400">No hours logged yet.</div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="section-title flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime</h2>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-0.5 text-xs font-medium" role="group" aria-label="Labour period">
+              {([['month', 'Month'], ['year', 'Year'], ['all', 'All time']] as const).map(([mode, label]) => (
+                <button key={mode} onClick={() => setLabourMode(mode)}
+                  className={`px-2.5 py-1 rounded-full transition-colors ${labourMode === mode ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {labourMode === 'month' && <input type="month" value={labourMonth} onChange={e => setLabourMonth(e.target.value || thisMonth())} className="input-base text-xs py-1 w-36" aria-label="Month" />}
+            {labourMode === 'year' && (
+              <select value={labourYear} onChange={e => setLabourYear(e.target.value)} className="input-base text-xs py-1 w-24" aria-label="Year">
+                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+        {labour === null ? (
+          <div className="skeleton h-28 w-full" />
+        ) : labour.length === 0 ? (
+          <div className="card p-8 text-center text-sm text-gray-400">
+            {labourMode === 'all' ? 'No hours logged yet.' : 'Nothing logged in this period. Jobs count in the month they’re scheduled.'}
+          </div>
         ) : (
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
@@ -138,15 +184,17 @@ function OverviewTab() {
                   <th className="font-medium px-4 py-2.5">Surveyor</th>
                   <th className="font-medium px-4 py-2.5 text-right">Regular hrs</th>
                   <th className="font-medium px-4 py-2.5 text-right">Overtime hrs</th>
+                  <th className="font-medium px-4 py-2.5 text-right">Distance (km)</th>
                   <th className="font-medium px-4 py-2.5 text-right">Pay</th>
                 </tr>
               </thead>
               <tbody>
-                {data.labour.map(s => (
+                {labour.map(s => (
                   <tr key={s.surveyor_id} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-3 text-gray-900">{s.name}</td>
                     <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
                     <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                    <td className="px-4 py-3 text-right tnum text-gray-600">{s.km ? s.km.toLocaleString() : <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-3 text-right">
                       {s.pay.length === 0 ? <span className="text-gray-300">—</span> : (
                         <div className="flex flex-col items-end gap-0.5">
@@ -158,6 +206,7 @@ function OverviewTab() {
                 ))}
               </tbody>
             </table>
+            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Distance is the per-surveyor trip log (paid per km). Jobs count in the month they&apos;re scheduled.</p>
           </div>
         )}
       </section>

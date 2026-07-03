@@ -7,24 +7,39 @@ import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface CurrencyBilling { currency: string; paid: number; outstanding: number; overdue: number; draft: number; count: number }
-export interface SurveyorLabour { surveyor_id: string; name: string; regular_hours: number; overtime_hours: number; pay: { currency: string; total: number }[] }
+export interface SurveyorLabour { surveyor_id: string; name: string; regular_hours: number; overtime_hours: number; km: number; pay: { currency: string; total: number }[] }
 export interface ClientOutstanding { client_id: string; name: string; amounts: { currency: string; amount: number }[] }
 
 export interface InvoicingDashboard {
   billing: CurrencyBilling[]
   jobsByWorkflow: { status: WorkflowStatus; count: number }[]
   openJobs: number
-  labour: SurveyorLabour[]
   clients: ClientOutstanding[]
+}
+
+/** Labour per surveyor (hours, OT, km, pay), optionally windowed to a date range
+ *  (YYYY-MM-DD, inclusive) for the monthly pay run. Jobs are attributed by their
+ *  scheduled date (else creation date), matching the analytics month bucketing. */
+export async function metricsLabour(from?: string | null, to?: string | null): Promise<SurveyorLabour[]> {
+  const { data } = await createClient().rpc('metrics_labour', { p_from: from ?? null, p_to: to ?? null })
+  return ((data ?? []) as any[])
+    .map(l => ({
+      surveyor_id: l.surveyor_id, name: l.name,
+      regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours),
+      km: Number(l.km ?? 0),
+      pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, total]) => ({ currency, total: Number(total) })),
+    }))
+    .filter(s => s.regular_hours || s.overtime_hours || s.km)
+    .sort((a, b) => b.overtime_hours - a.overtime_hours || b.regular_hours - a.regular_hours || b.km - a.km)
 }
 
 export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
   const supabase = createClient()
   // Aggregated server-side (migration 055) — RLS-scoped, no whole-table fetches.
-  const [billingRes, pipelineRes, labourRes, clientsRes] = await Promise.all([
+  // Labour is fetched separately (metricsLabour) so the overview can window it.
+  const [billingRes, pipelineRes, clientsRes] = await Promise.all([
     supabase.rpc('metrics_billing'),
     supabase.rpc('metrics_pipeline'),
-    supabase.rpc('metrics_labour'),
     supabase.rpc('metrics_client_outstanding'),
   ])
 
@@ -39,16 +54,6 @@ export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
   const jobsByWorkflow = WORKFLOW_ORDER.map(status => ({ status, count: wf.get(status) ?? 0 }))
   const openJobs = WORKFLOW_ORDER.filter(s => s !== 'paid' && s !== 'closed').reduce((n, s) => n + (wf.get(s) ?? 0), 0)
 
-  // ── Labour, per surveyor (pay arrives as a {currency: total} map) ──
-  const labour: SurveyorLabour[] = ((labourRes.data ?? []) as any[])
-    .map(l => ({
-      surveyor_id: l.surveyor_id, name: l.name,
-      regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours),
-      pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, total]) => ({ currency, total: Number(total) })),
-    }))
-    .filter(s => s.regular_hours || s.overtime_hours)
-    .sort((a, b) => b.overtime_hours - a.overtime_hours || b.regular_hours - a.regular_hours)
-
   // ── Outstanding per client (one row per client+currency → group) ──
   const cmap = new Map<string, { name: string; amounts: Map<string, number> }>()
   for (const r of (clientsRes.data ?? []) as any[]) {
@@ -60,5 +65,5 @@ export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
     .map(([client_id, c]) => ({ client_id, name: c.name, amounts: [...c.amounts.entries()].map(([currency, amount]) => ({ currency, amount })) }))
     .sort((a, b) => b.amounts.reduce((s, x) => s + x.amount, 0) - a.amounts.reduce((s, x) => s + x.amount, 0))
 
-  return { billing, jobsByWorkflow, openJobs, labour, clients }
+  return { billing, jobsByWorkflow, openJobs, clients }
 }
