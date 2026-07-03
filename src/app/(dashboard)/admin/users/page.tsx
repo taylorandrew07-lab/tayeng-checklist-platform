@@ -9,6 +9,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate, withTimeout } from '@/lib/utils'
+import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 import type { Profile, Client, UserRole, ClientRequest, OfficePermissionCatalogRow } from '@/lib/types/database'
 
 // Cosmetic staff job titles an admin can assign (display only — no permissions).
@@ -578,7 +579,10 @@ export default function UsersPage() {
             <label className="label-base">Role</label>
             <select value={form.role} onChange={(e) => setForm(p => ({ ...p, role: e.target.value as UserRole }))} className="input-base">
               <option value="surveyor">Surveyor</option>
-              <option value="client">Client</option>
+              {/* Creating a client account is pointless while the portal is off (they
+                  can't sign in). The role filter and approval flow keep 'client' so
+                  any pre-existing client records stay manageable. */}
+              {(CLIENT_PORTAL_ENABLED || form.role === 'client') && <option value="client">Client</option>}
               <option value="office">Office</option>
               {isSuperAdmin && <option value="admin">Admin</option>}
             </select>

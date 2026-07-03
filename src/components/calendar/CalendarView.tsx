@@ -18,6 +18,7 @@ import {
 } from '@/lib/calendar/api'
 import type { CalendarJob, CalendarVisibility, UserRole } from '@/lib/types/database'
 import { confirmDialog } from '@/components/ui/confirm'
+import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 const JOB_COLOR = '#3b82f6'
@@ -49,7 +50,9 @@ const LEGEND: { color: string; label: string }[] = [
 
 const ROLE_OPTIONS: { role: UserRole; label: string }[] = [
   { role: 'surveyor', label: 'Surveyors' }, { role: 'admin', label: 'Admins' },
-  { role: 'office', label: 'Office' }, { role: 'client', label: 'Clients' },
+  { role: 'office', label: 'Office' },
+  // Hidden while the client portal is off — clients can't see calendar events.
+  ...(CLIENT_PORTAL_ENABLED ? [{ role: 'client' as UserRole, label: 'Clients' }] : []),
 ]
 
 export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: boolean; canRequestLeave: boolean }) {

@@ -5,12 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
 import { Loader2, Search, X } from 'lucide-react'
 import { sendMessage } from '@/lib/messages/api'
+import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 import type { UserRole } from '@/lib/types/database'
 
 const ROLE_OPTIONS: { role: UserRole; label: string }[] = [
   { role: 'surveyor', label: 'All surveyors' },
   { role: 'office', label: 'All office' },
-  { role: 'client', label: 'All clients' },
+  // Clients can't sign in while the portal is disabled, so broadcasting to them
+  // would queue messages nobody can read.
+  ...(CLIENT_PORTAL_ENABLED ? [{ role: 'client' as UserRole, label: 'All clients' }] : []),
   { role: 'admin', label: 'All administrators' },
 ]
 

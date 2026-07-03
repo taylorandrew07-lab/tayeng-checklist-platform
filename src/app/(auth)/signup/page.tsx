@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
+import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 import { Loader2, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 
 export default function SignUpPage() {
@@ -141,8 +142,11 @@ export default function SignUpPage() {
                   /api/admin/create-user, never self-signup — see migration 068. */}
               {[
                 { value: 'surveyor', label: 'Surveyor', desc: 'Complete and submit survey jobs' },
-                { value: 'super_cargo', label: 'Cargo Technician', desc: 'Same as surveyor (different title)' },
-                { value: 'client', label: 'Client', desc: 'View job reports and results' },
+                { value: 'super_cargo', label: 'Cargo Technician', desc: 'Monitor cargo operations and voyages' },
+                // Client self-signup is hidden while the client portal is disabled —
+                // otherwise a customer could register, get approved, and land on the
+                // "Portal unavailable" dead end. Re-appears when the flag flips.
+                ...(CLIENT_PORTAL_ENABLED ? [{ value: 'client', label: 'Client', desc: 'View job reports and results' }] : []),
               ].map(opt => (
                 <label key={opt.value} className={`flex flex-col gap-1 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
                   form.role === opt.value ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
