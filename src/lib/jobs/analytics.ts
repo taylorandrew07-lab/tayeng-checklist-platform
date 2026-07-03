@@ -18,32 +18,23 @@ export interface Analytics {
   byMonth: { label: string; count: number }[]
   topClients: { client_id: string; name: string; jobs: number; revenue: MoneyByCurrency[] }[]
   billing: CurrencyBilling[]
-  labour: { surveyor_id: string; name: string; jobs: number; regular_hours: number; overtime_hours: number; pay: MoneyByCurrency[] }[]
-  overtimeHours: number
-}
-
-// Map the metrics_labour RPC rows to the Analytics labour shape (shared by both paths).
-function mapLabour(rows: any[]): Analytics['labour'] {
-  return (rows ?? [])
-    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: Number(l.jobs), regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours), pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, amount]) => ({ currency, amount: Number(amount) })) }))
-    .sort((a, b) => b.jobs - a.jobs)
 }
 
 /**
  * Company-wide analytics. Fast path: server-side aggregation via RPCs
  * (metrics_analytics for job KPIs/by-type/by-month/top-clients, plus the proven
- * metrics_pipeline / metrics_billing / metrics_labour) so whole tables never reach
- * the browser. Falls back to the in-browser computation (getAnalyticsClient) if the
- * RPC is unavailable or errors — so the dashboard never breaks.
+ * metrics_pipeline / metrics_billing) so whole tables never reach the browser.
+ * Falls back to the in-browser computation (getAnalyticsClient) if the RPC is
+ * unavailable or errors — so the dashboard never breaks. Per-surveyor labour is
+ * shown on Finance -> Overview, not here.
  */
 export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
   const supabase = createClient()
   try {
-    const [aRes, pipeRes, billRes, labourRes] = await Promise.all([
+    const [aRes, pipeRes, billRes] = await Promise.all([
       supabase.rpc('metrics_analytics', { p_months_back: monthsBack }),
       supabase.rpc('metrics_pipeline'),
       supabase.rpc('metrics_billing'),
-      supabase.rpc('metrics_labour'),
     ])
     const a = aRes.data as any
     if (aRes.error || !a || !a.kpis) throw aRes.error ?? new Error('analytics rpc empty')
@@ -69,7 +60,6 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
       byMonth.push({ label: `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getFullYear()).slice(-2)}`, count: monthCounts.get(key) ?? 0 })
     }
 
-    const labour = mapLabour((labourRes.data ?? []) as any[])
     return {
       kpis: a.kpis,
       byStatus,
@@ -77,8 +67,6 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
       byMonth,
       topClients: (a.topClients ?? []) as Analytics['topClients'],
       billing,
-      labour,
-      overtimeHours: labour.reduce((s, l) => s + l.overtime_hours, 0),
     }
   } catch {
     return getAnalyticsClient(monthsBack)
@@ -88,9 +76,8 @@ export async function getAnalytics(monthsBack = 12): Promise<Analytics> {
 // In-browser fallback (the original implementation): used only if the RPC path fails.
 async function getAnalyticsClient(monthsBack = 12): Promise<Analytics> {
   const supabase = createClient()
-  const [{ data: jobs }, labourRes, { data: invoices }] = await Promise.all([
+  const [{ data: jobs }, { data: invoices }] = await Promise.all([
     supabase.from('jobs').select('id, job_type, client_id, workflow_status, is_overtime, scheduled_date, created_at, client:clients(name)'),
-    supabase.rpc('metrics_labour'), // aggregated server-side (migration 055)
     supabase.from('invoices').select('job_id, client_id, status, total, currency, due_date'),
   ])
 
@@ -152,11 +139,5 @@ async function getAnalyticsClient(monthsBack = 12): Promise<Analytics> {
     .map(b => ({ currency: b.currency, invoiced: b.invoiced, paid: b.paid, outstanding: b.outstanding, overdue: b.overdue }))
     .sort((a, b) => b.outstanding - a.outstanding)
 
-  // ── Labour per surveyor (aggregated server-side, migration 055) ──
-  const labour = ((labourRes.data ?? []) as any[])
-    .map(l => ({ surveyor_id: l.surveyor_id, name: l.name, jobs: Number(l.jobs), regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours), pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, amount]) => ({ currency, amount: Number(amount) })) }))
-    .sort((a, b) => b.jobs - a.jobs)
-  const overtimeHours = labour.reduce((s, l) => s + l.overtime_hours, 0)
-
-  return { kpis: { totalJobs, openJobs, thisMonth, awaitingInvoice, overdueCount, otJobs }, byStatus, byType, byMonth, topClients, billing, labour, overtimeHours }
+  return { kpis: { totalJobs, openJobs, thisMonth, awaitingInvoice, overdueCount, otJobs }, byStatus, byType, byMonth, topClients, billing }
 }

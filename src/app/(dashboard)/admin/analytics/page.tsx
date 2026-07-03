@@ -30,7 +30,7 @@ export default function AnalyticsPage() {
             <Kpi label="This month" value={data.kpis.thisMonth} icon={CalendarDays} />
             <Kpi label="Awaiting invoice" value={data.kpis.awaitingInvoice} icon={Receipt} tone="amber" href="/admin/invoicing" />
             <Kpi label="Overdue" value={data.kpis.overdueCount} icon={AlertTriangle} tone={data.kpis.overdueCount > 0 ? 'red' : 'gray'} href="/admin/invoicing" />
-            <Kpi label="Overtime jobs" value={data.kpis.otJobs} icon={Clock} tone="amber" href="/admin/overtime" />
+            <Kpi label="Overtime jobs" value={data.kpis.otJobs} icon={Clock} tone="amber" href="/admin/invoicing" />
           </div>
 
           {/* Pipeline + types */}
@@ -102,41 +102,13 @@ export default function AnalyticsPage() {
             </section>
           )}
 
-          {/* Labour & overtime */}
+          {/* Per-surveyor labour + overtime + pay lives on Finance -> Overview, where
+              it can be windowed to a pay month and expanded per job. */}
           <section>
-            <div className="flex items-center justify-between mb-3 gap-2">
-              <h2 className="section-title flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime <span className="text-xs font-normal text-gray-400">· {data.overtimeHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} OT hrs total</span></h2>
-              <Link href="/admin/overtime" className="text-sm text-brand-700 hover:underline whitespace-nowrap">Overtime by month →</Link>
+            <div className="card p-5 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="section-title flex items-center gap-2"><Clock className="h-4 w-4 text-gray-400" /> Labour &amp; overtime</h2>
+              <Link href="/admin/invoicing" className="text-sm text-brand-700 hover:underline whitespace-nowrap">Per-surveyor hours, OT &amp; pay on Finance →</Link>
             </div>
-            {data.labour.length === 0 ? (
-              <div className="card p-8 text-center text-sm text-gray-400">No hours logged yet.</div>
-            ) : (
-              <div className="card overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-gray-100 text-left text-xs text-gray-400">
-                    <th className="font-medium px-4 py-2.5">Surveyor</th>
-                    <th className="font-medium px-4 py-2.5 text-right">Jobs</th>
-                    <th className="font-medium px-4 py-2.5 text-right">Regular hrs</th>
-                    <th className="font-medium px-4 py-2.5 text-right">Overtime hrs</th>
-                    <th className="font-medium px-4 py-2.5 text-right">Pay</th>
-                  </tr></thead>
-                  <tbody>
-                    {data.labour.map(s => (
-                      <tr key={s.surveyor_id} className="border-b border-gray-50 last:border-0">
-                        <td className="px-4 py-3 text-gray-900">{s.name}</td>
-                        <td className="px-4 py-3 text-right tnum text-gray-600">{s.jobs}</td>
-                        <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-                        <td className="px-4 py-3 text-right tnum font-medium text-gray-900">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-                        <td className="px-4 py-3 text-right">
-                          {s.pay.length === 0 ? <span className="text-gray-300">—</span>
-                            : <div className="flex flex-col items-end gap-0.5">{s.pay.map(p => <span key={p.currency} className="tnum text-gray-700">{money(p.amount, p.currency)}</span>)}</div>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </section>
         </>
       )}
