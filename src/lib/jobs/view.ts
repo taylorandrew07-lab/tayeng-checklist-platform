@@ -13,6 +13,8 @@ export type MonthSel = number | 'all' // 0–11, or 'all'
 
 const KEY = { mode: 'jobsColorMode', year: 'jobsFilterYear', month: 'jobsFilterMonth' }
 
+const persist = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* ignore */ } }
+
 export const MONTH_LABELS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -42,17 +44,25 @@ export function useJobsView(): JobsView {
       const m = localStorage.getItem(KEY.mode)
       if (m === 'none' || m === 'client' || m === 'type') setColorModeS(m)
       const y = localStorage.getItem(KEY.year)
-      if (y) setYearS(y === 'all' ? 'all' : Number(y))
+      const yr: YearSel = y ? (y === 'all' ? 'all' : Number(y)) : 'all'
+      if (y) setYearS(yr)
+      // Month only applies within a chosen year; ignore any stored month while the
+      // year is "all" (and heal the stored value) so a stale month can't hide rows.
       const mo = localStorage.getItem(KEY.month)
-      if (mo) setMonthS(mo === 'all' ? 'all' : Number(mo))
+      if (yr === 'all') { if (mo && mo !== 'all') persist(KEY.month, 'all') }
+      else if (mo) setMonthS(mo === 'all' ? 'all' : Number(mo))
     } catch { /* storage unavailable */ }
     setReady(true)
   }, [])
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const persist = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* ignore */ } }
   const setColorMode = (m: JobColorMode) => { setColorModeS(m); persist(KEY.mode, m) }
-  const setYear = (y: YearSel) => { setYearS(y); persist(KEY.year, String(y)) }
+  // Switching to "All time" also clears the month, so the (now disabled) month
+  // picker can never keep filtering behind an "All time" label.
+  const setYear = (y: YearSel) => {
+    setYearS(y); persist(KEY.year, String(y))
+    if (y === 'all') { setMonthS('all'); persist(KEY.month, 'all') }
+  }
   const setMonth = (m: MonthSel) => { setMonthS(m); persist(KEY.month, String(m)) }
 
   return { colorMode, setColorMode, year, setYear, month, setMonth, ready }
@@ -70,13 +80,17 @@ export function availableYears<T>(rows: T[], getDate: (r: T) => string | null | 
   return [...set].sort((a, b) => b - a)
 }
 
-/** True if a date string falls within the selected year (and month, if not 'all'). */
+/** True if a date string falls within the selected year (and month, if not 'all').
+ *  Month only narrows *within* a chosen year — the toolbar disables the month
+ *  picker when the year is "all". So "All time" ignores any (possibly stale)
+ *  month value; otherwise a month left over from a previous selection would
+ *  silently hide every other month even though the UI reads "All time". */
 export function inYearMonth(date: string | null | undefined, year: YearSel, month: MonthSel): boolean {
-  if (year === 'all' && month === 'all') return true
+  if (year === 'all') return true
   if (!date) return false
   const d = new Date(date)
   if (Number.isNaN(d.getTime())) return false
-  if (year !== 'all' && d.getFullYear() !== year) return false
+  if (d.getFullYear() !== year) return false
   if (month !== 'all' && d.getMonth() !== month) return false
   return true
 }
