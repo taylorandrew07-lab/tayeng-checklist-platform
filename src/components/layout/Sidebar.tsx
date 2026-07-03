@@ -1,7 +1,5 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -11,7 +9,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
-  LogOut, ChevronRight, X, Settings, Calculator, SlidersHorizontal, Check,
+  LogOut, ChevronRight, X, Settings, Calculator, BarChart3,
   Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2,
 } from 'lucide-react'
 
@@ -21,18 +19,11 @@ export interface NavItem {
   icon: React.ElementType
 }
 
-// Drag-to-reorder pulls in @dnd-kit (~tens of KB). It's only needed inside the
-// "Customize menu" mode, so load it on demand — normal navigation never ships it.
-// The fallback renders the rows statically so there's no flash while it loads.
-const SidebarReorder = dynamic(() => import('./SidebarReorder'), {
-  ssr: false,
-  loading: () => null,
-})
-
 const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
+  { label: 'Insights', href: '/admin/analytics', icon: BarChart3 },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
   // Team is a hub: the page itself has tabs for Team / Credentials / Approvals.
   { label: 'Team', href: '/admin/users', icon: Users },
@@ -128,38 +119,14 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
   const pathname = usePathname()
   const router = useRouter()
 
-  const canonical = roleNav(profile.role, officePermissions)
-  const [order, setOrder] = useState<NavItem[]>(() => orderedNav(canonical, profile.ui_prefs?.nav_order))
-  const [editMode, setEditMode] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const savedRef = useRef<NavItem[]>(order)
+  // Honour any nav order a user saved under the old "Customize menu" feature,
+  // but the reorder UI itself is gone — the canonical order is fixed now.
+  const order = orderedNav(roleNav(profile.role, officePermissions), profile.ui_prefs?.nav_order)
 
   function handleNavClick(href: string) {
     onClose?.()
     if (!dirtyState.requestNavigate(href)) return // handler shows dialog; dialog calls router.push
     router.push(href)
-  }
-
-  async function saveOrder() {
-    setSaving(true)
-    try {
-      const supabase = createClient()
-      const nav_order = order.map(i => i.href)
-      const ui_prefs = { ...(profile.ui_prefs ?? {}), nav_order }
-      const { error } = await supabase.from('profiles').update({ ui_prefs }).eq('id', profile.id)
-      if (error) throw error
-      savedRef.current = order
-      setEditMode(false)
-    } catch {
-      // Keep edit mode open on failure (e.g. migration not yet applied).
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function cancelEdit() {
-    setOrder(savedRef.current)
-    setEditMode(false)
   }
 
   async function handleSignOut() {
@@ -226,82 +193,38 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {editMode ? (
-            <>
-              <SidebarReorder order={order} onReorder={setOrder} />
-              {settingsItem.map(item => (
-                <div key={item.href} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-brand-400 opacity-60">
-                  <span className="w-4" />
-                  <item.icon className="h-5 w-5 flex-shrink-0" />
-                  {item.label}
-                  <span className="ml-auto text-[10px] uppercase tracking-wide">Fixed</span>
-                </div>
-              ))}
-            </>
-          ) : (
-            [...order, ...settingsItem].map((item) => {
-              const isActive =
-                item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
-                  ? pathname === item.href
-                  : pathname.startsWith(item.href)
-              return (
-                <button
-                  key={item.href}
-                  onClick={() => handleNavClick(item.href)}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
-                    isActive ? 'bg-brand-700 text-white' : 'text-brand-300 hover:bg-brand-800 hover:text-white'
-                  )}
-                >
-                  <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
-                  {item.label}
-                  {item.href === '/admin/users' && pendingCount > 0 ? (
-                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                      {pendingCount}
-                    </span>
-                  ) : item.href === '/inbox' && unreadMessages > 0 ? (
-                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                      {unreadMessages}
-                    </span>
-                  ) : item.href === '/admin/invoicing' && reconcileCount > 0 ? (
-                    <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                      {reconcileCount}
-                    </span>
-                  ) : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
-                </button>
-              )
-            })
-          )}
-
-          {/* Customize controls (only when there's more than one item to order) */}
-          {order.length > 1 && (
-            <div className="pt-2">
-              {editMode ? (
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveOrder}
-                    disabled={saving}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-500 transition-colors"
-                  >
-                    <Check className="h-3.5 w-3.5" />{saving ? 'Saving…' : 'Done'}
-                  </button>
-                  <button
-                    onClick={cancelEdit}
-                    className="px-3 py-2 rounded-lg text-xs font-medium text-brand-300 hover:bg-brand-800 hover:text-white transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setEditMode(true)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-brand-400 hover:bg-brand-800 hover:text-white transition-colors w-full"
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />Customize menu
-                </button>
-              )}
-            </div>
-          )}
+          {[...order, ...settingsItem].map((item) => {
+            const isActive =
+              item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
+                ? pathname === item.href
+                : pathname.startsWith(item.href)
+            return (
+              <button
+                key={item.href}
+                onClick={() => handleNavClick(item.href)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group w-full text-left',
+                  isActive ? 'bg-brand-700 text-white' : 'text-brand-300 hover:bg-brand-800 hover:text-white'
+                )}
+              >
+                <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-white' : 'text-brand-400 group-hover:text-white')} />
+                {item.label}
+                {item.href === '/admin/users' && pendingCount > 0 ? (
+                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {pendingCount}
+                  </span>
+                ) : item.href === '/inbox' && unreadMessages > 0 ? (
+                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {unreadMessages}
+                  </span>
+                ) : item.href === '/admin/invoicing' && reconcileCount > 0 ? (
+                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {reconcileCount}
+                  </span>
+                ) : isActive ? <ChevronRight className="h-4 w-4 ml-auto" /> : null}
+              </button>
+            )
+          })}
         </nav>
 
         {/* Sign out */}
