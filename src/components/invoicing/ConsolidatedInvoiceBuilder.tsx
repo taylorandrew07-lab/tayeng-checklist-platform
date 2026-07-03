@@ -6,7 +6,7 @@
 // someone other than the work client pays (e.g. ASCO pays for BP's vessels).
 // Creating the invoice stamps each job with it, so each vessel shows its invoice.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
@@ -68,7 +68,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     })
   }, [])
 
+  // True once the user manually picked an account or typed custom details — the
+  // auto-select below must not overwrite their choice for the current payer.
+  const bankTouched = useRef(false)
   function pickBank(id: string) {
+    bankTouched.current = true
     setBankAccountId(id)
     const a = bankAccounts.find(x => x.id === id)
     if (a) setBankDetails(a.details)
@@ -76,15 +80,28 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
 
   // Auto-select the bank account from whoever PAYS (bill-to if set, else the work
   // client): their linked "pays into" account, falling back to the global default.
-  // Runs on payer change — a manual pick afterwards still sticks.
+  // Re-applies on payer change; skipped while the user's own pick/typed details
+  // stand — and hand-typed custom details are never overwritten, even then.
   const payerId = billToId || clientId
+  const prevPayer = useRef<string | null>(null)
   useEffect(() => {
     if (bankAccounts.length === 0) return
+    const payerChanged = prevPayer.current !== payerId
+    prevPayer.current = payerId
+    if (!payerChanged && bankTouched.current) return // late data / re-render — keep the manual choice
+    if (bankTouched.current && bankAccountId === '' && bankDetails.trim()) return // hand-typed custom details
+    bankTouched.current = false
     const linked = payerId ? clientBankLinks[payerId] : undefined
     const acct = (linked ? bankAccounts.find(a => a.id === linked) : undefined)
       ?? bankAccounts.find(a => a.is_default) ?? bankAccounts[0]
     if (acct) { setBankAccountId(acct.id); setBankDetails(acct.details) }
   }, [payerId, bankAccounts, clientBankLinks]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warnings under the bank picker: the chosen account's currency vs the invoice
+  // currency, and a linked account that couldn't be applied (e.g. deactivated).
+  const selectedBank = bankAccounts.find(a => a.id === bankAccountId)
+  const bankCurrencyMismatch = selectedBank?.currency && selectedBank.currency !== currency
+  const linkedUnavailable = !!payerId && !!clientBankLinks[payerId] && !bankAccounts.some(a => a.id === clientBankLinks[payerId])
 
   const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
     const active = clientRates.filter(r => r.is_active)
@@ -411,11 +428,17 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
               {bankAccountId && payerId && clientBankLinks[payerId] === bankAccountId && (
                 <p className="text-[11px] text-brand-700 mt-1">{billToId ? billToName : clientName} is linked to this account — auto-selected.</p>
               )}
+              {bankCurrencyMismatch && (
+                <p className="text-[11px] text-amber-700 bg-amber-50/70 rounded-md px-2 py-1 mt-1">This account is {selectedBank?.currency}, but the invoice is {currency} — double-check the client pays to the right account.</p>
+              )}
+              {linkedUnavailable && (
+                <p className="text-[11px] text-amber-700 mt-1">{billToId ? billToName : clientName}&apos;s linked account is unavailable — using the default instead.</p>
+              )}
               </>
             ) : (
               <p className="text-[11px] text-gray-400">No saved bank accounts — add them in Settings, or type details below.</p>
             )}
-            <textarea value={bankDetails} onChange={e => { setBankDetails(e.target.value); setBankAccountId('') }} rows={3} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
+            <textarea value={bankDetails} onChange={e => { bankTouched.current = true; setBankDetails(e.target.value); setBankAccountId('') }} rows={3} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
           </div>
           <div>
             <label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label>

@@ -15,7 +15,7 @@ import { CURRENCIES, money, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices, isOverdue,
   getAppSettings, updateAppSettings, logInvoiceReminder, getInvoiceCounter, setInvoiceNextNumber,
-  listBankAccounts, saveBankAccount, deleteBankAccount,
+  listBankAccounts, saveBankAccount, deleteBankAccount, clientsPayingInto,
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
@@ -441,7 +441,13 @@ function BankAccountsCard() {
   useEffect(() => { load() }, [])
 
   async function remove(a: BankAccount) {
-    if (!(await confirmDialog({ title: 'Delete bank account?', message: `Remove "${a.label}"? Invoices already issued keep the details they were printed with.`, confirmLabel: 'Delete', danger: true }))) return
+    // Surface which clients "pay into" this account — deleting severs those links
+    // (they fall back to the default on future invoices).
+    const linked = await clientsPayingInto(a.id)
+    const linkedMsg = linked.length
+      ? ` ${linked.length === 1 ? `${linked[0]} is` : `${linked.length} clients (${linked.join(', ')}) are`} linked to pay into this account — they'll fall back to the default account on future invoices.`
+      : ''
+    if (!(await confirmDialog({ title: 'Delete bank account?', message: `Remove "${a.label}"?${linkedMsg} Invoices already issued keep the details they were printed with.`, confirmLabel: 'Delete', danger: true }))) return
     const res = await deleteBankAccount(a.id)
     if (res.error) { toast.error(res.error); return }
     toast.success('Bank account deleted'); load()

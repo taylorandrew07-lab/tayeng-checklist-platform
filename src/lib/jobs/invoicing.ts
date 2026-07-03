@@ -142,26 +142,36 @@ export async function listBankAccounts(activeOnly = false): Promise<BankAccount[
   return (data ?? []) as BankAccount[]
 }
 
-/** Create or update a bank account. Enforces a single default across the set. */
+/** Create or update a bank account. A partial unique index (mig 122) enforces a
+ *  single default, so other defaults are cleared BEFORE the row is marked default —
+ *  the reverse order would trip the index. */
 export async function saveBankAccount(input: {
   id?: string; label: string; currency: Currency | null; details: string; is_default: boolean; is_active?: boolean
 }): Promise<{ error?: string }> {
   const supabase = createClient()
   const row = { label: input.label, currency: input.currency, details: input.details, is_default: input.is_default, is_active: input.is_active ?? true }
-  let savedId = input.id
+  if (input.is_default) {
+    let clear = supabase.from('bank_accounts').update({ is_default: false }).eq('is_default', true)
+    if (input.id) clear = clear.neq('id', input.id)
+    const { error } = await clear
+    if (error) return { error: error.message }
+  }
   if (input.id) {
     const { error } = await supabase.from('bank_accounts').update(row).eq('id', input.id)
     if (error) return { error: error.message }
   } else {
-    const { data, error } = await supabase.from('bank_accounts').insert(row).select('id').single()
-    if (error) return { error: error.message }
-    savedId = data.id as string
-  }
-  if (input.is_default && savedId) {
-    const { error } = await supabase.from('bank_accounts').update({ is_default: false }).neq('id', savedId).eq('is_default', true)
+    const { error } = await supabase.from('bank_accounts').insert(row)
     if (error) return { error: error.message }
   }
   return {}
+}
+
+/** Names of clients whose "pays into" link (mig 121) points at this account — shown
+ *  before deleting an account so severed links aren't a surprise. */
+export async function clientsPayingInto(accountId: string): Promise<string[]> {
+  const { data } = await createClient().from('client_billing')
+    .select('client:clients(name)').eq('pay_to_bank_account_id', accountId)
+  return ((data ?? []) as any[]).map(r => r.client?.name).filter(Boolean)
 }
 
 export async function deleteBankAccount(id: string): Promise<{ error?: string }> {
