@@ -5,7 +5,7 @@
 // on each job; this page is the cross-job view + settings. Per-client billing
 // rates moved to the Clients hub (Clients → Rates).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
 import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
@@ -19,7 +19,7 @@ import {
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
-import { getInvoicingDashboard, metricsLabour, type InvoicingDashboard, type SurveyorLabour } from '@/lib/jobs/dashboard'
+import { getInvoicingDashboard, metricsLabour, metricsLabourByJob, type InvoicingDashboard, type SurveyorLabour, type SurveyorJobLabour } from '@/lib/jobs/dashboard'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
@@ -77,6 +77,9 @@ function OverviewTab() {
   const [labourMonth, setLabourMonth] = useState(thisMonth) // YYYY-MM
   const [labourYear, setLabourYear] = useState(String(new Date().getFullYear()))
   const [labour, setLabour] = useState<SurveyorLabour[] | null>(null)
+  // Per-job breakdown behind each surveyor row (same window, day-worked rule).
+  const [labourJobs, setLabourJobs] = useState<Map<string, SurveyorJobLabour[]>>(new Map())
+  const [openSurveyor, setOpenSurveyor] = useState<string | null>(null)
   useEffect(() => {
     let from: string | null = null, to: string | null = null
     if (labourMode === 'month' && labourMonth) {
@@ -87,8 +90,9 @@ function OverviewTab() {
       from = `${labourYear}-01-01`; to = `${labourYear}-12-31`
     }
     let active = true
-    setLabour(null)
+    setLabour(null); setOpenSurveyor(null)
     metricsLabour(from, to).then(l => { if (active) setLabour(l) })
+    metricsLabourByJob(from, to).then(m => { if (active) setLabourJobs(m) })
     return () => { active = false }
   }, [labourMode, labourMonth, labourYear])
   const yearOptions = Array.from({ length: new Date().getFullYear() - 2024 + 1 }, (_, i) => String(2024 + i)).reverse()
@@ -178,6 +182,7 @@ function OverviewTab() {
           </div>
         ) : (
           <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
@@ -186,27 +191,84 @@ function OverviewTab() {
                   <th className="font-medium px-4 py-2.5 text-right">Overtime hrs</th>
                   <th className="font-medium px-4 py-2.5 text-right">Distance (km)</th>
                   <th className="font-medium px-4 py-2.5 text-right">Pay</th>
+                  <th className="w-8" />
                 </tr>
               </thead>
               <tbody>
-                {labour.map(s => (
-                  <tr key={s.surveyor_id} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-3 text-gray-900">{s.name}</td>
-                    <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-                    <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-                    <td className="px-4 py-3 text-right tnum text-gray-600">{s.km ? s.km.toLocaleString() : <span className="text-gray-300">—</span>}</td>
-                    <td className="px-4 py-3 text-right">
-                      {s.pay.length === 0 ? <span className="text-gray-300">—</span> : (
-                        <div className="flex flex-col items-end gap-0.5">
-                          {s.pay.map(p => <span key={p.currency} className="tnum text-gray-700">{money(p.total, p.currency)}</span>)}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {labour.map(s => {
+                  const jobs = labourJobs.get(s.surveyor_id) ?? []
+                  const isOpen = openSurveyor === s.surveyor_id
+                  return (
+                  <Fragment key={s.surveyor_id}>
+                    <tr onClick={() => setOpenSurveyor(isOpen ? null : s.surveyor_id)}
+                      className={`border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50/60 ${isOpen ? 'bg-gray-50/60' : ''}`}>
+                      <td className="px-4 py-3 text-gray-900">{s.name}</td>
+                      <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                      <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                      <td className="px-4 py-3 text-right tnum text-gray-600">{s.km ? s.km.toLocaleString() : <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 text-right">
+                        {s.pay.length === 0 ? <span className="text-gray-300">—</span> : (
+                          <div className="flex flex-col items-end gap-0.5">
+                            {s.pay.map(p => <span key={p.currency} className="tnum text-gray-700">{money(p.total, p.currency)}</span>)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 text-gray-300"><ChevronRight className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-90' : ''}`} /></td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="bg-gray-50/40 border-b border-gray-100">
+                        <td colSpan={6} className="px-4 py-3">
+                          {jobs.length === 0 ? (
+                            <p className="text-xs text-gray-400">No per-job detail for this period.</p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-left text-gray-400">
+                                    <th className="font-medium px-3 py-1.5">Date</th>
+                                    <th className="font-medium px-3 py-1.5">Job</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">Reg hrs</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">OT hrs</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">Km</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">Pay</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {jobs.map(j => (
+                                    <tr key={j.job_id} className="border-t border-gray-100">
+                                      <td className="px-3 py-1.5 text-gray-500 tnum whitespace-nowrap">{j.job_date ? formatDate(j.job_date) : '—'}</td>
+                                      <td className="px-3 py-1.5">
+                                        <Link href={`/admin/jobs/${j.job_id}`} onClick={e => e.stopPropagation()} className="text-brand-700 hover:underline">
+                                          {j.vessel_name ? `M.V. ${j.vessel_name}` : (j.job_title || 'Job')}
+                                        </Link>
+                                        {j.report_number && <span className="text-gray-400 tnum"> · {j.report_number}</span>}
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right tnum text-gray-600">{j.regular_hours ? j.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}</td>
+                                      <td className="px-3 py-1.5 text-right tnum text-gray-900 font-medium">{j.overtime_hours ? j.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}</td>
+                                      <td className="px-3 py-1.5 text-right tnum text-gray-600">{j.km ? j.km.toLocaleString() : '—'}</td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        {j.pay.length === 0 ? <span className="text-gray-300">—</span> : (
+                                          <div className="flex flex-col items-end gap-0.5">
+                                            {j.pay.map(p => <span key={p.currency} className="tnum text-gray-700">{money(p.total, p.currency)}</span>)}
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                  )
+                })}
               </tbody>
             </table>
-            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Overtime shifts and km trips count on the day they were worked or driven. Regular hours (and typed-in OT with no shift log) count in the month the job is scheduled.</p>
+            </div>
+            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Overtime shifts and km trips count on the day they were worked or driven. Regular hours (and typed-in OT with no shift log) count in the month the job is scheduled. Tap a surveyor to see the jobs behind their totals.</p>
           </div>
         )}
       </section>

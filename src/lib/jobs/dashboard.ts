@@ -8,6 +8,12 @@ import type { WorkflowStatus } from '@/lib/types/database'
 
 export interface CurrencyBilling { currency: string; paid: number; outstanding: number; overdue: number; draft: number; count: number }
 export interface SurveyorLabour { surveyor_id: string; name: string; regular_hours: number; overtime_hours: number; km: number; pay: { currency: string; total: number }[] }
+export interface SurveyorJobLabour {
+  surveyor_id: string; job_id: string
+  job_title: string; vessel_name: string | null; report_number: string | null; job_date: string | null
+  regular_hours: number; overtime_hours: number; km: number
+  pay: { currency: string; total: number }[]
+}
 export interface ClientOutstanding { client_id: string; name: string; amounts: { currency: string; amount: number }[] }
 
 export interface InvoicingDashboard {
@@ -18,8 +24,9 @@ export interface InvoicingDashboard {
 }
 
 /** Labour per surveyor (hours, OT, km, pay), optionally windowed to a date range
- *  (YYYY-MM-DD, inclusive) for the monthly pay run. Jobs are attributed by their
- *  scheduled date (else creation date), matching the analytics month bucketing. */
+ *  (YYYY-MM-DD, inclusive) for the monthly pay run. Day-worked attribution: OT
+ *  shifts count on their own date, km on the trip date, regular on the job date
+ *  (see mig 125). */
 export async function metricsLabour(from?: string | null, to?: string | null): Promise<SurveyorLabour[]> {
   const { data } = await createClient().rpc('metrics_labour', { p_from: from ?? null, p_to: to ?? null })
   return ((data ?? []) as any[])
@@ -31,6 +38,29 @@ export async function metricsLabour(from?: string | null, to?: string | null): P
     }))
     .filter(s => s.regular_hours || s.overtime_hours || s.km)
     .sort((a, b) => b.overtime_hours - a.overtime_hours || b.regular_hours - a.regular_hours || b.km - a.km)
+}
+
+/** The per-job breakdown behind a surveyor's labour row (same window + same
+ *  day-worked rule as metricsLabour, at job grain — mig 126). The rows for a
+ *  surveyor sum exactly to that surveyor's metricsLabour totals. Returned as a
+ *  Map keyed by surveyor_id so the Overview can expand one row at a time. */
+export async function metricsLabourByJob(from?: string | null, to?: string | null): Promise<Map<string, SurveyorJobLabour[]>> {
+  const { data } = await createClient().rpc('metrics_labour_by_job', { p_from: from ?? null, p_to: to ?? null })
+  const byS = new Map<string, SurveyorJobLabour[]>()
+  for (const l of (data ?? []) as any[]) {
+    const row: SurveyorJobLabour = {
+      surveyor_id: l.surveyor_id, job_id: l.job_id,
+      job_title: l.job_title ?? '', vessel_name: l.vessel_name ?? null,
+      report_number: l.report_number ?? null, job_date: l.job_date ?? null,
+      regular_hours: Number(l.regular_hours), overtime_hours: Number(l.overtime_hours),
+      km: Number(l.km ?? 0),
+      pay: Object.entries((l.pay ?? {}) as Record<string, number>).map(([currency, total]) => ({ currency, total: Number(total) })),
+    }
+    const arr = byS.get(row.surveyor_id); if (arr) arr.push(row); else byS.set(row.surveyor_id, [row])
+  }
+  // Most recent job first within each surveyor's breakdown.
+  for (const arr of byS.values()) arr.sort((a, b) => (b.job_date ?? '').localeCompare(a.job_date ?? ''))
+  return byS
 }
 
 export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
