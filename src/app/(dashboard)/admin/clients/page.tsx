@@ -14,7 +14,8 @@ import { formatDate, withTimeout, sanitizeStorageName } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { listClientBilling, upsertClientBilling } from '@/lib/clients/billing'
-import type { Client, ClientBilling } from '@/lib/types/database'
+import { listBankAccounts } from '@/lib/jobs/invoicing'
+import type { Client, ClientBilling, BankAccount } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
 function logoUrl(path?: string | null): string | null {
@@ -57,10 +58,13 @@ export default function ClientsPage() {
     // contact + payment live in client_billing (admin/office only)
     contact_name: '', contact_email: '', contact_phone: '', address: '', notes: '',
     bank_details: '', payment_terms: '', ap_email: '', ap_contact: '', ap_phone: '', tax_number: '',
+    pay_to_bank_account_id: '',
     logo_path: '',
     color: '' as string,
   }
   const [form, setForm] = useState(blankForm)
+  // Our bank accounts, for the "pays into" link (defaults the invoice builder).
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -84,7 +88,7 @@ export default function ClientsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); listBankAccounts(true).then(setBankAccounts) }, [])
 
   // Deep link from the Jobs Tracker (?focus=<clientId>) opens that client.
   const focusHandled = useRef(false)
@@ -121,6 +125,7 @@ export default function ClientsPage() {
       ap_contact: b?.ap_contact ?? '',
       ap_phone: b?.ap_phone ?? '',
       tax_number: b?.tax_number ?? '',
+      pay_to_bank_account_id: b?.pay_to_bank_account_id ?? '',
       logo_path: client.logo_path ?? '',
       color: client.color ?? '',
     })
@@ -169,6 +174,7 @@ export default function ClientsPage() {
       ap_contact: form.ap_contact || null,
       ap_phone: form.ap_phone || null,
       tax_number: form.tax_number || null,
+      pay_to_bank_account_id: form.pay_to_bank_account_id || null,
     }
 
     let clientId = editClient?.id
@@ -330,6 +336,7 @@ export default function ClientsPage() {
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
+        size="xl"
         title={editClient ? 'Edit Client' : 'Add Client'}
         footer={
           <>
@@ -345,64 +352,64 @@ export default function ClientsPage() {
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
           )}
-          <div>
-            <label className="label-base">Client Name *</label>
-            <input type="text" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} className="input-base" placeholder="e.g. Acme Shipping Co." />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label-base">Contact Name</label>
-              <input type="text" value={form.contact_name} onChange={(e) => setForm(p => ({ ...p, contact_name: e.target.value }))} className="input-base" />
-            </div>
-            <div>
-              <label className="label-base">Contact Phone</label>
-              <input type="tel" value={form.contact_phone} onChange={(e) => setForm(p => ({ ...p, contact_phone: e.target.value }))} className="input-base" />
-            </div>
-          </div>
-          <div>
-            <label className="label-base">Contact Email</label>
-            <input type="email" value={form.contact_email} onChange={(e) => setForm(p => ({ ...p, contact_email: e.target.value }))} className="input-base" />
-          </div>
-          <div>
-            <label className="label-base">Address</label>
-            <textarea value={form.address} onChange={(e) => setForm(p => ({ ...p, address: e.target.value }))} className="input-base resize-none" rows={2} />
-          </div>
-          <div>
-            <label className="label-base">Notes</label>
-            <textarea value={form.notes} onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))} className="input-base resize-none" rows={2} placeholder="Internal notes about this client" />
-          </div>
-
-          {/* Payment / billing — private (admin + office only; never shown to surveyors) */}
-          <div className="pt-2 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 mb-2">Payment &amp; billing <span className="font-normal text-gray-400">— private; surveyors never see this</span></p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label-base">Payment terms</label>
-                  <input type="text" value={form.payment_terms} onChange={(e) => setForm(p => ({ ...p, payment_terms: e.target.value }))} className="input-base" placeholder="e.g. 30 days" />
-                </div>
-                <div>
-                  <label className="label-base">Tax / BRC / VAT no.</label>
-                  <input type="text" value={form.tax_number} onChange={(e) => setForm(p => ({ ...p, tax_number: e.target.value }))} className="input-base" />
-                </div>
+          {/* Two columns on desktop (the modal is wide); stacked on mobile. Left =
+              the client + day-to-day contact, right = who handles paying us. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 items-start">
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold text-gray-900 pb-2 border-b border-gray-100">Client &amp; contact</h3>
+              <div>
+                <label className="label-base">Client Name *</label>
+                <input type="text" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} className="input-base" placeholder="e.g. Acme Shipping Co." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label-base">Accounts-payable email</label>
-                  <input type="email" value={form.ap_email} onChange={(e) => setForm(p => ({ ...p, ap_email: e.target.value }))} className="input-base" placeholder="invoices@client.com" />
+                  <label className="label-base">Contact Name</label>
+                  <input type="text" value={form.contact_name} onChange={(e) => setForm(p => ({ ...p, contact_name: e.target.value }))} className="input-base" />
                 </div>
+                <div>
+                  <label className="label-base">Contact Phone</label>
+                  <input type="tel" value={form.contact_phone} onChange={(e) => setForm(p => ({ ...p, contact_phone: e.target.value }))} className="input-base" />
+                </div>
+              </div>
+              <div>
+                <label className="label-base">Contact Email</label>
+                <input type="email" value={form.contact_email} onChange={(e) => setForm(p => ({ ...p, contact_email: e.target.value }))} className="input-base" />
+              </div>
+              <div>
+                <label className="label-base">Address</label>
+                <textarea value={form.address} onChange={(e) => setForm(p => ({ ...p, address: e.target.value }))} className="input-base resize-none" rows={2} />
+              </div>
+              <div>
+                <label className="label-base">Notes</label>
+                <textarea value={form.notes} onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))} className="input-base resize-none" rows={2} placeholder="Internal notes about this client" />
+              </div>
+            </div>
+
+            {/* Payment / billing — private (admin + office only; never shown to surveyors).
+                The AP contact is often a different person from the day-to-day contact. */}
+            <div className="space-y-4 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-8">
+              <h3 className="text-base font-semibold text-gray-900 pb-2 border-b border-gray-100">Payment &amp; billing <span className="text-xs font-normal text-gray-400">— private; surveyors never see this</span></h3>
+              <div>
+                <label className="label-base">Payment terms</label>
+                <input type="text" value={form.payment_terms} onChange={(e) => setForm(p => ({ ...p, payment_terms: e.target.value }))} className="input-base" placeholder="e.g. 30 days" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label-base">AP contact name</label>
                   <input type="text" value={form.ap_contact} onChange={(e) => setForm(p => ({ ...p, ap_contact: e.target.value }))} className="input-base" placeholder="Name" />
                 </div>
+                <div>
+                  <label className="label-base">Accounts-payable email</label>
+                  <input type="email" value={form.ap_email} onChange={(e) => setForm(p => ({ ...p, ap_email: e.target.value }))} className="input-base" placeholder="invoices@client.com" />
+                </div>
               </div>
               <div>
-                <label className="label-base">AP phone</label>
-                <input type="tel" value={form.ap_phone} onChange={(e) => setForm(p => ({ ...p, ap_phone: e.target.value }))} className="input-base" />
-              </div>
-              <div>
-                <label className="label-base">Bank / payment details</label>
-                <textarea value={form.bank_details} onChange={(e) => setForm(p => ({ ...p, bank_details: e.target.value }))} className="input-base resize-y text-sm" rows={3} placeholder="Bank name, account, SWIFT…" />
+                <label className="label-base">Pays into <span className="text-gray-400 font-normal">— our bank account; auto-selected when invoicing this client</span></label>
+                <select value={form.pay_to_bank_account_id} onChange={(e) => setForm(p => ({ ...p, pay_to_bank_account_id: e.target.value }))} className="input-base">
+                  <option value="">— No link (use the default account) —</option>
+                  {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
+                </select>
+                {bankAccounts.length === 0 && <p className="text-xs text-gray-400 mt-1">No bank accounts yet — add them on the Finance page, Settings tab.</p>}
               </div>
             </div>
           </div>

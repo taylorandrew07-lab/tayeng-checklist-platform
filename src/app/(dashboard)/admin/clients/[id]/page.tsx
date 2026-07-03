@@ -7,6 +7,7 @@ import {
   ArrowLeft, Loader2, Building2, Pencil, Mail, Phone, MapPin, Briefcase, FolderOpen, AlertTriangle, Lock,
 } from 'lucide-react'
 import { getClientDetail, type ClientDetail } from '@/lib/jobs/client-detail'
+import { listBankAccounts } from '@/lib/jobs/invoicing'
 import { money } from '@/lib/jobs/tracker'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { formatDate } from '@/lib/utils'
@@ -24,6 +25,8 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true)
   // undefined = "use the loaded client.color"; a value = a just-picked override.
   const [colorOverride, setColorOverride] = useState<string | null | undefined>(undefined)
+  // Label of the bank account this client pays into (client_billing link, mig 121).
+  const [payToLabel, setPayToLabel] = useState<string | null>(null)
 
   async function saveColor(key: string | null) {
     if (!data) return
@@ -39,6 +42,18 @@ export default function ClientDetailPage() {
     return () => { active = false }
   }, [params.id])
 
+  const payToId = data?.clientBilling?.pay_to_bank_account_id ?? null
+  useEffect(() => {
+    if (!payToId) { setPayToLabel(null); return }
+    let active = true
+    listBankAccounts().then(accts => {
+      if (!active) return
+      const a = accts.find(x => x.id === payToId)
+      setPayToLabel(a ? `${a.label}${a.currency ? ` (${a.currency})` : ''}` : null)
+    })
+    return () => { active = false }
+  }, [payToId])
+
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
 
   if (!data) {
@@ -53,7 +68,7 @@ export default function ClientDetailPage() {
   const { client, clientBilling, jobCount, openJobs, billing, jobs, invoices } = data
   const logo = logoUrl(client.logo_path)
   const cb = clientBilling
-  const hasPayment = !!(cb && (cb.bank_details || cb.payment_terms || cb.ap_email || cb.ap_contact || cb.ap_phone || cb.tax_number))
+  const hasPayment = !!(cb && (cb.payment_terms || cb.ap_email || cb.ap_contact || cb.ap_phone || cb.pay_to_bank_account_id))
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -93,11 +108,10 @@ export default function ClientDetailPage() {
           <p className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-1.5"><Lock className="h-3 w-3" /> Payment &amp; billing <span className="font-normal">— admin/office only</span></p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
             {cb?.payment_terms && <div><span className="text-gray-400">Terms: </span><span className="text-gray-700">{cb.payment_terms}</span></div>}
-            {cb?.tax_number && <div><span className="text-gray-400">Tax/BRC/VAT: </span><span className="text-gray-700 tnum">{cb.tax_number}</span></div>}
             {cb?.ap_email && <div><span className="text-gray-400">AP email: </span><a href={`mailto:${cb.ap_email}`} className="text-brand-700 hover:underline">{cb.ap_email}</a></div>}
             {(cb?.ap_contact || cb?.ap_phone) && <div><span className="text-gray-400">AP contact: </span><span className="text-gray-700">{[cb?.ap_contact, cb?.ap_phone].filter(Boolean).join(' · ')}</span></div>}
+            {payToLabel && <div><span className="text-gray-400">Pays into: </span><span className="text-gray-700">{payToLabel}</span></div>}
           </div>
-          {cb?.bank_details && <div className="mt-2 pt-2 border-t border-gray-100 text-sm"><span className="text-gray-400 block text-xs mb-0.5">Bank / payment details</span><span className="text-gray-700 whitespace-pre-wrap">{cb.bank_details}</span></div>}
         </div>
       )}
 

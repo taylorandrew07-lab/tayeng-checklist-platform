@@ -180,6 +180,9 @@ export interface ClientBilling {
   ap_contact: string | null
   ap_phone: string | null
   tax_number: string | null
+  /** Our bank account this client pays into — defaults the invoice builder's
+   *  bank details when this client is the payer (mig 121). */
+  pay_to_bank_account_id: string | null
   created_at: string
   updated_at: string
 }

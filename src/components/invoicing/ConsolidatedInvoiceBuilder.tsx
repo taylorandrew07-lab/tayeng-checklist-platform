@@ -15,6 +15,7 @@ import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
+import { listClientBilling } from '@/lib/clients/billing'
 import LineItemsEditor, { blankLine, type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
 import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
@@ -43,6 +44,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [bankDetails, setBankDetails] = useState('')
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [bankAccountId, setBankAccountId] = useState('')
+  // client_id → linked "pays into" bank account (client_billing.pay_to_bank_account_id).
+  const [clientBankLinks, setClientBankLinks] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState('')
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
@@ -57,10 +60,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     getLatestInvoiceNumber().then(setLastInvNumber)
     listJobTypes().then(ts => setJobTypes(ts.map(t => t.name)))
     getAppSettings().then(s => { if (s) setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }]) })
-    listBankAccounts(true).then(accts => {
-      setBankAccounts(accts)
-      const def = accts.find(a => a.is_default) ?? accts[0]
-      if (def) { setBankAccountId(def.id); setBankDetails(def.details) }
+    listBankAccounts(true).then(setBankAccounts)
+    listClientBilling().then(map => {
+      const links: Record<string, string> = {}
+      for (const [cid, b] of Object.entries(map)) if (b.pay_to_bank_account_id) links[cid] = b.pay_to_bank_account_id
+      setClientBankLinks(links)
     })
   }, [])
 
@@ -69,6 +73,18 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const a = bankAccounts.find(x => x.id === id)
     if (a) setBankDetails(a.details)
   }
+
+  // Auto-select the bank account from whoever PAYS (bill-to if set, else the work
+  // client): their linked "pays into" account, falling back to the global default.
+  // Runs on payer change — a manual pick afterwards still sticks.
+  const payerId = billToId || clientId
+  useEffect(() => {
+    if (bankAccounts.length === 0) return
+    const linked = payerId ? clientBankLinks[payerId] : undefined
+    const acct = (linked ? bankAccounts.find(a => a.id === linked) : undefined)
+      ?? bankAccounts.find(a => a.is_default) ?? bankAccounts[0]
+    if (acct) { setBankAccountId(acct.id); setBankDetails(acct.details) }
+  }, [payerId, bankAccounts, clientBankLinks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
     const active = clientRates.filter(r => r.is_active)
@@ -387,10 +403,15 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           <div>
             <label className="text-[11px] text-gray-400">Bank account <span className="text-gray-300">— shown on the invoice</span></label>
             {bankAccounts.length > 0 ? (
+              <>
               <select value={bankAccountId} onChange={e => pickBank(e.target.value)} className={cell}>
                 {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
                 <option value="">Custom / none</option>
               </select>
+              {bankAccountId && payerId && clientBankLinks[payerId] === bankAccountId && (
+                <p className="text-[11px] text-brand-700 mt-1">{billToId ? billToName : clientName} is linked to this account — auto-selected.</p>
+              )}
+              </>
             ) : (
               <p className="text-[11px] text-gray-400">No saved bank accounts — add them in Settings, or type details below.</p>
             )}
