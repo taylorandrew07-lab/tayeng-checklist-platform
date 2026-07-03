@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download } from 'lucide-react'
+import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
@@ -26,6 +26,9 @@ export default function SurveyorDashboard() {
   const [period, setPeriod] = useState<'this_month' | 'last_month' | 'this_year' | 'all' | 'custom'>('this_month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  // The pay/work summary is secondary in the field — collapsed by default so the
+  // job lists sit at the top; its totals stay visible in the collapsed header.
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const tick = useRealtimeRefresh('jobs')
   // Your own documents expired or expiring soon.
   const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
@@ -200,7 +203,8 @@ export default function SurveyorDashboard() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          {/* At-a-glance counts (the third "Total" tile was just Active+Submitted). */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="card p-4 text-center">
               <p className="text-3xl font-bold text-yellow-600 tnum">{active.length}</p>
               <p className="text-sm text-gray-500 mt-1">Active</p>
@@ -209,37 +213,9 @@ export default function SurveyorDashboard() {
               <p className="text-3xl font-bold text-purple-600 tnum">{submittedAll.length}</p>
               <p className="text-sm text-gray-500 mt-1">Submitted</p>
             </div>
-            <div className="card p-4 text-center">
-              <p className="text-3xl font-bold text-gray-600 tnum">{jobs.length}</p>
-              <p className="text-sm text-gray-500 mt-1">Total</p>
-            </div>
           </div>
 
-          <div className="card p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
-                  <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
-                ))}
-              </div>
-              <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
-            </div>
-            {period === 'custom' && (
-              <div className="flex flex-wrap items-end gap-2 mt-3">
-                <div><label className="block text-[11px] text-gray-400">From</label><input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input-base py-1 text-sm" /></div>
-                <div><label className="block text-[11px] text-gray-400">To</label><input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input-base py-1 text-sm" /></div>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm mt-3 pt-3 border-t border-gray-100">
-              <span className="font-medium text-gray-700">{range.label} · {periodJobs.length} job{periodJobs.length === 1 ? '' : 's'}</span>
-              <span className="text-gray-500">Regular: <strong className="text-gray-800 tnum">{totals.reg}h</strong></span>
-              <span className="text-gray-500">Overtime: <strong className="text-gray-800 tnum">{totals.ot}h</strong></span>
-              <span className="text-gray-500">Distance: <strong className="text-gray-800 tnum">{totals.km} km</strong></span>
-            </div>
-          </div>
-
-          <AttentionCard items={docAttention} />
-
+          {/* Field-first: unsynced + active jobs sit right under the header. */}
           {localJobs.length > 0 && (
             <div>
               <h2 className="section-title mb-3">Saved on this device — not yet synced</h2>
@@ -271,7 +247,7 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.scheduled_date ?? job.created_at)}
                       </p>
                       <MyLine jobId={job.id} />
                     </div>
@@ -281,6 +257,43 @@ export default function SurveyorDashboard() {
               </div>
             </div>
           )}
+
+          <AttentionCard items={docAttention} />
+
+          {/* My work summary — collapsed by default; totals stay glanceable in the
+              header, the period pills + custom range + CSV live inside. The period
+              still drives the Submitted/Completed list below. */}
+          <div className="card p-4">
+            <button onClick={() => setSummaryOpen(o => !o)} className="w-full flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-left">
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${summaryOpen ? '' : '-rotate-90'}`} />
+                My work · {range.label} · {periodJobs.length} job{periodJobs.length === 1 ? '' : 's'}
+              </span>
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-6">
+                <span className="text-gray-500">Reg <strong className="text-gray-800 tnum">{totals.reg}h</strong></span>
+                <span className="text-gray-500">OT <strong className="text-gray-800 tnum">{totals.ot}h</strong></span>
+                <span className="text-gray-500">Dist <strong className="text-gray-800 tnum">{totals.km} km</strong></span>
+              </span>
+            </button>
+            {summaryOpen && (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
+                      <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                    ))}
+                  </div>
+                  <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
+                </div>
+                {period === 'custom' && (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div><label className="block text-[11px] text-gray-400">From</label><input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input-base py-1 text-sm" /></div>
+                    <div><label className="block text-[11px] text-gray-400">To</label><input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input-base py-1 text-sm" /></div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {submitted.length > 0 && (
             <div>
@@ -294,7 +307,7 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.created_at)}
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.scheduled_date ?? job.created_at)}
                       </p>
                       <MyLine jobId={job.id} />
                     </div>

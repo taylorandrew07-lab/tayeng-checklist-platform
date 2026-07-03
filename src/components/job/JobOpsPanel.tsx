@@ -251,24 +251,25 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
                 <span className="font-medium tnum flex-shrink-0">{e.hours}h</span>
                 {e.location && <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100">{e.location}</span>}
                 {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
-                {!locked && <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
+                {!locked && <button onClick={() => removeEntry(e.id)} disabled={logBusy} className="ml-auto btn-ghost p-2 sm:py-0.5 sm:px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
               </div>
             ))}
             {entries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet{locked ? '.' : ' — add each shift below (a shift can run from one day into the next).'}</p>}
             {!locked && (
             <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
-              <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
-                <div><label className="block text-[10px] text-gray-400">Start date</label><input type="date" value={nStartDate} onChange={e => { const v = e.target.value; setNStartDate(v); if (!nEndDate || nEndDate < v) setNEndDate(v) }} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
-                <div><label className="block text-[10px] text-gray-400">Start time</label><input type="time" value={nStartTime} onChange={e => setNStartTime(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
-                <span className="text-gray-300 pb-1.5">→</span>
-                <div><label className="block text-[10px] text-gray-400">Stop date</label><input type="date" value={nEndDate} min={nStartDate || undefined} onChange={e => setNEndDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
-                <div><label className="block text-[10px] text-gray-400">Stop time</label><input type="time" value={nEndTime} onChange={e => setNEndTime(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
-                <span className="text-xs text-gray-500 pb-1.5">= <span className="font-medium tnum">{preview}h</span></span>
+              {/* Mobile: full-width stacked 44px fields; sm+ keeps the compact inline row for admin desktop. */}
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Start date</label><input type="date" value={nStartDate} onChange={e => { const v = e.target.value; setNStartDate(v); if (!nEndDate || nEndDate < v) setNEndDate(v) }} className="input-base w-full py-2.5 px-3 text-base sm:w-32 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Start time</label><input type="time" value={nStartTime} onChange={e => setNStartTime(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-24 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <span className="hidden sm:inline text-gray-300 pb-1.5">→</span>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Stop date</label><input type="date" value={nEndDate} min={nStartDate || undefined} onChange={e => setNEndDate(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-32 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Stop time</label><input type="time" value={nEndTime} onChange={e => setNEndTime(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-24 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <span className="w-full sm:w-auto text-sm sm:text-xs text-gray-500 sm:pb-1.5">= <span className="font-medium tnum">{preview}h</span></span>
               </div>
-              <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
-                <div><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`oloc-${row.id}`} value={nLocation} onChange={e => setNLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base py-0.5 px-1.5 text-xs w-36" /><datalist id={`oloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
-                <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
-                <button onClick={addEntry} disabled={logBusy} className="btn-secondary py-1 px-2 text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`oloc-${row.id}`} value={nLocation} onChange={e => setNLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base w-full py-2.5 px-3 text-base sm:w-36 sm:py-0.5 sm:px-1.5 sm:text-xs" /><datalist id={`oloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
+                <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base w-full py-2.5 px-3 text-base sm:flex-1 sm:min-w-[80px] sm:py-0.5 sm:px-1.5 sm:text-xs" />
+                <button onClick={addEntry} disabled={logBusy} className="btn-secondary w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs">{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
               </div>
             </div>
             )}
@@ -290,16 +291,16 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
                 <span className="tnum text-gray-600 flex-shrink-0">{fmtDay(e.trip_date)}</span>
                 <span className="font-medium tnum flex-shrink-0">{e.km} km</span>
                 {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
-                {!locked && <button onClick={() => removeKm(e.id)} disabled={kmBusy} className="ml-auto btn-ghost py-0.5 px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
+                {!locked && <button onClick={() => removeKm(e.id)} disabled={kmBusy} className="ml-auto btn-ghost p-2 sm:py-0.5 sm:px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
               </div>
             ))}
             {kmEntries.length === 0 && <p className="text-[11px] text-gray-400">No trips logged yet{locked ? '.' : ` — add each drive (${KM_MIN}–${KM_MAX} km, whole numbers).`}</p>}
             {!locked && (
-            <div className="pt-1.5 border-t border-gray-200 flex flex-wrap items-end gap-x-2 gap-y-1.5">
-              <div><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nKmDate} onChange={e => setNKmDate(e.target.value)} className="input-base py-0.5 px-1.5 text-xs w-32" /></div>
-              <div><label className="block text-[10px] text-gray-400">Distance (km)</label><input type="number" min={KM_MIN} max={KM_MAX} step={1} value={nKm} onChange={e => setNKm(e.target.value)} placeholder={`${KM_MIN}–${KM_MAX}`} className="input-base py-0.5 px-1.5 text-xs w-24" /></div>
-              <input type="text" value={nKmNote} onChange={e => setNKmNote(e.target.value)} placeholder="note (optional)" className="input-base py-0.5 px-1.5 text-xs flex-1 min-w-[80px]" />
-              <button onClick={addKm} disabled={kmBusy} className="btn-secondary py-1 px-2 text-xs">{kmBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+            <div className="pt-1.5 border-t border-gray-200 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
+              <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Date</label><input type="date" value={nKmDate} onChange={e => setNKmDate(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-32 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+              <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Distance (km)</label><input type="number" min={KM_MIN} max={KM_MAX} step={1} value={nKm} onChange={e => setNKm(e.target.value)} placeholder={`${KM_MIN}–${KM_MAX}`} className="input-base w-full py-2.5 px-3 text-base sm:w-24 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+              <input type="text" value={nKmNote} onChange={e => setNKmNote(e.target.value)} placeholder="note (optional)" className="input-base w-full py-2.5 px-3 text-base sm:flex-1 sm:min-w-[80px] sm:py-0.5 sm:px-1.5 sm:text-xs" />
+              <button onClick={addKm} disabled={kmBusy} className="btn-secondary w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs">{kmBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
             </div>
             )}
           </div>
