@@ -174,7 +174,7 @@ function OverviewTab() {
           <div className="skeleton h-28 w-full" />
         ) : labour.length === 0 ? (
           <div className="card p-8 text-center text-sm text-gray-400">
-            {labourMode === 'all' ? 'No hours logged yet.' : 'Nothing logged in this period. Jobs count in the month they’re scheduled.'}
+            {labourMode === 'all' ? 'No hours logged yet.' : 'Nothing logged in this period.'}
           </div>
         ) : (
           <div className="card overflow-hidden">
@@ -206,7 +206,7 @@ function OverviewTab() {
                 ))}
               </tbody>
             </table>
-            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Distance is the per-surveyor trip log (paid per km). Jobs count in the month they&apos;re scheduled.</p>
+            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Overtime shifts and km trips count on the day they were worked or driven. Regular hours (and typed-in OT with no shift log) count in the month the job is scheduled.</p>
           </div>
         )}
       </section>
@@ -452,7 +452,10 @@ function SettingsTab() {
   if (!settings) return <div className="skeleton h-32 w-full max-w-md" />
 
   return (
-    <div className="space-y-6 max-w-md">
+    // Two columns on desktop (bank accounts get their own side — they're the
+    // longest card); stacked single-column on mobile.
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      <div className="space-y-6">
       <InvoiceNumberingCard />
       <div className="card p-5 space-y-4">
       <div>
@@ -475,6 +478,7 @@ function SettingsTab() {
         <p className="text-[11px] text-gray-400 mt-1">A sent invoice is flagged overdue this many days past its due date.</p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary py-2 px-4 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save settings</button>
+      </div>
       </div>
       <BankAccountsCard />
     </div>
