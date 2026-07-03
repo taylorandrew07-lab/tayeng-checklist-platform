@@ -463,7 +463,10 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-      {showOps && (
+      {/* The workflow stepper is a read-only, billing-vocabulary admin pipeline; a
+          surveyor only ever reads it, and the page header already carries the status
+          pill and the closed-job lock. Hide the whole card for non-admins. */}
+      {showOps && isAdmin && (
       <div className="card p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h3 className="font-medium text-gray-900">Workflow</h3>
@@ -505,7 +508,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             {surveyors.length > 0 && (savingAll ? (
               <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>
             ) : dirtyRows.size > 0 ? (
-              <span className="inline-flex items-center gap-1 text-[11px] text-amber-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Unsaved changes</span>
+              // Rows autosave ~1.2s after an edit; this chip is the manual-flush escape
+              // hatch for the rare in-flight window (e.g. leaving on flaky wifi).
+              <button onClick={saveAll} title="Save now" className="inline-flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-700"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Unsaved changes — save now</button>
             ) : (
               <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><CheckCircle2 className="h-3 w-3 text-emerald-500" />Saved</span>
             ))}
@@ -529,11 +534,6 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
               </div>
             ) : (
               <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${billingMode === 'overtime' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}><Clock className="h-3.5 w-3.5" />{billingMode === 'overtime' ? 'Overtime job' : billingMode === 'fixed' ? 'Fixed-price job' : 'Regular-hours job'}</span>
-            )}
-            {surveyors.length > 0 && (
-              <button onClick={saveAll} disabled={savingAll || dirtyRows.size === 0} className="btn-secondary py-1 px-2.5 text-xs">
-                {savingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Save
-              </button>
             )}
           </div>
         </div>

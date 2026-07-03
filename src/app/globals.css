@@ -40,6 +40,18 @@
     outline-offset: 2px;
     border-radius: 2px;
   }
+
+  /* Prevent iOS Safari from auto-zooming the viewport when a surveyor focuses a
+     sub-16px field in the checklist / cargo / hours flows. Phones only — the
+     16px floor overrides text-xs/text-sm inputs on small screens and leaves the
+     denser desktop sizing untouched. */
+  @media (max-width: 640px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 @layer components {

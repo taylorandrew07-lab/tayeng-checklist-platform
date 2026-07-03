@@ -1076,6 +1076,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }
 
     async function deletePhoto(photoId: string, storagePath: string, fieldKey?: string | null) {
+      if (!(await confirmDialog({ message: 'Delete this photo? This cannot be undone.', danger: true, confirmLabel: 'Delete' }))) return
       const supabase = createClient()
       const { error: storErr } = await supabase.storage.from('job-photos').remove([storagePath])
       if (storErr) { setSaveError('Delete failed: ' + storErr.message); return }
@@ -1244,12 +1245,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">{isClosed && !isSubmitted ? 'Edit closed' : 'Edit submitted'}</span>
               </button>
             )}
-            {!readOnly && (
-              <button onClick={handleSave} disabled={saving} className="btn-secondary">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                <span className="hidden sm:inline">{saving ? 'Saving…' : 'Save Draft'}</span>
-              </button>
-            )}
+            {/* The single manual Save Draft lives in the sticky bottom bar (beside Submit);
+                the header shows only autosave status ("Saved HH:MM" / "Unsaved changes"). */}
           </div>
         </div>
 
@@ -1476,9 +1473,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                                 )}
                                 <button
                                   onClick={() => deletePhoto(p.id, p.storage_path, key)}
-                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  aria-label="Delete photo"
+                                  className="absolute top-1 right-1 w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                                 >
-                                  <X className="h-3 w-3" />
+                                  <X className="h-4 w-4" />
                                 </button>
                               </div>
                             ))}
@@ -1714,9 +1712,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           )}
                           <button
                             onClick={() => deletePhoto(p.id, p.storage_path, null)}
-                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="Delete photo"
+                            className="absolute top-1 right-1 w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-4 w-4" />
                           </button>
                         </div>
                         {lineTargets.length > 0 && (

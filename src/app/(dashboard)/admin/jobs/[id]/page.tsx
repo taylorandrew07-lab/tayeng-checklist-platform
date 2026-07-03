@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
-  ArrowLeft, Loader2, Save, Download, Eye, Trash2, CheckCircle2,
+  ArrowLeft, Loader2, Save, Download, Trash2, CheckCircle2,
   ClipboardList, ListChecks, FolderOpen, Receipt,
 } from 'lucide-react'
 import { formatDate, formatDateTime, withTimeout } from '@/lib/utils'
@@ -241,7 +241,7 @@ export default function AdminChecklistDetailPage() {
 
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <button
           onClick={() => editorRef.current?.navigate('/admin/jobs')}
@@ -272,6 +272,14 @@ export default function AdminChecklistDetailPage() {
             <button onClick={downloadPdf} disabled={sharing} className="btn-secondary" title="Download / Share PDF">
               {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               <span className="hidden sm:inline">Download / Share PDF</span>
+            </button>
+          )}
+          {/* Admin escape hatch when a surveyor's submit is stuck; lifecycle otherwise
+              runs through the workflow stepper on the Overview tab. */}
+          {!editMode && !job.submitted_at && (
+            <button onClick={markSubmitted} disabled={marking} className="btn-secondary" title="Mark as submitted">
+              {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              <span className="hidden sm:inline">Mark submitted</span>
             </button>
           )}
           <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-secondary' : 'btn-secondary'}>
@@ -315,8 +323,7 @@ export default function AdminChecklistDetailPage() {
       <div className="space-y-6">
       <JobOpsPanel job={job} isAdmin section="ops" onChanged={load} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
+      <div className="space-y-4">
           <div className="card p-5 space-y-4">
             <h2 className="section-title">Job Details</h2>
 
@@ -406,7 +413,12 @@ export default function AdminChecklistDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Template</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{job.template?.name}</dd>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {job.template?.name}
+                    {job.template?.id && (
+                      <button onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)} className="ml-2 text-brand-700 hover:underline text-xs">View</button>
+                    )}
+                  </dd>
                 </div>
                 {job.job_stage && (
                   <div>
@@ -447,36 +459,6 @@ export default function AdminChecklistDetailPage() {
               </dl>
             )}
           </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="card p-5">
-            <h3 className="font-medium text-gray-900 mb-3">Actions</h3>
-            <div className="space-y-2">
-              {/* Admin can push a completed checklist through if a surveyor's
-                  submit is stuck. Lifecycle otherwise via the workflow stepper above. */}
-              {!job.submitted_at && (
-                <button onClick={markSubmitted} disabled={marking} className="btn-secondary w-full justify-start text-sm">
-                  {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Mark as submitted
-                </button>
-              )}
-              <button
-                onClick={() => editorRef.current?.navigate(`/admin/templates/${job.template?.id}`)}
-                className="btn-ghost w-full justify-start text-sm"
-              >
-                <Eye className="h-4 w-4" />
-                View Template
-              </button>
-              {!!job.submitted_at && (
-                <button onClick={downloadPdf} disabled={sharing} className="btn-ghost w-full justify-start text-sm">
-                  {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  Download / Share PDF
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Cargo voyages billed on this job (cargo jobs / jobs that already have links) */}
