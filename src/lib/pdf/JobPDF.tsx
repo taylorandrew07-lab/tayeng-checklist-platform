@@ -472,11 +472,13 @@ interface PDFProps {
   hideSurveyor?: boolean
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, labelWidth }: { label: string; value: string; labelWidth?: number }) {
   return (
     <View style={styles.jobDetailRow}>
-      <Text style={styles.jobDetailLabel}>{label}:</Text>
-      <Text style={styles.jobDetailValue}>{value}</Text>
+      {/* Fixed-width, right-aligned label so every colon in the column lines up and the
+          values all start at the same x (e.g. "Vessel:" / "Date:" colons align). */}
+      <Text style={[styles.jobDetailLabel, labelWidth ? { width: labelWidth, textAlign: 'right' as const } : {}]}>{label}:</Text>
+      <Text style={[styles.jobDetailValue, { flex: 1 }]}>{value}</Text>
     </View>
   )
 }
@@ -548,6 +550,24 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const methodDisplay = methodField ? resolveDropdownValue(methodField, methodRaw) : ''
   const showBunkerVessel = methodRaw === 'bunker_vessel' && !!bunkerVesselField
 
+  // Per-column label widths for the Job Details block: size each column's label cell to
+  // its own widest label so the labels can be right-aligned (colons line up, values start
+  // at the same x). Estimated width — generous factor so the longest label never wraps;
+  // over-estimating is harmless (right-aligned colons still line up, just a touch of gap).
+  const labelColWidth = (labels: string[]) =>
+    labels.length ? Math.max(...labels.map(l => (l.length + 1) * 4.6)) : undefined
+  const leftLabelW = labelColWidth([
+    job.vessel_name ? 'Vessel' : '',
+    job.client?.name && !hideClient ? 'Client' : '',
+    dateField && fieldValues[dateField.id] ? 'Date' : '',
+    surveyors.length > 0 && !hideSurveyor ? `Surveyor${surveyors.length > 1 ? 's' : ''}` : '',
+  ].filter(Boolean))
+  const rightLabelW = labelColWidth([
+    portField && fieldValues[portField.id] ? 'Port' : '',
+    methodDisplay ? 'Method of Delivery' : '',
+    showBunkerVessel && bunkerVesselField && fieldValues[bunkerVesselField.id] ? 'Bunker Vessel Name' : '',
+  ].filter(Boolean))
+
   const reportTitle = job.template?.name ?? job.title
 
   return (
@@ -592,15 +612,15 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {!useFlagHeader && (
           <View style={styles.jobDetailsBlock}>
             <View style={styles.jobDetailCol}>
-              {job.vessel_name && <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} />}
-              {job.client?.name && !hideClient && <DetailRow label="Client" value={job.client.name} />}
-              {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
-              {surveyors.length > 0 && !hideSurveyor && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
+              {job.vessel_name && <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} labelWidth={leftLabelW} />}
+              {job.client?.name && !hideClient && <DetailRow label="Client" value={job.client.name} labelWidth={leftLabelW} />}
+              {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} labelWidth={leftLabelW} />}
+              {surveyors.length > 0 && !hideSurveyor && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} labelWidth={leftLabelW} />}
             </View>
             <View style={styles.jobDetailCol}>
-              {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} />}
-              {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} /> : null}
-              {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} />}
+              {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} labelWidth={rightLabelW} />}
+              {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} labelWidth={rightLabelW} /> : null}
+              {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} labelWidth={rightLabelW} />}
             </View>
           </View>
         )}
@@ -819,8 +839,15 @@ function renderField(
   const maxItemNumLen = Math.max(0, ...allFieldsFlat.map((f: any) => (f.item_number ?? '').length))
   const numColWidth = maxItemNumLen > 0 ? maxItemNumLen * 5.2 + 4 : 0
 
+  // Keep a short-answer row intact across page breaks: if it doesn't fit at the bottom of
+  // a page the WHOLE row (number + question + answer + remark) moves to the next page
+  // together, instead of stranding the number/answer on the previous page while the
+  // wrapped question jumps down. Long-value types (textarea/multiple-choice/video) can
+  // legitimately be taller than the remaining space, so they keep default wrapping.
+  const rowWrap = NARROW_LABEL_TYPES.has(field.field_type)
+
   return (
-    <View key={key} style={styles.fieldRow}>
+    <View key={key} style={styles.fieldRow} wrap={rowWrap}>
       <View style={[labelStyle, { flexDirection: 'row' }]}>
         {numColWidth > 0 ? (
           <Text style={[styles.itemNumberText, { width: numColWidth }]}>{field.item_number ?? ''}</Text>
