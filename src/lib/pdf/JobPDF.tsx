@@ -28,13 +28,13 @@ const styles = StyleSheet.create({
   },
   // Report title
   reportTitleBlock: {
-    marginBottom: 8,
-    paddingBottom: 5,
+    marginBottom: 6,
+    paddingBottom: 4,
     borderBottomWidth: 2,
     borderBottomColor: '#1d4ed8',
   },
   reportTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontFamily: 'Helvetica-Bold',
     color: '#1d4ed8',
   },
@@ -42,8 +42,8 @@ const styles = StyleSheet.create({
   jobDetailsBlock: {
     backgroundColor: '#f8fafc',
     borderRadius: 3,
-    padding: '5 8',
-    marginBottom: 8,
+    padding: '4 8',
+    marginBottom: 6,
     flexDirection: 'row',
   },
   jobDetailCol: {
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
   },
   jobDetailRow: {
     flexDirection: 'row',
-    marginBottom: 3,
+    marginBottom: 2,
     alignItems: 'center',
   },
   jobDetailLabel: {
@@ -97,6 +97,14 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     width: '38%',
+    paddingRight: 6,
+  },
+  // Wide label for short-answer rows (yes/no, pass/fail, numbers, dropdowns): give the
+  // QUESTION most of the width so it fits on one line, leaving the value column just
+  // enough for the answer badge + a short remark. Long-answer types (textarea, video,
+  // multiple-choice) keep the narrow `fieldLabel` so their value has room to wrap.
+  fieldLabelWide: {
+    width: '64%',
     paddingRight: 6,
   },
   fieldLabelText: {
@@ -450,6 +458,10 @@ interface PDFProps {
   hideLogo?: boolean
   /** Names of the surveyors assigned to the job, printed in the header. */
   surveyors?: string[]
+  /** Template opted to drop the Client row from the header (client is in the title). */
+  hideClient?: boolean
+  /** Template opted to drop the Surveyor row from the header. */
+  hideSurveyor?: boolean
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -472,7 +484,7 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [] }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
@@ -563,9 +575,9 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           <View style={styles.jobDetailsBlock}>
             <View style={styles.jobDetailCol}>
               {job.vessel_name && <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} />}
-              {job.client?.name && <DetailRow label="Client" value={job.client.name} />}
+              {job.client?.name && !hideClient && <DetailRow label="Client" value={job.client.name} />}
               {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} />}
-              {surveyors.length > 0 && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
+              {surveyors.length > 0 && !hideSurveyor && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} />}
             </View>
             <View style={styles.jobDetailCol}>
               {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} />}
@@ -596,8 +608,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                   {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name)) : null}
                 </View>
                 {specFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
-                {job.client?.name ? renderInfoRow('client', 'Client', job.client.name) : null}
-                {surveyors.length > 0 ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', ')) : null}
+                {job.client?.name && !hideClient ? renderInfoRow('client', 'Client', job.client.name) : null}
+                {surveyors.length > 0 && !hideSurveyor ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', ')) : null}
                 {restFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
                 {preambleNode}
               </View>
@@ -777,9 +789,15 @@ function renderField(
 
   const hasValue = !!rawValue
 
+  // Short-answer rows get a WIDE question column (so the question fits on one line and
+  // the value column keeps just enough for the answer + a short remark). Long-answer
+  // types keep the narrow label so their value has room to wrap onto multiple lines.
+  const NARROW_LABEL_TYPES = new Set(['textarea', 'video_link', 'multiple_choice'])
+  const labelStyle = NARROW_LABEL_TYPES.has(field.field_type) ? styles.fieldLabel : styles.fieldLabelWide
+
   return (
     <View key={key} style={styles.fieldRow}>
-      <View style={styles.fieldLabel}>
+      <View style={labelStyle}>
         <Text style={styles.fieldLabelText}>
           {field.item_number ? <Text style={{ color: '#1d4ed8' }}>{field.item_number}{'  '}</Text> : null}
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}

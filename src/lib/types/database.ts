@@ -261,6 +261,11 @@ export interface ChecklistTemplate {
   /** When true, the report letterhead hides the graphic logo (falls back to the
    *  company-name text header). Default false. Seeded true for fuel/loadout checklists. */
   pdf_hide_logo: boolean
+  /** When true, the report header omits the Client row (used when the client name is
+   *  already in the report title, e.g. "BPTT LLC - Fuel Transfer"). Default false. */
+  pdf_hide_client: boolean
+  /** When true, the report header omits the Surveyor row. Default false. */
+  pdf_hide_surveyor: boolean
   /** Fixed legal boilerplate printed at the end of every generated PDF for this
    *  template (NOT an editable survey field). null prints nothing. */
   pdf_disclaimer: string | null

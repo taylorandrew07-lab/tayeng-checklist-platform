@@ -23,6 +23,8 @@ export default function EditTemplatePage() {
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [pdfHideLogo, setPdfHideLogo] = useState(false)
+  const [pdfHideClient, setPdfHideClient] = useState(false)
+  const [pdfHideSurveyor, setPdfHideSurveyor] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [color, setColor] = useState<string | null>(null)
@@ -48,7 +50,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfDisclaimer, pdfPreamble, color, sections])
+  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
+    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -96,6 +98,8 @@ export default function EditTemplatePage() {
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
       setPdfIncludePhotos(tmpl.pdf_include_photos ?? false)
       setPdfHideLogo(tmpl.pdf_hide_logo ?? false)
+      setPdfHideClient(tmpl.pdf_hide_client ?? false)
+      setPdfHideSurveyor(tmpl.pdf_hide_surveyor ?? false)
       setPdfDisclaimer(tmpl.pdf_disclaimer ?? '')
       setPdfPreamble(tmpl.pdf_preamble ?? '')
       setColor(tmpl.color ?? null)
@@ -218,6 +222,8 @@ export default function EditTemplatePage() {
           allow_surveyor_start: allowSurveyorStart,
           pdf_include_photos: pdfIncludePhotos,
           pdf_hide_logo: pdfHideLogo,
+          pdf_hide_client: pdfHideClient,
+          pdf_hide_surveyor: pdfHideSurveyor,
           pdf_disclaimer: pdfDisclaimer.trim() || null,
           pdf_preamble: pdfPreamble.trim() || null,
           color,
@@ -427,6 +433,30 @@ export default function EditTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${!pdfHideLogo ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Show company letterhead on the report <span className="font-normal text-gray-400">— logo + address at the top; turn OFF to show just the report title</span></span>
+            </label>
+          </div>
+          {/* Trim redundant header rows — e.g. when the client is already in the report
+              title (BPTT), or the checklist doesn't print the surveyor's name. */}
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setPdfHideClient(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${pdfHideClient ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfHideClient ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Hide Client in the report header <span className="font-normal text-gray-400">— use when the client name is already in the report title</span></span>
+            </label>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setPdfHideSurveyor(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${pdfHideSurveyor ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${pdfHideSurveyor ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Hide Surveyor in the report header</span>
             </label>
           </div>
           <div className="sm:col-span-2">
