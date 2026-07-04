@@ -496,18 +496,28 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   }
   const endPhotos = photos.filter(p => !(p.field_id && repeatablePhotoFieldIds.has(p.field_id)))
 
-  // Locate key Job Detail fields by label pattern
-  const bunkerVesselField = allFieldsFlat.find((f: any) =>
-    /bunker/i.test(f.label) && /vessel/i.test(f.label)
+  // Locate key Job Detail fields by label pattern. CRITICAL: only ever consider
+  // IDENTITY-style field types (text/date/dropdown/number/time) as header candidates.
+  // Header fields (Vessel, Date, Port, Method of Delivery, Bunker Vessel Name) are never
+  // answer/question types — so this guard stops a real checklist question from being
+  // mistaken for a header field and silently dropped from the body. (This exact bug:
+  // "COQ provided by bunker suppliers to vessel" — a yes/no question — matched the loose
+  // bunker+vessel pattern once the conditional "Bunker Vessel Name" field was hidden.)
+  const HEADER_FIELD_TYPES = new Set(['text', 'date', 'dropdown', 'number', 'time'])
+  const headerCandidates = allFieldsFlat.filter((f: any) => HEADER_FIELD_TYPES.has(f.field_type))
+  // Require the words "bunker" and "vessel" to be adjacent so only the identity field
+  // ("Bunker Vessel Name") matches — never a sentence that merely mentions both.
+  const bunkerVesselField = headerCandidates.find((f: any) =>
+    /bunker\s+vessel/i.test(f.label)
   ) ?? null
   // The surveyed vessel's NAME field only — excludes descriptor fields
   // ("Vessel IMO Number", "Vessel Type", …) and the bunker vessel.
-  const vesselField = allFieldsFlat.find((f: any) =>
+  const vesselField = headerCandidates.find((f: any) =>
     isSurveyedVesselNameField(f.label) && f.id !== bunkerVesselField?.id
   ) ?? null
-  const dateField = allFieldsFlat.find((f: any) => /\bdate\b/i.test(f.label)) ?? null
-  const portField = allFieldsFlat.find((f: any) => /\bport\b/i.test(f.label)) ?? null
-  const methodField = allFieldsFlat.find((f: any) => /method.*delivery|delivery.*method/i.test(f.label)) ?? null
+  const dateField = headerCandidates.find((f: any) => /\bdate\b/i.test(f.label)) ?? null
+  const portField = headerCandidates.find((f: any) => /\bport\b/i.test(f.label)) ?? null
+  const methodField = headerCandidates.find((f: any) => /method.*delivery|delivery.*method/i.test(f.label)) ?? null
 
   // Generic header mechanism (cross-template-safe): fields flagged show_in_header are
   // promoted to the top info block and suppressed from the body. Templates with none
