@@ -112,6 +112,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color: '#374151',
   },
+  // Item number sits in its own fixed-width cell so every question's wording starts at
+  // the SAME x — the width is sized to the widest number in the report (see renderField),
+  // so "1" and "19" leave their labels aligned.
+  itemNumberText: {
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1d4ed8',
+  },
   fieldRequired: {
     color: '#ef4444',
     fontSize: 7.5,
@@ -805,11 +813,19 @@ function renderField(
   const NARROW_LABEL_TYPES = new Set(['textarea', 'video_link', 'multiple_choice'])
   const labelStyle = NARROW_LABEL_TYPES.has(field.field_type) ? styles.fieldLabel : styles.fieldLabelWide
 
+  // Fixed-width number cell sized to the WIDEST item number in the report, so every
+  // question's wording starts at the same x regardless of 1- vs 2-digit numbers. 0 when
+  // the report has no item numbers at all (then no cell is reserved).
+  const maxItemNumLen = Math.max(0, ...allFieldsFlat.map((f: any) => (f.item_number ?? '').length))
+  const numColWidth = maxItemNumLen > 0 ? maxItemNumLen * 5.2 + 4 : 0
+
   return (
     <View key={key} style={styles.fieldRow}>
-      <View style={labelStyle}>
-        <Text style={styles.fieldLabelText}>
-          {field.item_number ? <Text style={{ color: '#1d4ed8' }}>{field.item_number}{'  '}</Text> : null}
+      <View style={[labelStyle, { flexDirection: 'row' }]}>
+        {numColWidth > 0 ? (
+          <Text style={[styles.itemNumberText, { width: numColWidth }]}>{field.item_number ?? ''}</Text>
+        ) : null}
+        <Text style={[styles.fieldLabelText, { flex: 1 }]}>
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
           {/* No required-asterisk in the report — that marker is only for the survey form. */}
         </Text>
