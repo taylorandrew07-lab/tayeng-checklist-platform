@@ -27,6 +27,22 @@ const ROLE_HOME: Record<string, string> = {
 // signed in. Long enough that normal mobile app-switching never triggers it.
 const IDLE_LIMIT_MS = 30 * 60 * 1000
 
+// Last-known profile, cached at line ~77 on every successful load. Read only in an
+// effect (never in a useState initializer) to avoid a client/server hydration
+// mismatch. Used to paint the staff shell immediately instead of blocking on the
+// profiles fetch — the same cache the offline fallback already trusts.
+function cachedStaffProfile(): Profile | null {
+  if (typeof window === 'undefined') return null
+  const path = window.location.pathname
+  if (!path.startsWith('/surveyor') && !path.startsWith('/admin')) return null
+  try {
+    const raw = localStorage.getItem('te_profile')
+    return raw ? (JSON.parse(raw) as Profile) : null
+  } catch {
+    return null
+  }
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -43,6 +59,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // used to re-run on every pathname change, re-scanning jobs+invoices for the
   // reconcile badge on each page load.)
   useEffect(() => {
+    // Paint the staff shell immediately from the cached profile (no network wait),
+    // then verify the session and refresh below. loadProfile still redirects to
+    // /login if the session is genuinely gone, so this only skips the blank spinner.
+    const cached = cachedStaffProfile()
+    if (cached) { setProfile(cached); setLoading(false) }
+
     async function loadProfile() {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()

@@ -57,11 +57,10 @@ export interface Profile {
    *  Grants no permissions — authorization is driven by `role` only. */
   display_title?: string | null
   ui_prefs?: UiPrefs | null
-  // Employee / pass fields (self-editable by the owner; admins edit anyone).
+  // Operational identifiers (self-editable by the owner; admins edit anyone).
+  // NB: passport_number / id_card_number / drivers_permit_number moved to the
+  // admin/owner-only staff_private table in mig 130 (they leaked via profiles RLS).
   vehicle_number?: string | null
-  drivers_permit_number?: string | null
-  id_card_number?: string | null
-  passport_number?: string | null
   employee_number?: string | null
   created_at: string
   updated_at: string

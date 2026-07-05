@@ -26,9 +26,6 @@ export const JOB_PALETTE: PaletteOption[] = [
 
 const BY_KEY: Record<string, JobColor> = Object.fromEntries(JOB_PALETTE.map(o => [o.key, { bg: o.bg, fg: o.fg }]))
 
-/** Neutral fallback used when a row's entity has no colour assigned. */
-export const NEUTRAL_COLOR: JobColor = { bg: '#ffffff', fg: '#1e293b' }
-
 /** Resolve a stored palette key to its colour, or null if unset/unknown. */
 export function resolveColor(key: string | null | undefined): JobColor | null {
   if (!key) return null

@@ -90,7 +90,9 @@ export async function setInvoiceAndJobsStatus(invoiceId: string, status: 'sent' 
   ;(linked ?? []).forEach((j: any) => ids.add(j.id))
   const { data: inv } = await supabase.from('invoices').select('job_id').eq('id', invoiceId).maybeSingle()
   if (inv?.job_id) ids.add(inv.job_id)
-  for (const id of ids) await setWorkflowStatus(id, status)
+  // Advance the jobs concurrently rather than serially — each setWorkflowStatus
+  // still writes its own activity_log entry, but the round-trips no longer stack.
+  await Promise.all([...ids].map(id => setWorkflowStatus(id, status)))
   return {}
 }
 

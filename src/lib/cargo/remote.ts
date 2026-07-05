@@ -40,24 +40,13 @@ export interface OpsVoyageRow {
 /** All synced voyages across the company (admin RLS returns every row). Note:
  *  voyages a surveyor hasn't synced yet still live only on their device. */
 export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyageRow[]> {
+  // Job linkage embeds directly — job_id + the jobs FK have existed since mig 085
+  // (long applied), so the earlier separate best-effort query is no longer needed.
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, voyage_number, status, updated_at, synced_at, owner:profiles!owner_id(full_name, display_title)')
+    .select('id, vessel_name, voyage_number, status, updated_at, synced_at, job_id, owner:profiles!owner_id(full_name, display_title), job:jobs!cargo_voyages_job_id_fkey(job_number)')
     .order('synced_at', { ascending: false })
   if (error) throw error
-
-  // Best-effort job linkage. Separate query so the core view still loads if the
-  // job_id column isn't there yet (the brief window between a deploy and migration
-  // 085 applying). Once the column exists, the Job links light up automatically.
-  const jobByVoyage = new Map<string, { job_id: string | null; job_number: string | null }>()
-  const link = await supabase
-    .from('cargo_voyages')
-    .select('id, job_id, job:jobs!cargo_voyages_job_id_fkey(job_number)')
-  if (!link.error) {
-    for (const r of (link.data ?? []) as any[]) {
-      jobByVoyage.set(r.id, { job_id: r.job_id ?? null, job_number: r.job?.job_number ?? null })
-    }
-  }
 
   return ((data ?? []) as any[]).map(r => ({
     id: r.id,
@@ -67,8 +56,8 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
     updated_at: r.updated_at,
     synced_at: r.synced_at,
     owner_name: r.owner?.full_name ?? null,
-    job_id: jobByVoyage.get(r.id)?.job_id ?? null,
-    job_number: jobByVoyage.get(r.id)?.job_number ?? null,
+    job_id: r.job_id ?? null,
+    job_number: r.job?.job_number ?? null,
   }))
 }
 

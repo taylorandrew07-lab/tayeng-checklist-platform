@@ -1467,7 +1467,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                             {photos.map(p => (
                               <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
                                 {photoUrls[p.storage_path] ? (
-                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
+                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                                 ) : (
                                   <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                                 )}
@@ -1505,7 +1505,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         {photos.map(p => (
                           <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
                             {photoUrls[p.storage_path] ? (
-                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
+                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                             ) : (
                               <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                             )}
@@ -1706,7 +1706,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
                         <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
                           {photoUrls[p.storage_path] ? (
-                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
+                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
                           ) : (
                             <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                           )}

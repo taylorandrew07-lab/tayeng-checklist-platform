@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Info, Plus, X, Video } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
@@ -28,7 +28,7 @@ interface FieldRendererProps {
   instance?: number
 }
 
-export default function FieldRenderer({
+function FieldRenderer({
   field,
   value,
   valueArray,
@@ -325,9 +325,12 @@ function CalculatedField({ field, value, allValues, instance = 0, onChange }: {
   instance?: number
   onChange: (v: string) => void
 }) {
-  const computed = field.calculation_formula
-    ? evaluateCalculation(field.calculation_formula, allValues, instance)
-    : ''
+  // Re-parse the formula only when the inputs it reads (or the entry instance)
+  // actually change — not on every keystroke elsewhere on the checklist.
+  const computed = useMemo(
+    () => (field.calculation_formula ? evaluateCalculation(field.calculation_formula, allValues, instance) : ''),
+    [field.calculation_formula, allValues, instance],
+  )
 
   // The result is derived, but it must still be PERSISTED so it lands in the PDF
   // and the saved record. Only push a non-empty recompute up — never let a
@@ -567,3 +570,27 @@ function ClientSelectInput({ value, onChange, readOnly, baseInputClass, listId }
     </>
   )
 }
+
+// Re-render a field only when ITS OWN inputs change. The parent (JobChecklistEditor)
+// passes a fresh `allValues` map and fresh inline callbacks every keystroke, which
+// used to re-render every field (and re-run conditional/calc logic) on each character
+// — the input lag surveyors felt on large checklists. The callbacks are behaviourally
+// identical each render (they close over a stable `key` and useCallback'd setters that
+// use functional updates), so it's safe to ignore them here. Only fields that actually
+// read `allValues` — conditional-logic fields and calculated fields — need to re-render
+// when the shared map changes.
+function fieldPropsEqual(prev: FieldRendererProps, next: FieldRendererProps): boolean {
+  const dependsOnAllValues = !!next.field.conditional_logic || next.field.field_type === 'calculated'
+  if (dependsOnAllValues && prev.allValues !== next.allValues) return false
+  return (
+    prev.field === next.field &&
+    prev.value === next.value &&
+    prev.valueArray === next.valueArray &&
+    prev.signature === next.signature &&
+    prev.readOnly === next.readOnly &&
+    prev.resolvedLabel === next.resolvedLabel &&
+    prev.instance === next.instance
+  )
+}
+
+export default memo(FieldRenderer, fieldPropsEqual)
