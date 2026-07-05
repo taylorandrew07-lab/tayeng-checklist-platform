@@ -5,10 +5,10 @@
 // hours, invoice and surveyors are summarised per row; the client links to its
 // record; and report numbers can be filled down the date order.
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download } from 'lucide-react'
+import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download, Columns3 } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
@@ -22,8 +22,12 @@ import {
 } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
-type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'status' | 'date'
+type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
 type Filter = 'open' | 'paid' | 'closed' | 'all'
+
+// Persisted column layout (visibility + widths). Bumped if the column set changes.
+const COLS_STORAGE_KEY = 'te_jobs_cols_v1'
+const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: 'Regular', fixed: 'Fixed' }
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'open', label: 'Open' }, { key: 'paid', label: 'Paid' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
@@ -144,16 +148,173 @@ function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s
   )
 }
 
-function Th({ label, col, sort, onSort, className }: { label: string; col?: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; className?: string }) {
-  const base = 'sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-xs font-medium'
-  if (!col) return <th className={`${base} text-gray-500 ${className ?? ''}`}>{label}</th>
-  const active = sort.key === col
+// ── Configurable columns ─────────────────────────────────────────────────────
+// Each column knows how to render its own cell (inline editors get patchRow /
+// changeStatus via ctx). Which columns show, and how wide they are, is chosen by
+// the user (checkbox menu + drag-to-resize) and persisted in localStorage.
+interface CellCtx {
+  patchRow: (id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) => void
+  changeStatus: (id: string, status: WorkflowStatus) => void
+}
+interface ColumnDef {
+  key: string
+  label: string
+  sortKey?: SortKey
+  defaultVisible: boolean
+  width: number
+  min: number
+  align?: 'right'
+  cell: (r: TrackerRow, ctx: CellCtx) => React.ReactNode
+}
+
+const COLUMNS: ColumnDef[] = [
+  { key: 'report', label: 'Report #', sortKey: 'report', defaultVisible: true, width: 130, min: 90,
+    cell: (r, { patchRow }) => (
+      <ReportCell reportNumber={r.report_number} notRequired={r.report_not_required}
+        onSaveNumber={v => {
+          if (isNaText(v)) { const p = { report_not_required: true, report_number: null }; return patchRow(r.id, p, p) }
+          patchRow(r.id, { report_number: v, report_not_required: false }, { report_number: v, report_not_required: false })
+        }}
+        onSetNA={na => { const p = na ? { report_not_required: true, report_number: null } : { report_not_required: false }; patchRow(r.id, p, p) }} />
+    ) },
+  { key: 'type', label: 'Type', sortKey: 'type', defaultVisible: true, width: 150, min: 100,
+    cell: (r, { patchRow }) => (
+      <>
+        <EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} />
+        {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate">{r.job_stage}</span>}
+        {r.cargo_type && <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate">{r.cargo_type}</span>}
+      </>
+    ) },
+  { key: 'vessel', label: 'Vessel', sortKey: 'vessel', defaultVisible: true, width: 150, min: 100,
+    cell: (r, { patchRow }) => <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /> },
+  { key: 'client', label: 'Client', sortKey: 'client', defaultVisible: true, width: 150, min: 90,
+    cell: r => r.client_name
+      ? <Link href={`/admin/clients/${r.client_id}`} className="block px-3 truncate text-brand-700 hover:underline">{r.client_name}</Link>
+      : <span className="block px-3 text-gray-300">—</span> },
+  { key: 'surveyors', label: 'Surveyors', defaultVisible: true, width: 160, min: 90,
+    cell: r => (
+      <div className="px-3 text-gray-600 truncate">
+        {r.surveyors.length === 0 ? <span className="text-gray-300">—</span>
+          : r.surveyors.length === 1 ? r.surveyors[0]
+          : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
+      </div>
+    ) },
+  { key: 'hours', label: 'Hours', sortKey: 'hours', defaultVisible: true, width: 120, min: 80, align: 'right',
+    cell: r => (
+      <div className="px-3 text-right whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5 justify-end">
+          {r.is_overtime && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium" title="Overtime job">OT</span>}
+          {r.regular_hours + r.overtime_hours === 0
+            ? <span className="text-gray-300 tnum">—</span>
+            : <span className="text-gray-700 tnum">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>}
+        </span>
+      </div>
+    ) },
+  { key: 'regular', label: 'Regular (h)', sortKey: 'regular', defaultVisible: false, width: 110, min: 80, align: 'right',
+    cell: r => <div className="px-3 text-right tnum text-gray-700">{r.regular_hours || <span className="text-gray-300">—</span>}</div> },
+  { key: 'overtime', label: 'Overtime (h)', sortKey: 'overtime', defaultVisible: false, width: 120, min: 80, align: 'right',
+    cell: r => <div className="px-3 text-right tnum">{r.overtime_hours ? <span className="text-amber-600">{r.overtime_hours}</span> : <span className="text-gray-300">—</span>}</div> },
+  { key: 'km', label: 'Distance (km)', sortKey: 'km', defaultVisible: false, width: 120, min: 90, align: 'right',
+    cell: r => <div className="px-3 text-right tnum text-gray-700">{r.total_km ? r.total_km : <span className="text-gray-300">—</span>}</div> },
+  { key: 'billing', label: 'Billing', defaultVisible: false, width: 110, min: 80,
+    cell: r => <div className="px-3 text-gray-600 truncate">{BILLING_LABEL[r.billing_mode] ?? r.billing_mode}</div> },
+  { key: 'stage', label: 'Stage', defaultVisible: false, width: 110, min: 80,
+    cell: r => <div className="px-3 text-gray-600 truncate">{r.job_stage || <span className="text-gray-300">—</span>}</div> },
+  { key: 'cargo', label: 'Cargo', defaultVisible: false, width: 120, min: 80,
+    cell: r => <div className="px-3 text-gray-600 truncate">{r.cargo_type || <span className="text-gray-300">—</span>}</div> },
+  { key: 'invoice', label: 'Invoice', defaultVisible: true, width: 140, min: 90,
+    cell: r => (
+      <div className="px-3">
+        {r.invoice_number ? (
+          <Link href={`/admin/jobs/${r.id}`} className="block hover:underline">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="tnum text-gray-700">{r.invoice_number}</span>
+              {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
+            </span>
+            {r.invoice_sent_at && <span className="block text-[10px] text-gray-400 leading-tight">sent {formatDate(r.invoice_sent_at)}</span>}
+          </Link>
+        ) : <span className="text-gray-300">—</span>}
+      </div>
+    ) },
+  { key: 'invoice_total', label: 'Invoice total', defaultVisible: false, width: 120, min: 90, align: 'right',
+    cell: r => <div className="px-3 text-right tnum text-gray-700">{r.invoice_total != null ? money(r.invoice_total, r.invoice_currency ?? 'USD') : <span className="text-gray-300">—</span>}</div> },
+  { key: 'status', label: 'Status', sortKey: 'status', defaultVisible: true, width: 120, min: 90,
+    cell: (r, { changeStatus }) => <div className="px-3"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></div> },
+  { key: 'date', label: 'Date', sortKey: 'date', defaultVisible: true, width: 130, min: 90,
+    cell: (r, { patchRow }) => (
+      <>
+        <EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
+        {r.end_date && <span className="block px-2 text-[11px] text-gray-400 leading-tight">→ {formatDate(r.end_date)}</span>}
+      </>
+    ) },
+  { key: 'end_date', label: 'End date', defaultVisible: false, width: 110, min: 90,
+    cell: r => <div className="px-3 text-gray-600 whitespace-nowrap">{r.end_date ? formatDate(r.end_date) : <span className="text-gray-300">—</span>}</div> },
+  { key: 'notes', label: 'Notes', defaultVisible: false, width: 220, min: 120,
+    cell: r => <div className="px-3 text-gray-600 truncate" title={r.notes ?? ''}>{r.notes || <span className="text-gray-300">—</span>}</div> },
+]
+
+// Render one cell as its own component so a column's render runs in a child scope.
+// (Calling col.cell(...) inline during the row map trips react-hooks/refs, because
+// the inline editors transitively touch a ref — here ctx is just an opaque prop.)
+function JobCell({ col, row, ctx }: { col: ColumnDef; row: TrackerRow; ctx: CellCtx }) {
+  return <>{col.cell(row, ctx)}</>
+}
+
+function HeaderCell({ col, sort, onSort, onResize }: {
+  col: ColumnDef; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; onResize: (e: React.PointerEvent, key: string) => void
+}) {
+  const active = col.sortKey && sort.key === col.sortKey
   return (
-    <th className={`${base} ${className ?? ''}`} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button onClick={() => onSort(col)} className={`inline-flex items-center gap-1 select-none rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${active ? 'text-brand-700' : 'text-gray-500'}`}>
-        {label}{active ? <span className="text-[10px]">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-      </button>
+    <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-xs font-medium"
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
+        {col.sortKey ? (
+          <button onClick={() => onSort(col.sortKey!)} className={`inline-flex items-center gap-1 min-w-0 select-none rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${active ? 'text-brand-700' : 'text-gray-500'}`}>
+            <span className="truncate">{col.label}</span>{active ? <span className="text-[10px] shrink-0">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30 shrink-0" />}
+          </button>
+        ) : <span className="text-gray-500 truncate">{col.label}</span>}
+      </div>
+      {/* Drag handle: resize this column. Sits on the right edge; the th is a
+          positioned (sticky) box so the absolute handle anchors to it. */}
+      <span onPointerDown={e => onResize(e, col.key)} title="Drag to resize"
+        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-brand-300 active:bg-brand-400" />
     </th>
+  )
+}
+
+function ColumnsMenu({ colVisible, onToggle, onReset }: { colVisible: Record<string, boolean>; onToggle: (k: string) => void; onReset: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  const count = COLUMNS.filter(c => colVisible[c.key] !== false).length
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} className="btn-secondary" title="Choose which columns to show">
+        <Columns3 className="h-4 w-4" /><span className="hidden sm:inline">Columns</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 z-30 w-56 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+          <div className="flex items-center justify-between px-2 py-1">
+            <span className="text-xs font-medium text-gray-500">Show columns ({count})</span>
+            <button onClick={onReset} className="text-[11px] text-brand-600 hover:underline">Reset</button>
+          </div>
+          <div className="max-h-72 overflow-auto">
+            {COLUMNS.map(c => (
+              <label key={c.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer text-sm">
+                <input type="checkbox" checked={colVisible[c.key] !== false} onChange={() => onToggle(c.key)} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                <span className="text-gray-700">{c.label}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100">Drag a column&apos;s right edge to resize it.</p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -181,6 +342,63 @@ export default function JobsTrackerPage() {
   const router = useRouter()
   const pathname = usePathname()
   const didInitUrl = useRef(false)
+
+  // Column layout: which columns show + their widths, chosen by the user and
+  // persisted per-browser. Seeded to defaults; hydrated from localStorage on mount
+  // (in an effect, so SSR and first client render match — no hydration mismatch).
+  const [colVisible, setColVisible] = useState<Record<string, boolean>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.defaultVisible])))
+  const [widths, setWidths] = useState<Record<string, number>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+  const [colsLoaded, setColsLoaded] = useState(false)
+  const widthsRef = useRef(widths)
+  useEffect(() => { widthsRef.current = widths }, [widths])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLS_STORAGE_KEY)
+      if (raw) {
+        const p = JSON.parse(raw)
+        if (p.visible && typeof p.visible === 'object') setColVisible(v => ({ ...v, ...p.visible }))
+        if (p.widths && typeof p.widths === 'object') setWidths(w => ({ ...w, ...p.widths }))
+      }
+    } catch { /* ignore corrupt/absent storage */ }
+    setColsLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (!colsLoaded) return
+    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify({ visible: colVisible, widths })) } catch { /* quota / private mode */ }
+  }, [colVisible, widths, colsLoaded])
+
+  const visibleColumns = useMemo(() => COLUMNS.filter(c => colVisible[c.key] !== false), [colVisible])
+  const tableWidth = useMemo(() => 36 + visibleColumns.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0), [visibleColumns, widths])
+
+  const toggleCol = useCallback((key: string) => {
+    setColVisible(prev => {
+      const next = { ...prev, [key]: prev[key] === false }
+      // Never let every column be hidden — keep the last one on.
+      if (COLUMNS.every(c => next[c.key] === false)) return prev
+      return next
+    })
+  }, [])
+  const resetCols = useCallback(() => {
+    setColVisible(Object.fromEntries(COLUMNS.map(c => [c.key, c.defaultVisible])))
+    setWidths(Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+  }, [])
+
+  // Drag-to-resize a column: track the pointer on the document so the drag keeps
+  // working past the header edge; clamp to the column's minimum.
+  const startResize = useCallback((e: React.PointerEvent, key: string) => {
+    e.preventDefault(); e.stopPropagation()
+    const startX = e.clientX
+    const col = COLUMNS.find(c => c.key === key)!
+    const startW = widthsRef.current[key] ?? col.width
+    function move(ev: PointerEvent) {
+      const w = Math.max(col.min, startW + (ev.clientX - startX))
+      setWidths(prev => ({ ...prev, [key]: w }))
+    }
+    function up() { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up) }
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up)
+  }, [])
 
   const load = useCallback(async () => {
     const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
@@ -235,6 +453,7 @@ export default function JobsTrackerPage() {
     mutate(id, patch, () => updateJobField(id, dbPatch)), [mutate])
   const changeStatus = useCallback((id: string, status: WorkflowStatus) =>
     mutate(id, { workflow_status: status }, () => setWorkflowStatus(id, status)), [mutate])
+  const cellCtx = useMemo<CellCtx>(() => ({ patchRow, changeStatus }), [patchRow, changeStatus])
 
   function handleSort(key: SortKey) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })
@@ -263,6 +482,9 @@ export default function JobsTrackerPage() {
         case 'type': return (r.job_type ?? '').toLowerCase()
         case 'client': return (r.client_name ?? '').toLowerCase()
         case 'hours': return r.regular_hours + r.overtime_hours
+        case 'regular': return r.regular_hours
+        case 'overtime': return r.overtime_hours
+        case 'km': return r.total_km
         case 'status': return WORKFLOW_ORDER.indexOf(r.workflow_status)
         // Compare by the local calendar day actually shown in the Date column, so the
         // order matches the displayed dates (raw date-vs-timestamp strings don't).
@@ -337,6 +559,7 @@ export default function JobsTrackerPage() {
           <button onClick={exportCsv} disabled={loading || visible.length === 0} className="btn-secondary" title="Download the shown jobs as a CSV (respects filters)">
             <Download className="h-4 w-4" /><span className="hidden sm:inline">Export CSV</span>
           </button>
+          <ColumnsMenu colVisible={colVisible} onToggle={toggleCol} onReset={resetCols} />
           <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
         </div>
       </div>
@@ -383,31 +606,33 @@ export default function JobsTrackerPage() {
       {/* Colour-by + month/year filter */}
       <JobsViewToolbar view={view} years={jobYears} count={visible.length} legend={legend} />
 
-      {/* Grid — own scroll region with a frozen header */}
+      {/* Grid — own scroll region with a frozen header. Fixed layout + a <colgroup>
+          so each column honours its chosen width and the drag-resize sticks. */}
       <div className="card overflow-hidden">
         <div className="overflow-auto max-h-[calc(100vh-15rem)]">
-          <table className="w-full text-sm min-w-[1180px]">
+          <table className="text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
+            <colgroup>
+              <col style={{ width: 36 }} />
+              {visibleColumns.map(c => <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />)}
+            </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 w-9 px-2 py-2.5" />
-                <Th label="Report #" col="report" sort={sort} onSort={handleSort} />
-                <Th label="Type" col="type" sort={sort} onSort={handleSort} />
-                <Th label="Vessel" col="vessel" sort={sort} onSort={handleSort} />
-                <Th label="Client" col="client" sort={sort} onSort={handleSort} />
-                <Th label="Surveyors" sort={sort} onSort={handleSort} />
-                <Th label="Hours" col="hours" sort={sort} onSort={handleSort} className="!text-right" />
-                <Th label="Invoice" sort={sort} onSort={handleSort} />
-                <Th label="Status" col="status" sort={sort} onSort={handleSort} />
-                <Th label="Date" col="date" sort={sort} onSort={handleSort} />
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-2 py-2.5" />
+                {visibleColumns.map(c => (
+                  <HeaderCell key={c.key} col={c} sort={sort} onSort={handleSort} onResize={startResize} />
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 [0, 1, 2, 3, 4, 5].map(i => (
-                  <tr key={i}>{Array.from({ length: 10 }).map((_, k) => <td key={k} className="px-3 py-2.5"><div className="skeleton h-3.5 w-16" /></td>)}</tr>
+                  <tr key={i}>
+                    <td className="px-2 py-2.5" />
+                    {visibleColumns.map(c => <td key={c.key} className="px-3 py-2.5"><div className="skeleton h-3.5 w-16" /></td>)}
+                  </tr>
                 ))
               ) : visible.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
+                <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
               ) : paged.map(r => {
                 const c = rowColor(view.colorMode, r.client_color, r.template_color)
                 return (
@@ -415,62 +640,9 @@ export default function JobsTrackerPage() {
                   <td className="px-2 py-1.5" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
-                  <td className="py-1.5 pr-2 min-w-[110px]">
-                    <ReportCell
-                      reportNumber={r.report_number}
-                      notRequired={r.report_not_required}
-                      onSaveNumber={v => {
-                        // Typing "N/A" (any casing) means "no report" — set the flag and
-                        // keep report_number NULL so it never hits the unique index.
-                        if (isNaText(v)) { const p = { report_not_required: true, report_number: null }; return patchRow(r.id, p, p) }
-                        patchRow(r.id, { report_number: v, report_not_required: false }, { report_number: v, report_not_required: false })
-                      }}
-                      onSetNA={na => {
-                        const p = na ? { report_not_required: true, report_number: null } : { report_not_required: false }
-                        patchRow(r.id, p, p)
-                      }}
-                    />
-                  </td>
-                  <td className="py-1.5 pr-2 min-w-[120px]">
-                    <EditableCombo value={r.job_type} listId="jobTypeOptions" onSave={v => patchRow(r.id, { job_type: v }, { job_type: v })} />
-                    {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.job_stage}</span>}
-                    {r.cargo_type && <span className="block px-2 text-[11px] text-gray-400 leading-tight">{r.cargo_type}</span>}
-                  </td>
-                  <td className="py-1.5 pr-2 min-w-[130px]"><EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /></td>
-                  <td className="px-3 py-1.5">
-                    {r.client_name
-                      ? <Link href={`/admin/clients/${r.client_id}`} className="text-brand-700 hover:underline">{r.client_name}</Link>
-                      : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-gray-600">
-                    {r.surveyors.length === 0 ? <span className="text-gray-300">—</span>
-                      : r.surveyors.length === 1 ? r.surveyors[0]
-                      : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5 justify-end">
-                      {r.is_overtime && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium" title="Overtime job">OT</span>}
-                      {r.regular_hours + r.overtime_hours === 0
-                        ? <span className="text-gray-300 tnum">—</span>
-                        : <span className="text-gray-700 tnum">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {r.invoice_number ? (
-                      <Link href={`/admin/jobs/${r.id}`} className="block hover:underline">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="tnum text-gray-700">{r.invoice_number}</span>
-                          {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
-                        </span>
-                        {r.invoice_sent_at && <span className="block text-[10px] text-gray-400 leading-tight">sent {formatDate(r.invoice_sent_at)}</span>}
-                      </Link>
-                    ) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-1.5"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></td>
-                  <td className="py-1.5 pr-2 min-w-[120px]">
-                    <EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
-                    {r.end_date && <span className="block px-2 text-[11px] text-gray-400 leading-tight">→ {formatDate(r.end_date)}</span>}
-                  </td>
+                  {visibleColumns.map(col => (
+                    <td key={col.key} className="py-1.5 overflow-hidden align-middle"><JobCell col={col} row={r} ctx={cellCtx} /></td>
+                  ))}
                 </tr>
                 )
               })}
