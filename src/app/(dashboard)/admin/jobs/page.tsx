@@ -310,10 +310,13 @@ function SortableHeaderCell({ col, sort, onSort, onResize, onAutofit, isLast }: 
           onClick={e => e.stopPropagation()}
           title="Drag to resize · double-click to auto-fit"
           style={{ touchAction: 'none' }}
-          className="group/grip absolute -right-2 sm:-right-1 top-0 z-20 flex h-full w-5 sm:w-2.5 cursor-col-resize items-stretch justify-center"
+          // Sits INSIDE this column's right edge (no overhang under the next column,
+          // which would otherwise cover it) and above everything so it's grabbable.
+          className="group/grip absolute right-0 top-0 z-30 flex h-full w-3.5 cursor-col-resize items-stretch justify-end select-none"
         >
-          {/* Faintly visible on touch (no hover) so the resize affordance is findable. */}
-          <span className="w-0.5 bg-gray-300/70 sm:bg-transparent group-hover/grip:bg-brand-400 transition-colors" />
+          {/* Always-visible hairline that thickens + turns blue on hover, so the
+              resize edge is findable (and clearly not the same as the header body). */}
+          <span className="w-px bg-gray-300 group-hover/grip:w-[3px] group-hover/grip:bg-brand-500 transition-all" />
         </span>
       )}
     </th>
@@ -344,10 +347,10 @@ function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
       </button>
       {open && (
         <div className="absolute right-0 mt-2 z-30 w-60 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
-          {/* Sizing actions */}
+          {/* Sizing actions — close the menu on apply so the change is visible. */}
           <div className="grid grid-cols-2 gap-1.5 px-1 pb-2 mb-1 border-b border-gray-100">
-            <button onClick={onEqual} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Give every column the same width">Make equal</button>
-            <button onClick={onAutofitAll} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Size every column to its content, still filling the page">Auto-fit all</button>
+            <button onClick={() => { onEqual(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Give every column the same width">Make equal</button>
+            <button onClick={() => { onAutofitAll(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Size every column to its content, still filling the page">Auto-fit all</button>
           </div>
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-xs font-medium text-gray-500">Show columns ({count})</span>
@@ -503,7 +506,10 @@ export default function JobsTrackerPage() {
   // the two so the total (and every other column) stays put — the table never
   // grows past the page.
   function startResize(e: React.PointerEvent, key: string) {
-    e.preventDefault(); e.stopPropagation()
+    // NB: do NOT preventDefault() here — that would cancel the browser's dblclick,
+    // killing double-click-to-autofit. stopPropagation is enough to keep the header
+    // reorder-drag from starting.
+    e.stopPropagation()
     const idx = visibleColumns.findIndex(c => c.key === key)
     if (idx < 0 || idx >= visibleColumns.length - 1) return
     const a = visibleColumns[idx].key, b = visibleColumns[idx + 1].key
@@ -512,12 +518,20 @@ export default function JobsTrackerPage() {
     const minW = MIN_COL_PX * wPerPx
     const startX = e.clientX
     function move(ev: PointerEvent) {
+      ev.preventDefault() // stop text selection mid-drag
       const newA = Math.min(Math.max(wA0 + (ev.clientX - startX) * wPerPx, minW), pair - minW)
       setWeights(prev => ({ ...prev, [a]: newA, [b]: pair - newA }))
     }
-    function up() { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.body.style.cursor = '' }
+    function up() {
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
     document.body.style.cursor = 'col-resize'
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up)
+    document.body.style.userSelect = 'none'
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', up)
   }
 
   // Double-click a divider: size that one column to its content, letting the others
