@@ -1,4 +1,3 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const PROTECTED_PREFIXES = ['/admin', '/surveyor', '/client', '/office']
@@ -9,43 +8,26 @@ export async function proxy(request: NextRequest) {
   const isProtected = PROTECTED_PREFIXES.some(p => pathname.startsWith(p))
   if (!isProtected) return NextResponse.next()
 
-  // Refresh session cookies and check authentication
-  const response = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  // Is there a Supabase auth session cookie at all? (chunked as sb-<ref>-auth-token[.N])
+  // Gate on the presence of a Supabase auth session cookie (chunked as
+  // sb-<ref>-auth-token[.N]) — nothing more. We deliberately do NOT call
+  // supabase.auth.getUser() here anymore:
+  //   - Its return value never affected the redirect (the old check was
+  //     `!user && !hasAuthCookie`, so a present cookie always let the request
+  //     through and an absent one always redirected — user was irrelevant).
+  //   - But getUser() rotated the refresh token on EVERY protected navigation,
+  //     racing the browser client's own auto-refresh. A stale rotated token can
+  //     trip Supabase's reuse detection and revoke the whole session — an
+  //     intermittent, hard-to-diagnose logout. Removing it makes the browser the
+  //     single, Web-Lock-serialised refresher.
+  // Security is unchanged: no cookie → still redirected to /login, and RLS remains
+  // the authoritative gate on every row for any request that gets through.
   const hasAuthCookie = request.cookies.getAll().some(c => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
 
-  // getUser() validates the token over the network AND refreshes it (writing fresh
-  // cookies via setAll). But on flaky mobile connections that network call fails and
-  // returns no user — which previously bounced a perfectly-valid session to /login
-  // (the "it logged me out, pull-to-refresh fixes it" complaint). So: only redirect
-  // when there's genuinely NO session cookie. If a cookie exists but validation
-  // failed (network), let the request through — the client layout re-checks the
-  // session and RLS still guards every row, so nothing is exposed.
-  let user = null
-  try { user = (await supabase.auth.getUser()).data.user } catch { /* transient — treat as "still signed in" */ }
-
-  if (!user && !hasAuthCookie) {
+  if (!hasAuthCookie) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return response
+  return NextResponse.next()
 }
 
 export const config = {

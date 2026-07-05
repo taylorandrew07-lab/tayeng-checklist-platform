@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, hasAuthCookie } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
@@ -65,12 +65,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const cached = cachedStaffProfile()
     if (cached) { setProfile(cached); setLoading(false) }
 
-    async function loadProfile() {
+    async function loadProfile(attempt = 0) {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       // Supabase persists the session itself (cookie storage, auto-refreshed).
-      // Only redirect when there is genuinely no valid session.
-      if (!session) { router.push('/login'); return }
+      if (!session) {
+        // No session object — but if the long-lived auth cookie is still present,
+        // this is almost always transient: Android wakes the PWA before the network
+        // radio is back, so the expired access token can't refresh yet and
+        // getSession() momentarily returns null. Bouncing to /login here was a top
+        // cause of the "it logged me out" complaint. Instead: retry a few times to
+        // give auto-refresh a chance, and never redirect while the cookie is intact
+        // (RLS still guards every row, and the cached staff shell stays painted).
+        if (hasAuthCookie()) {
+          if (attempt < 3) { setTimeout(() => loadProfile(attempt + 1), 600); return }
+          setLoading(false); return
+        }
+        // Genuinely signed out (no cookie) — go to login.
+        router.push('/login'); return
+      }
 
       const { data } = await supabase
         .from('profiles')

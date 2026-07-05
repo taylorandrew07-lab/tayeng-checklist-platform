@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, hasAuthCookie } from '@/lib/supabase/client'
 import { Loader2, Pencil, KeyRound, Clock, X, ShieldCheck, WifiOff } from 'lucide-react'
 import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -58,10 +58,19 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ full_name: '', phone: '', email: '' })
 
-  async function load() {
+  async function load(attempt = 0) {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { router.push('/login'); return }
+    if (!session) {
+      // Don't bounce to /login on a transient null session while the auth cookie
+      // is still present (Android waking before the network is back). Retry to let
+      // auto-refresh recover; only redirect when genuinely signed out.
+      if (hasAuthCookie()) {
+        if (attempt < 3) { setTimeout(() => load(attempt + 1), 600); return }
+        setLoading(false); return
+      }
+      router.push('/login'); return
+    }
     const { data: p } = await supabase.from('profiles').select('id, full_name, email, phone, role, is_super_admin, display_title').eq('id', session.user.id).single()
     if (p) {
       setProfile(p)

@@ -421,6 +421,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       } else {
         const { data: { user } } = await supabase.auth.getUser()
         userId = user?.id ?? null
+        // getUser() hits the network. On Android navigator.onLine frequently lies
+        // (reports online during tower handovers / the first seconds after the PWA
+        // wakes), so we take this online branch and getUser() fails even though the
+        // session is fine — which used to throw a surveyor to /login mid-job. Fall
+        // back to the locally-persisted session (the same credential the offline
+        // branch trusts) before assuming the user is signed out.
+        if (!userId) {
+          const { data: { session } } = await supabase.auth.getSession()
+          userId = session?.user?.id ?? null
+        }
       }
       if (!userId) { router.push('/login'); return }
       setCurrentUserId(userId)

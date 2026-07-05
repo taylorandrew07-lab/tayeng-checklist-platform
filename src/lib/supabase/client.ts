@@ -17,3 +17,17 @@ export function createClient() {
     }
   )
 }
+
+// True when a Supabase auth-token cookie is present in the browser (chunked as
+// sb-<ref>-auth-token[.N]). The cookies are httpOnly:false by necessity, so JS can
+// read them. Used to distinguish "genuinely signed out" (no cookie → redirect to
+// /login) from "session momentarily unavailable" — e.g. Android waking the PWA
+// before the network is back, when getSession() transiently returns null even
+// though the long-lived cookie is intact. In that case we must NOT bounce the user
+// to /login. Mirrors the same check the middleware (src/proxy.ts) uses server-side.
+export function hasAuthCookie(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie
+    .split('; ')
+    .some(c => c.startsWith('sb-') && c.includes('-auth-token'))
+}
