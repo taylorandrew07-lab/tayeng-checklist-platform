@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
+import { getUiPrefs, setUiPref } from '@/lib/preferences'
 import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
@@ -436,39 +437,76 @@ export default function JobsTrackerPage() {
   const pathname = usePathname()
   const didInitUrl = useRef(false)
 
-  // Column layout — chosen by the user, persisted per-browser. The table ALWAYS
-  // fills exactly one page: widths are relative "weights" (not pixels), rendered as
-  // a share of the available width, so it never scrolls sideways and never gaps.
-  // Order is a separate list so columns can be dragged to reorder.
+  // Column layout — chosen by the user. The table ALWAYS fills exactly one page:
+  // widths are relative "weights" (not pixels), rendered as a share of the
+  // available width, so it never scrolls sideways and never gaps. Order is a
+  // separate list so columns can be dragged to reorder.
+  //
+  // Persistence is account-based: the layout is stored on the user's profile
+  // (profiles.ui_prefs.jobs_cols) so a choice made on the desktop shows up on the
+  // phone and vice-versa. localStorage is kept only as an instant-paint cache /
+  // offline fallback; the account copy is the source of truth.
   const byKey = useMemo(() => Object.fromEntries(COLUMNS.map(c => [c.key, c])) as Record<string, ColumnDef>, [])
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.defaultVisible])))
   const [weights, setWeights] = useState<Record<string, number>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
   const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map(c => c.key))
   const [colsLoaded, setColsLoaded] = useState(false)
+  // Gate account writes until the account copy has been read, so the local default
+  // never clobbers a layout saved on another device before we've loaded it.
+  const remoteSaveReady = useRef(false)
   const tableRef = useRef<HTMLTableElement>(null)
   const measureCanvas = useRef<HTMLCanvasElement | null>(null)
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(COLS_STORAGE_KEY)
-      if (raw) {
-        const p = JSON.parse(raw)
-        if (p.visible && typeof p.visible === 'object') setColVisible(v => ({ ...v, ...p.visible }))
-        if (p.weights && typeof p.weights === 'object') setWeights(w => ({ ...w, ...p.weights }))
-        if (Array.isArray(p.order)) {
-          const known = new Set(COLUMNS.map(c => c.key))
-          const saved = (p.order as string[]).filter(k => known.has(k))
-          const missing = COLUMNS.map(c => c.key).filter(k => !saved.includes(k))
-          setColOrder([...saved, ...missing])
-        }
-      }
-    } catch { /* ignore corrupt/absent storage */ }
-    setColsLoaded(true)
+  // Apply a stored layout blob ({visible, weights, order}) to state, tolerating
+  // partial/older shapes and unknown/renamed columns.
+  const applyColsPref = useCallback((p: { visible?: Record<string, boolean>; weights?: Record<string, number>; order?: string[] } | null | undefined) => {
+    if (!p) return
+    if (p.visible && typeof p.visible === 'object') setColVisible(v => ({ ...v, ...p.visible }))
+    if (p.weights && typeof p.weights === 'object') setWeights(w => ({ ...w, ...p.weights }))
+    if (Array.isArray(p.order)) {
+      const known = new Set(COLUMNS.map(c => c.key))
+      const saved = p.order.filter(k => known.has(k))
+      const missing = COLUMNS.map(c => c.key).filter(k => !saved.includes(k))
+      setColOrder([...saved, ...missing])
+    }
   }, [])
 
   useEffect(() => {
+    // 1) Instant paint from the per-device cache (no await).
+    let cached: { visible?: Record<string, boolean>; weights?: Record<string, number>; order?: string[] } | null = null
+    try {
+      const raw = localStorage.getItem(COLS_STORAGE_KEY)
+      if (raw) cached = JSON.parse(raw)
+    } catch { /* ignore corrupt/absent storage */ }
+    applyColsPref(cached)
+    setColsLoaded(true)
+
+    // 2) Account copy — the cross-device source of truth. Override the cache with
+    // it if present; otherwise seed the account from whatever this device had, so
+    // an existing desktop layout propagates without needing a fresh change.
+    ;(async () => {
+      try {
+        const remote = (await getUiPrefs()).jobs_cols
+        if (remote && (remote.visible || remote.weights || remote.order)) {
+          applyColsPref(remote)
+          try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(remote)) } catch { /* quota / private mode */ }
+        } else if (cached) {
+          setUiPref('jobs_cols', cached).catch(() => {})
+        }
+      } catch { /* offline / signed out — the cache still applies */ }
+      remoteSaveReady.current = true
+    })()
+  }, [applyColsPref])
+
+  // Persist changes: localStorage immediately (fast, per-device), and the account
+  // copy debounced (so a burst of resize drags doesn't spam writes).
+  useEffect(() => {
     if (!colsLoaded) return
-    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify({ visible: colVisible, weights, order: colOrder })) } catch { /* quota / private mode */ }
+    const snapshot = { visible: colVisible, weights, order: colOrder }
+    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* quota / private mode */ }
+    if (!remoteSaveReady.current) return
+    const h = setTimeout(() => { setUiPref('jobs_cols', snapshot).catch(() => {}) }, 700)
+    return () => clearTimeout(h)
   }, [colVisible, weights, colOrder, colsLoaded])
 
   const visibleColumns = useMemo(

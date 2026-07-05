@@ -43,6 +43,13 @@ export interface UiPrefs {
   nav_order?: string[]
   /** Ordered list of dashboard tile keys the user has chosen to show. */
   dashboard_tiles?: string[]
+  /** Jobs grid column layout — visibility, widths (weights) and order — so the
+   *  chosen columns follow the user across devices. */
+  jobs_cols?: {
+    visible?: Record<string, boolean>
+    weights?: Record<string, number>
+    order?: string[]
+  }
 }
 
 export interface Profile {
