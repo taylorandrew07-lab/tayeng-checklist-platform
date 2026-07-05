@@ -9,7 +9,7 @@ import { OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
-  LogOut, ChevronRight, X, Settings, Calculator, BarChart3,
+  LogOut, ChevronRight, X, Settings, Calculator,
   Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2,
 } from 'lucide-react'
 
@@ -23,7 +23,6 @@ const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
-  { label: 'Insights', href: '/admin/analytics', icon: BarChart3 },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
   // Team is a hub: the page itself has tabs for Team / Credentials / Approvals.
   { label: 'Team', href: '/admin/users', icon: Users },

@@ -8,7 +8,6 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import AttentionCard, { type AttentionItem } from '@/components/dashboard/AttentionCard'
-import InsightsSummary from '@/components/dashboard/InsightsSummary'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 import { useReconciliationAttention } from '@/components/dashboard/useReconciliationAttention'
 
@@ -16,8 +15,7 @@ import { useReconciliationAttention } from '@/components/dashboard/useReconcilia
 const TONE_RANK: Record<AttentionItem['tone'], number> = { danger: 0, warn: 1, info: 2 }
 
 // ── Dashboard tiles ───────────────────────────────────────────────────────
-// A fixed catalog-count row (templates, jobs, users, clients). The deeper
-// operational + billing KPIs render below via <InsightsSummary>.
+// A fixed catalog-count row (templates, jobs, users, clients).
 type TileKey = 'activeTemplates' | 'totalJobs' | 'users' | 'clients'
 
 interface TileDef { label: string; sub?: string; href: string; icon: typeof FileText }
@@ -203,9 +201,6 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {TILE_KEYS.map(k => <StatTile key={k} def={TILE_DEFS[k]} value={tileValue(k)} loading={loading} />)}
       </div>
-
-      {/* Insights — headline operational + billing metrics, embedded from /admin/analytics */}
-      <InsightsSummary />
     </div>
   )
 }
