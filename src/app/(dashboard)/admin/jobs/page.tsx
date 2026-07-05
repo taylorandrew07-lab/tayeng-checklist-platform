@@ -455,7 +455,21 @@ export default function JobsTrackerPage() {
   // never clobbers a layout saved on another device before we've loaded it.
   const remoteSaveReady = useRef(false)
   const tableRef = useRef<HTMLTableElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const measureCanvas = useRef<HTMLCanvasElement | null>(null)
+  // Live width of the scroll region, tracked so desktop column widths can be REAL
+  // pixels. (calc()/% widths on <col> under table-layout:fixed are unreliable —
+  // browsers often ignore them, which is why resizing did nothing. px is honoured.)
+  const [availWidth, setAvailWidth] = useState(0)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const update = () => setAvailWidth(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // Apply a stored layout blob ({visible, weights, order}) to state, tolerating
   // partial/older shapes and unknown/renamed columns.
@@ -519,15 +533,23 @@ export default function JobsTrackerPage() {
   // col) so the table fills exactly one page. Narrow (phone): a real pixel width so
   // the table can grow wider than the screen and scroll sideways — readable cells
   // instead of "F…". Weights double as those px widths (never below MIN_COL_PX).
-  const colWidthStyle = (key: string): string =>
-    narrow ? `${Math.max(wOf(key), MIN_COL_PX)}px` : `calc((100% - 36px) * ${(wOf(key) / sumVisibleW).toFixed(6)})`
+  const colWidthStyle = (key: string): string => {
+    if (narrow) return `${Math.max(wOf(key), MIN_COL_PX)}px`
+    const ratio = sumVisibleW > 0 ? wOf(key) / sumVisibleW : 1 / Math.max(visibleColumns.length, 1)
+    // Real px once the container is measured (browsers honour px on <col>, not calc%);
+    // the calc() fallback only ever renders on the pre-measure first paint / SSR, and
+    // still fills the page. Shares sum to 1, so px sum to exactly (availWidth - 36).
+    return availWidth > 0
+      ? `${(ratio * (availWidth - 36)).toFixed(3)}px`
+      : `calc((100% - 36px) * ${ratio.toFixed(6)})`
+  }
   // Total table width in narrow mode (open-link col + every visible column).
   const narrowTableWidth = useMemo(
     () => narrow ? 36 + visibleColumns.reduce((s, c) => s + Math.max(wOf(c.key), MIN_COL_PX), 0) : 0,
     [narrow, visibleColumns, wOf],
   )
   // Live pixel width available to the weighted columns (needed for px↔weight maths).
-  const dataAvailPx = () => Math.max(1, (tableRef.current?.clientWidth ?? 900) - 36)
+  const dataAvailPx = () => Math.max(1, (availWidth || tableRef.current?.clientWidth || 900) - 36)
 
   const toggleCol = useCallback((key: string) => {
     setColVisible(prev => {
@@ -554,7 +576,10 @@ export default function JobsTrackerPage() {
     if (!cx) return byKey[key].width
     let max = 0
     cells.forEach(el => {
-      cx.font = getComputedStyle(el).font || '14px system-ui'
+      const cs = getComputedStyle(el)
+      // getComputedStyle(el).font serialises to '' in some browsers (Firefox, and
+      // inconsistently in Chrome) — build it from longhands so measurement is accurate.
+      cx.font = cs.font || `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily}`.trim() || '14px system-ui'
       for (const line of (el.innerText || '').split('\n')) {
         const w = cx.measureText(line.trim()).width
         if (w > max) max = w
@@ -842,7 +867,7 @@ export default function JobsTrackerPage() {
           sum to 100%). Headers drag to reorder; their right edge drags to resize /
           double-clicks to auto-fit. Faint gridlines between columns. */}
       <div className="card overflow-hidden">
-        <div className={`${narrow ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto max-h-[calc(100vh-15rem)]`}>
+        <div ref={scrollRef} className={`${narrow ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto max-h-[calc(100vh-15rem)]`}>
           <table ref={tableRef} className={`${narrow ? '' : 'w-full'} text-sm`} style={{ tableLayout: 'fixed', width: narrow ? narrowTableWidth : undefined }}>
             <colgroup>
               <col style={{ width: 36 }} />
