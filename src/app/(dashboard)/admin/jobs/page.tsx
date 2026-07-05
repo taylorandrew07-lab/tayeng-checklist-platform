@@ -9,6 +9,13 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download, Columns3 } from 'lucide-react'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, horizontalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
@@ -25,8 +32,10 @@ import type { WorkflowStatus } from '@/lib/types/database'
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
 type Filter = 'open' | 'paid' | 'closed' | 'all'
 
-// Persisted column layout (visibility + widths). Bumped if the column set changes.
-const COLS_STORAGE_KEY = 'te_jobs_cols_v1'
+// Persisted column layout (visibility + weights + order). Bumped when the schema changes.
+const COLS_STORAGE_KEY = 'te_jobs_cols_v2'
+// Smallest a column may be squeezed to (px) — text truncates below this.
+const MIN_COL_PX = 46
 const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: 'Regular', fixed: 'Fixed' }
 
 const FILTERS: { key: Filter; label: string }[] = [
@@ -39,7 +48,7 @@ const INV_PILL: Record<string, string> = {
 }
 
 // Shared look for an editable cell's resting (button) state.
-const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'
+const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-200'
 
 // CSV-escape one value: quote-wrap when it holds a comma/quote/newline; double quotes.
@@ -260,29 +269,62 @@ function JobCell({ col, row, ctx }: { col: ColumnDef; row: TrackerRow; ctx: Cell
   return <>{col.cell(row, ctx)}</>
 }
 
-function HeaderCell({ col, sort, onSort, onResize }: {
-  col: ColumnDef; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; onResize: (e: React.PointerEvent, key: string) => void
+// A header cell that (a) can be dragged left/right to reorder columns (dnd-kit),
+// (b) sorts on click when it has a sortKey, and (c) carries a right-edge grip you
+// drag to resize or double-click to autofit. isLast hides the grip + gridline on
+// the final column so nothing dangles past the table edge.
+function SortableHeaderCell({ col, sort, onSort, onResize, onAutofit, isLast }: {
+  col: ColumnDef
+  sort: { key: SortKey; dir: 'asc' | 'desc' }
+  onSort: (k: SortKey) => void
+  onResize: (e: React.PointerEvent, key: string) => void
+  onAutofit: (key: string) => void
+  isLast: boolean
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: col.key })
   const active = col.sortKey && sort.key === col.sortKey
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 20 : undefined,
+  }
   return (
-    <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-xs font-medium"
+    <th ref={setNodeRef} style={style} data-col={col.key}
+      className={`sticky top-0 z-10 bg-gray-50 border-b border-gray-200 ${isLast ? '' : 'border-r border-gray-200/80'} px-3 py-2.5 text-xs font-medium`}
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-      <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
+      {/* Whole label area is the drag handle; a click with no movement still sorts. */}
+      <div {...attributes} {...listeners}
+        title="Drag to reorder"
+        className={`flex items-center gap-1 min-w-0 cursor-grab active:cursor-grabbing touch-none ${col.align === 'right' ? 'justify-end' : ''}`}>
         {col.sortKey ? (
           <button onClick={() => onSort(col.sortKey!)} className={`inline-flex items-center gap-1 min-w-0 select-none rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${active ? 'text-brand-700' : 'text-gray-500'}`}>
             <span className="truncate">{col.label}</span>{active ? <span className="text-[10px] shrink-0">{sort.dir === 'asc' ? '▲' : '▼'}</span> : <ArrowUpDown className="h-3 w-3 opacity-30 shrink-0" />}
           </button>
         ) : <span className="text-gray-500 truncate">{col.label}</span>}
       </div>
-      {/* Drag handle: resize this column. Sits on the right edge; the th is a
-          positioned (sticky) box so the absolute handle anchors to it. */}
-      <span onPointerDown={e => onResize(e, col.key)} title="Drag to resize"
-        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-brand-300 active:bg-brand-400" />
+      {!isLast && (
+        <span
+          onPointerDown={e => onResize(e, col.key)}
+          onDoubleClick={e => { e.preventDefault(); e.stopPropagation(); onAutofit(col.key) }}
+          onClick={e => e.stopPropagation()}
+          title="Drag to resize · double-click to auto-fit"
+          className="group/grip absolute -right-1 top-0 z-20 flex h-full w-2.5 cursor-col-resize items-stretch justify-center"
+        >
+          <span className="w-0.5 bg-transparent group-hover/grip:bg-brand-400 transition-colors" />
+        </span>
+      )}
     </th>
   )
 }
 
-function ColumnsMenu({ colVisible, onToggle, onReset }: { colVisible: Record<string, boolean>; onToggle: (k: string) => void; onReset: () => void }) {
+function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
+  colVisible: Record<string, boolean>
+  onToggle: (k: string) => void
+  onReset: () => void
+  onEqual: () => void
+  onAutofitAll: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -298,7 +340,12 @@ function ColumnsMenu({ colVisible, onToggle, onReset }: { colVisible: Record<str
         <Columns3 className="h-4 w-4" /><span className="hidden sm:inline">Columns</span>
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 z-30 w-56 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+        <div className="absolute right-0 mt-2 z-30 w-60 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+          {/* Sizing actions */}
+          <div className="grid grid-cols-2 gap-1.5 px-1 pb-2 mb-1 border-b border-gray-100">
+            <button onClick={onEqual} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Give every column the same width">Make equal</button>
+            <button onClick={onAutofitAll} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Size every column to its content, still filling the page">Auto-fit all</button>
+          </div>
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-xs font-medium text-gray-500">Show columns ({count})</span>
             <button onClick={onReset} className="text-[11px] text-brand-600 hover:underline">Reset</button>
@@ -311,7 +358,7 @@ function ColumnsMenu({ colVisible, onToggle, onReset }: { colVisible: Record<str
               </label>
             ))}
           </div>
-          <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100">Drag a column&apos;s right edge to resize it.</p>
+          <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100 leading-relaxed">Drag a header to reorder · drag its right edge to resize · double-click the edge to auto-fit.</p>
         </div>
       )}
     </div>
@@ -343,14 +390,17 @@ export default function JobsTrackerPage() {
   const pathname = usePathname()
   const didInitUrl = useRef(false)
 
-  // Column layout: which columns show + their widths, chosen by the user and
-  // persisted per-browser. Seeded to defaults; hydrated from localStorage on mount
-  // (in an effect, so SSR and first client render match — no hydration mismatch).
+  // Column layout — chosen by the user, persisted per-browser. The table ALWAYS
+  // fills exactly one page: widths are relative "weights" (not pixels), rendered as
+  // a share of the available width, so it never scrolls sideways and never gaps.
+  // Order is a separate list so columns can be dragged to reorder.
+  const byKey = useMemo(() => Object.fromEntries(COLUMNS.map(c => [c.key, c])) as Record<string, ColumnDef>, [])
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.defaultVisible])))
-  const [widths, setWidths] = useState<Record<string, number>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+  const [weights, setWeights] = useState<Record<string, number>>(() => Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+  const [colOrder, setColOrder] = useState<string[]>(() => COLUMNS.map(c => c.key))
   const [colsLoaded, setColsLoaded] = useState(false)
-  const widthsRef = useRef(widths)
-  useEffect(() => { widthsRef.current = widths }, [widths])
+  const tableRef = useRef<HTMLTableElement>(null)
+  const measureCanvas = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     try {
@@ -358,7 +408,13 @@ export default function JobsTrackerPage() {
       if (raw) {
         const p = JSON.parse(raw)
         if (p.visible && typeof p.visible === 'object') setColVisible(v => ({ ...v, ...p.visible }))
-        if (p.widths && typeof p.widths === 'object') setWidths(w => ({ ...w, ...p.widths }))
+        if (p.weights && typeof p.weights === 'object') setWeights(w => ({ ...w, ...p.weights }))
+        if (Array.isArray(p.order)) {
+          const known = new Set(COLUMNS.map(c => c.key))
+          const saved = (p.order as string[]).filter(k => known.has(k))
+          const missing = COLUMNS.map(c => c.key).filter(k => !saved.includes(k))
+          setColOrder([...saved, ...missing])
+        }
       }
     } catch { /* ignore corrupt/absent storage */ }
     setColsLoaded(true)
@@ -366,39 +422,111 @@ export default function JobsTrackerPage() {
 
   useEffect(() => {
     if (!colsLoaded) return
-    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify({ visible: colVisible, widths })) } catch { /* quota / private mode */ }
-  }, [colVisible, widths, colsLoaded])
+    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify({ visible: colVisible, weights, order: colOrder })) } catch { /* quota / private mode */ }
+  }, [colVisible, weights, colOrder, colsLoaded])
 
-  const visibleColumns = useMemo(() => COLUMNS.filter(c => colVisible[c.key] !== false), [colVisible])
-  const tableWidth = useMemo(() => 36 + visibleColumns.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0), [visibleColumns, widths])
+  const visibleColumns = useMemo(
+    () => colOrder.map(k => byKey[k]).filter((c): c is ColumnDef => !!c && colVisible[c.key] !== false),
+    [colOrder, byKey, colVisible],
+  )
+  const wOf = useCallback((key: string) => weights[key] ?? byKey[key].width, [weights, byKey])
+  const sumVisibleW = useMemo(() => visibleColumns.reduce((s, c) => s + (weights[c.key] ?? c.width), 0), [visibleColumns, weights])
+  // CSS width for a column as a share of the row minus the fixed 36px open-link col.
+  const colWidthStyle = (key: string): string => `calc((100% - 36px) * ${(wOf(key) / sumVisibleW).toFixed(6)})`
+  // Live pixel width available to the weighted columns (needed for px↔weight maths).
+  const dataAvailPx = () => Math.max(1, (tableRef.current?.clientWidth ?? 900) - 36)
 
   const toggleCol = useCallback((key: string) => {
     setColVisible(prev => {
       const next = { ...prev, [key]: prev[key] === false }
-      // Never let every column be hidden — keep the last one on.
-      if (COLUMNS.every(c => next[c.key] === false)) return prev
+      if (COLUMNS.every(c => next[c.key] === false)) return prev // keep at least one
       return next
     })
   }, [])
   const resetCols = useCallback(() => {
     setColVisible(Object.fromEntries(COLUMNS.map(c => [c.key, c.defaultVisible])))
-    setWidths(Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+    setWeights(Object.fromEntries(COLUMNS.map(c => [c.key, c.width])))
+    setColOrder(COLUMNS.map(c => c.key))
   }, [])
 
-  // Drag-to-resize a column: track the pointer on the document so the drag keeps
-  // working past the header edge; clamp to the column's minimum.
-  const startResize = useCallback((e: React.PointerEvent, key: string) => {
+  // Measure a column's natural content width (px) from the rendered header + body
+  // cells, via a canvas text metric using each cell's own font. Truncated text is
+  // fully measured (we read the text, not the clipped box).
+  function measureColPx(key: string): number {
+    const table = tableRef.current
+    const cells = table?.querySelectorAll<HTMLElement>(`[data-col="${key}"]`)
+    if (!cells || !cells.length) return byKey[key].width
+    const canvas = measureCanvas.current ?? (measureCanvas.current = document.createElement('canvas'))
+    const cx = canvas.getContext('2d')
+    if (!cx) return byKey[key].width
+    let max = 0
+    cells.forEach(el => {
+      cx.font = getComputedStyle(el).font || '14px system-ui'
+      for (const line of (el.innerText || '').split('\n')) {
+        const w = cx.measureText(line.trim()).width
+        if (w > max) max = w
+      }
+    })
+    return Math.ceil(max) + 52 // padding + room for sort arrow / pills
+  }
+
+  // Drag the divider between a column and its right neighbour: trade weight between
+  // the two so the total (and every other column) stays put — the table never
+  // grows past the page.
+  function startResize(e: React.PointerEvent, key: string) {
     e.preventDefault(); e.stopPropagation()
+    const idx = visibleColumns.findIndex(c => c.key === key)
+    if (idx < 0 || idx >= visibleColumns.length - 1) return
+    const a = visibleColumns[idx].key, b = visibleColumns[idx + 1].key
+    const wA0 = wOf(a), wB0 = wOf(b), pair = wA0 + wB0
+    const wPerPx = sumVisibleW / dataAvailPx()
+    const minW = MIN_COL_PX * wPerPx
     const startX = e.clientX
-    const col = COLUMNS.find(c => c.key === key)!
-    const startW = widthsRef.current[key] ?? col.width
     function move(ev: PointerEvent) {
-      const w = Math.max(col.min, startW + (ev.clientX - startX))
-      setWidths(prev => ({ ...prev, [key]: w }))
+      const newA = Math.min(Math.max(wA0 + (ev.clientX - startX) * wPerPx, minW), pair - minW)
+      setWeights(prev => ({ ...prev, [a]: newA, [b]: pair - newA }))
     }
-    function up() { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up) }
+    function up() { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.body.style.cursor = '' }
+    document.body.style.cursor = 'col-resize'
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up)
-  }, [])
+  }
+
+  // Double-click a divider: size that one column to its content, letting the others
+  // keep their relative ratios and reflow to fill the rest of the page.
+  function autofitColumn(key: string) {
+    const avail = dataAvailPx()
+    const target = Math.min(Math.max(measureColPx(key), MIN_COL_PX), avail - (visibleColumns.length - 1) * MIN_COL_PX)
+    const Wo = visibleColumns.filter(c => c.key !== key).reduce((s, c) => s + wOf(c.key), 0)
+    const wKey = avail - target > 1 ? (target * Wo) / (avail - target) : Math.max(Wo, 1) * 8
+    setWeights(prev => ({ ...prev, [key]: wKey }))
+  }
+  // Size every visible column to its content (all still summing to one page).
+  function autofitAll() {
+    const next: Record<string, number> = {}
+    visibleColumns.forEach(c => { next[c.key] = measureColPx(c.key) })
+    setWeights(prev => ({ ...prev, ...next }))
+  }
+  // Every visible column the same width.
+  function equalizeColumns() {
+    const next: Record<string, number> = {}
+    visibleColumns.forEach(c => { next[c.key] = 100 })
+    setWeights(prev => ({ ...prev, ...next }))
+  }
+
+  // Drag a header onto another to reorder (operates on the full order list so
+  // hidden columns keep their slots).
+  const colSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  function handleColDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    setColOrder(prev => {
+      const from = prev.indexOf(active.id as string), to = prev.indexOf(over.id as string)
+      return from < 0 || to < 0 ? prev : arrayMove(prev, from, to)
+    })
+  }
 
   const load = useCallback(async () => {
     const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
@@ -559,7 +687,7 @@ export default function JobsTrackerPage() {
           <button onClick={exportCsv} disabled={loading || visible.length === 0} className="btn-secondary" title="Download the shown jobs as a CSV (respects filters)">
             <Download className="h-4 w-4" /><span className="hidden sm:inline">Export CSV</span>
           </button>
-          <ColumnsMenu colVisible={colVisible} onToggle={toggleCol} onReset={resetCols} />
+          <ColumnsMenu colVisible={colVisible} onToggle={toggleCol} onReset={resetCols} onEqual={equalizeColumns} onAutofitAll={autofitAll} />
           <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
         </div>
       </div>
@@ -606,22 +734,27 @@ export default function JobsTrackerPage() {
       {/* Colour-by + month/year filter */}
       <JobsViewToolbar view={view} years={jobYears} count={visible.length} legend={legend} />
 
-      {/* Grid — own scroll region with a frozen header. Fixed layout + a <colgroup>
-          so each column honours its chosen width and the drag-resize sticks. */}
+      {/* Grid — fills exactly one page (fixed layout, weighted column widths that
+          sum to 100%). Headers drag to reorder; their right edge drags to resize /
+          double-clicks to auto-fit. Faint gridlines between columns. */}
       <div className="card overflow-hidden">
-        <div className="overflow-auto max-h-[calc(100vh-15rem)]">
-          <table className="text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
+        <div className="overflow-x-hidden overflow-y-auto max-h-[calc(100vh-15rem)]">
+          <table ref={tableRef} className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: 36 }} />
-              {visibleColumns.map(c => <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />)}
+              {visibleColumns.map(c => <col key={c.key} style={{ width: colWidthStyle(c.key) }} />)}
             </colgroup>
             <thead>
-              <tr>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-2 py-2.5" />
-                {visibleColumns.map(c => (
-                  <HeaderCell key={c.key} col={c} sort={sort} onSort={handleSort} onResize={startResize} />
-                ))}
-              </tr>
+              <DndContext sensors={colSensors} collisionDetection={closestCenter} onDragEnd={handleColDragEnd}>
+                <tr>
+                  <th className="sticky top-0 z-10 bg-gray-50 border-b border-r border-gray-200/80 px-2 py-2.5" />
+                  <SortableContext items={visibleColumns.map(c => c.key)} strategy={horizontalListSortingStrategy}>
+                    {visibleColumns.map((c, i) => (
+                      <SortableHeaderCell key={c.key} col={c} sort={sort} onSort={handleSort} onResize={startResize} onAutofit={autofitColumn} isLast={i === visibleColumns.length - 1} />
+                    ))}
+                  </SortableContext>
+                </tr>
+              </DndContext>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
@@ -637,11 +770,11 @@ export default function JobsTrackerPage() {
                 const c = rowColor(view.colorMode, r.client_color, r.template_color)
                 return (
                 <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle" style={c ? { backgroundColor: c.bg } : undefined}>
-                  <td className="px-2 py-1.5" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
+                  <td className="px-2 py-1.5 border-r border-gray-100" style={{ borderLeft: `4px solid ${c ? c.fg : 'transparent'}` }}>
                     <Link href={`/admin/jobs/${r.id}`} title="Open job" aria-label="Open job" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
                   </td>
-                  {visibleColumns.map(col => (
-                    <td key={col.key} className="py-1.5 overflow-hidden align-middle"><JobCell col={col} row={r} ctx={cellCtx} /></td>
+                  {visibleColumns.map((col, i) => (
+                    <td key={col.key} data-col={col.key} className={`py-1.5 overflow-hidden align-middle ${i === visibleColumns.length - 1 ? '' : 'border-r border-gray-100'}`}><JobCell col={col} row={r} ctx={cellCtx} /></td>
                   ))}
                 </tr>
                 )
