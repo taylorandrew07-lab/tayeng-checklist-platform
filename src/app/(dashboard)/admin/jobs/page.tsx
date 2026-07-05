@@ -323,7 +323,8 @@ function SortableHeaderCell({ col, sort, onSort, onResize, onAutofit, isLast }: 
   )
 }
 
-function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
+function ColumnsMenu({ narrow, colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
+  narrow: boolean
   colVisible: Record<string, boolean>
   onToggle: (k: string) => void
   onReset: () => void
@@ -340,33 +341,55 @@ function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
     return () => document.removeEventListener('pointerdown', onDoc)
   }, [open])
   const count = COLUMNS.filter(c => colVisible[c.key] !== false).length
+
+  // Shared panel contents. On desktop this sits in a button-anchored dropdown; on
+  // phones that dropdown ran off the left screen edge (anchored right-0, 240px wide,
+  // button near the middle), so there it becomes a centered popup with a backdrop.
+  const body = (
+    <>
+      {/* Sizing actions — close the menu on apply so the change is visible. */}
+      <div className="grid grid-cols-2 gap-1.5 px-1 pb-2 mb-1 border-b border-gray-100">
+        <button onClick={() => { onEqual(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Give every column the same width">Make equal</button>
+        <button onClick={() => { onAutofitAll(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Size every column to its content, still filling the page">Auto-fit all</button>
+      </div>
+      <div className="flex items-center justify-between px-2 py-1">
+        <span className="text-xs font-medium text-gray-500">Show columns ({count})</span>
+        <button onClick={onReset} className="text-[11px] text-brand-600 hover:underline">Reset</button>
+      </div>
+      <div className="max-h-72 overflow-auto">
+        {COLUMNS.map(c => (
+          <label key={c.key} className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 cursor-pointer text-sm">
+            <input type="checkbox" checked={colVisible[c.key] !== false} onChange={() => onToggle(c.key)} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+            <span className="text-gray-700">{c.label}</span>
+          </label>
+        ))}
+      </div>
+      <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100 leading-relaxed">Drag a header to reorder · drag its right edge to resize · double-click the edge to auto-fit.</p>
+    </>
+  )
+
   return (
     <div className="relative" ref={ref}>
       <button onClick={() => setOpen(o => !o)} className="btn-secondary" title="Choose which columns to show">
         <Columns3 className="h-4 w-4" /><span className="hidden sm:inline">Columns</span>
       </button>
-      {open && (
+      {open && (narrow ? (
+        // Phone: full backdrop + centered card that always fits on-screen.
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setOpen(false)} />
+          <div className="fixed z-50 left-1/2 -translate-x-1/2 top-24 w-[calc(100vw-2rem)] max-w-sm max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-xl p-2">
+            <div className="flex items-center justify-between px-1 pb-2 mb-1">
+              <span className="text-sm font-semibold text-gray-800">Columns</span>
+              <button onClick={() => setOpen(false)} className="text-sm text-gray-500 px-2 py-1 rounded-md hover:bg-gray-100">Done</button>
+            </div>
+            {body}
+          </div>
+        </>
+      ) : (
         <div className="absolute right-0 mt-2 z-30 w-60 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
-          {/* Sizing actions — close the menu on apply so the change is visible. */}
-          <div className="grid grid-cols-2 gap-1.5 px-1 pb-2 mb-1 border-b border-gray-100">
-            <button onClick={() => { onEqual(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Give every column the same width">Make equal</button>
-            <button onClick={() => { onAutofitAll(); setOpen(false) }} className="text-xs font-medium text-gray-600 rounded-md border border-gray-200 px-2 py-1.5 hover:bg-gray-50" title="Size every column to its content, still filling the page">Auto-fit all</button>
-          </div>
-          <div className="flex items-center justify-between px-2 py-1">
-            <span className="text-xs font-medium text-gray-500">Show columns ({count})</span>
-            <button onClick={onReset} className="text-[11px] text-brand-600 hover:underline">Reset</button>
-          </div>
-          <div className="max-h-72 overflow-auto">
-            {COLUMNS.map(c => (
-              <label key={c.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer text-sm">
-                <input type="checkbox" checked={colVisible[c.key] !== false} onChange={() => onToggle(c.key)} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-                <span className="text-gray-700">{c.label}</span>
-              </label>
-            ))}
-          </div>
-          <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100 leading-relaxed">Drag a header to reorder · drag its right edge to resize · double-click the edge to auto-fit.</p>
+          {body}
         </div>
-      )}
+      ))}
     </div>
   )
 }
@@ -730,7 +753,7 @@ export default function JobsTrackerPage() {
           <button onClick={exportCsv} disabled={loading || visible.length === 0} className="btn-secondary" title="Download the shown jobs as a CSV (respects filters)">
             <Download className="h-4 w-4" /><span className="hidden sm:inline">Export CSV</span>
           </button>
-          <ColumnsMenu colVisible={colVisible} onToggle={toggleCol} onReset={resetCols} onEqual={equalizeColumns} onAutofitAll={autofitAll} />
+          <ColumnsMenu narrow={narrow} colVisible={colVisible} onToggle={toggleCol} onReset={resetCols} onEqual={equalizeColumns} onAutofitAll={autofitAll} />
           <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
         </div>
       </div>
