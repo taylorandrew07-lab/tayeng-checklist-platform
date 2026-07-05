@@ -114,7 +114,7 @@ export default function AdminDashboard() {
             <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse flex-shrink-0" />
             <div className="text-sm text-yellow-800">
               <span className="font-semibold">{totalPending} pending approval{totalPending > 1 ? 's' : ''}</span>
-              {pending.users > 0 && <span className="ml-2 text-yellow-700">{pending.users} user{pending.users > 1 ? 's' : ''}</span>}
+              {pending.users > 0 && <span className="ml-2 text-yellow-700">{pending.users} team member{pending.users > 1 ? 's' : ''}</span>}
               {pending.clients > 0 && <span className="ml-2 text-yellow-700">{pending.clients} new client{pending.clients > 1 ? 's' : ''}</span>}
               {pending.changes > 0 && <span className="ml-2 text-yellow-700">{pending.changes} profile change{pending.changes > 1 ? 's' : ''}</span>}
             </div>
