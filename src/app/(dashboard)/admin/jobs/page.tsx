@@ -365,7 +365,11 @@ function ColumnsMenu({ narrow, colVisible, onToggle, onReset, onEqual, onAutofit
           </label>
         ))}
       </div>
-      <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100 leading-relaxed">Drag a header to reorder · drag its right edge to resize · double-click the edge to auto-fit.</p>
+      <p className="text-[11px] text-gray-400 px-2 pt-1.5 mt-1 border-t border-gray-100 leading-relaxed">
+        {narrow
+          ? 'Tick to show or hide a column. The grid scrolls sideways — use “Auto-fit all” or “Make equal” to size the columns.'
+          : 'Drag a header to reorder · drag its right edge to resize · double-click the edge to auto-fit.'}
+      </p>
     </>
   )
 
@@ -463,9 +467,16 @@ export default function JobsTrackerPage() {
   const [availWidth, setAvailWidth] = useState(0)
   useEffect(() => {
     const el = scrollRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const update = () => setAvailWidth(el.clientWidth)
+    if (!el) return
+    const update = () => {
+      const next = Math.max(0, Math.floor(el.clientWidth))
+      setAvailWidth(prev => prev === next ? prev : next)
+    }
     update()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
@@ -529,19 +540,28 @@ export default function JobsTrackerPage() {
   )
   const wOf = useCallback((key: string) => weights[key] ?? byKey[key].width, [weights, byKey])
   const sumVisibleW = useMemo(() => visibleColumns.reduce((s, c) => s + (weights[c.key] ?? c.width), 0), [visibleColumns, weights])
+  const desktopColWidths = useMemo(() => {
+    const widths: Record<string, number> = {}
+    if (narrow || visibleColumns.length === 0) return widths
+    const available = Math.max(0, (availWidth > 36 ? availWidth : 36 + sumVisibleW) - 36)
+    const total = sumVisibleW || 1
+    let used = 0
+    visibleColumns.forEach((c, i) => {
+      const width = i === visibleColumns.length - 1
+        ? Math.max(0, available - used)
+        : Math.max(0, available * (wOf(c.key) / total))
+      widths[c.key] = width
+      used += width
+    })
+    return widths
+  }, [availWidth, narrow, sumVisibleW, visibleColumns, wOf])
   // CSS width for a column. Desktop: a share of the row (minus the 36px open-link
   // col) so the table fills exactly one page. Narrow (phone): a real pixel width so
   // the table can grow wider than the screen and scroll sideways — readable cells
   // instead of "F…". Weights double as those px widths (never below MIN_COL_PX).
   const colWidthStyle = (key: string): string => {
     if (narrow) return `${Math.max(wOf(key), MIN_COL_PX)}px`
-    const ratio = sumVisibleW > 0 ? wOf(key) / sumVisibleW : 1 / Math.max(visibleColumns.length, 1)
-    // Real px once the container is measured (browsers honour px on <col>, not calc%);
-    // the calc() fallback only ever renders on the pre-measure first paint / SSR, and
-    // still fills the page. Shares sum to 1, so px sum to exactly (availWidth - 36).
-    return availWidth > 0
-      ? `${(ratio * (availWidth - 36)).toFixed(3)}px`
-      : `calc((100% - 36px) * ${ratio.toFixed(6)})`
+    return `${desktopColWidths[key] ?? byKey[key].width}px`
   }
   // Total table width in narrow mode (open-link col + every visible column).
   const narrowTableWidth = useMemo(
@@ -549,7 +569,12 @@ export default function JobsTrackerPage() {
     [narrow, visibleColumns, wOf],
   )
   // Live pixel width available to the weighted columns (needed for px↔weight maths).
-  const dataAvailPx = () => Math.max(1, (availWidth || tableRef.current?.clientWidth || 900) - 36)
+  const dataAvailPx = () => {
+    const width = narrow
+      ? (tableRef.current?.clientWidth || narrowTableWidth || 900)
+      : (availWidth || scrollRef.current?.clientWidth || tableRef.current?.clientWidth || 900)
+    return Math.max(1, width - 36)
+  }
 
   const toggleCol = useCallback((key: string) => {
     setColVisible(prev => {
@@ -579,7 +604,7 @@ export default function JobsTrackerPage() {
       const cs = getComputedStyle(el)
       // getComputedStyle(el).font serialises to '' in some browsers (Firefox, and
       // inconsistently in Chrome) — build it from longhands so measurement is accurate.
-      cx.font = cs.font || `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily}`.trim() || '14px system-ui'
+      cx.font = `${cs.fontStyle || 'normal'} ${cs.fontWeight || '400'} ${cs.fontSize || '14px'} ${cs.fontFamily || 'system-ui'}`
       for (const line of (el.innerText || '').split('\n')) {
         const w = cx.measureText(line.trim()).width
         if (w > max) max = w
@@ -623,9 +648,18 @@ export default function JobsTrackerPage() {
   // Double-click a divider: size that one column to its content, letting the others
   // keep their relative ratios and reflow to fill the rest of the page.
   function autofitColumn(key: string) {
+    if (visibleColumns.length <= 1) {
+      setWeights(prev => ({ ...prev, [key]: Math.max(measureColPx(key), MIN_COL_PX) }))
+      return
+    }
     const avail = dataAvailPx()
-    const target = Math.min(Math.max(measureColPx(key), MIN_COL_PX), avail - (visibleColumns.length - 1) * MIN_COL_PX)
+    const maxTarget = Math.max(MIN_COL_PX, avail - (visibleColumns.length - 1) * MIN_COL_PX)
+    const target = Math.min(Math.max(measureColPx(key), MIN_COL_PX), maxTarget)
     const Wo = visibleColumns.filter(c => c.key !== key).reduce((s, c) => s + wOf(c.key), 0)
+    if (Wo <= 0) {
+      setWeights(prev => ({ ...prev, [key]: target }))
+      return
+    }
     const wKey = avail - target > 1 ? (target * Wo) / (avail - target) : Math.max(Wo, 1) * 8
     setWeights(prev => ({ ...prev, [key]: wKey }))
   }
@@ -868,7 +902,7 @@ export default function JobsTrackerPage() {
           double-clicks to auto-fit. Faint gridlines between columns. */}
       <div className="card overflow-hidden">
         <div ref={scrollRef} className={`${narrow ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto max-h-[calc(100vh-15rem)]`}>
-          <table ref={tableRef} className={`${narrow ? '' : 'w-full'} text-sm`} style={{ tableLayout: 'fixed', width: narrow ? narrowTableWidth : undefined }}>
+          <table ref={tableRef} className={`${narrow ? '' : 'w-full'} text-sm`} style={{ tableLayout: 'fixed', width: narrow ? narrowTableWidth : availWidth || undefined }}>
             <colgroup>
               <col style={{ width: 36 }} />
               {visibleColumns.map(c => <col key={c.key} style={{ width: colWidthStyle(c.key) }} />)}
