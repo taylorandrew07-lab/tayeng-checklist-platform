@@ -309,9 +309,11 @@ function SortableHeaderCell({ col, sort, onSort, onResize, onAutofit, isLast }: 
           onDoubleClick={e => { e.preventDefault(); e.stopPropagation(); onAutofit(col.key) }}
           onClick={e => e.stopPropagation()}
           title="Drag to resize · double-click to auto-fit"
-          className="group/grip absolute -right-1 top-0 z-20 flex h-full w-2.5 cursor-col-resize items-stretch justify-center"
+          style={{ touchAction: 'none' }}
+          className="group/grip absolute -right-2 sm:-right-1 top-0 z-20 flex h-full w-5 sm:w-2.5 cursor-col-resize items-stretch justify-center"
         >
-          <span className="w-0.5 bg-transparent group-hover/grip:bg-brand-400 transition-colors" />
+          {/* Faintly visible on touch (no hover) so the resize affordance is findable. */}
+          <span className="w-0.5 bg-gray-300/70 sm:bg-transparent group-hover/grip:bg-brand-400 transition-colors" />
         </span>
       )}
     </th>
@@ -329,9 +331,10 @@ function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    function onDoc(e: Event) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    // pointerdown covers both mouse and touch (mousedown alone can miss taps).
+    document.addEventListener('pointerdown', onDoc)
+    return () => document.removeEventListener('pointerdown', onDoc)
   }, [open])
   const count = COLUMNS.filter(c => colVisible[c.key] !== false).length
   return (
@@ -369,6 +372,22 @@ function ColumnsMenu({ colVisible, onToggle, onReset, onEqual, onAutofitAll }: {
 // run over the full set; this only limits how many rows are painted at once.
 const PAGE_SIZE = 50
 
+// True on phone-width screens. The grid's "fit exactly one page" model crams 8
+// columns into ~360px (every cell truncates to "F…"), and its edge-drag resize is
+// unusable by touch — so on narrow screens we switch to a horizontally-scrollable
+// spreadsheet with real per-column widths instead.
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const on = () => setNarrow(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return narrow
+}
+
 export default function JobsTrackerPage() {
   const [rows, setRows] = useState<TrackerRow[]>([])
   const [jobTypes, setJobTypes] = useState<string[]>([])
@@ -381,6 +400,7 @@ export default function JobsTrackerPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
   const [shown, setShown] = useState(PAGE_SIZE)
   const [numberOpen, setNumberOpen] = useState(false)
+  const narrow = useIsNarrow()
   const tick = useRealtimeRefresh('jobs')
   // Suppress the realtime reload briefly after our own writes so inline edits
   // don't trigger a full-grid refresh (flicker / scroll jump) on every save.
@@ -431,8 +451,17 @@ export default function JobsTrackerPage() {
   )
   const wOf = useCallback((key: string) => weights[key] ?? byKey[key].width, [weights, byKey])
   const sumVisibleW = useMemo(() => visibleColumns.reduce((s, c) => s + (weights[c.key] ?? c.width), 0), [visibleColumns, weights])
-  // CSS width for a column as a share of the row minus the fixed 36px open-link col.
-  const colWidthStyle = (key: string): string => `calc((100% - 36px) * ${(wOf(key) / sumVisibleW).toFixed(6)})`
+  // CSS width for a column. Desktop: a share of the row (minus the 36px open-link
+  // col) so the table fills exactly one page. Narrow (phone): a real pixel width so
+  // the table can grow wider than the screen and scroll sideways — readable cells
+  // instead of "F…". Weights double as those px widths (never below MIN_COL_PX).
+  const colWidthStyle = (key: string): string =>
+    narrow ? `${Math.max(wOf(key), MIN_COL_PX)}px` : `calc((100% - 36px) * ${(wOf(key) / sumVisibleW).toFixed(6)})`
+  // Total table width in narrow mode (open-link col + every visible column).
+  const narrowTableWidth = useMemo(
+    () => narrow ? 36 + visibleColumns.reduce((s, c) => s + Math.max(wOf(c.key), MIN_COL_PX), 0) : 0,
+    [narrow, visibleColumns, wOf],
+  )
   // Live pixel width available to the weighted columns (needed for px↔weight maths).
   const dataAvailPx = () => Math.max(1, (tableRef.current?.clientWidth ?? 900) - 36)
 
@@ -738,8 +767,8 @@ export default function JobsTrackerPage() {
           sum to 100%). Headers drag to reorder; their right edge drags to resize /
           double-clicks to auto-fit. Faint gridlines between columns. */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-hidden overflow-y-auto max-h-[calc(100vh-15rem)]">
-          <table ref={tableRef} className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+        <div className={`${narrow ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto max-h-[calc(100vh-15rem)]`}>
+          <table ref={tableRef} className={`${narrow ? '' : 'w-full'} text-sm`} style={{ tableLayout: 'fixed', width: narrow ? narrowTableWidth : undefined }}>
             <colgroup>
               <col style={{ width: 36 }} />
               {visibleColumns.map(c => <col key={c.key} style={{ width: colWidthStyle(c.key) }} />)}
