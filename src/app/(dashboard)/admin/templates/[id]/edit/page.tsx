@@ -7,10 +7,11 @@ import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
-import type { TemplateStatus } from '@/lib/types/database'
+import type { TemplateStatus, JobType } from '@/lib/types/database'
 import { dirtyState } from '@/lib/dirty-state'
 import { withTimeout } from '@/lib/utils'
 import { useAutoSave } from '@/lib/useAutoSave'
+import { listJobTypes } from '@/lib/jobs/tracker'
 
 export default function EditTemplatePage() {
   const router = useRouter()
@@ -20,6 +21,8 @@ export default function EditTemplatePage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TemplateStatus>('draft')
+  const [defaultJobType, setDefaultJobType] = useState('')
+  const [jobTypes, setJobTypes] = useState<JobType[]>([])
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [pdfHideLogo, setPdfHideLogo] = useState(false)
@@ -50,7 +53,10 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections])
+  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections])
+
+  // Job types for the "default job type" picker (same active list the New Job form uses).
+  useEffect(() => { listJobTypes().then(setJobTypes).catch(() => {}) }, [])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -74,7 +80,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
+    [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -95,6 +101,7 @@ export default function EditTemplatePage() {
       setName(tmpl.name)
       setDescription(tmpl.description ?? '')
       setStatus(tmpl.status)
+      setDefaultJobType(tmpl.default_job_type ?? '')
       setAllowSurveyorStart(tmpl.allow_surveyor_start)
       setPdfIncludePhotos(tmpl.pdf_include_photos ?? false)
       setPdfHideLogo(tmpl.pdf_hide_logo ?? false)
@@ -219,6 +226,7 @@ export default function EditTemplatePage() {
           name: name.trim(),
           description: description.trim() || null,
           status,
+          default_job_type: defaultJobType || null,
           allow_surveyor_start: allowSurveyorStart,
           pdf_include_photos: pdfIncludePhotos,
           pdf_hide_logo: pdfHideLogo,
@@ -399,6 +407,15 @@ export default function EditTemplatePage() {
               <option value="active">Active</option>
               <option value="archived">Archived</option>
             </select>
+          </div>
+          <div>
+            <label className="label-base">Default job type <span className="text-gray-400 font-normal">— auto-filled on the Jobs page</span></label>
+            <select value={defaultJobType} onChange={(e) => setDefaultJobType(e.target.value)} className="input-base">
+              <option value="">None — set the type per job</option>
+              {jobTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+              {defaultJobType && !jobTypes.some(t => t.name === defaultJobType) && <option value={defaultJobType}>{defaultJobType}</option>}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Jobs created from this template get this type automatically (you can still change it on the job).</p>
           </div>
           <div className="flex items-center gap-3 pt-6">
             <label className="flex items-center gap-2 cursor-pointer select-none">

@@ -49,6 +49,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       id: jobId,
       title: j.title,
       template_id: j.template_id,
+      job_type: j.job_type ?? null,
       vessel_name: j.vessel_name ?? null,
       vessel_id: vesselId,
       surveyor_name: j.surveyor_name ?? null,

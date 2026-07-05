@@ -119,6 +119,7 @@ export default function SurveyorNewChecklistPage() {
       const startedAt = new Date(`${scheduledDate}T12:00:00`).toISOString()
       const job = {
         id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
+        job_type: selectedTemplate.default_job_type ?? null,
         vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,

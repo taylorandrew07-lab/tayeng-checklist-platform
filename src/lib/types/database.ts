@@ -279,6 +279,10 @@ export interface ChecklistTemplate {
   restored_at: string | null
   /** Curated palette key (src/lib/jobs/colors.ts) for colour-coding jobs by type. */
   color: string | null
+  /** Default job type (mirrors jobs.job_type) auto-filled on the New Job form when
+   *  this template is picked, so routine jobs don't need the type set by hand.
+   *  null = no default; chosen from the job_types list. See migration 131. */
+  default_job_type: string | null
   created_at: string
   updated_at: string
 }

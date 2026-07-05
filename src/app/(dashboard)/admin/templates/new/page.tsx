@@ -6,9 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
-import type { TemplateStatus, ConditionalLogic } from '@/lib/types/database'
+import type { TemplateStatus, ConditionalLogic, JobType } from '@/lib/types/database'
 import { dirtyState } from '@/lib/dirty-state'
 import { withTimeout } from '@/lib/utils'
+import { listJobTypes } from '@/lib/jobs/tracker'
 
 // --- Remap helpers ---
 function remapConditional(
@@ -37,6 +38,8 @@ export default function NewTemplatePage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TemplateStatus>('draft')
+  const [defaultJobType, setDefaultJobType] = useState('')
+  const [jobTypes, setJobTypes] = useState<JobType[]>([])
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
@@ -56,7 +59,10 @@ export default function NewTemplatePage() {
   useEffect(() => {
     if (!loadedRef.current) return
     setIsDirty(true)
-  }, [name, description, status, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, sections])
+  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, sections])
+
+  // Job types for the "default job type" picker (same active list the New Job form uses).
+  useEffect(() => { listJobTypes().then(setJobTypes).catch(() => {}) }, [])
 
   // Sync to global dirty-state so sidebar links respect it
   useEffect(() => {
@@ -91,6 +97,7 @@ export default function NewTemplatePage() {
       if (tmpl) {
         setName(`${tmpl.name} (Copy)`)
         setDescription(tmpl.description ?? '')
+        setDefaultJobType(tmpl.default_job_type ?? '')
 
         // Build idMap: oldDbId -> newLocalUUID so we can remap conditional_logic
         const idMap: Record<string, string> = {}
@@ -188,6 +195,7 @@ export default function NewTemplatePage() {
         name: name.trim(),
         description: description.trim() || null,
         status,
+        default_job_type: defaultJobType || null,
         allow_surveyor_start: allowSurveyorStart,
         pdf_include_photos: pdfIncludePhotos,
         pdf_disclaimer: pdfDisclaimer.trim() || null,
@@ -348,6 +356,15 @@ export default function NewTemplatePage() {
               <option value="active">Active</option>
               <option value="archived">Archived</option>
             </select>
+          </div>
+          <div>
+            <label className="label-base">Default job type <span className="text-gray-400 font-normal">— auto-filled on the Jobs page</span></label>
+            <select value={defaultJobType} onChange={(e) => setDefaultJobType(e.target.value)} className="input-base">
+              <option value="">None — set the type per job</option>
+              {jobTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+              {defaultJobType && !jobTypes.some(t => t.name === defaultJobType) && <option value={defaultJobType}>{defaultJobType}</option>}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Jobs created from this template get this type automatically (you can still change it on the job).</p>
           </div>
           <div className="flex items-center gap-3 pt-6">
             <label className="flex items-center gap-2 cursor-pointer select-none">

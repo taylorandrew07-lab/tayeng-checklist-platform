@@ -92,6 +92,20 @@ export default function NewJobPage() {
 
   function togglePicked(id: string) { setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }) }
 
+  // Picking a template auto-fills its default job type (mig 131) so routine jobs
+  // don't need the type set by hand. Only overrides when the template carries one —
+  // a manually-chosen type survives switching to a template with no default.
+  function handleTemplateChange(id: string) {
+    setTemplateId(id)
+    const tmpl = templates.find(t => t.id === id)
+    if (tmpl?.default_job_type) {
+      setShowNewJobType(false)
+      setJobStage('')
+      setCargoType('')
+      setJobType(tmpl.default_job_type)
+    }
+  }
+
   async function addNewJobType() {
     const name = newJobTypeName.trim()
     if (!name) return
@@ -232,7 +246,7 @@ export default function NewJobPage() {
 
         <div>
           <label className="label-base">Checklist template <span className="text-gray-400 font-normal">(optional — leave empty for a report-only job)</span></label>
-          <select value={templateId} onChange={e => setTemplateId(e.target.value)} className="input-base">
+          <select value={templateId} onChange={e => handleTemplateChange(e.target.value)} className="input-base">
             <option value="">No checklist (report only)</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
