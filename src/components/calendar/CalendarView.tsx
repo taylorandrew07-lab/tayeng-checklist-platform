@@ -77,6 +77,10 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
   const [adminLeaveOpen, setAdminLeaveOpen] = useState(false)
   const [eventEdit, setEventEdit] = useState<CalendarEventRow | 'new' | null>(null)
   const tick = useRealtimeRefresh('calendar_events')
+  // Also refresh when jobs change — the grid renders the get_calendar_jobs feed, so
+  // without this a concurrently created/rescheduled job stays stale (and the
+  // subscribed calendar_events channel suppresses the fallback poll).
+  const jobTick = useRealtimeRefresh('jobs')
   const loadedOnce = useRef(false)
 
   const days = useMemo(() => eachDayOfInterval({
@@ -97,7 +101,7 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
     setLoading(false)
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void reload() }, [cursor, tick, isAdmin])
+  useEffect(() => { void reload() }, [cursor, tick, jobTick, isAdmin])
 
   // Multi-day jobs paint across every day of their span (scheduled_date → end_date).
   function jobsOn(dayStr: string) {

@@ -105,7 +105,10 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
 
   const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
     const active = clientRates.filter(r => r.is_active)
-    const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type) ?? null
+    // per_km rates drive the separate mileage line only — never the main survey
+    // line (else a client with just a per_km rate gets a bogus qty-1 line).
+    const billable = active.filter(r => r.rate_type !== 'per_km')
+    const rate = billable.find(r => r.job_type === job.job_type) ?? billable.find(r => !r.job_type) ?? null
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
     const hourly = rate?.rate_type === 'hourly'
     const perUnit = rate?.rate_type === 'per_unit'
@@ -187,14 +190,14 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
 
   // The note saved against this client's rate for a job's type (e.g. initial/final fees).
   function rateNoteFor(job: InvoiceableJob): string | null {
-    const active = rates.filter(r => r.is_active)
+    const active = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
     return (active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type))?.notes ?? null
   }
 
   // When the matched rate is hourly, show that the line's qty came from the job's
   // billable hours (checklist total or labour ledger) — so it's clear the chain is linked.
   function hoursHintFor(job: InvoiceableJob): string | null {
-    const active = rates.filter(r => r.is_active)
+    const active = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type)
     if (rate?.rate_type === 'per_unit') {
       const unit = rate.unit_label || 'unit'
@@ -212,14 +215,24 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // Money-safety: every line is summed under one invoice currency, so block creating
     // an invoice where a selected job's rate is in a DIFFERENT currency (no conversion).
     const active = rates.filter(r => r.is_active)
+    const billable = active.filter(r => r.rate_type !== 'per_km')
     const mismatch = orderedLines.find(l => {
-      const rate = active.find(r => r.job_type === l.job.job_type) ?? active.find(r => !r.job_type)
+      const rate = billable.find(r => r.job_type === l.job.job_type) ?? billable.find(r => !r.job_type)
       return rate && rate.currency !== currency
     })
     if (mismatch) {
-      const rate = active.find(r => r.job_type === mismatch.job.job_type) ?? active.find(r => !r.job_type)
+      const rate = billable.find(r => r.job_type === mismatch.job.job_type) ?? billable.find(r => !r.job_type)
       toast.error(`${mismatch.job.job_type ?? 'A job'} is rated in ${rate?.currency}, but this invoice is ${currency}. Match the currency (or remove that job) before billing.`)
       return
+    }
+    // Same check for the auto-mileage lines, which are priced from a per_km rate
+    // that lives outside orderedLines and was previously never currency-checked.
+    if (extra.some(l => l.auto_mileage)) {
+      const kmMismatch = active.find(r => r.rate_type === 'per_km' && r.currency !== currency)
+      if (kmMismatch) {
+        toast.error(`Mileage is rated in ${kmMismatch.currency}, but this invoice is ${currency}. Match the currency (or remove the mileage line) before billing.`)
+        return
+      }
     }
     setSaving(true)
     const res = await createConsolidatedInvoice({

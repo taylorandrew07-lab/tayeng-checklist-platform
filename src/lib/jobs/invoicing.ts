@@ -3,7 +3,7 @@
 // the invoicing.view permission (enforced by RLS — this layer just queries).
 
 import { createClient } from '@/lib/supabase/client'
-import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
+import { logActivity, setWorkflowStatus, WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import { sanitizeStorageName } from '@/lib/utils'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
@@ -16,7 +16,7 @@ export async function getAppSettings(): Promise<AppSettings | null> {
   const { data } = await createClient().from('app_settings').select('*').eq('id', true).maybeSingle()
   return (data as AppSettings) ?? null
 }
-export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'overdue_days' | 'bank_details_default'>>): Promise<{ error?: string }> {
+export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'overdue_days' | 'bank_details_default' | 'surveyor_km_rate' | 'surveyor_km_currency'>>): Promise<{ error?: string }> {
   const { error } = await createClient().from('app_settings').update(patch).eq('id', true)
   return { error: error?.message }
 }
@@ -85,14 +85,22 @@ export async function setInvoiceAndJobsStatus(invoiceId: string, status: 'sent' 
   const res = await setInvoiceStatus(invoiceId, status)
   if (res.error) return res
   const supabase = createClient()
-  const ids = new Set<string>()
-  const { data: linked } = await supabase.from('jobs').select('id').eq('invoice_id', invoiceId)
-  ;(linked ?? []).forEach((j: any) => ids.add(j.id))
+  const byId = new Map<string, string>() // job id → current workflow_status
+  const { data: linked } = await supabase.from('jobs').select('id, workflow_status').eq('invoice_id', invoiceId)
+  ;(linked ?? []).forEach((j: any) => byId.set(j.id, j.workflow_status))
   const { data: inv } = await supabase.from('invoices').select('job_id').eq('id', invoiceId).maybeSingle()
-  if (inv?.job_id) ids.add(inv.job_id)
-  // Advance the jobs concurrently rather than serially — each setWorkflowStatus
-  // still writes its own activity_log entry, but the round-trips no longer stack.
-  await Promise.all([...ids].map(id => setWorkflowStatus(id, status)))
+  if (inv?.job_id && !byId.has(inv.job_id)) {
+    const { data: jr } = await supabase.from('jobs').select('workflow_status').eq('id', inv.job_id).maybeSingle()
+    if (jr) byId.set(inv.job_id, jr.workflow_status)
+  }
+  // FORWARD-ONLY: only advance jobs whose status is BEFORE the target. Without this
+  // a plain setWorkflowStatus would drag an already-'closed' job (which sorts after
+  // sent/paid) backward, re-opening its surveyor edits. Concurrent — each write
+  // still logs its own activity entry.
+  const order = WORKFLOW_ORDER as readonly string[]
+  const target = order.indexOf(status)
+  const toAdvance = [...byId.entries()].filter(([, s]) => order.indexOf(s) < target).map(([id]) => id)
+  await Promise.all(toAdvance.map(id => setWorkflowStatus(id, status)))
   return {}
 }
 

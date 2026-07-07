@@ -473,7 +473,7 @@ export interface Invoice {
 }
 export interface InvoiceLineItem { id: string; invoice_id: string; job_id: string | null; description: string; qty: number; unit_price: number; amount: number; sort: number }
 export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
-export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null }
+export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null; surveyor_km_rate: number; surveyor_km_currency: Currency }
 
 // Selectable bank accounts shown on invoices (migration 080). Admin-managed.
 export interface BankAccount {

@@ -37,13 +37,16 @@ export interface PersonDetail {
 
 export async function getPersonDetail(id: string): Promise<PersonDetail | null> {
   const supabase = createClient()
-  const [{ data: profile }, { data: js }] = await Promise.all([
+  const [{ data: profile }, { data: js }, { data: kmRows }, { data: settings }] = await Promise.all([
     supabase.from('profiles')
       .select('id, full_name, email, phone, role, display_title, is_active, is_super_admin, employee_number, vehicle_number')
       .eq('id', id).single(),
     supabase.from('job_surveyors')
       .select('regular_hours, overtime_hours, regular_pay, overtime_pay, pay_currency, job:jobs(id, report_number, title, workflow_status, scheduled_date, created_at)')
       .eq('surveyor_id', id),
+    // Travel: all this surveyor's km trips, priced by the company rate below.
+    supabase.from('job_surveyor_km').select('km, js:job_surveyors!inner(surveyor_id)').eq('js.surveyor_id', id),
+    supabase.from('app_settings').select('surveyor_km_rate, surveyor_km_currency').eq('id', true).maybeSingle(),
   ])
   if (!profile) return null
 
@@ -62,6 +65,15 @@ export async function getPersonDetail(id: string): Promise<PersonDetail | null> 
     })
   }
   jobs.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+
+  // Travel pay = total km × the company rate, added to the configured currency
+  // bucket so it lines up with the Finance Overview labour totals.
+  const kmTotal = ((kmRows ?? []) as any[]).reduce((s, r) => s + Number(r.km ?? 0), 0)
+  const kmPay = kmTotal * Number(settings?.surveyor_km_rate ?? 0)
+  if (kmPay) {
+    const kmCur = (settings?.surveyor_km_currency as string) ?? 'TTD'
+    pay.set(kmCur, (pay.get(kmCur) ?? 0) + kmPay)
+  }
 
   return {
     profile: profile as PersonProfile,

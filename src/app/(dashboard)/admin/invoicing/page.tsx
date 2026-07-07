@@ -494,18 +494,26 @@ function SettingsTab() {
   const [taxName, setTaxName] = useState('')
   const [taxRate, setTaxRate] = useState('')
   const [overdue, setOverdue] = useState('')
+  const [kmRate, setKmRate] = useState('')
+  const [kmCurrency, setKmCurrency] = useState<Currency>('TTD')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     getAppSettings().then(s => {
       setSettings(s)
-      if (s) { setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days)) }
+      if (s) {
+        setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days))
+        setKmRate(String(s.surveyor_km_rate ?? 0)); setKmCurrency(s.surveyor_km_currency ?? 'TTD')
+      }
     })
   }, [])
 
   async function save() {
     setSaving(true)
-    const res = await updateAppSettings({ default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0 })
+    const res = await updateAppSettings({
+      default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0,
+      surveyor_km_rate: Number(kmRate) || 0, surveyor_km_currency: kmCurrency,
+    })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     toast.success('Settings saved')
@@ -538,6 +546,23 @@ function SettingsTab() {
         <label className="label-base">Overdue after (days)</label>
         <input type="number" min={0} value={overdue} onChange={e => setOverdue(e.target.value)} className="input-base" />
         <p className="text-[11px] text-gray-400 mt-1">A sent invoice is flagged overdue this many days past its due date.</p>
+      </div>
+      <div className="pt-4 border-t border-gray-100">
+        <h3 className="font-medium text-gray-900">Surveyor travel pay</h3>
+        <p className="text-xs text-gray-400 mb-3">What you pay surveyors per kilometre driven. Applies to every job; the total shows in the <strong>Pay</strong> column of the Labour table above.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label-base">Rate per km</label>
+            <input type="number" min={0} step="0.01" value={kmRate} onChange={e => setKmRate(e.target.value)} className="input-base" placeholder="0.00" />
+          </div>
+          <div>
+            <label className="label-base">Currency</label>
+            <select value={kmCurrency} onChange={e => setKmCurrency(e.target.value as Currency)} className="input-base">
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1">Set the rate to 0 to pay no travel. Distance is logged per surveyor on each job.</p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary py-2 px-4 text-sm">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save settings</button>
       </div>
