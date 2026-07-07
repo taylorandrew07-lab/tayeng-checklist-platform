@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { JobPDF } from '@/lib/pdf/JobPDF'
+import { BorescopingReportPDF, BORESCOPING_TEMPLATE_ID } from '@/lib/pdf/BorescopingReportPDF'
 import React from 'react'
 import sharp from 'sharp'
 import exifr from 'exifr'
@@ -191,10 +192,15 @@ export async function GET(
   // Render PDF. Wrap so a render failure returns a clean JSON 500 (which the client
   // helper turns into a friendly "Could not generate the report") instead of an
   // unhandled crash that the browser might render as a broken page.
+  // Standalone reports: signature templates that render through their OWN dedicated
+  // component (isolated from the generic renderer so cross-template edits can't touch
+  // them). Selected by template id — everything else uses the generic JobPDF.
+  const PdfComponent = job.template_id === BORESCOPING_TEMPLATE_ID ? BorescopingReportPDF : JobPDF
+
   let pdfBuffer: Buffer
   try {
     pdfBuffer = await renderToBuffer(
-      React.createElement(JobPDF, {
+      React.createElement(PdfComponent, {
         job,
         sections: processedSections,
         fieldValues: vals,
