@@ -155,6 +155,9 @@ export interface CalendarJob {
   job_number: string | null
   status: string
   scheduled_date: string
+  end_date: string | null
+  start_time: string | null
+  end_time: string | null
   vessel_name: string | null
   surveyor_name: string | null
   client_name: string | null
@@ -354,6 +357,14 @@ export interface Job {
   // End of a multi-day job (migration 111). scheduled_date is the start ("from"),
   // end_date is the "to"; null = single-day job.
   end_date: string | null
+  // Optional time-of-day window (migration 132), wall-clock 'HH:MM:SS'. null = all-day.
+  // Composed with the dates for surveyor double-booking detection.
+  start_time: string | null
+  end_time: string | null
+  // Provenance (migration 132): 'manual' today; 'whatsapp'/'email'/'ai' when the AI
+  // intake seam lands. source_ref holds the future source message/thread id.
+  source: 'manual' | 'whatsapp' | 'email' | 'ai'
+  source_ref: string | null
   started_at: string | null
   submitted_at: string | null
   completed_at: string | null

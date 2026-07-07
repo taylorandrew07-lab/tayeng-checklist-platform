@@ -15,6 +15,8 @@ import {
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type KmEntry,
 } from '@/lib/jobs/tracker'
+import { checkSurveyorConflicts } from '@/lib/jobs/conflicts'
+import { notifyAssignment } from '@/lib/jobs/notify'
 import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
 
 function activityText(a: ActivityLogRow): string {
@@ -431,9 +433,29 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   async function add() {
     if (!addId) return
     setBusy(true)
+    // Warn (but allow) if this surveyor is already booked on an overlapping job.
+    if (job.scheduled_date) {
+      const clashes = await checkSurveyorConflicts(addId, {
+        scheduled_date: job.scheduled_date, end_date: job.end_date,
+        start_time: job.start_time, end_time: job.end_time,
+      }, job.id)
+      if (clashes.length) {
+        setBusy(false)
+        const name = accounts.find(a => a.id === addId)?.full_name ?? 'This surveyor'
+        const list = clashes.map(c => `${c.vessel_name ?? c.title} (${c.scheduled_date}${c.start_time ? ` ${c.start_time.slice(0, 5)}` : ', all-day'})`).join('; ')
+        const ok = await confirmDialog({ message: `${name} already has ${list}, which overlaps this job. Assign anyway?`, confirmLabel: 'Assign anyway' })
+        if (!ok) return
+        setBusy(true)
+      }
+    }
     const res = await addJobSurveyor(job.id, addId)
+    if (res.error) { setBusy(false); toast.error(res.error); return }
+    // Let the newly-added surveyor know (in-app + email). Best-effort.
+    await notifyAssignment(
+      { id: job.id, title: job.title, scheduled_date: job.scheduled_date, start_time: job.start_time, vessel_name: job.vessel_name },
+      [addId],
+    )
     setBusy(false)
-    if (res.error) { toast.error(res.error); return }
     setAddId(''); onChanged(); reload()
   }
   async function remove(row: JobSurveyorRow) {

@@ -12,6 +12,7 @@ import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
+import UpcomingJobs from '@/components/dashboard/UpcomingJobs'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
@@ -214,6 +215,10 @@ export default function SurveyorDashboard() {
               <p className="text-sm text-gray-500 mt-1">Submitted</p>
             </div>
           </div>
+
+          {/* Your upcoming jobs in date order (scheduled soonest first), with a
+              double-booking flag if two overlap. RLS scopes this to your jobs. */}
+          <UpcomingJobs hrefBase="/surveyor/jobs" />
 
           {/* Field-first: unsynced + active jobs sit right under the header. */}
           {localJobs.length > 0 && (

@@ -6,9 +6,12 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
-import { listJobTypes, addJobType, listSurveyorAccounts, logActivity, type SurveyorAccount } from '@/lib/jobs/tracker'
+import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { titleCaseVesselName } from '@/lib/utils'
+import { createDraftJob } from '@/lib/jobs/drafts'
+import { notifyAssignment } from '@/lib/jobs/notify'
+import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
 // Local yyyy-mm-dd (for the <input type=date> default — avoids the UTC off-by-one
@@ -59,6 +62,9 @@ export default function NewJobPage() {
   const [billingMode, setBillingMode] = useState<'overtime' | 'regular' | 'fixed'>('regular')
   const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
   const [endDate, setEndDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [conflicts, setConflicts] = useState<Map<string, JobConflict[]>>(new Map())
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
   const [notes, setNotes] = useState('')
@@ -89,6 +95,24 @@ export default function NewJobPage() {
     }
     loadData()
   }, [])
+
+  // Double-booking check — whenever the schedule or picked surveyors change, ask
+  // the DB which of them already have an overlapping job. Debounced; warn-only.
+  useEffect(() => {
+    // checkConflictsForSurveyors returns an empty map when there's no date or no
+    // surveyor picked, so this also clears stale warnings — no synchronous setState.
+    const ids = Array.from(picked)
+    const schedule = {
+      scheduled_date: scheduledDate,
+      end_date: endDate || null,
+      start_time: startTime || null,
+      end_time: endTime || null,
+    }
+    const t = setTimeout(() => {
+      checkConflictsForSurveyors(ids, schedule).then(setConflicts)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [scheduledDate, endDate, startTime, endTime, picked])
 
   function togglePicked(id: string) { setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }) }
 
@@ -123,6 +147,8 @@ export default function NewJobPage() {
     if (!vesselName.trim()) { setError('Vessel name is required'); return }
     if (!scheduledDate) { setError('Please choose a survey date'); return }
     if (endDate && endDate < scheduledDate) { setError('The end date can’t be before the start date'); return }
+    // On a single-day job, the end time must be after the start time.
+    if (startTime && endTime && !endDate && endTime <= startTime) { setError('The end time must be after the start time'); return }
     setSaving(true); setError(null)
 
     const supabase = createClient()
@@ -144,41 +170,45 @@ export default function NewJobPage() {
     // Link to the vessels directory (create on first use), keeping vessel_name as snapshot.
     const vesselId = await findOrCreateVessel(vessel)
 
-    const { data: job, error: jobErr } = await supabase.from('jobs').insert({
-      title,
-      template_id: templateId || null,
-      job_type: jobType,
-      vessel_name: vessel,
-      vessel_id: vesselId,
-      surveyor_name: primary?.full_name ?? null,
-      client_id: finalClientId,
-      created_by: user.id,
-      assigned_to: primary?.id ?? null,
-      workflow_status: ids.length ? 'assigned' : 'new',
-      billing_mode: billingMode,
-      is_overtime: billingMode === 'overtime',
-      notes: notes.trim() || null,
-      job_stage: jobStage || null,
-      cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
-      report_not_required: reportNotRequired,
-      scheduled_date: scheduledDate,
-      end_date: endDate || null,
-      started_at: new Date(`${scheduledDate}T12:00:00`).toISOString(),
-    }).select().single()
+    // All job creation flows through the createDraftJob seam so the AI intake
+    // path can later reuse it verbatim. Manual entry → source 'manual'.
+    const { job, assignError, error: jobErr } = await createDraftJob(supabase, {
+      job: {
+        title,
+        template_id: templateId || null,
+        job_type: jobType,
+        vessel_name: vessel,
+        vessel_id: vesselId,
+        surveyor_name: primary?.full_name ?? null,
+        client_id: finalClientId,
+        created_by: user.id,
+        assigned_to: primary?.id ?? null,
+        workflow_status: ids.length ? 'assigned' : 'new',
+        billing_mode: billingMode,
+        is_overtime: billingMode === 'overtime',
+        notes: notes.trim() || null,
+        job_stage: jobStage || null,
+        cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
+        report_not_required: reportNotRequired,
+        scheduled_date: scheduledDate,
+        end_date: endDate || null,
+        start_time: startTime || null,
+        end_time: endTime || null,
+        started_at: new Date(`${scheduledDate}T${startTime || '12:00'}:00`).toISOString(),
+      },
+      surveyorIds: ids,
+      actorId: user.id,
+      clientId: finalClientId,
+    }, 'manual')
 
-    if (jobErr || !job) { setError(jobErr?.message ?? 'Failed to create job'); setSaving(false); return }
+    if (jobErr || !job) { setError(jobErr ?? 'Failed to create job'); setSaving(false); return }
+    if (assignError) toast.error(`Job created, but assigning surveyors failed: ${assignError} — add them on the job page.`)
 
-    if (ids.length) {
-      // Upsert: the mig-124 trigger already added the primary (assigned_to) row on
-      // job insert — a plain insert would trip UNIQUE(job_id, surveyor_id).
-      const { error: jsErr } = await supabase.from('job_surveyors')
-        .upsert(ids.map(id => ({ job_id: job.id, surveyor_id: id, created_by: user.id })), { onConflict: 'job_id,surveyor_id', ignoreDuplicates: true })
-      if (jsErr) toast.error(`Job created, but assigning surveyors failed: ${jsErr.message} — add them on the job page.`)
-    }
-    if (finalClientId) {
-      await supabase.from('client_job_permissions').insert({ client_id: finalClientId, job_id: job.id, can_view_status: true, can_view_pdf: false, can_view_checklist_details: false })
-    }
-    await logActivity('job', job.id, 'created', { report_number: job.report_number })
+    // Let each assigned surveyor know, in-app + email. Best-effort.
+    await notifyAssignment(
+      { id: job.id, title: job.title, scheduled_date: scheduledDate, start_time: startTime || null, vessel_name: vessel },
+      ids,
+    )
 
     toast.success(`Job created — ${job.report_number ?? job.title}`)
     router.push(`/admin/jobs/${job.id}`)
@@ -273,7 +303,33 @@ export default function NewJobPage() {
             <input type="date" value={endDate} min={scheduledDate} onChange={e => setEndDate(e.target.value)} className="input-base" />
             <p className="text-xs text-gray-400 mt-1">For multi-day jobs (e.g. a 7-day loadout). Leave blank for a single day.</p>
           </div>
+          <div>
+            <label className="label-base">Start time <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Leave blank for an all-day booking.</p>
+          </div>
+          <div>
+            <label className="label-base">End time <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Used to spot overlapping surveyor bookings.</p>
+          </div>
         </div>
+
+        {conflicts.size > 0 && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 space-y-1.5 animate-rise">
+            <p className="text-sm font-semibold text-amber-800">Possible double-booking</p>
+            {Array.from(conflicts.entries()).map(([sid, clashes]) => {
+              const name = surveyors.find(s => s.id === sid)?.full_name ?? 'This surveyor'
+              return (
+                <p key={sid} className="text-xs text-amber-700">
+                  <span className="font-medium">{name}</span> already has{' '}
+                  {clashes.map(c => `${c.vessel_name ?? c.title} (${c.scheduled_date}${c.start_time ? ` ${c.start_time.slice(0, 5)}` : ', all-day'})`).join('; ')}.
+                </p>
+              )
+            })}
+            <p className="text-xs text-amber-600 pt-0.5">You can still assign — this is just a heads-up.</p>
+          </div>
+        )}
 
         <div>
           <label className="label-base">How is this job billed?</label>

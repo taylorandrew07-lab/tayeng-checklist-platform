@@ -39,6 +39,17 @@ const JOB_STATUS_COLOR: Record<string, string> = {
 }
 const jobColor = (status: string) => JOB_STATUS_COLOR[status] ?? JOB_COLOR
 
+const hhmm = (t: string | null) => t?.slice(0, 5) ?? null
+// A short time-window label for a job: "08:00–14:00", "from 08:00", or "All day".
+function jobTimeLabel(j: CalendarJob): string {
+  const s = hhmm(j.start_time), e = hhmm(j.end_time)
+  const span = j.end_date && j.end_date !== j.scheduled_date ? ` (${j.scheduled_date} → ${j.end_date})` : ''
+  if (s && e) return `${s}–${e}${span}`
+  if (s) return `from ${s}${span}`
+  if (e) return `until ${e}${span}`
+  return `All day${span}`
+}
+
 const LEGEND: { color: string; label: string }[] = [
   { color: '#3b82f6', label: 'Job — in progress' },
   { color: '#8b5cf6', label: 'Job — report ready' },
@@ -88,7 +99,10 @@ export default function CalendarView({ isAdmin, canRequestLeave }: { isAdmin: bo
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void reload() }, [cursor, tick, isAdmin])
 
-  function jobsOn(dayStr: string) { return jobs.filter(j => j.scheduled_date === dayStr) }
+  // Multi-day jobs paint across every day of their span (scheduled_date → end_date).
+  function jobsOn(dayStr: string) {
+    return jobs.filter(j => j.scheduled_date <= dayStr && (j.end_date ?? j.scheduled_date) >= dayStr)
+  }
   function eventsOn(dayStr: string) {
     return events.filter(e => e.start_date <= dayStr && e.end_date >= dayStr)
   }
@@ -237,7 +251,7 @@ function DayModal({ dayStr, jobs, events, isAdmin, onClose, onEditEvent, onChang
         {jobs.map(j => (
           <div key={j.id} className="rounded-lg border border-gray-200 p-3" style={{ borderLeftWidth: 3, borderLeftColor: jobColor(j.status) }}>
             <p className="font-medium text-gray-900 flex items-center gap-2"><Briefcase className="h-4 w-4" style={{ color: jobColor(j.status) }} />{j.vessel_name ?? j.title}<span className="text-xs text-gray-400">{j.job_number}</span></p>
-            <p className="text-xs text-gray-500 mt-0.5">{j.surveyor_name ?? 'No surveyor'} · {j.client_name ?? 'No client'} · {j.status}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{jobTimeLabel(j)} · {j.surveyor_name ?? 'No surveyor'} · {j.client_name ?? 'No client'} · {j.status}</p>
           </div>
         ))}
       </div>
