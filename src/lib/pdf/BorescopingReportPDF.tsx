@@ -158,11 +158,11 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 6.5, color: '#94a3b8' },
 })
 
-// The single label-column width shared by every Job Details row. Because primary rows
-// (Vessel/Client/Surveyors) and indented spec/detail rows all reserve the SAME label
-// width, their values line up in one column. Indented rows shift only their label text.
-const LABEL_COL = 150
-const SUB_INDENT = 12
+// The single label-column width shared by every Job Details row: every label starts at
+// the same left edge (one clean column) and every value starts at the same x (LABEL_COL
+// from the margin). Wider column ⇒ the value column sits further right, spreading the
+// block across the page instead of bunching it on the left.
+const LABEL_COL = 210
 
 // A field is "job-backed" when its value comes from the job record (vessel name,
 // client, surveyor) rather than a typed answer — those render as injected rows.
@@ -175,11 +175,12 @@ function resolveDropdownValue(field: any, rawValue: string): string {
   return opt?.label ?? rawValue
 }
 
-// One Job Details row: fixed label column (optionally indented) + value column.
-function DetailRow({ label, value, indent = false }: { label: string; value: React.ReactNode; indent?: boolean }) {
+// One Job Details row: fixed label column + value column. Every label shares the same
+// left edge, so the whole left side reads as one aligned column.
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <View style={styles.detailRow}>
-      <View style={{ width: LABEL_COL, paddingRight: 6, paddingLeft: indent ? SUB_INDENT : 0 }}>
+      <View style={{ width: LABEL_COL, paddingRight: 6 }}>
         <Text style={styles.detailLabelText}>{label}</Text>
       </View>
       <View style={styles.detailValue}>
@@ -352,10 +353,10 @@ export function BorescopingReportPDF({
                   </View>
                   {job.vessel_name ? <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} /> : null}
                 </View>
-                {specFields.map(f => <DetailRow key={f.id} label={f.label} value={detailFieldValue(f, fieldValues, arrayValues)} indent />)}
+                {specFields.map(f => <DetailRow key={f.id} label={f.label} value={detailFieldValue(f, fieldValues, arrayValues)} />)}
                 {job.client?.name && !hideClient ? <DetailRow label="Client" value={job.client.name} /> : null}
                 {surveyors.length > 0 && !hideSurveyor ? <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} /> : null}
-                {restFields.map(f => <DetailRow key={f.id} label={f.label} value={detailFieldValue(f, fieldValues, arrayValues)} indent />)}
+                {restFields.map(f => <DetailRow key={f.id} label={f.label} value={detailFieldValue(f, fieldValues, arrayValues)} />)}
                 {preambleNode}
               </View>
             )
