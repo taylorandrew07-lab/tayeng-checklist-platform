@@ -64,10 +64,16 @@ export async function listJobActivity(jobId: string): Promise<(ActivityLogRow & 
 export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Promise<{ error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  // Stamp on entry; on a BACKWARD move, clear any stamp now ahead of the new status
+  // so closed_at/paid_at/approved never contradict a job that was pulled back (L3).
+  const ni = WORKFLOW_ORDER.indexOf(next)
   const patch: Record<string, any> = { workflow_status: next }
   if (next === 'approved') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
+  else if (ni < WORKFLOW_ORDER.indexOf('approved')) { patch.report_approved_at = null; patch.report_approved_by = null }
   if (next === 'paid') patch.paid_at = new Date().toISOString()
+  else if (ni < WORKFLOW_ORDER.indexOf('paid')) patch.paid_at = null
   if (next === 'closed') { patch.closed_at = new Date().toISOString(); patch.closed_by = user?.id ?? null }
+  else if (ni < WORKFLOW_ORDER.indexOf('closed')) { patch.closed_at = null; patch.closed_by = null }
   // .select('id') so an RLS-filtered 0-row update (e.g. a read-only office user) is
   // detected as a denial instead of silently reporting success.
   const { data, error } = await supabase.from('jobs').update(patch).eq('id', jobId).select('id')
@@ -94,6 +100,26 @@ export async function advanceWorkflowTo(jobId: string, target: WorkflowStatus): 
     .not('workflow_status', 'in', `(${atOrAfter.join(',')})`)
     .select('id')
   if (data && data.length) await logActivity('job', jobId, `workflow:${target}`)
+}
+
+/** Switching a job to fixed-price means it has no billable hours — clear the
+ *  logged regular/OT hours + OT shift log for every surveyor on the job so stale
+ *  hours can't keep paying through the labour metrics (audit M6). Distance (km) is
+ *  kept — travel is paid regardless of billing mode. Destructive; call behind a
+ *  confirm. The mig-135 trigger keeps overtime_hours in step as the log is cleared. */
+export async function clearJobLabourForFixed(jobId: string): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: rows, error: rErr } = await supabase.from('job_surveyors').select('id').eq('job_id', jobId)
+  if (rErr) return { error: rErr.message }
+  const ids = (rows ?? []).map((r: any) => r.id)
+  if (ids.length) {
+    // Delete the OT shift log first — else metrics_labour re-derives OT from it.
+    const { error: oErr } = await supabase.from('job_surveyor_overtime').delete().in('job_surveyor_id', ids)
+    if (oErr) return { error: oErr.message }
+    const { error: hErr } = await supabase.from('job_surveyors').update({ regular_hours: 0, overtime_hours: 0 }).eq('job_id', jobId)
+    if (hErr) return { error: hErr.message }
+  }
+  return {}
 }
 
 // ── Client-facing status (simplified — hides billing internals) ─────────────

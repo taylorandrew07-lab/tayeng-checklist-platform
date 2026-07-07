@@ -8,6 +8,7 @@
 // (browser anon client today; createServiceClient() on the future server path).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { notifyAssignment } from '@/lib/jobs/notify'
 
 export type JobSource = 'manual' | 'whatsapp' | 'email' | 'ai'
 
@@ -21,6 +22,12 @@ export interface DraftJobInput {
   actorId: string
   /** When set, grants the client status visibility (client_job_permissions). */
   clientId?: string | null
+  /** Idempotent create: upsert on the client-supplied job.id instead of insert, for
+   *  retry-safe paths (offline sync). Requires job.id to be set. */
+  upsert?: boolean
+  /** Notify newly-assigned surveyors in-app + email. Default true. The actor is
+   *  always skipped (never notify yourself). */
+  notify?: boolean
 }
 
 export interface DraftJobResult {
@@ -37,11 +44,11 @@ export async function createDraftJob(
   source: JobSource,
   sourceRef?: string | null,
 ): Promise<DraftJobResult> {
-  const { data: job, error } = await supabase
-    .from('jobs')
-    .insert({ ...input.job, source, source_ref: sourceRef ?? null })
-    .select()
-    .single()
+  const row = { ...input.job, source, source_ref: sourceRef ?? null }
+  const { data: job, error } = await (input.upsert
+    ? supabase.from('jobs').upsert(row, { onConflict: 'id' })
+    : supabase.from('jobs').insert(row)
+  ).select().single()
 
   if (error || !job) {
     return { job: null, assignedIds: [], error: error?.message ?? 'Failed to create job' }
@@ -60,16 +67,31 @@ export async function createDraftJob(
   }
 
   if (input.clientId) {
-    await supabase.from('client_job_permissions').insert({
+    // Upsert so a retried offline sync doesn't trip the (client_id, job_id) PK.
+    await supabase.from('client_job_permissions').upsert({
       client_id: input.clientId, job_id: job.id,
       can_view_status: true, can_view_pdf: false, can_view_checklist_details: false,
-    })
+    }, { onConflict: 'client_id,job_id' })
   }
 
   await supabase.from('activity_log').insert({
     entity: 'job', entity_id: job.id, action: 'created',
     actor_id: input.actorId, meta: { report_number: job.report_number, source },
   })
+
+  // Notify assigned surveyors (never the actor). Built into the seam so every
+  // create path — incl. the future AI/WhatsApp intake — notifies automatically.
+  if (input.notify !== false) {
+    const recipients = input.surveyorIds.filter(id => id !== input.actorId)
+    if (recipients.length) {
+      await notifyAssignment({
+        id: job.id, title: job.title,
+        scheduled_date: (job as any).scheduled_date ?? null,
+        start_time: (job as any).start_time ?? null,
+        vessel_name: (job as any).vessel_name ?? null,
+      }, recipients)
+    }
+  }
 
   return { job, assignedIds: input.surveyorIds, assignError }
 }

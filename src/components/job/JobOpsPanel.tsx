@@ -8,7 +8,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
   WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
-  setWorkflowStatus, updateJobField, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
+  setWorkflowStatus, updateJobField, clearJobLabourForFixed, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
   listSurveyorKm, addSurveyorKm, deleteSurveyorKm, KM_MIN, KM_MAX,
@@ -383,10 +383,24 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   async function setMode(mode: 'overtime' | 'regular' | 'fixed') {
     const prev = billingMode
     if (mode === prev) return
+    // Switching to fixed clears any logged hours (they'd otherwise keep paying via
+    // the labour metrics — audit M6). Confirm first; km/distance is kept.
+    if (mode === 'fixed') {
+      const anyHours = surveyors.some(s => Number(s.regular_hours) || Number(s.overtime_hours)) || Object.keys(otByRow).length > 0
+      if (anyHours && !(await confirmDialog({
+        message: 'Switching to fixed-price clears all logged regular and overtime hours (and overtime shifts) on this job — distance/km is kept. This can’t be undone. Continue?',
+        danger: true, confirmLabel: 'Switch & clear hours',
+      }))) return
+    }
     setBillingMode(mode)
     // Keep is_overtime in lockstep so the jobs-list OT filter/badge/CSV stay correct.
     const res = await updateJobField(job.id, { billing_mode: mode, is_overtime: mode === 'overtime' })
     if (res.error) { setBillingMode(prev); toast.error(res.error); return }
+    if (mode === 'fixed') {
+      const cl = await clearJobLabourForFixed(job.id)
+      if (cl.error) toast.error(`Switched to fixed, but clearing hours failed: ${cl.error}`)
+      reload()
+    }
     onChanged()
   }
 

@@ -10,7 +10,6 @@ import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } 
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { titleCaseVesselName } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
-import { notifyAssignment } from '@/lib/jobs/notify'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
@@ -203,12 +202,7 @@ export default function NewJobPage() {
 
     if (jobErr || !job) { setError(jobErr ?? 'Failed to create job'); setSaving(false); return }
     if (assignError) toast.error(`Job created, but assigning surveyors failed: ${assignError} — add them on the job page.`)
-
-    // Let each assigned surveyor know, in-app + email. Best-effort.
-    await notifyAssignment(
-      { id: job.id, title: job.title, scheduled_date: scheduledDate, start_time: startTime || null, vessel_name: vessel },
-      ids,
-    )
+    // Assigned surveyors are notified inside createDraftJob (the create choke-point).
 
     toast.success(`Job created — ${job.report_number ?? job.title}`)
     router.push(`/admin/jobs/${job.id}`)
