@@ -288,7 +288,7 @@ export default function ClientsPage() {
         {filteredClients.length === 0 ? (
           <div className="card py-12 text-center text-gray-400 text-sm">No clients match your search.</div>
         ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {filteredClients.map(client => (
             <div key={client.id} className={`card p-5 sm:p-6 flex flex-col ${!client.is_active ? 'opacity-60' : ''}`}>
               {/* Status */}

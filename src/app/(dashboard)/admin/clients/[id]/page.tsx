@@ -139,6 +139,9 @@ export default function ClientDetailPage() {
         </div>
       </div>
 
+      {/* Jobs + Invoices sit side by side on wide screens to use desktop width;
+          they stack on smaller screens. */}
+      <div className="grid xl:grid-cols-2 gap-6 items-start">
       {/* Jobs */}
       <div className="card p-0 overflow-hidden">
         <h2 className="section-title px-4 pt-4 pb-3">Jobs ({jobCount})</h2>
@@ -214,6 +217,7 @@ export default function ClientDetailPage() {
             </table>
           </div>
         )}
+      </div>
       </div>
     </div>
   )
