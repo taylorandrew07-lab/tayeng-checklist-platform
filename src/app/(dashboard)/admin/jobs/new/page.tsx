@@ -10,6 +10,7 @@ import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } 
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { titleCaseVesselName } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
+import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
 
@@ -112,6 +113,14 @@ export default function NewJobPage() {
     }, 400)
     return () => clearTimeout(t)
   }, [scheduledDate, endDate, startTime, endTime, picked])
+
+  // Smart default for "No report required": report-only kinds (hatch/cargo/initial
+  // draught) and templates with "requires report number" unticked pre-tick the box.
+  // Re-derives when the type/stage/template changes; the admin can still override it
+  // by hand afterwards (their toggle sticks until one of those drivers changes).
+  useEffect(() => {
+    setReportNotRequired(autoReportNotRequired({ jobType, jobStage, template: selectedTemplate }))
+  }, [jobType, jobStage, templateId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function togglePicked(id: string) { setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }) }
 
@@ -216,7 +225,7 @@ export default function NewJobPage() {
         <Link href="/admin/jobs" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
           <h1 className="page-title">New Job</h1>
-          <p className="text-gray-500 mt-0.5">A report number is assigned automatically.</p>
+          <p className="text-gray-500 mt-0.5">A report number is assigned automatically (report-only kinds show N/A).</p>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { loadNewJobData } from '@/lib/offline/newJobData'
 import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
+import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { titleCaseVesselName } from '@/lib/utils'
 
 // Local yyyy-mm-dd for the <input type=date> default (avoids the UTC off-by-one).
@@ -124,6 +125,12 @@ export default function SurveyorNewChecklistPage() {
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
         started_at: startedAt, scheduled_date: scheduledDate, notes: notes.trim() || null, job_number: null,
+        // Report-only templates (e.g. hatch testing) skip the report number → N/A.
+        // Carried on the draft; sync.ts passes it through to the server row.
+        report_not_required: autoReportNotRequired({
+          jobType: selectedTemplate.default_job_type ?? null,
+          template: selectedTemplate,
+        }),
       }
 
       // Create the job locally first (works with no signal). It syncs — creating

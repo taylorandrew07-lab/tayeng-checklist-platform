@@ -64,6 +64,9 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
         assigned_to: user.id,
         workflow_status: 'in_progress',
         notes: j.notes ?? null,
+        // Carry the report-only flag the surveyor page stamped (report-only templates
+        // show N/A). Fall back to false; createDraftJob still applies the job_type rule.
+        report_not_required: j.report_not_required ?? false,
         scheduled_date: j.scheduled_date ?? null,
         started_at: j.started_at ?? new Date().toISOString(),
       },

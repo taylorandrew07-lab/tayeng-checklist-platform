@@ -28,6 +28,7 @@ export default function EditTemplatePage() {
   const [pdfHideLogo, setPdfHideLogo] = useState(false)
   const [pdfHideClient, setPdfHideClient] = useState(false)
   const [pdfHideSurveyor, setPdfHideSurveyor] = useState(false)
+  const [requiresReportNumber, setRequiresReportNumber] = useState(true)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [color, setColor] = useState<string | null>(null)
@@ -53,7 +54,7 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections])
+  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, pdfDisclaimer, pdfPreamble, color, sections])
 
   // Job types for the "default job type" picker (same active list the New Job form uses).
   useEffect(() => { listJobTypes().then(setJobTypes).catch(() => {}) }, [])
@@ -80,7 +81,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
+    [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -107,6 +108,7 @@ export default function EditTemplatePage() {
       setPdfHideLogo(tmpl.pdf_hide_logo ?? false)
       setPdfHideClient(tmpl.pdf_hide_client ?? false)
       setPdfHideSurveyor(tmpl.pdf_hide_surveyor ?? false)
+      setRequiresReportNumber(tmpl.requires_report_number ?? true)
       setPdfDisclaimer(tmpl.pdf_disclaimer ?? '')
       setPdfPreamble(tmpl.pdf_preamble ?? '')
       setColor(tmpl.color ?? null)
@@ -232,6 +234,7 @@ export default function EditTemplatePage() {
           pdf_hide_logo: pdfHideLogo,
           pdf_hide_client: pdfHideClient,
           pdf_hide_surveyor: pdfHideSurveyor,
+          requires_report_number: requiresReportNumber,
           pdf_disclaimer: pdfDisclaimer.trim() || null,
           pdf_preamble: pdfPreamble.trim() || null,
           color,
@@ -426,6 +429,19 @@ export default function EditTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${allowSurveyorStart ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Allow surveyor start</span>
+            </label>
+          </div>
+          {/* Report numbering. Direct binding: switch ON = jobs get an auto report
+              number; OFF = report-only (jobs show "N/A", skipping the number). */}
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setRequiresReportNumber(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${requiresReportNumber ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${requiresReportNumber ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Jobs from this template get a report number <span className="font-normal text-gray-400">— turn OFF for report-only kinds (e.g. hatch testing, cargo, initial draught) so they show N/A</span></span>
             </label>
           </div>
           <div className="flex items-center gap-3 sm:col-span-2">

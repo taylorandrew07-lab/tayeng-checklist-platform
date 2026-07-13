@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyAssignment } from '@/lib/jobs/notify'
+import { typeSkipsReportNumber } from '@/lib/jobs/reportPolicy'
 
 export type JobSource = 'manual' | 'whatsapp' | 'email' | 'ai'
 
@@ -44,7 +45,18 @@ export async function createDraftJob(
   source: JobSource,
   sourceRef?: string | null,
 ): Promise<DraftJobResult> {
-  const row = { ...input.job, source, source_ref: sourceRef ?? null }
+  const row: Record<string, unknown> = { ...input.job, source, source_ref: sourceRef ?? null }
+  // Safety net so every create path (incl. future AI/WhatsApp intake) marks the
+  // report-only job types as N/A even if a caller forgets. Only fills in the flag
+  // when the caller left it unset — an explicit value (e.g. an admin ticking or
+  // un-ticking "No report required") always wins. The template opt-out is applied
+  // by each caller (it needs the template row, which this seam doesn't fetch).
+  if (row.report_not_required == null) {
+    row.report_not_required = typeSkipsReportNumber(
+      row.job_type as string | null | undefined,
+      row.job_stage as string | null | undefined,
+    )
+  }
   const { data: job, error } = await (input.upsert
     ? supabase.from('jobs').upsert(row, { onConflict: 'id' })
     : supabase.from('jobs').insert(row)

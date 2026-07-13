@@ -293,6 +293,10 @@ export interface ChecklistTemplate {
    *  this template is picked, so routine jobs don't need the type set by hand.
    *  null = no default; chosen from the job_types list. See migration 131. */
   default_job_type: string | null
+  /** When true (default), jobs created from this template get an auto-assigned report
+   *  number. Untick for report-only kinds (e.g. hatch testing) so their jobs skip the
+   *  number and show "N/A" (sets jobs.report_not_required at creation). See migration 136. */
+  requires_report_number: boolean
   created_at: string
   updated_at: string
 }

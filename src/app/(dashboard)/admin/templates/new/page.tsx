@@ -42,6 +42,7 @@ export default function NewTemplatePage() {
   const [jobTypes, setJobTypes] = useState<JobType[]>([])
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
+  const [requiresReportNumber, setRequiresReportNumber] = useState(true)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [sections, setSections] = useState<BuilderSection[]>([])
@@ -59,7 +60,7 @@ export default function NewTemplatePage() {
   useEffect(() => {
     if (!loadedRef.current) return
     setIsDirty(true)
-  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfDisclaimer, pdfPreamble, sections])
+  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, requiresReportNumber, pdfDisclaimer, pdfPreamble, sections])
 
   // Job types for the "default job type" picker (same active list the New Job form uses).
   useEffect(() => { listJobTypes().then(setJobTypes).catch(() => {}) }, [])
@@ -98,6 +99,7 @@ export default function NewTemplatePage() {
         setName(`${tmpl.name} (Copy)`)
         setDescription(tmpl.description ?? '')
         setDefaultJobType(tmpl.default_job_type ?? '')
+        setRequiresReportNumber(tmpl.requires_report_number ?? true)
 
         // Build idMap: oldDbId -> newLocalUUID so we can remap conditional_logic
         const idMap: Record<string, string> = {}
@@ -198,6 +200,7 @@ export default function NewTemplatePage() {
         default_job_type: defaultJobType || null,
         allow_surveyor_start: allowSurveyorStart,
         pdf_include_photos: pdfIncludePhotos,
+        requires_report_number: requiresReportNumber,
         pdf_disclaimer: pdfDisclaimer.trim() || null,
         pdf_preamble: pdfPreamble.trim() || null,
         created_by: user.id,
@@ -375,6 +378,19 @@ export default function NewTemplatePage() {
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${allowSurveyorStart ? 'translate-x-5' : 'translate-x-1'}`} />
               </div>
               <span className="text-sm font-medium text-gray-700">Allow surveyors to start new jobs from this template</span>
+            </label>
+          </div>
+          {/* Report numbering. Direct binding: switch ON = jobs get an auto report
+              number; OFF = report-only (jobs show "N/A", skipping the number). */}
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setRequiresReportNumber(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${requiresReportNumber ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${requiresReportNumber ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Jobs from this template get a report number <span className="font-normal text-gray-400">— turn OFF for report-only kinds (e.g. hatch testing, cargo, initial draught) so they show N/A</span></span>
             </label>
           </div>
           <div className="flex items-center gap-3 sm:col-span-2">
