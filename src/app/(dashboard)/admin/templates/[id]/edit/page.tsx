@@ -12,6 +12,7 @@ import { dirtyState } from '@/lib/dirty-state'
 import { withTimeout } from '@/lib/utils'
 import { useAutoSave } from '@/lib/useAutoSave'
 import { listJobTypes } from '@/lib/jobs/tracker'
+import { applyItemNumbering } from '@/lib/checklist/itemNumbering'
 
 export default function EditTemplatePage() {
   const router = useRouter()
@@ -29,6 +30,7 @@ export default function EditTemplatePage() {
   const [pdfHideClient, setPdfHideClient] = useState(false)
   const [pdfHideSurveyor, setPdfHideSurveyor] = useState(false)
   const [requiresReportNumber, setRequiresReportNumber] = useState(true)
+  const [manualNumbering, setManualNumbering] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [color, setColor] = useState<string | null>(null)
@@ -54,7 +56,20 @@ export default function EditTemplatePage() {
     if (!loadedRef.current) return
     if (skipDirtyRef.current) { skipDirtyRef.current = false; return }
     setIsDirty(true)
-  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, pdfDisclaimer, pdfPreamble, color, sections])
+  }, [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, manualNumbering, pdfDisclaimer, pdfPreamble, color, sections])
+
+  // Toggling manual numbering must also bring the STORED numbers back in line with what the
+  // builder now displays. Switching off re-stamps every section 1..n immediately; without this the
+  // builder would show 1,2,3… while the saved item_numbers stayed as authored ("C1A"…), and the
+  // debounced autosave would persist that mismatch — the surveyor's checklist and the report would
+  // then disagree with the builder permanently. Switching ON is safe: it only stops re-stamping.
+  function toggleManualNumbering() {
+    const next = !manualNumbering
+    setManualNumbering(next)
+    if (!next) {
+      setSections(prev => prev.map(s => ({ ...s, fields: applyItemNumbering(s.fields, false) })))
+    }
+  }
 
   // Job types for the "default job type" picker (same active list the New Job form uses).
   useEffect(() => { listJobTypes().then(setJobTypes).catch(() => {}) }, [])
@@ -81,7 +96,7 @@ export default function EditTemplatePage() {
   // Stays on the page (redirectTo: null). A validation error just surfaces and waits.
   useAutoSave(
     () => { if (isDirty && !saving) handleSave({ redirectTo: null }) },
-    [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
+    [name, description, status, defaultJobType, allowSurveyorStart, pdfIncludePhotos, pdfHideLogo, pdfHideClient, pdfHideSurveyor, requiresReportNumber, manualNumbering, pdfDisclaimer, pdfPreamble, color, sections, isDirty],
     { enabled: !loading },
   )
 
@@ -109,6 +124,7 @@ export default function EditTemplatePage() {
       setPdfHideClient(tmpl.pdf_hide_client ?? false)
       setPdfHideSurveyor(tmpl.pdf_hide_surveyor ?? false)
       setRequiresReportNumber(tmpl.requires_report_number ?? true)
+      setManualNumbering(tmpl.manual_numbering ?? false)
       setPdfDisclaimer(tmpl.pdf_disclaimer ?? '')
       setPdfPreamble(tmpl.pdf_preamble ?? '')
       setColor(tmpl.color ?? null)
@@ -235,6 +251,7 @@ export default function EditTemplatePage() {
           pdf_hide_client: pdfHideClient,
           pdf_hide_surveyor: pdfHideSurveyor,
           requires_report_number: requiresReportNumber,
+          manual_numbering: manualNumbering,
           pdf_disclaimer: pdfDisclaimer.trim() || null,
           pdf_preamble: pdfPreamble.trim() || null,
           color,
@@ -444,6 +461,20 @@ export default function EditTemplatePage() {
               <span className="text-sm font-medium text-gray-700">Jobs from this template get a report number <span className="font-normal text-gray-400">— turn OFF for report-only kinds (e.g. hatch testing, cargo, initial draught) so they show N/A</span></span>
             </label>
           </div>
+          {/* Manual item numbering. OFF (default) = each section auto-numbers 1..n and re-numbers
+              on every edit. ON = keep the numbers exactly as authored, for templates transcribed
+              from a paper form whose numbering runs across sections or uses letters. */}
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => toggleManualNumbering()}
+                className={`relative w-10 h-6 rounded-full transition-colors ${manualNumbering ? 'bg-brand-600' : 'bg-gray-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${manualNumbering ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Keep item numbers exactly as written <span className="font-normal text-gray-400">— turn ON for templates copied from a paper form with numbering like 1, 1A, 6B, or numbers that continue across sections. Leave OFF to auto-number each section 1, 2, 3…</span></span>
+            </label>
+          </div>
           <div className="flex items-center gap-3 sm:col-span-2">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <div
@@ -517,7 +548,7 @@ export default function EditTemplatePage() {
 
       <div className="space-y-3">
         <h2 className="section-title px-1">Template Fields</h2>
-        <TemplateBuilder sections={sections} onChange={setSections} />
+        <TemplateBuilder sections={sections} onChange={setSections} manualNumbering={manualNumbering} />
       </div>
 
       {error && (

@@ -265,12 +265,17 @@ export function evalArithmetic(input: string): number | null {
 }
 
 /**
- * Formats a USG difference + true percentage for display in the "Difference" calculated field.
+ * Formats a volume difference + true percentage for display in the "Difference" calculated field.
  * Returns null pct when denominator is zero/missing (safe no-divide guard).
+ *
+ * `unit` defaults to 'USG' so every pre-existing caller (the BPTT Fuel Transfer template, whose
+ * figures ARE in US gallons) keeps byte-identical output. Templates measured in other units — e.g.
+ * Brine Transfer in BBLS — set `unit` on the calculated field and get their own label.
  */
 export function formatDiffPercentage(
   rawDiff: number,
-  denominatorStr: string | undefined
+  denominatorStr: string | undefined,
+  unit: string = 'USG'
 ): { display: string; pct: number | null } {
   const denominator = parseFloat(denominatorStr ?? '')
   if (!isFinite(denominator) || denominator === 0) {
@@ -278,7 +283,7 @@ export function formatDiffPercentage(
   }
   const pct = (rawDiff / denominator) * 100
   const diffDisplay = Number.isInteger(rawDiff) ? String(rawDiff) : rawDiff.toFixed(2)
-  return { display: `${diffDisplay} USG: ${pct.toFixed(2)}%`, pct }
+  return { display: `${diffDisplay} ${unit}: ${pct.toFixed(2)}%`, pct }
 }
 
 export function checkConditionalLogic(

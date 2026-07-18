@@ -1,7 +1,7 @@
 'use client'
 
 import {
-  useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback, Fragment, type ReactNode,
+  useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback, useMemo, Fragment, type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
+import { clearHiddenAnswers, type VisibilityUnit } from '@/lib/checklist/clearHidden'
 import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import { checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
@@ -607,11 +608,47 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setLoading(false)
     }
 
+    // Every answer slot on the checklist, paired with the rules that decide whether it is shown.
+    // Rebuilt only when the template or the repeatable entry order changes.
+    const visibilityUnits = useMemo<VisibilityUnit[]>(() => {
+      const units: VisibilityUnit[] = []
+      for (const section of sections) {
+        const instances = section.is_repeatable ? (entryOrder[section.id] ?? [0]) : [0]
+        for (const inst of instances) {
+          for (const field of section.fields) {
+            if (field.field_type === 'heading' || field.field_type === 'divider') continue
+            units.push({
+              key: instanceKey(field.id, inst),
+              logic: field.conditional_logic ?? null,
+              sectionLogic: section.conditional_logic ?? null,
+            })
+          }
+        }
+      }
+      return units
+    }, [sections, entryOrder])
+
     // --- Value setters that mark dirty ---
+    // Changing an answer can hide other fields. Their stored answers are cleared here, because a
+    // hidden answer is invisible to the surveyor yet still feeds every conditional that references
+    // it and still prints in the report — see lib/checklist/clearHidden.
+    //
+    // Deliberately done HERE, on a user edit, and not in an effect: during load every value starts
+    // empty, so every dependent field would look hidden and a completed checklist would be wiped.
     const updateValue = useCallback((fieldId: string, val: string) => {
-      setValues(prev => ({ ...prev, [fieldId]: val }))
+      setValues(prev => {
+        const next = { ...prev, [fieldId]: val }
+        // Never sweep on an EMPTY new value. A number input passes through '' on every
+        // keystroke, and a numeric condition treats '' as failing (parseFloat('') is NaN) — so
+        // backspacing Ultrasonic's "Number of holds" to retype it would momentarily hide, and
+        // therefore blank, every gated Hold/Bilge answer in every test round. The residue this
+        // leaves (deliberately blanking a controlling field keeps its dependants' answers) is
+        // exactly the old behaviour, so nothing regresses.
+        if (!val) return next
+        return clearHiddenAnswers(visibilityUnits, next) ?? next
+      })
       setIsDirty(true)
-    }, [])
+    }, [visibilityUnits])
 
     // Calculated fields update values silently — they are derived, not user-driven
     const updateCalculatedValue = useCallback((fieldId: string, val: string) => {
@@ -758,6 +795,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           const instIds = section.is_repeatable ? (entryOrder[section.id] ?? [0]) : [0]
           for (const field of section.fields) {
             if (field.field_type !== 'calculated' || !field.calculation_formula) continue
+            // Skip calcs the template is currently hiding, or this would resurrect a result that
+            // clearHiddenAnswers just blanked (its inputs can still be populated) and feed it back
+            // into the conditionals on the next load.
+            if (!checkConditionalLogic(section.conditional_logic, valuesToSave)) continue
+            if (!checkConditionalLogic(field.conditional_logic, valuesToSave)) continue
             // Recompute the calc for EACH entry against that entry's own inputs.
             for (const inst of instIds) {
               const k = instanceKey(field.id, inst)

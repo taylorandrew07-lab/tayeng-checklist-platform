@@ -18,6 +18,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { applyItemNumbering, itemNumberFor } from '@/lib/checklist/itemNumbering'
 import {
   Plus,
   GripVertical,
@@ -91,28 +92,13 @@ function TypeChip({ type, options }: { type: FieldType; options?: FieldOption[] 
 interface TemplateBuilderProps {
   sections: BuilderSection[]
   onChange: (sections: BuilderSection[]) => void
+  /**
+   * Keep hand-authored item numbers ("1A", "6B") instead of auto-numbering each section 1..n.
+   * Set for templates transcribed from a paper form — see lib/checklist/itemNumbering.
+   */
+  manualNumbering?: boolean
 }
 
-// Re-stamp order_index and the auto sequential item_number for a section's fields.
-// Layout fields (heading/divider) are skipped in the visible numbering.
-function renumberFields(fields: BuilderField[]): BuilderField[] {
-  let n = 0
-  return fields.map((f, i) => {
-    const isLayout = f.field_type === 'heading' || f.field_type === 'divider'
-    return { ...f, order_index: i, item_number: isLayout ? '' : String(++n) }
-  })
-}
-
-// Visible number for a field at render time (skips layout fields). Returns '' for layout.
-function computeDisplayNumber(fields: BuilderField[], index: number): string {
-  let n = 0
-  for (let i = 0; i <= index; i++) {
-    const isLayout = fields[i].field_type === 'heading' || fields[i].field_type === 'divider'
-    if (!isLayout) n++
-    if (i === index) return isLayout ? '' : String(n)
-  }
-  return ''
-}
 
 // The same-section field a field's visibility depends on (its logical parent).
 function parentOf(field: BuilderField, sectionFieldIds: Set<string>): string | undefined {
@@ -167,7 +153,12 @@ function defaultTriggerValue(parent: BuilderField): string {
   return ''
 }
 
-export default function TemplateBuilder({ sections, onChange }: TemplateBuilderProps) {
+export default function TemplateBuilder({ sections, onChange, manualNumbering = false }: TemplateBuilderProps) {
+  // Re-stamp order_index and (unless the template numbers by hand) the sequential item_number.
+  const renumberFields = (fields: BuilderField[]) => applyItemNumbering(fields, manualNumbering)
+  const computeDisplayNumber = (fields: BuilderField[], index: number) =>
+    itemNumberFor(fields, index, manualNumbering)
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -297,6 +288,7 @@ export default function TemplateBuilder({ sections, onChange }: TemplateBuilderP
               onDeleteField={(fieldId) => deleteField(section.id, fieldId)}
               onFieldDragEnd={(event) => handleFieldDragEnd(section.id, event)}
               onAddFollowUp={(fieldId) => addFollowUp(section.id, fieldId)}
+              manualNumbering={manualNumbering}
             />
           ))}
         </SortableContext>
@@ -342,6 +334,7 @@ interface SortableSectionProps {
   onDeleteField: (fieldId: string) => void
   onFieldDragEnd: (event: DragEndEvent) => void
   onAddFollowUp: (fieldId: string) => void
+  manualNumbering: boolean
 }
 
 function SortableSection({
@@ -354,6 +347,7 @@ function SortableSection({
   onDeleteField,
   onFieldDragEnd,
   onAddFollowUp,
+  manualNumbering,
 }: SortableSectionProps) {
   const [collapsed, setCollapsed] = useState(false)
   const depths = computeDepths(section.fields)
@@ -472,7 +466,8 @@ function SortableSection({
                           <SortableField
                             field={field}
                             allFields={allFields}
-                            displayNumber={computeDisplayNumber(section.fields, i)}
+                            displayNumber={itemNumberFor(section.fields, i, manualNumbering)}
+                            manualNumbering={manualNumbering}
                             onUpdate={(updated) => onUpdateField(field.id, updated)}
                             onDelete={() => onDeleteField(field.id)}
                           />
@@ -504,11 +499,12 @@ interface SortableFieldProps {
   field: BuilderField
   allFields: BuilderField[]
   displayNumber: string
+  manualNumbering: boolean
   onUpdate: (field: BuilderField) => void
   onDelete: () => void
 }
 
-function SortableField({ field, allFields, displayNumber, onUpdate, onDelete }: SortableFieldProps) {
+function SortableField({ field, allFields, displayNumber, manualNumbering, onUpdate, onDelete }: SortableFieldProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
 
   // Compact, iAuditor-style row by default; expand to the full editor on click. A
@@ -553,6 +549,7 @@ function SortableField({ field, allFields, displayNumber, onUpdate, onDelete }: 
               field={field}
               allFields={allFields}
               displayNumber={displayNumber}
+              manualNumbering={manualNumbering}
               onChange={onUpdate}
               onDelete={onDelete}
             />

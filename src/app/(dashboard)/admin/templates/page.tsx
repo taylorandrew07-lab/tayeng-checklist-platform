@@ -74,6 +74,9 @@ export default function TemplatesPage() {
         pdf_include_photos: template.pdf_include_photos ?? false,
         pdf_disclaimer: template.pdf_disclaimer ?? null,
         pdf_preamble: template.pdf_preamble ?? null,
+        // Carry the numbering mode across: the copy keeps the source's item_numbers below, so
+        // without this the first edit to the copy would re-stamp hand-authored numbers to 1..n.
+        manual_numbering: template.manual_numbering ?? false,
         created_by: userId,
         duplicated_from: template.id,
       })

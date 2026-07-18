@@ -395,13 +395,15 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
   )
 }
 
-// Handles both percentage-display calculated fields (shows "<diff> USG: <pct>%") and plain numbers
-function CalcDiffCell({ rawValue, validation, formula, fieldValues, instance = 0 }: {
+// Handles both percentage-display calculated fields (shows "<diff> <unit>: <pct>%") and plain
+// numbers. `unit` comes from the template field and falls back to USG for legacy fuel templates.
+function CalcDiffCell({ rawValue, validation, formula, fieldValues, instance = 0, unit }: {
   rawValue: string
   validation: any
   formula?: string
   fieldValues: Record<string, string>
   instance?: number
+  unit?: string
 }) {
   const num = parseFloat(rawValue)
   if (isNaN(num)) return <Text style={{ fontSize: 8, color: '#94a3b8' }}>—</Text>
@@ -411,7 +413,7 @@ function CalcDiffCell({ rawValue, validation, formula, fieldValues, instance = 0
     const denominatorId = tokens[tokens.length - 1]
     // Resolve the denominator for THIS entry instance (falls back to the bare id).
     const denominator = denominatorId ? (fieldValues[instanceKey(denominatorId, instance)] ?? fieldValues[denominatorId]) : undefined
-    const { display, pct } = formatDiffPercentage(num, denominator)
+    const { display, pct } = formatDiffPercentage(num, denominator, unit || undefined)
 
     if (pct === null) {
       return <Text style={styles.fieldValueText}>{display}</Text>
@@ -879,6 +881,7 @@ function renderField(
             formula={field.calculation_formula}
             fieldValues={fieldValues}
             instance={inst}
+            unit={field.unit}
           />
         ) : field.field_type === 'dropdown' ? (
           <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>

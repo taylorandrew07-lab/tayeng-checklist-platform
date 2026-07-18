@@ -43,6 +43,7 @@ export default function NewTemplatePage() {
   const [allowSurveyorStart, setAllowSurveyorStart] = useState(false)
   const [pdfIncludePhotos, setPdfIncludePhotos] = useState(false)
   const [requiresReportNumber, setRequiresReportNumber] = useState(true)
+  const [manualNumbering, setManualNumbering] = useState(false)
   const [pdfDisclaimer, setPdfDisclaimer] = useState('')
   const [pdfPreamble, setPdfPreamble] = useState('')
   const [sections, setSections] = useState<BuilderSection[]>([])
@@ -100,6 +101,8 @@ export default function NewTemplatePage() {
         setDescription(tmpl.description ?? '')
         setDefaultJobType(tmpl.default_job_type ?? '')
         setRequiresReportNumber(tmpl.requires_report_number ?? true)
+        // Duplicating carries the source's item_numbers, so it must carry the numbering mode too.
+        setManualNumbering(tmpl.manual_numbering ?? false)
 
         // Build idMap: oldDbId -> newLocalUUID so we can remap conditional_logic
         const idMap: Record<string, string> = {}
@@ -201,6 +204,7 @@ export default function NewTemplatePage() {
         allow_surveyor_start: allowSurveyorStart,
         pdf_include_photos: pdfIncludePhotos,
         requires_report_number: requiresReportNumber,
+        manual_numbering: manualNumbering,
         pdf_disclaimer: pdfDisclaimer.trim() || null,
         pdf_preamble: pdfPreamble.trim() || null,
         created_by: user.id,
@@ -430,7 +434,7 @@ export default function NewTemplatePage() {
       {/* Template builder */}
       <div className="space-y-3">
         <h2 className="section-title px-1">Template Fields</h2>
-        <TemplateBuilder sections={sections} onChange={setSections} />
+        <TemplateBuilder sections={sections} onChange={setSections} manualNumbering={manualNumbering} />
       </div>
 
       {error && (

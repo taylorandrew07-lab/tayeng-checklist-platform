@@ -297,6 +297,11 @@ export interface ChecklistTemplate {
    *  number. Untick for report-only kinds (e.g. hatch testing) so their jobs skip the
    *  number and show "N/A" (sets jobs.report_not_required at creation). See migration 136. */
   requires_report_number: boolean
+  /** When true, the template builder keeps item numbers exactly as authored instead of
+   *  auto-numbering each section 1..n on every edit. For templates transcribed from a paper
+   *  form whose numbering uses letters ("1A", "6B") or runs continuously across sections —
+   *  e.g. Brine Transfer, items 1..33 over five phases. See migration 137. */
+  manual_numbering: boolean
   created_at: string
   updated_at: string
 }

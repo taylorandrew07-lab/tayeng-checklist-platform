@@ -24,6 +24,10 @@ interface FieldEditorProps {
   allFields: BuilderField[]
   /** Auto sequential number for this field within its section (read-only). '' for layout fields. */
   displayNumber: string
+  /** When the template numbers by hand, the badge becomes an editable input — otherwise a
+   *  manual-numbering template could never be given a number for a newly added field, nor have a
+   *  wrong one repaired, because nothing else in the UI writes item_number. */
+  manualNumbering?: boolean
   onChange: (field: BuilderField) => void
   onDelete: () => void
 }
@@ -46,7 +50,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
   )
 }
 
-export default function FieldEditor({ field, allFields, displayNumber, onChange, onDelete }: FieldEditorProps) {
+export default function FieldEditor({ field, allFields, displayNumber, manualNumbering = false, onChange, onDelete }: FieldEditorProps) {
   // Collapse is owned by the parent SortableField (chip row ↔ editor); this editor
   // always renders its body when mounted, so opening a field takes a single click.
   const [showConditional, setShowConditional] = useState(!!field.conditional_logic)
@@ -104,11 +108,21 @@ export default function FieldEditor({ field, allFields, displayNumber, onChange,
     <div className="border border-gray-200 rounded-xl bg-white shadow-sm">
       {/* Field header (static — collapse is handled by the parent row) */}
       <div className="flex items-center gap-3 px-4 py-3 select-none border-b border-gray-100">
-        {displayNumber && (
+        {manualNumbering && !isLayoutField ? (
+          <input
+            type="text"
+            value={field.item_number ?? ''}
+            onChange={(e) => onChange({ ...field, item_number: e.target.value })}
+            placeholder="—"
+            aria-label="Item number"
+            title="Item number — typed by hand for this template (e.g. 1, 1A, 6B)"
+            className="flex-shrink-0 w-12 h-6 rounded-md bg-brand-50 border border-brand-200 text-brand-700 text-xs font-semibold text-center focus:outline-none focus:ring-1 focus:ring-brand-500"
+          />
+        ) : displayNumber ? (
           <span className="flex-shrink-0 w-6 h-6 rounded-md bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center">
             {displayNumber}
           </span>
-        )}
+        ) : null}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-900 truncate">

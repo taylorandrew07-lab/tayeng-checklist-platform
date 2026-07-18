@@ -355,7 +355,8 @@ function CalculatedField({ field, value, allValues, instance = 0, onChange }: {
     const denominatorId = tokens[tokens.length - 1]
     const { display, pct } = formatDiffPercentage(
       numVal,
-      denominatorId ? (allValues[instanceKey(denominatorId, instance)] ?? allValues[denominatorId]) : undefined
+      denominatorId ? (allValues[instanceKey(denominatorId, instance)] ?? allValues[denominatorId]) : undefined,
+      field.unit || undefined
     )
     // If the denominator isn't available (e.g. showing a persisted fallback
     // without live inputs), keep the plain figure rather than collapsing to "—".
