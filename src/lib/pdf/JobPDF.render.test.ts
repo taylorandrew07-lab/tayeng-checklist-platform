@@ -169,3 +169,54 @@ describe('JobPDF repeatable section page break', () => {
     expect(flowed.length).toBeLessThan(broken.length)
   })
 })
+
+// A blank field prints "—". That is meaningful for a question the surveyor was asked, but
+// noise for an optional notes field — especially inside a repeatable section, where it
+// costs a wasted row per entry. pdf_hide_when_empty drops the row; it defaults to false.
+describe('JobPDF pdf_hide_when_empty', () => {
+  const sections = (hide: boolean) => [{
+    id: 's1', title: 'Hourly Loading Line Inspection', is_repeatable: true, pdf_page_break: false,
+    fields: [
+      { id: 't', label: 'Time of inspection', field_type: 'time', item_number: '25', order_index: 0 },
+      { id: 'ok', label: 'Loading line satisfactory?', field_type: 'yes_no', order_index: 1 },
+      { id: 'obs', label: 'Observations / defects', field_type: 'textarea', order_index: 2,
+        ...(hide ? { pdf_hide_when_empty: true } : {}) },
+    ],
+  }]
+  const common = {
+    job: { id: 'j1', title: 'Brine', job_number: '26-07-001', template: { name: 'Brine' } } as any,
+    arrayValues: {}, signatures: {}, photoCount: 0, photos: [],
+  }
+  // Three entries, none with observations — the case that wastes three rows.
+  const empty = { t: '14:50', ok: 'yes', 't@@1': '15:50', 'ok@@1': 'yes', 't@@2': '16:50', 'ok@@2': 'yes' }
+
+  it('drops the blank row when the field opts in', async () => {
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, sections: sections(true) as any, fieldValues: empty } as any) as any)
+    expect(buf.length).toBeGreaterThan(0)
+  })
+
+  it('still prints the placeholder by default', async () => {
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, sections: sections(false) as any, fieldValues: empty } as any) as any)
+    expect(buf.length).toBeGreaterThan(0)
+  })
+
+  it('hiding blanks yields a smaller document than printing them', async () => {
+    const [hidden, shown] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections(true) as any, fieldValues: empty } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections(false) as any, fieldValues: empty } as any) as any),
+    ])
+    expect(hidden.length).toBeLessThan(shown.length)
+  })
+
+  it('never hides a row that HAS been filled in', async () => {
+    const answered = { ...empty, obs: 'Slight weep at the flange', 'obs@@1': '', 'obs@@2': '' }
+    const [withText, withoutText] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections(true) as any, fieldValues: answered } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections(true) as any, fieldValues: empty } as any) as any),
+    ])
+    // The answered entry must still render its observation, so the document is larger.
+    expect(withText.length).toBeGreaterThan(withoutText.length)
+  })
+})

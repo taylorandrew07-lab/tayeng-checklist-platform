@@ -861,6 +861,17 @@ function renderField(
 
   const hasValue = !!rawValue
 
+  // Opt-in per field: leave the row out entirely when it was not filled in, rather than
+  // printing a "—" placeholder. Meant for free-text notes ("Observations / defects") that
+  // are usually blank, especially inside a repeatable entry where one empty row per entry
+  // adds up. Deliberately NOT the default: for a question the surveyor was asked, a "—"
+  // is meaningful — it shows the question existed and went unanswered, which silently
+  // omitting it would hide from whoever reads the signed report.
+  if (field.pdf_hide_when_empty && !hasValue
+      && !(signatures[key] || (arrayValues[key] ?? []).length)) {
+    return null
+  }
+
   // Short-answer rows get a WIDE question column (so the question fits on one line and
   // the value column keeps just enough for the answer + a short remark). Long-answer
   // types keep the narrow label so their value has room to wrap onto multiple lines.
