@@ -1,0 +1,1816 @@
+{
+  "brine": {
+    "sections": [
+      {
+        "id": "b21e0000-0000-4000-8000-000000000010",
+        "title": "Job Details",
+        "order_index": 0,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000011",
+        "title": "Pre-Loading",
+        "order_index": 1,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000012",
+        "title": "Initial",
+        "order_index": 2,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000013",
+        "title": "Mid Loading",
+        "order_index": 3,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000014",
+        "title": "Hourly Shore Line Inspection",
+        "order_index": 4,
+        "is_repeatable": true,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000015",
+        "title": "Final",
+        "order_index": 5,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000016",
+        "title": "After Loading / Reconciliation",
+        "order_index": 6,
+        "is_repeatable": false,
+        "conditional_logic": null
+      }
+    ],
+    "fields": [
+      {
+        "id": "b21e0000-0000-4000-8000-000000000110",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Charter history",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000160",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Rate increase",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000100",
+        "section_id": "b21e0000-0000-4000-8000-000000000010",
+        "label": "Operation",
+        "field_type": "dropdown",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": [
+          {
+            "label": "Loading",
+            "value": "loading"
+          },
+          {
+            "label": "Discharging",
+            "value": "discharging"
+          }
+        ]
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000170",
+        "section_id": "b21e0000-0000-4000-8000-000000000014",
+        "label": "Time of inspection",
+        "field_type": "time",
+        "item_number": "26",
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000180",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Vessel",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000130",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Shore side",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000190",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Final calculation of liquid bulk delivered",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000111",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Was tank cleaning completed at the end of the previous charter?",
+        "field_type": "yes_no_na",
+        "item_number": "1",
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000131",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has an initial manual sounding/ullage of the shore tank been carried out by the surveyor using a calibrated sounding tape?",
+        "field_type": "yes_no",
+        "item_number": "9",
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000161",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Has the increased loading rate been agreed between ship and shore, and the shore loading lines and connections inspected immediately on ramp-up?",
+        "field_type": "yes_no_na",
+        "item_number": "23",
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000101",
+        "section_id": "b21e0000-0000-4000-8000-000000000010",
+        "label": "Cargo type",
+        "field_type": "text",
+        "item_number": null,
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000171",
+        "section_id": "b21e0000-0000-4000-8000-000000000014",
+        "label": "Shore loading line inspected and found satisfactory?",
+        "field_type": "yes_no_na",
+        "item_number": null,
+        "order_index": 1,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000181",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Have the lines been blown through and verified after completion of discharge?",
+        "field_type": "yes_no_na",
+        "item_number": "27",
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000191",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Ship's figure",
+        "field_type": "number",
+        "item_number": null,
+        "order_index": 1,
+        "is_required": true,
+        "unit": "BBLS",
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000112",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Did the previous charterer's tank cleaning procedure include a line displacement with brine?",
+        "field_type": "yes_no_na",
+        "item_number": "1A",
+        "order_index": 2,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000111",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000132",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has an initial photograph of the shore flow meter been taken?",
+        "field_type": "yes_no",
+        "item_number": "10",
+        "order_index": 2,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000162",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Resumption samples",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 2,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000172",
+        "section_id": "b21e0000-0000-4000-8000-000000000014",
+        "label": "Observations / defects",
+        "field_type": "textarea",
+        "item_number": null,
+        "order_index": 2,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000182",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has the cargo line been disconnected from the ship's manifold prior to commencement of final soundings/ullages?",
+        "field_type": "yes_no_na",
+        "item_number": "28",
+        "order_index": 2,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000192",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Shore figure",
+        "field_type": "number",
+        "item_number": null,
+        "order_index": 2,
+        "is_required": true,
+        "unit": "BBLS",
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000113",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Is this the first loadout of liquid bulk cargo under the current charter?",
+        "field_type": "yes_no_na",
+        "item_number": "2",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000133",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Is the shipper's shore flow meter calibration certificate up to date and calibrated for the cargo's specific gravity?",
+        "field_type": "yes_no_na",
+        "item_number": "11",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000163",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Was a line sample taken at the ship's manifold on resumption of loading?",
+        "field_type": "yes_no_na",
+        "item_number": "24",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000173",
+        "section_id": "b21e0000-0000-4000-8000-000000000014",
+        "label": "Photo",
+        "field_type": "photo",
+        "item_number": null,
+        "order_index": 3,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000183",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has a final manual sounding/ullage of the ship's tanks been carried out by the surveyor using a calibrated sounding tape?",
+        "field_type": "yes_no",
+        "item_number": "29",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000193",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Difference (Ship − Shore)",
+        "field_type": "calculated",
+        "item_number": null,
+        "order_index": 3,
+        "is_required": false,
+        "unit": "BBLS",
+        "validation": null,
+        "calculation_formula": "{b21e0000-0000-4000-8000-000000000191}-{b21e0000-0000-4000-8000-000000000192}",
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000114",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Tank nomination & this loadout's cargo history",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 4,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000134",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Have the shore loading lines been inspected, serial numbers verified against certificates, and pressure tested within the last 12 months?",
+        "field_type": "yes_no_na",
+        "item_number": "12",
+        "order_index": 4,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000184",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has a final photograph of the ship's flow meter been taken?",
+        "field_type": "yes_no",
+        "item_number": "30",
+        "order_index": 4,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000164",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Was the 2nd line sample visually inspected and approved?",
+        "field_type": "yes_no_na",
+        "item_number": "24A",
+        "order_index": 4,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000163",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000194",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "% Variance vs shore figure",
+        "field_type": "calculated",
+        "item_number": null,
+        "order_index": 4,
+        "is_required": false,
+        "unit": "BBLS",
+        "validation": {
+          "display_as": "percentage",
+          "thresholds": [
+            {
+              "max": 1,
+              "color": "green"
+            },
+            {
+              "max": 2,
+              "color": "amber"
+            },
+            {
+              "color": "red"
+            }
+          ]
+        },
+        "calculation_formula": "{b21e0000-0000-4000-8000-000000000191}-{b21e0000-0000-4000-8000-000000000192}",
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000115",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "What was the previous cargo loaded in the tanks?",
+        "field_type": "text",
+        "item_number": "3",
+        "order_index": 5,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000135",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Vessel",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 5,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000185",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "What is the volume from the ship's flow meter?",
+        "field_type": "number",
+        "item_number": "30A",
+        "order_index": 5,
+        "is_required": false,
+        "unit": "BBLS",
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000184",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000165",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Periodic monitoring",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 5,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000195",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Has the cargo certificate been issued and signed by the vessel, surveyor and shipper representatives?",
+        "field_type": "yes_no",
+        "item_number": "33",
+        "order_index": 5,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000116",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Was tank cleaning carried out prior to loading this cargo?",
+        "field_type": "yes_no_na",
+        "item_number": "4",
+        "order_index": 6,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000136",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Have the height(s) of the vessel's sounding tube(s) been verified?",
+        "field_type": "yes_no_na",
+        "item_number": "13",
+        "order_index": 6,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000186",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Shore side",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 6,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000166",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Were periodic samples taken at the ship's manifold during loading?",
+        "field_type": "yes_no_na",
+        "item_number": "25",
+        "order_index": 6,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000117",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Did that tank cleaning include a line displacement with brine?",
+        "field_type": "yes_no_na",
+        "item_number": "4A",
+        "order_index": 7,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000116",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000137",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has an initial manual sounding/ullage of the ship's tanks been carried out by the surveyor using a calibrated sounding tape?",
+        "field_type": "yes_no",
+        "item_number": "14",
+        "order_index": 7,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000187",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has a final manual sounding/ullage of the shore tank been carried out by the surveyor using a calibrated sounding tape?",
+        "field_type": "yes_no",
+        "item_number": "31",
+        "order_index": 7,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000167",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Were the periodic samples visually inspected and found satisfactory?",
+        "field_type": "yes_no_na",
+        "item_number": "25A",
+        "order_index": 7,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000166",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000118",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Which cargo tanks are nominated to load this cargo?",
+        "field_type": "text",
+        "item_number": "5",
+        "order_index": 8,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000138",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has an initial photograph of the ship's flow meter been taken?",
+        "field_type": "yes_no",
+        "item_number": "15",
+        "order_index": 8,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000188",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has a final photograph of the shipper's shore flow meter been taken?",
+        "field_type": "yes_no",
+        "item_number": "32",
+        "order_index": 8,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000119",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Segregation",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 9,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000139",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Is the ship's flow meter calibration certificate up to date and calibrated for the cargo's specific gravity?",
+        "field_type": "yes_no_na",
+        "item_number": "16",
+        "order_index": 9,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000189",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "What is the volume from the shipper's shore flow meter?",
+        "field_type": "number",
+        "item_number": "32A",
+        "order_index": 9,
+        "is_required": false,
+        "unit": "BBLS",
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000188",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000120",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Is more than one cargo type being loaded?",
+        "field_type": "yes_no_na",
+        "item_number": "6",
+        "order_index": 10,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": [
+          {
+            "color": "amber",
+            "label": "Yes",
+            "value": "yes"
+          },
+          {
+            "color": "green",
+            "label": "No",
+            "value": "no"
+          },
+          {
+            "color": "gray",
+            "label": "N/A",
+            "value": "na"
+          }
+        ]
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000140",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Were the vessel loading lines inspected via borescope and found fit to load cargo?",
+        "field_type": "yes_no_na",
+        "item_number": "17",
+        "order_index": 10,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000121",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Are segregated loading lines, pumps and manifolds (including discharge lines) being used for each product type?",
+        "field_type": "yes_no_na",
+        "item_number": "6A",
+        "order_index": 11,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000120",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000141",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Agreements",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 11,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000122",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Has cross-contamination been evaluated by the shipper and advised to the charterer?",
+        "field_type": "yes_no_na",
+        "item_number": "6B",
+        "order_index": 12,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000120",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000121",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000142",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has the transfer rate been agreed between ship and shore, including the initial slow start-up procedure?",
+        "field_type": "yes_no_na",
+        "item_number": "18",
+        "order_index": 12,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000143",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Has the tank loading sequence been agreed, with each tank to load an initial first foot individually?",
+        "field_type": "yes_no_na",
+        "item_number": "19",
+        "order_index": 13,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000123",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Notification",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 13,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000124",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Have the above questions been notified to charterers prior to loading?",
+        "field_type": "yes_no_na",
+        "item_number": "7",
+        "order_index": 14,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000144",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "First foot & line samples",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 14,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000145",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Was a line sample taken at the ship's manifold at commencement of loading?",
+        "field_type": "yes_no_na",
+        "item_number": "20",
+        "order_index": 15,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000125",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Spill response",
+        "field_type": "heading",
+        "item_number": null,
+        "order_index": 15,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000126",
+        "section_id": "b21e0000-0000-4000-8000-000000000011",
+        "label": "Are spill kits (including containment booms) available and ready to deploy on ship and shore for oil-based cargoes?",
+        "field_type": "yes_no_na",
+        "item_number": "8",
+        "order_index": 16,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000146",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Was the line sample visually inspected and approved?",
+        "field_type": "yes_no_na",
+        "item_number": "20A",
+        "order_index": 16,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000145",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000147",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Was a first foot sample taken from each tank?",
+        "field_type": "yes_no_na",
+        "item_number": "21",
+        "order_index": 17,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000148",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Were the first foot samples visually inspected and approved?",
+        "field_type": "yes_no_na",
+        "item_number": "21A",
+        "order_index": 18,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000147",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000149",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Have the charterers been notified that the cargo is off-spec?",
+        "field_type": "yes_no_na",
+        "item_number": "22",
+        "order_index": 19,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "or",
+          "conditions": [
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000146",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000148",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000164",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000167",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      }
+    ]
+  },
+  "uht": {
+    "sections": [
+      {
+        "id": "75480000-0000-4000-8000-000000000002",
+        "title": "Job details",
+        "order_index": 0,
+        "is_repeatable": false,
+        "conditional_logic": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000006",
+        "title": "Test round",
+        "order_index": 1,
+        "is_repeatable": true,
+        "conditional_logic": null
+      }
+    ],
+    "fields": [
+      {
+        "id": "75480000-0000-4000-8000-000000000003",
+        "section_id": "75480000-0000-4000-8000-000000000002",
+        "label": "Location",
+        "field_type": "text",
+        "item_number": "1",
+        "order_index": 0,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000007",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Date",
+        "field_type": "date",
+        "item_number": null,
+        "order_index": 0,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000008",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Start time",
+        "field_type": "time",
+        "item_number": null,
+        "order_index": 1,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "ea954d2a-b76d-41d0-82ca-311a2b9b5be1",
+        "section_id": "75480000-0000-4000-8000-000000000002",
+        "label": "New Field",
+        "field_type": "text",
+        "item_number": "2",
+        "order_index": 1,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000004",
+        "section_id": "75480000-0000-4000-8000-000000000002",
+        "label": "Number of holds",
+        "field_type": "number",
+        "item_number": "3",
+        "order_index": 2,
+        "is_required": false,
+        "unit": null,
+        "validation": {
+          "max": 9,
+          "min": 1
+        },
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000009",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "End time",
+        "field_type": "time",
+        "item_number": null,
+        "order_index": 2,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000005",
+        "section_id": "75480000-0000-4000-8000-000000000002",
+        "label": "Number of hatches",
+        "field_type": "number",
+        "item_number": "4",
+        "order_index": 3,
+        "is_required": false,
+        "unit": null,
+        "validation": {
+          "max": 9,
+          "min": 1
+        },
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000010",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 1",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 3,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "0",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000011",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 2",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 4,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "1",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000012",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 3",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 5,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "2",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000013",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 4",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 6,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "3",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000014",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 5",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 7,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "4",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000015",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 6",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 8,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "5",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000016",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 7",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 9,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "6",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000017",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 8",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 10,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "7",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000018",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Hold 9",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 11,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "8",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000019",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 1",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 12,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "0",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": [
+          {
+            "color": "green",
+            "label": "Pass",
+            "value": "pass"
+          },
+          {
+            "color": "red",
+            "label": "Fail",
+            "value": "fail"
+          }
+        ]
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000065",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 2",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 13,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "1",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000066",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 3",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 14,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "2",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000067",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 4",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 15,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "3",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000068",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 5",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 16,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "4",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000069",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 6",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 17,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "5",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000070",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 7",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 18,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "6",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000071",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 8",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 19,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "7",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000072",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Bilge 9",
+        "field_type": "pass_fail",
+        "item_number": null,
+        "order_index": 20,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "8",
+              "field_id": "75480000-0000-4000-8000-000000000004",
+              "operator": "greater_than"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
+        "id": "75480000-0000-4000-8000-000000000020",
+        "section_id": "75480000-0000-4000-8000-000000000006",
+        "label": "Further re-test required?",
+        "field_type": "yes_no",
+        "item_number": null,
+        "order_index": 21,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      }
+    ]
+  }
+}
