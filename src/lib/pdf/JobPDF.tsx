@@ -472,6 +472,33 @@ interface PDFProps {
   hideClient?: boolean
   /** Template opted to drop the Surveyor row from the header. */
   hideSurveyor?: boolean
+  /** Split the header rows evenly across the two columns instead of the historic
+   *  job-rows-left / checklist-rows-right split. Opt-in per template (migration 141). */
+  balancedHeader?: boolean
+}
+
+export interface HeaderRow { label: string; value: string }
+
+/** Rows that have always belonged to the header's right-hand column. */
+const FIXED_RIGHT_LABELS = new Set(['Port', 'Method of Delivery', 'Bunker Vessel Name'])
+
+/**
+ * Split the report header's rows into its two columns.
+ *
+ * Default (`balanced` false) is the historic fixed split: job-record rows (Vessel, Client,
+ * Date, Surveyor) on the left, checklist-derived rows (Port, Method of Delivery, Bunker
+ * Vessel Name) on the right. That reads lopsided when a template has six rows — 4 and 2 —
+ * so a template can opt into an even split (`pdf_balanced_header`, migration 141).
+ *
+ * Both modes slice the same ordered list, so the columns always partition it exactly:
+ * no row is dropped and none is printed twice.
+ */
+export function splitHeaderRows(rows: HeaderRow[], balanced: boolean): [HeaderRow[], HeaderRow[]] {
+  const firstRight = rows.findIndex(r => FIXED_RIGHT_LABELS.has(r.label))
+  const cut = balanced
+    ? Math.ceil(rows.length / 2)
+    : (firstRight < 0 ? rows.length : firstRight)
+  return [rows.slice(0, cut), rows.slice(cut)]
 }
 
 function DetailRow({ label, value, labelWidth }: { label: string; value: string; labelWidth?: number }) {
@@ -496,7 +523,7 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
@@ -558,17 +585,24 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // over-estimating is harmless (right-aligned colons still line up, just a touch of gap).
   const labelColWidth = (labels: string[]) =>
     labels.length ? Math.max(...labels.map(l => (l.length + 1) * 4.6)) : undefined
-  const leftLabelW = labelColWidth([
-    job.vessel_name ? 'Vessel' : '',
-    job.client?.name && !hideClient ? 'Client' : '',
-    dateField && fieldValues[dateField.id] ? 'Date' : '',
-    surveyors.length > 0 && !hideSurveyor ? `Surveyor${surveyors.length > 1 ? 's' : ''}` : '',
-  ].filter(Boolean))
-  const rightLabelW = labelColWidth([
-    portField && fieldValues[portField.id] ? 'Port' : '',
-    methodDisplay ? 'Method of Delivery' : '',
-    showBunkerVessel && bunkerVesselField && fieldValues[bunkerVesselField.id] ? 'Bunker Vessel Name' : '',
-  ].filter(Boolean))
+
+  // The header rows that actually have a value, in print order.
+  const headerRows: Array<{ label: string; value: string }> = [
+    job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name) } : null,
+    job.client?.name && !hideClient ? { label: 'Client', value: job.client.name } : null,
+    dateField && fieldValues[dateField.id] ? { label: 'Date', value: fieldValues[dateField.id] } : null,
+    surveyors.length > 0 && !hideSurveyor
+      ? { label: `Surveyor${surveyors.length > 1 ? 's' : ''}`, value: surveyors.join(', ') } : null,
+    portField && fieldValues[portField.id] ? { label: 'Port', value: fieldValues[portField.id] } : null,
+    methodDisplay ? { label: 'Method of Delivery', value: methodDisplay } : null,
+    showBunkerVessel && bunkerVesselField && fieldValues[bunkerVesselField.id]
+      ? { label: 'Bunker Vessel Name', value: fieldValues[bunkerVesselField.id] } : null,
+  ].filter((r): r is { label: string; value: string } => !!r)
+
+  const [leftRows, rightRows] = splitHeaderRows(headerRows, balancedHeader)
+
+  const leftLabelW = labelColWidth(leftRows.map(r => r.label))
+  const rightLabelW = labelColWidth(rightRows.map(r => r.label))
 
   const reportTitle = job.template?.name ?? job.title
 
@@ -614,15 +648,10 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {!useFlagHeader && (
           <View style={styles.jobDetailsBlock}>
             <View style={styles.jobDetailCol}>
-              {job.vessel_name && <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} labelWidth={leftLabelW} />}
-              {job.client?.name && !hideClient && <DetailRow label="Client" value={job.client.name} labelWidth={leftLabelW} />}
-              {dateField && fieldValues[dateField.id] && <DetailRow label="Date" value={fieldValues[dateField.id]} labelWidth={leftLabelW} />}
-              {surveyors.length > 0 && !hideSurveyor && <DetailRow label={`Surveyor${surveyors.length > 1 ? 's' : ''}`} value={surveyors.join(', ')} labelWidth={leftLabelW} />}
+              {leftRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={leftLabelW} />)}
             </View>
             <View style={styles.jobDetailCol}>
-              {portField && fieldValues[portField.id] && <DetailRow label="Port" value={fieldValues[portField.id]} labelWidth={rightLabelW} />}
-              {methodDisplay ? <DetailRow label="Method of Delivery" value={methodDisplay} labelWidth={rightLabelW} /> : null}
-              {showBunkerVessel && fieldValues[bunkerVesselField!.id] && <DetailRow label="Bunker Vessel Name" value={fieldValues[bunkerVesselField!.id]} labelWidth={rightLabelW} />}
+              {rightRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={rightLabelW} />)}
             </View>
           </View>
         )}

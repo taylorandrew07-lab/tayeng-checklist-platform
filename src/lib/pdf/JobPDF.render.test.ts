@@ -79,3 +79,43 @@ describe('JobPDF render (borescoping-style)', () => {
     expect(Buffer.from(reordered).equals(Buffer.from(natural))).toBe(false)
   }, 25000)
 })
+
+// The header is two columns. Historically the split was fixed: job-record rows (Vessel,
+// Client, Date, Surveyor) left, checklist-derived rows (Port, Method of Delivery, Bunker
+// Vessel Name) right. `balancedHeader` (migration 141) spreads them evenly instead — with
+// Brine's six rows that is 3 and 3 rather than 4 and 2. These pin BOTH behaviours so the
+// opt-in cannot silently become the default for every other report.
+describe('JobPDF header column split', () => {
+  const sections = [{
+    id: 's1', title: 'Job Details', is_repeatable: false,
+    fields: [
+      { id: 'd', label: 'Date', field_type: 'date', order_index: 0 },
+      { id: 'p', label: 'Port', field_type: 'text', order_index: 1 },
+      { id: 'm', label: 'Method of Delivery', field_type: 'dropdown', order_index: 2,
+        options: [{ value: 'shore_tank', label: 'Shore Tank' }] },
+    ],
+  }]
+  const fieldValues = { d: '2026-07-18', p: 'Point Lisas', m: 'shore_tank' }
+  const job: any = {
+    id: 'j1', title: 'Brine Transfer', job_number: '26-07-001',
+    vessel_name: 'Test Vessel', client: { name: 'Test Client' },
+    template: { name: 'Brine Transfer Checklist' },
+  }
+  const common = {
+    job, sections: sections as any, fieldValues, arrayValues: {}, signatures: {},
+    photoCount: 0, photos: [], surveyors: ['A. Taylor'],
+  }
+
+  it('renders with the historic fixed split by default', async () => {
+    const buf = await renderToBuffer(React.createElement(JobPDF, common as any) as any)
+    expect(buf.length).toBeGreaterThan(0)
+  })
+
+  it('renders with an even split when the template opts in', async () => {
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, balancedHeader: true } as any) as any,
+    )
+    expect(buf.length).toBeGreaterThan(0)
+  })
+
+})

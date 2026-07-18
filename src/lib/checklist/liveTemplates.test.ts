@@ -46,11 +46,19 @@ const brineUnits = (): VisibilityUnit[] =>
       .map(f => ({ key: f.id, logic: f.conditional_logic, sectionLogic: s.conditional_logic })),
   )
 
+/** The four sample chains: [sample taken?, approved?, charterers notified?]. */
+const SAMPLE_CHAINS: Array<[string, string, string]> = [
+  ['20', '20A', '20B'],  // line sample at commencement
+  ['21', '21A', '21B'],  // first foot samples
+  ['23', '23A', '23B'],  // second line sample on resumption
+  ['24', '24A', '24B'],  // periodic samples
+]
+
 describe('Brine Transfer — conditional rules, against the live seeded template', () => {
   // Every "iff parent = Yes" rule from the source form.
   const simple: Array<[string, string]> = [
     ['1A', '1'], ['4A', '4'], ['6A', '6'], ['20A', '20'],
-    ['21A', '21'], ['24A', '24'], ['25A', '25'], ['30A', '30'], ['32A', '32'],
+    ['21A', '21'], ['23A', '23'], ['24A', '24'], ['29A', '29'], ['31A', '31'],
   ]
   it.each(simple)('%s is shown only when %s is Yes', (child, parent) => {
     expect(visible(item(child), vals({ [parent]: 'yes' }))).toBe(true)
@@ -67,20 +75,32 @@ describe('Brine Transfer — conditional rules, against the live seeded template
     expect(visible(item('6B'), vals({ '6': 'no' }))).toBe(false)
   })
 
-  it('22 appears when ANY inspection fails, including ones in a later section', () => {
-    for (const failed of ['20A', '21A', '24A', '25A']) {
-      expect(visible(item('22'), vals({ [failed]: 'no' }))).toBe(true)
+  // Migration 138 replaced the single item 22 with a per-sample escalation, so the
+  // off-spec question always sits directly under the sample that failed.
+  it.each(SAMPLE_CHAINS)('%s → %s → %s escalates only on a failed inspection', (n, a, b) => {
+    expect(visible(item(b), vals({ [n]: 'yes', [a]: 'no' }))).toBe(true)
+    expect(visible(item(b), vals({ [n]: 'yes', [a]: 'yes' }))).toBe(false)
+    expect(visible(item(b), vals({ [n]: 'yes', [a]: 'na' }))).toBe(false)
+    // Sample never taken: the approval question never showed, so no escalation.
+    expect(visible(item(b), vals({ [n]: 'no' }))).toBe(false)
+    expect(visible(item(b), {})).toBe(false)
+  })
+
+  it('keeps the four escalations independent of each other', () => {
+    // A failure on the line sample must not raise the periodic-sample escalation.
+    const v = vals({ '20': 'yes', '20A': 'no' })
+    expect(visible(item('20B'), v)).toBe(true)
+    for (const b of ['21B', '23B', '24B']) expect(visible(item(b), v)).toBe(false)
+  })
+
+  it('no longer carries the old cross-section item 22', () => {
+    const offSpec = brine.fields.filter(f => /charterers been notified/i.test(f.label))
+    expect(offSpec).toHaveLength(4)
+    // Every one is gated on its own two-step chain, not an OR across sections.
+    for (const f of offSpec) {
+      expect(f.conditional_logic.operator).toBe('and')
+      expect(f.conditional_logic.conditions).toHaveLength(2)
     }
-  })
-
-  it('22 stays hidden while every inspection passes or is unanswered', () => {
-    expect(visible(item('22'), vals({ '20A': 'yes', '21A': 'yes', '24A': 'yes', '25A': 'yes' }))).toBe(false)
-    expect(visible(item('22'), {})).toBe(false)
-  })
-
-  it('22 keys off the sub-items, never their parents', () => {
-    // A sample simply not taken (parent = No) must NOT raise the off-spec question.
-    expect(visible(item('22'), vals({ '20': 'no', '24': 'no' }))).toBe(false)
   })
 
   it('remarks on a parent answer do not break its children (yes|||note)', () => {
@@ -88,17 +108,17 @@ describe('Brine Transfer — conditional rules, against the live seeded template
   })
 
   // The defect that motivated clearHiddenAnswers, replayed on the real template.
-  it('correcting item 20 clears 20A and retires item 22 from the report', () => {
-    const before = vals({ '20': 'yes', '20A': 'no', '22': 'yes' })
-    expect(visible(item('22'), before)).toBe(true)
+  it.each(SAMPLE_CHAINS)('correcting %s clears %s and retires %s', (n, a, b) => {
+    const before = vals({ [n]: 'yes', [a]: 'no', [b]: 'yes' })
+    expect(visible(item(b), before)).toBe(true)
 
-    const corrected = { ...before, [item('20').id]: 'no' }
+    const corrected = { ...before, [item(n).id]: 'no' }
     const after = clearHiddenAnswers(brineUnits(), corrected)
 
     expect(after).not.toBeNull()
-    expect(after![item('20A').id]).toBe('')
-    expect(after![item('22').id]).toBe('')
-    expect(visible(item('22'), after!)).toBe(false)
+    expect(after![item(a).id]).toBe('')
+    expect(after![item(b).id]).toBe('')
+    expect(visible(item(b), after!)).toBe(false)
   })
 
   it('clears the whole 6 → 6A → 6B chain in one pass', () => {
@@ -116,17 +136,21 @@ describe('Brine Transfer — conditional rules, against the live seeded template
 })
 
 describe('Brine Transfer — structure, against the live seeded template', () => {
-  it('carries items 1..33 plus all ten lettered sub-items', () => {
+  it('carries items 1..32 plus every lettered sub-item', () => {
     const nums = brine.fields.map(f => f.item_number).filter(Boolean) as string[]
-    for (let n = 1; n <= 33; n++) expect(nums, `item ${n}`).toContain(String(n))
-    for (const l of ['1A', '4A', '6A', '6B', '20A', '21A', '24A', '25A', '30A', '32A']) {
+    for (let n = 1; n <= 32; n++) expect(nums, `item ${n}`).toContain(String(n))
+    for (const l of ['1A', '4A', '6A', '6B', '20A', '20B', '21A', '21B', '23A', '23B', '24A', '24B', '29A', '31A']) {
       expect(nums, `item ${l}`).toContain(l)
     }
+    expect(nums, 'item 33 was retired when item 22 was removed').not.toContain('33')
   })
 
-  it('withholds N/A on the hard-evidence items only', () => {
+  it('withholds N/A only where the answer cannot legitimately be "not applicable"', () => {
+    // Shore-side soundings and meter photographs, and the cargo certificate. The vessel-side
+    // equivalents (14, 15, 28, 29) DO offer N/A — a ship may have no ATGs and no flow meter.
     const strict = brine.fields.filter(f => f.field_type === 'yes_no').map(f => f.item_number).sort()
-    expect(strict).toEqual(['10', '14', '15', '29', '30', '31', '32', '33', '9'].sort())
+    expect(strict).toEqual(['9', '10', '30', '31', '32'].sort())
+    for (const n of ['14', '15', '28', '29']) expect(item(n).field_type).toBe('yes_no_na')
   })
 
   it('reverse-colours item 6 so a single cargo type reads green', () => {
@@ -135,21 +159,34 @@ describe('Brine Transfer — structure, against the live seeded template', () =>
     expect(six.find(o => o.value === 'yes')?.color).toBe('amber')
   })
 
-  it('reconciles Ship minus Shore in BBLS with the agreed colour bands', () => {
-    const diff = brine.fields.find(f => f.label.startsWith('Difference'))!
-    const pct = brine.fields.find(f => f.validation?.display_as === 'percentage')!
+  it('reports the difference and its variance on ONE line, as the fuel report does', () => {
+    const calcs = brine.fields.filter(f => f.field_type === 'calculated')
+    expect(calcs, 'a separate % Variance row would print on its own line').toHaveLength(1)
+
+    const diff = calcs[0]
     const ship = brine.fields.find(f => f.label === "Ship's figure")!
     const shore = brine.fields.find(f => f.label === 'Shore figure')!
 
     expect(diff.calculation_formula).toBe(`{${ship.id}}-{${shore.id}}`)
     expect(diff.unit).toBe('BBLS')
-    expect(pct.unit).toBe('BBLS')
+    expect(diff.validation.display_as).toBe('percentage')
     // The denominator is the LAST token in the formula — it must be the SHORE figure.
-    const tokens = Array.from(pct.calculation_formula!.matchAll(/\{([^}]+)\}/g), m => m[1])
+    const tokens = Array.from(diff.calculation_formula!.matchAll(/\{([^}]+)\}/g), m => m[1])
     expect(tokens[tokens.length - 1]).toBe(shore.id)
-    expect(pct.validation.thresholds).toEqual([
+    expect(diff.validation.thresholds).toEqual([
       { max: 1, color: 'green' }, { max: 2, color: 'amber' }, { color: 'red' },
     ])
+  })
+
+  it('carries the header fields the report puts in its right-hand column', () => {
+    // JobPDF finds these by label and suppresses them from the body (JobPDF.tsx:530-532, 543-549).
+    expect(brine.fields.find(f => /\bdate\b/i.test(f.label))?.field_type).toBe('date')
+    expect(brine.fields.find(f => /\bport\b/i.test(f.label))?.field_type).toBe('text')
+    expect(brine.fields.find(f => /method.*delivery/i.test(f.label))?.field_type).toBe('dropdown')
+  })
+
+  it('has no in-section sub-headings left', () => {
+    expect(brine.fields.filter(f => f.field_type === 'heading')).toEqual([])
   })
 
   it('keeps the repeatable hourly section free of conditionals and required fields', () => {

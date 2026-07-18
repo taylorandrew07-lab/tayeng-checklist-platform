@@ -53,34 +53,6 @@
     ],
     "fields": [
       {
-        "id": "b21e0000-0000-4000-8000-000000000110",
-        "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "Charter history",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 0,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000160",
-        "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Rate increase",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 0,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
         "id": "b21e0000-0000-4000-8000-000000000100",
         "section_id": "b21e0000-0000-4000-8000-000000000010",
         "label": "Operation",
@@ -108,7 +80,7 @@
         "section_id": "b21e0000-0000-4000-8000-000000000014",
         "label": "Time of inspection",
         "field_type": "time",
-        "item_number": "26",
+        "item_number": "25",
         "order_index": 0,
         "is_required": false,
         "unit": null,
@@ -118,42 +90,14 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000180",
-        "section_id": "b21e0000-0000-4000-8000-000000000015",
-        "label": "Vessel",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 0,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000130",
-        "section_id": "b21e0000-0000-4000-8000-000000000012",
-        "label": "Shore side",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 0,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000190",
+        "id": "b21e0000-0000-4000-8000-000000000191",
         "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "Final calculation of liquid bulk delivered",
-        "field_type": "heading",
+        "label": "Ship's figure",
+        "field_type": "number",
         "item_number": null,
         "order_index": 0,
-        "is_required": false,
-        "unit": null,
+        "is_required": true,
+        "unit": "BBLS",
         "validation": null,
         "calculation_formula": null,
         "conditional_logic": null,
@@ -192,7 +136,7 @@
         "section_id": "b21e0000-0000-4000-8000-000000000013",
         "label": "Has the increased loading rate been agreed between ship and shore, and the shore loading lines and connections inspected immediately on ramp-up?",
         "field_type": "yes_no_na",
-        "item_number": "23",
+        "item_number": "22",
         "order_index": 1,
         "is_required": true,
         "unit": null,
@@ -234,7 +178,7 @@
         "section_id": "b21e0000-0000-4000-8000-000000000015",
         "label": "Have the lines been blown through and verified after completion of discharge?",
         "field_type": "yes_no_na",
-        "item_number": "27",
+        "item_number": "26",
         "order_index": 1,
         "is_required": true,
         "unit": null,
@@ -244,9 +188,9 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000191",
+        "id": "b21e0000-0000-4000-8000-000000000192",
         "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "Ship's figure",
+        "label": "Shore figure",
         "field_type": "number",
         "item_number": null,
         "order_index": 1,
@@ -295,18 +239,18 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000162",
-        "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Resumption samples",
-        "field_type": "heading",
-        "item_number": null,
+        "id": "b21e0000-0000-4000-8000-000000000210",
+        "section_id": "b21e0000-0000-4000-8000-000000000010",
+        "label": "Date",
+        "field_type": "date",
+        "item_number": "",
         "order_index": 2,
-        "is_required": false,
+        "is_required": true,
         "unit": null,
-        "validation": null,
+        "validation": {},
         "calculation_formula": null,
         "conditional_logic": null,
-        "options": null
+        "options": []
       },
       {
         "id": "b21e0000-0000-4000-8000-000000000172",
@@ -327,7 +271,7 @@
         "section_id": "b21e0000-0000-4000-8000-000000000015",
         "label": "Has the cargo line been disconnected from the ship's manifold prior to commencement of final soundings/ullages?",
         "field_type": "yes_no_na",
-        "item_number": "28",
+        "item_number": "27",
         "order_index": 2,
         "is_required": true,
         "unit": null,
@@ -337,16 +281,31 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000192",
+        "id": "b21e0000-0000-4000-8000-000000000193",
         "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "Shore figure",
-        "field_type": "number",
+        "label": "Difference (Ship − Shore)",
+        "field_type": "calculated",
         "item_number": null,
         "order_index": 2,
-        "is_required": true,
+        "is_required": false,
         "unit": "BBLS",
-        "validation": null,
-        "calculation_formula": null,
+        "validation": {
+          "display_as": "percentage",
+          "thresholds": [
+            {
+              "max": 1,
+              "color": "green"
+            },
+            {
+              "max": 2,
+              "color": "amber"
+            },
+            {
+              "color": "red"
+            }
+          ]
+        },
+        "calculation_formula": "{b21e0000-0000-4000-8000-000000000191}-{b21e0000-0000-4000-8000-000000000192}",
         "conditional_logic": null,
         "options": null
       },
@@ -381,9 +340,37 @@
       {
         "id": "b21e0000-0000-4000-8000-000000000163",
         "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Was a line sample taken at the ship's manifold on resumption of loading?",
+        "label": "Was a second line sample taken at the ship's manifold on resumption of loading?",
         "field_type": "yes_no_na",
-        "item_number": "24",
+        "item_number": "23",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": null
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000211",
+        "section_id": "b21e0000-0000-4000-8000-000000000010",
+        "label": "Port",
+        "field_type": "text",
+        "item_number": "",
+        "order_index": 3,
+        "is_required": true,
+        "unit": null,
+        "validation": {},
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": []
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000195",
+        "section_id": "b21e0000-0000-4000-8000-000000000016",
+        "label": "Has the cargo certificate been issued and signed by the vessel, surveyor and shipper representatives?",
+        "field_type": "yes_no",
+        "item_number": "32",
         "order_index": 3,
         "is_required": true,
         "unit": null,
@@ -410,38 +397,10 @@
         "id": "b21e0000-0000-4000-8000-000000000183",
         "section_id": "b21e0000-0000-4000-8000-000000000015",
         "label": "Has a final manual sounding/ullage of the ship's tanks been carried out by the surveyor using a calibrated sounding tape?",
-        "field_type": "yes_no",
-        "item_number": "29",
+        "field_type": "yes_no_na",
+        "item_number": "28",
         "order_index": 3,
         "is_required": true,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000193",
-        "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "Difference (Ship − Shore)",
-        "field_type": "calculated",
-        "item_number": null,
-        "order_index": 3,
-        "is_required": false,
-        "unit": "BBLS",
-        "validation": null,
-        "calculation_formula": "{b21e0000-0000-4000-8000-000000000191}-{b21e0000-0000-4000-8000-000000000192}",
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000114",
-        "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "Tank nomination & this loadout's cargo history",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 4,
-        "is_required": false,
         "unit": null,
         "validation": null,
         "calculation_formula": null,
@@ -466,8 +425,8 @@
         "id": "b21e0000-0000-4000-8000-000000000184",
         "section_id": "b21e0000-0000-4000-8000-000000000015",
         "label": "Has a final photograph of the ship's flow meter been taken?",
-        "field_type": "yes_no",
-        "item_number": "30",
+        "field_type": "yes_no_na",
+        "item_number": "29",
         "order_index": 4,
         "is_required": true,
         "unit": null,
@@ -477,11 +436,42 @@
         "options": null
       },
       {
+        "id": "b21e0000-0000-4000-8000-000000000212",
+        "section_id": "b21e0000-0000-4000-8000-000000000010",
+        "label": "Method of Delivery",
+        "field_type": "dropdown",
+        "item_number": "",
+        "order_index": 4,
+        "is_required": true,
+        "unit": null,
+        "validation": {},
+        "calculation_formula": null,
+        "conditional_logic": null,
+        "options": [
+          {
+            "label": "Shore line / jetty",
+            "value": "shore_line"
+          },
+          {
+            "label": "Road tanker wagon",
+            "value": "road_tanker_wagon"
+          },
+          {
+            "label": "Barge",
+            "value": "barge"
+          },
+          {
+            "label": "Ship to ship",
+            "value": "ship_to_ship"
+          }
+        ]
+      },
+      {
         "id": "b21e0000-0000-4000-8000-000000000164",
         "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Was the 2nd line sample visually inspected and approved?",
+        "label": "Was the second line sample visually inspected and approved?",
         "field_type": "yes_no_na",
-        "item_number": "24A",
+        "item_number": "23A",
         "order_index": 4,
         "is_required": false,
         "unit": null,
@@ -500,39 +490,10 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000194",
-        "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "% Variance vs shore figure",
-        "field_type": "calculated",
-        "item_number": null,
-        "order_index": 4,
-        "is_required": false,
-        "unit": "BBLS",
-        "validation": {
-          "display_as": "percentage",
-          "thresholds": [
-            {
-              "max": 1,
-              "color": "green"
-            },
-            {
-              "max": 2,
-              "color": "amber"
-            },
-            {
-              "color": "red"
-            }
-          ]
-        },
-        "calculation_formula": "{b21e0000-0000-4000-8000-000000000191}-{b21e0000-0000-4000-8000-000000000192}",
-        "conditional_logic": null,
-        "options": null
-      },
-      {
         "id": "b21e0000-0000-4000-8000-000000000115",
         "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "What was the previous cargo loaded in the tanks?",
-        "field_type": "text",
+        "label": "Was there previous cargo loaded in the tanks?",
+        "field_type": "yes_no_na",
         "item_number": "3",
         "order_index": 5,
         "is_required": true,
@@ -543,28 +504,42 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000135",
-        "section_id": "b21e0000-0000-4000-8000-000000000012",
-        "label": "Vessel",
-        "field_type": "heading",
-        "item_number": null,
+        "id": "b21e0000-0000-4000-8000-000000000168",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Have the charterers been notified that the cargo is off-spec?",
+        "field_type": "yes_no_na",
+        "item_number": "23B",
         "order_index": 5,
         "is_required": false,
         "unit": null,
-        "validation": null,
+        "validation": {},
         "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000163",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000164",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": []
       },
       {
         "id": "b21e0000-0000-4000-8000-000000000185",
         "section_id": "b21e0000-0000-4000-8000-000000000015",
         "label": "What is the volume from the ship's flow meter?",
         "field_type": "number",
-        "item_number": "30A",
+        "item_number": "29A",
         "order_index": 5,
         "is_required": false,
-        "unit": "BBLS",
+        "unit": null,
         "validation": null,
         "calculation_formula": null,
         "conditional_logic": {
@@ -577,34 +552,6 @@
             }
           ]
         },
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000165",
-        "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Periodic monitoring",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 5,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000195",
-        "section_id": "b21e0000-0000-4000-8000-000000000016",
-        "label": "Has the cargo certificate been issued and signed by the vessel, surveyor and shipper representatives?",
-        "field_type": "yes_no",
-        "item_number": "33",
-        "order_index": 5,
-        "is_required": true,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
         "options": null
       },
       {
@@ -636,32 +583,44 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000186",
+        "id": "b21e0000-0000-4000-8000-000000000200",
         "section_id": "b21e0000-0000-4000-8000-000000000015",
-        "label": "Shore side",
-        "field_type": "heading",
-        "item_number": null,
+        "label": "Ship's flow meter — unit",
+        "field_type": "dropdown",
+        "item_number": "",
         "order_index": 6,
         "is_required": false,
         "unit": null,
-        "validation": null,
+        "validation": {},
         "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000166",
-        "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Were periodic samples taken at the ship's manifold during loading?",
-        "field_type": "yes_no_na",
-        "item_number": "25",
-        "order_index": 6,
-        "is_required": true,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000184",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": [
+          {
+            "label": "Barrels (BBLS)",
+            "value": "bbls"
+          },
+          {
+            "label": "Cubic metres (m³)",
+            "value": "m3"
+          },
+          {
+            "label": "Litres",
+            "value": "litres"
+          },
+          {
+            "label": "US gallons (USG)",
+            "value": "usg"
+          }
+        ]
       },
       {
         "id": "b21e0000-0000-4000-8000-000000000117",
@@ -690,7 +649,7 @@
         "id": "b21e0000-0000-4000-8000-000000000137",
         "section_id": "b21e0000-0000-4000-8000-000000000012",
         "label": "Has an initial manual sounding/ullage of the ship's tanks been carried out by the surveyor using a calibrated sounding tape?",
-        "field_type": "yes_no",
+        "field_type": "yes_no_na",
         "item_number": "14",
         "order_index": 7,
         "is_required": true,
@@ -701,40 +660,17 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000187",
-        "section_id": "b21e0000-0000-4000-8000-000000000015",
-        "label": "Has a final manual sounding/ullage of the shore tank been carried out by the surveyor using a calibrated sounding tape?",
-        "field_type": "yes_no",
-        "item_number": "31",
+        "id": "b21e0000-0000-4000-8000-000000000166",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Were periodic samples taken at the ship's manifold during loading?",
+        "field_type": "yes_no_na",
+        "item_number": "24",
         "order_index": 7,
         "is_required": true,
         "unit": null,
         "validation": null,
         "calculation_formula": null,
         "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000167",
-        "section_id": "b21e0000-0000-4000-8000-000000000013",
-        "label": "Were the periodic samples visually inspected and found satisfactory?",
-        "field_type": "yes_no_na",
-        "item_number": "25A",
-        "order_index": 7,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": {
-          "operator": "and",
-          "conditions": [
-            {
-              "value": "yes",
-              "field_id": "b21e0000-0000-4000-8000-000000000166",
-              "operator": "equals"
-            }
-          ]
-        },
         "options": null
       },
       {
@@ -755,7 +691,7 @@
         "id": "b21e0000-0000-4000-8000-000000000138",
         "section_id": "b21e0000-0000-4000-8000-000000000012",
         "label": "Has an initial photograph of the ship's flow meter been taken?",
-        "field_type": "yes_no",
+        "field_type": "yes_no_na",
         "item_number": "15",
         "order_index": 8,
         "is_required": true,
@@ -766,11 +702,11 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000188",
+        "id": "b21e0000-0000-4000-8000-000000000187",
         "section_id": "b21e0000-0000-4000-8000-000000000015",
-        "label": "Has a final photograph of the shipper's shore flow meter been taken?",
+        "label": "Has a final manual sounding/ullage of the shore tank been carried out by the surveyor using a calibrated sounding tape?",
         "field_type": "yes_no",
-        "item_number": "32",
+        "item_number": "30",
         "order_index": 8,
         "is_required": true,
         "unit": null,
@@ -780,17 +716,26 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000119",
-        "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "Segregation",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 9,
+        "id": "b21e0000-0000-4000-8000-000000000167",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Were the periodic samples visually inspected and found satisfactory?",
+        "field_type": "yes_no_na",
+        "item_number": "24A",
+        "order_index": 8,
         "is_required": false,
         "unit": null,
         "validation": null,
         "calculation_formula": null,
-        "conditional_logic": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000166",
+              "operator": "equals"
+            }
+          ]
+        },
         "options": null
       },
       {
@@ -808,26 +753,45 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000189",
-        "section_id": "b21e0000-0000-4000-8000-000000000015",
-        "label": "What is the volume from the shipper's shore flow meter?",
-        "field_type": "number",
-        "item_number": "32A",
+        "id": "b21e0000-0000-4000-8000-000000000169",
+        "section_id": "b21e0000-0000-4000-8000-000000000013",
+        "label": "Have the charterers been notified that the cargo is off-spec?",
+        "field_type": "yes_no_na",
+        "item_number": "24B",
         "order_index": 9,
         "is_required": false,
-        "unit": "BBLS",
-        "validation": null,
+        "unit": null,
+        "validation": {},
         "calculation_formula": null,
         "conditional_logic": {
           "operator": "and",
           "conditions": [
             {
               "value": "yes",
-              "field_id": "b21e0000-0000-4000-8000-000000000188",
+              "field_id": "b21e0000-0000-4000-8000-000000000166",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000167",
               "operator": "equals"
             }
           ]
         },
+        "options": []
+      },
+      {
+        "id": "b21e0000-0000-4000-8000-000000000188",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Has a final photograph of the shipper's shore flow meter been taken?",
+        "field_type": "yes_no",
+        "item_number": "31",
+        "order_index": 9,
+        "is_required": true,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": null,
         "options": null
       },
       {
@@ -875,6 +839,29 @@
         "options": null
       },
       {
+        "id": "b21e0000-0000-4000-8000-000000000189",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "What is the volume from the shipper's shore flow meter?",
+        "field_type": "number",
+        "item_number": "31A",
+        "order_index": 10,
+        "is_required": false,
+        "unit": null,
+        "validation": null,
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000188",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": null
+      },
+      {
         "id": "b21e0000-0000-4000-8000-000000000121",
         "section_id": "b21e0000-0000-4000-8000-000000000011",
         "label": "Are segregated loading lines, pumps and manifolds (including discharge lines) being used for each product type?",
@@ -898,18 +885,44 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000141",
-        "section_id": "b21e0000-0000-4000-8000-000000000012",
-        "label": "Agreements",
-        "field_type": "heading",
-        "item_number": null,
+        "id": "b21e0000-0000-4000-8000-000000000201",
+        "section_id": "b21e0000-0000-4000-8000-000000000015",
+        "label": "Shore flow meter — unit",
+        "field_type": "dropdown",
+        "item_number": "",
         "order_index": 11,
         "is_required": false,
         "unit": null,
-        "validation": null,
+        "validation": {},
         "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000188",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": [
+          {
+            "label": "Barrels (BBLS)",
+            "value": "bbls"
+          },
+          {
+            "label": "Cubic metres (m³)",
+            "value": "m3"
+          },
+          {
+            "label": "Litres",
+            "value": "litres"
+          },
+          {
+            "label": "US gallons (USG)",
+            "value": "usg"
+          }
+        ]
       },
       {
         "id": "b21e0000-0000-4000-8000-000000000122",
@@ -968,20 +981,6 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000123",
-        "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "Notification",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 13,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
         "id": "b21e0000-0000-4000-8000-000000000124",
         "section_id": "b21e0000-0000-4000-8000-000000000011",
         "label": "Have the above questions been notified to charterers prior to loading?",
@@ -996,20 +995,6 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000144",
-        "section_id": "b21e0000-0000-4000-8000-000000000012",
-        "label": "First foot & line samples",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 14,
-        "is_required": false,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
         "id": "b21e0000-0000-4000-8000-000000000145",
         "section_id": "b21e0000-0000-4000-8000-000000000012",
         "label": "Was a line sample taken at the ship's manifold at commencement of loading?",
@@ -1017,20 +1002,6 @@
         "item_number": "20",
         "order_index": 15,
         "is_required": true,
-        "unit": null,
-        "validation": null,
-        "calculation_formula": null,
-        "conditional_logic": null,
-        "options": null
-      },
-      {
-        "id": "b21e0000-0000-4000-8000-000000000125",
-        "section_id": "b21e0000-0000-4000-8000-000000000011",
-        "label": "Spill response",
-        "field_type": "heading",
-        "item_number": null,
-        "order_index": 15,
-        "is_required": false,
         "unit": null,
         "validation": null,
         "calculation_formula": null,
@@ -1075,12 +1046,40 @@
         "options": null
       },
       {
+        "id": "b21e0000-0000-4000-8000-000000000150",
+        "section_id": "b21e0000-0000-4000-8000-000000000012",
+        "label": "Have the charterers been notified that the cargo is off-spec?",
+        "field_type": "yes_no_na",
+        "item_number": "20B",
+        "order_index": 17,
+        "is_required": false,
+        "unit": null,
+        "validation": {},
+        "calculation_formula": null,
+        "conditional_logic": {
+          "operator": "and",
+          "conditions": [
+            {
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000145",
+              "operator": "equals"
+            },
+            {
+              "value": "no",
+              "field_id": "b21e0000-0000-4000-8000-000000000146",
+              "operator": "equals"
+            }
+          ]
+        },
+        "options": []
+      },
+      {
         "id": "b21e0000-0000-4000-8000-000000000147",
         "section_id": "b21e0000-0000-4000-8000-000000000012",
         "label": "Was a first foot sample taken from each tank?",
         "field_type": "yes_no_na",
         "item_number": "21",
-        "order_index": 17,
+        "order_index": 18,
         "is_required": true,
         "unit": null,
         "validation": null,
@@ -1094,7 +1093,7 @@
         "label": "Were the first foot samples visually inspected and approved?",
         "field_type": "yes_no_na",
         "item_number": "21A",
-        "order_index": 18,
+        "order_index": 19,
         "is_required": false,
         "unit": null,
         "validation": null,
@@ -1112,42 +1111,32 @@
         "options": null
       },
       {
-        "id": "b21e0000-0000-4000-8000-000000000149",
+        "id": "b21e0000-0000-4000-8000-000000000151",
         "section_id": "b21e0000-0000-4000-8000-000000000012",
         "label": "Have the charterers been notified that the cargo is off-spec?",
         "field_type": "yes_no_na",
-        "item_number": "22",
-        "order_index": 19,
+        "item_number": "21B",
+        "order_index": 20,
         "is_required": false,
         "unit": null,
-        "validation": null,
+        "validation": {},
         "calculation_formula": null,
         "conditional_logic": {
-          "operator": "or",
+          "operator": "and",
           "conditions": [
             {
-              "value": "no",
-              "field_id": "b21e0000-0000-4000-8000-000000000146",
+              "value": "yes",
+              "field_id": "b21e0000-0000-4000-8000-000000000147",
               "operator": "equals"
             },
             {
               "value": "no",
               "field_id": "b21e0000-0000-4000-8000-000000000148",
               "operator": "equals"
-            },
-            {
-              "value": "no",
-              "field_id": "b21e0000-0000-4000-8000-000000000164",
-              "operator": "equals"
-            },
-            {
-              "value": "no",
-              "field_id": "b21e0000-0000-4000-8000-000000000167",
-              "operator": "equals"
             }
           ]
         },
-        "options": null
+        "options": []
       }
     ]
   },

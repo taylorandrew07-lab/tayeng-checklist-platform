@@ -275,6 +275,9 @@ export interface ChecklistTemplate {
   pdf_hide_client: boolean
   /** When true, the report header omits the Surveyor row. Default false. */
   pdf_hide_surveyor: boolean
+  /** Spread the report header rows evenly across both columns instead of the default
+   *  job-rows-left / checklist-rows-right split. See migration 141. */
+  pdf_balanced_header: boolean
   /** Fixed legal boilerplate printed at the end of every generated PDF for this
    *  template (NOT an editable survey field). null prints nothing. */
   pdf_disclaimer: string | null

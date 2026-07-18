@@ -39,7 +39,7 @@ const main = async () => {
   const [tpls, secs, flds, jobs, vals, photos] = await Promise.all([
     db.from('checklist_templates').select('id, name, status'),
     db.from('template_sections').select('id, template_id, title, is_repeatable, order_index'),
-    db.from('template_fields').select('id, template_id, section_id, label, field_type, item_number, calculation_formula, conditional_logic, show_in_header'),
+    db.from('template_fields').select('id, template_id, section_id, label, field_type, item_number, order_index, calculation_formula, conditional_logic, show_in_header'),
     db.from('jobs').select('id, template_id, report_number, title, submitted_at'),
     db.from('job_field_values').select('job_id, field_id'),
     db.from('job_photos').select('job_id, field_id'),
@@ -68,6 +68,18 @@ const main = async () => {
     // Duplicate item numbers
     const byNum = new Map(); for (const f of tf) if (f.item_number) byNum.set(f.item_number, (byNum.get(f.item_number) ?? 0) + 1)
     for (const [n, c] of byNum) if (c > 1) console.log(`    ⚠ DUPLICATE item_number ×${c}: "${n}"`)
+    // Tied order_index WITHIN a section. Order is what every renderer sorts on, so a tie
+    // sorts arbitrarily: a field can land in a different place in the app than in the PDF,
+    // or a heading can strand itself mid-block.
+    for (const sec of secs.filter(x => x.template_id === t.id)) {
+      const byIdx = new Map()
+      for (const f of tf.filter(x => x.section_id === sec.id)) {
+        byIdx.set(f.order_index, [...(byIdx.get(f.order_index) ?? []), f.label])
+      }
+      for (const [idx, labels] of byIdx) {
+        if (labels.length > 1) console.log(`    ⚠ TIED order_index ${idx} in "${sec.title}": ${labels.map(l => l.slice(0, 40)).join(' | ')}`)
+      }
+    }
     // Broken calc / conditional references
     const ownIds = new Set(tf.map(f => f.id))
     for (const f of tf) {
