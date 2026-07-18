@@ -164,8 +164,9 @@ describe('Brine Transfer — structure, against the live seeded template', () =>
     expect(calcs, 'a separate % Variance row would print on its own line').toHaveLength(1)
 
     const diff = calcs[0]
-    const ship = brine.fields.find(f => f.label === "Ship's figure")!
-    const shore = brine.fields.find(f => f.label === 'Shore figure')!
+    // Found by id, not label — the delivery-side labels carry {uuid} tokens.
+    const ship = brine.fields.find(f => f.id.endsWith('191'))!
+    const shore = brine.fields.find(f => f.id.endsWith('192'))!
 
     expect(diff.calculation_formula).toBe(`{${ship.id}}-{${shore.id}}`)
     expect(diff.unit).toBe('BBLS')
@@ -187,6 +188,67 @@ describe('Brine Transfer — structure, against the live seeded template', () =>
 
   it('has no in-section sub-headings left', () => {
     expect(brine.fields.filter(f => f.field_type === 'heading')).toEqual([])
+  })
+})
+
+describe('Brine Transfer — delivery-side wording follows Method of Delivery', () => {
+  const method = brine.fields.find(f => /method.*delivery/i.test(f.label))!
+  const token = `{${method.id}}`
+  /** Resolve a label the way the app and the report both do. */
+  const render = (label: string, optionValue: string) => {
+    const opt = (method.options as Array<{ value: string; label: string }>)
+      .find(o => o.value === optionValue)!
+    return label.replaceAll(token, opt.label)
+  }
+
+  it('offers the three delivery sources, with the vessel one disambiguated', () => {
+    const opts = method.options as Array<{ value: string; label: string }>
+    expect(opts.map(o => o.label)).toEqual(['Shore Tank', 'Road Tanker Wagon', 'Delivery Vessel'])
+    // "Vessel" alone would be ambiguous — the checklist already calls the receiving ship
+    // "the vessel", so an interpolated "Vessel flow meter" would read as the ship's.
+    expect(method.is_required).toBe(true)
+  })
+
+  it('no longer hard-codes "shore" in any delivery-side question', () => {
+    const stragglers = brine.fields
+      .filter(f => !f.label.includes(token))
+      .filter(f => /\bshore\b/i.test(f.label))
+      .map(f => `${f.item_number ?? '·'} ${f.label}`)
+    expect(stragglers, 'these still assume a shore tank').toEqual([])
+  })
+
+  it('reads correctly for every delivery method', () => {
+    const delivery = brine.fields.filter(f => f.label.includes(token))
+    expect(delivery.length).toBeGreaterThanOrEqual(13)
+
+    for (const f of delivery) {
+      for (const v of ['shore_tank', 'road_tanker_wagon', 'vessel']) {
+        const out = render(f.label, v)
+        expect(out, `${f.item_number ?? '·'} left a raw token`).not.toContain('{')
+      }
+      // "Shore" may only survive when the source genuinely IS the shore tank.
+      expect(render(f.label, 'road_tanker_wagon'), `${f.item_number ?? '·'} still says shore`)
+        .not.toMatch(/\bshore\b/i)
+      expect(render(f.label, 'vessel'), `${f.item_number ?? '·'} still says shore`)
+        .not.toMatch(/\bshore\b/i)
+      expect(render(f.label, 'shore_tank')).toMatch(/Shore Tank/)
+    }
+  })
+
+  it('keeps the receiving ship\'s own questions untouched', () => {
+    // These are about the vessel being loaded, not the delivery source.
+    for (const n of ['13', '14', '15', '16', '17', '20', '23', '24', '27', '28', '29', '29A']) {
+      expect(item(n).label, `item ${n} should not interpolate`).not.toContain(token)
+    }
+  })
+
+  it('interpolates both sides of the reconciliation consistently', () => {
+    const diff = brine.fields.find(f => f.field_type === 'calculated')!
+    const shore = brine.fields.find(f => f.id.endsWith('192'))!
+    expect(shore.label).toContain(token)
+    expect(diff.label).toContain(token)
+    expect(render(diff.label, 'road_tanker_wagon')).toBe('Difference (Ship − Road Tanker Wagon)')
+    expect(render(shore.label, 'vessel')).toBe('Delivery Vessel figure')
   })
 
   it('keeps the repeatable hourly section free of conditionals and required fields', () => {

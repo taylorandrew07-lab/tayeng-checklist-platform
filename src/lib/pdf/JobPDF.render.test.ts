@@ -119,3 +119,53 @@ describe('JobPDF header column split', () => {
   })
 
 })
+
+// A repeatable section normally starts on a fresh page (Borescoping prints a page of
+// photos per entry). Brine's hourly log is one question mid-checklist, where that left
+// most of a page blank — so a section can opt out via pdf_page_break. Default stays true.
+describe('JobPDF repeatable section page break', () => {
+  const makeSections = (pdfPageBreak?: boolean) => [
+    {
+      id: 's1', title: 'Mid Loading', is_repeatable: false,
+      fields: [{ id: 'q24', label: 'Periodic samples taken?', field_type: 'yes_no', item_number: '24', order_index: 0 }],
+    },
+    {
+      id: 's2', title: 'Hourly Loading Line Inspection', is_repeatable: true,
+      ...(pdfPageBreak === undefined ? {} : { pdf_page_break: pdfPageBreak }),
+      fields: [{ id: 'q25', label: 'Time of inspection', field_type: 'time', item_number: '25', order_index: 0 }],
+    },
+    {
+      id: 's3', title: 'Final', is_repeatable: false,
+      fields: [{ id: 'q26', label: 'Lines blown through?', field_type: 'yes_no', item_number: '26', order_index: 0 }],
+    },
+  ]
+  const common = {
+    job: { id: 'j1', title: 'Brine', job_number: '26-07-001', template: { name: 'Brine Transfer Checklist' } } as any,
+    fieldValues: { q24: 'yes', q25: '14:50', q26: 'yes' },
+    arrayValues: {}, signatures: {}, photoCount: 0, photos: [],
+  }
+
+  it('renders when the section opts out of the page break', async () => {
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, sections: makeSections(false) as any } as any) as any)
+    expect(buf.length).toBeGreaterThan(0)
+  })
+
+  it('still breaks by default, and when the column is absent', async () => {
+    for (const sections of [makeSections(true), makeSections(undefined)]) {
+      const buf = await renderToBuffer(
+        React.createElement(JobPDF, { ...common, sections: sections as any } as any) as any)
+      expect(buf.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('opting out produces a SHORTER document than forcing the break', async () => {
+    // The real symptom: a forced break wastes most of a page, so the same content spans
+    // more pages. Byte length is a proxy — a page of whitespace still costs page objects.
+    const [flowed, broken] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: makeSections(false) as any } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: makeSections(true) as any } as any) as any),
+    ])
+    expect(flowed.length).toBeLessThan(broken.length)
+  })
+})

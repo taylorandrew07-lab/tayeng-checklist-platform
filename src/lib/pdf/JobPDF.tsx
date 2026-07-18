@@ -690,8 +690,11 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           if (section.is_repeatable) {
             const ids = orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos)
             return (
-              // Inspections start on a fresh page (after Job Details + preamble).
-              <View key={section.id} style={styles.sectionContainer} break>
+              // Inspections normally start on a fresh page (Borescoping prints a page of
+              // photos per entry, so a mid-page start reads badly). A section can opt out —
+              // Brine's hourly log is a single question in the middle of the checklist, and
+              // forcing a break there left most of a page blank between items 24B and 25.
+              <View key={section.id} style={styles.sectionContainer} break={(section as any).pdf_page_break !== false}>
                 <View wrap={false}>
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
