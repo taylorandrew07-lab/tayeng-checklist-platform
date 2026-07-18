@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Modal } from './Modal'
 import { AlertTriangle } from 'lucide-react'
 
@@ -12,7 +13,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   danger?: boolean
   loading?: boolean
-  error?: string | null
+  /** String, or a node — the checklist passes clickable links to each missing required field. */
+  error?: ReactNode
 }
 
 export function ConfirmDialog({

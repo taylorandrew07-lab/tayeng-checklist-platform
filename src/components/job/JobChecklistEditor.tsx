@@ -20,6 +20,35 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
 import { clearHiddenAnswers, type VisibilityUnit } from '@/lib/checklist/clearHidden'
+
+/** A required field left blank at submit, with enough to link the surveyor straight to it. */
+interface MissingField {
+  /** instanceKey(field.id, instance) — also the DOM anchor. */
+  key: string
+  label: string
+  itemNumber: string | null
+}
+
+/** DOM id of a field's scroll anchor. */
+const fieldAnchorId = (key: string) => `field-${key}`
+
+/**
+ * Scroll a required-but-blank field into view and focus its first control.
+ * A long checklist can hide a missed question hundreds of pixels off-screen, and naming it in
+ * an error message still leaves the surveyor hunting for it.
+ */
+function jumpToField(key: string) {
+  const el = typeof document !== 'undefined' ? document.getElementById(fieldAnchorId(key)) : null
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  // Focus after the scroll settles, so the browser doesn't fight it with its own jump.
+  window.setTimeout(() => {
+    const control = el.querySelector<HTMLElement>('input, select, textarea, button')
+    control?.focus({ preventScroll: true })
+  }, 350)
+  el.classList.add('ring-2', 'ring-red-400', 'rounded-lg')
+  window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-400', 'rounded-lg'), 2200)
+}
 import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import { checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
 import { dirtyState } from '@/lib/dirty-state'
@@ -188,6 +217,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [collapsedEntries, setCollapsedEntries] = useState<Set<string>>(new Set())
     const [showSubmitDialog, setShowSubmitDialog] = useState(false)
     const [submitError, setSubmitError] = useState<string | null>(null)
+    const [missingRequired, setMissingRequired] = useState<MissingField[]>([])
     const [showLeaveDialog, setShowLeaveDialog] = useState(false)
     const [leaveDestination, setLeaveDestination] = useState<string | null>(null)
     const [uploadingField, setUploadingField] = useState<string | null>(null)
@@ -900,7 +930,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
       try {
         // Validate required fields — every entry of a repeatable section.
-        const missing: string[] = []
+        // Each carries its anchor key so the error message can link straight to the field.
+        const missing: MissingField[] = []
         for (const section of sections) {
           if (!checkConditionalLogic(section.conditional_logic, values)) continue
           const ids = section.is_repeatable ? orderFor(section.id) : [0]
@@ -910,29 +941,32 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               if (!checkConditionalLogic(field.conditional_logic, values)) continue
               const key = instanceKey(field.id, inst)
               const label = ids.length > 1 ? `${field.label} (entry ${pos + 1})` : field.label
+              const miss = { key, label, itemNumber: field.item_number ?? null }
               if (field.field_type === 'signature' && !signatures[key]) {
-                missing.push(label)
+                missing.push(miss)
               } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[key]?.length)) {
-                missing.push(label)
+                missing.push(miss)
               } else if (field.field_type === 'photo' && !(fieldPhotos[key]?.length)) {
-                missing.push(label)
+                missing.push(miss)
               } else if (!['signature', 'multiple_choice', 'video_link', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
                 // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
                 // so a field with only remarks (no Yes/No/Pass/Fail picked) still counts as missing.
                 const raw = values[key] ?? ''
                 const answerPart = raw.includes('|||') ? raw.split('|||')[0] : raw
-                if (!answerPart.trim()) missing.push(label)
+                if (!answerPart.trim()) missing.push(miss)
               }
             }
           })
         }
 
         if (missing.length > 0) {
-          const message = `Required fields not completed: ${missing.join(', ')}`
+          setMissingRequired(missing)
+          const message = `Required fields not completed: ${missing.map(m => m.label).join(', ')}`
           setSaveError(message)
           setSubmitError(message)
           return
         }
+        setMissingRequired([])
 
         // Offline: queue the submit locally; it is applied to the server on sync.
         if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -1457,6 +1491,19 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // `inst` is the entry's STABLE instance id (for data); `pos` is its current
           // display position (0-based) — used only for the "Entry N" label so the
           // number tracks the visible order after inserts/reorders.
+          // Wraps a field's control in an anchor the "required fields not completed" message can
+          // scroll to. Returns null for hidden fields, so no empty anchors are emitted.
+          const renderFieldAnchored = (field: TemplateField, inst: number, pos = 0) => {
+            const control = renderFieldControl(field, inst, pos)
+            if (control === null) return null
+            const key = instanceKey(field.id, inst)
+            return (
+              <div key={key} id={fieldAnchorId(key)} className="scroll-mt-24">
+                {control}
+              </div>
+            )
+          }
+
           const renderFieldControl = (field: TemplateField, inst: number, pos = 0) => {
             if (!checkConditionalLogic(field.conditional_logic, values)) return null
             const key = instanceKey(field.id, inst)
@@ -1669,7 +1716,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                                       </div>
                                       {!entryCollapsed && (
                                         <div className="p-4 space-y-5">
-                                          {section.fields.map(field => renderFieldControl(field, inst, pos))}
+                                          {section.fields.map(field => renderFieldAnchored(field, inst, pos))}
                                         </div>
                                       )}
                                     </div>
@@ -1691,7 +1738,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       )}
                     </div>
                   ) : (
-                    section.fields.map(field => renderFieldControl(field, 0))
+                    section.fields.map(field => renderFieldAnchored(field, 0))
                   )}
                 </div>
               )}
@@ -1875,7 +1922,28 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           }
           confirmLabel={isDirty ? 'Save and Submit' : 'Submit Checklist'}
           loading={submitting}
-          error={submitError}
+          error={missingRequired.length > 0 ? (
+            <div className="space-y-2">
+              <p className="font-medium">
+                {missingRequired.length} required {missingRequired.length === 1 ? 'question' : 'questions'} not answered.
+                Tap one to go straight to it:
+              </p>
+              <ul className="space-y-1">
+                {missingRequired.map(m => (
+                  <li key={m.key}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowSubmitDialog(false); jumpToField(m.key) }}
+                      className="text-left underline underline-offset-2 hover:text-red-900"
+                    >
+                      {m.itemNumber && <span className="font-semibold mr-1">{m.itemNumber}</span>}
+                      {m.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : submitError}
         />
 
         {/* Admin override confirmation */}
