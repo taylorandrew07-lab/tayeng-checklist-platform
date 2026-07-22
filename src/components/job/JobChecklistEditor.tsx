@@ -1236,7 +1236,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     if (!job) return null
 
     const isSubmitted = !!job.submitted_at
-    // A closed job is frozen for surveyors too (payments are settled against it). It
+    // A closed job is frozen for surveyors too (it has been invoiced). It
     // behaves like a submitted job: read-only for everyone except a privileged re-open.
     const isClosed = job.workflow_status === 'closed'
     const isLocked = isSubmitted || isClosed
@@ -1373,7 +1373,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         {readOnly && isClosed && !isPrivileged && (
           <div className="rounded-lg bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700 flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />
-            <span>This job is closed — the checklist is locked and can no longer be edited.</span>
+            <span>This job has been invoiced and closed — the checklist is locked and can no longer be edited.</span>
           </div>
         )}
 

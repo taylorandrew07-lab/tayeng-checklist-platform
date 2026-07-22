@@ -4,16 +4,19 @@
 // filtered by client (and optionally month), so you can put many vessels on ONE
 // invoice — and address it to a third-party payer (the "bill to" dropdown) when
 // someone other than the work client pays (e.g. ASCO pays for BP's vessels).
-// Creating the invoice stamps each job with it, so each vessel shows its invoice.
+// Creating the invoice stamps each job with it and CLOSES it (migration 145), which
+// is also what locks surveyor edits — so only jobs you've marked "invoice ready" are
+// billable here; submitted ones sit in a review group with a one-click promote.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
-  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, type InvoiceableJob, type TaxDraft,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady,
+  type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import { listClientBilling } from '@/lib/clients/billing'
 import LineItemsEditor, { blankLine, type DraftLine } from '@/components/invoicing/LineItemsEditor'
@@ -141,14 +144,18 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     ])
     setRates(rs)
     setJobs(js)
+    // Only INVOICE-READY jobs are billable. report_ready ones are listed separately
+    // for a one-click review — never auto-selected, or the deliberate second look
+    // the invoice-ready step exists for would be skipped silently.
+    const billableJs = js.filter(j => j.workflow_status === 'invoice_ready')
     const seeded: Record<string, LineState> = {}
-    js.forEach(j => { seeded[j.id] = seedLine(j, rs) })
+    billableJs.forEach(j => { seeded[j.id] = seedLine(j, rs) })
     setLines(seeded)
     // Auto-add a mileage line per job when the client carries a per_km rate and the
     // job has km logged. Editable/removable; previous auto-mileage lines are dropped
     // on reload, while any manual/expense lines the user added are kept.
     const perKm = rs.filter(r => r.is_active && r.rate_type === 'per_km')
-    const mileageLines: DraftLine[] = perKm.length ? js.flatMap(j => {
+    const mileageLines: DraftLine[] = perKm.length ? billableJs.flatMap(j => {
       if (!j.billable_km || j.billable_km <= 0) return []
       const rate = perKm.find(r => r.job_type === j.job_type) ?? perKm.find(r => !r.job_type)
       if (!rate) return []
@@ -163,22 +170,38 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
 
   useEffect(() => { loadJobs() }, [loadJobs])
 
+  // Billable = invoice-ready. Awaiting = submitted but not yet reviewed; shown below
+  // the billable list with a one-click "Mark invoice ready" so a forgotten flip
+  // never means hunting through the jobs list.
+  const billable = useMemo(() => jobs.filter(j => j.workflow_status === 'invoice_ready'), [jobs])
+  const awaiting = useMemo(() => jobs.filter(j => j.workflow_status === 'report_ready'), [jobs])
+
+  const [markingId, setMarkingId] = useState<string | null>(null)
+  async function markReady(job: InvoiceableJob) {
+    setMarkingId(job.id)
+    const res = await markJobInvoiceReady(job.id)
+    setMarkingId(null)
+    if (res.error) { toast.error(res.error); return }
+    toast.success(`${job.vessel_name ?? job.report_number ?? 'Job'} is now invoice ready`)
+    loadJobs()
+  }
+
   const toggle = (job: InvoiceableJob) => setLines(prev => {
     const next = { ...prev }
     if (next[job.id]) delete next[job.id]
     else next[job.id] = seedLine(job, rates)
     return next
   })
-  const allSelected = jobs.length > 0 && jobs.every(j => lines[j.id])
+  const allSelected = billable.length > 0 && billable.every(j => lines[j.id])
   const toggleAll = () => setLines(prev => {
-    if (jobs.every(j => prev[j.id])) return {}
+    if (billable.every(j => prev[j.id])) return {}
     const all: Record<string, LineState> = {}
-    jobs.forEach(j => { all[j.id] = prev[j.id] ?? seedLine(j, rates) })
+    billable.forEach(j => { all[j.id] = prev[j.id] ?? seedLine(j, rates) })
     return all
   })
   const setLine = (id: string, patch: Partial<LineState>) => setLines(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))
 
-  const orderedLines = jobs.filter(j => lines[j.id]).map(j => ({ job: j, ...lines[j.id] }))
+  const orderedLines = billable.filter(j => lines[j.id]).map(j => ({ job: j, ...lines[j.id] }))
   const allDrafts = [
     ...orderedLines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
     ...extra.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
@@ -302,22 +325,27 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       {clientId && (
         <div className="card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
-            <button onClick={toggleAll} disabled={jobs.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">
+            <button onClick={toggleAll} disabled={billable.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">
               {allSelected ? <CheckSquare className="h-4 w-4 text-brand-600" /> : <Square className="h-4 w-4 text-gray-400" />}
               Select all
             </button>
-            <span className="ml-auto text-xs text-gray-400 tnum">{orderedLines.length} of {jobs.length} selected</span>
+            <span className="ml-auto text-xs text-gray-400 tnum">{orderedLines.length} of {billable.length} selected</span>
           </div>
 
           {loadingJobs ? (
             <div className="p-4 space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-10 w-full" />)}</div>
           ) : jobs.length === 0 ? (
             <p className="p-8 text-center text-sm text-gray-400">
-              No jobs ready to invoice for {clientName}{month ? ` in ${month}` : ''}. Jobs appear here once they&apos;re report-ready or approved and not already on an invoice.
+              No jobs ready to invoice for {clientName}{month ? ` in ${month}` : ''}. Jobs appear here once they&apos;ve been submitted and aren&apos;t already on an invoice.
             </p>
           ) : (
             <div className="divide-y divide-gray-50">
-              {jobs.map(j => {
+              {billable.length === 0 && (
+                <p className="px-4 py-6 text-center text-sm text-gray-400">
+                  Nothing marked invoice ready yet — review the jobs below and mark the ones you want to bill.
+                </p>
+              )}
+              {billable.map(j => {
                 const sel = !!lines[j.id]
                 const ls = lines[j.id]
                 const note = rateNoteFor(j)
@@ -333,7 +361,6 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
                           {j.job_type && <span>· {j.job_type}</span>}
                           {j.scheduled_date && <span>· {formatDate(j.scheduled_date)}</span>}
-                          {j.workflow_status === 'report_ready' && <span className="text-amber-600">· awaiting approval</span>}
                         </div>
                         {sel ? (
                           <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
@@ -352,6 +379,34 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                   </div>
                 )
               })}
+
+              {/* Submitted but not yet reviewed. Deliberately NOT selectable — one
+                  look confirms the report is finished, then it joins the list above. */}
+              {awaiting.length > 0 && (
+                <div className="bg-amber-50/40">
+                  <p className="px-4 pt-3 pb-1 text-xs font-medium text-amber-800">
+                    Awaiting your review · {awaiting.length}
+                    <span className="font-normal text-amber-700/80"> — submitted, but not marked invoice ready yet</span>
+                  </p>
+                  {awaiting.map(j => (
+                    <div key={j.id} className="px-4 py-3 flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
+                          <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
+                          {j.job_type && <span>· {j.job_type}</span>}
+                          {j.scheduled_date && <span>· {formatDate(j.scheduled_date)}</span>}
+                        </div>
+                        <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
+                      </div>
+                      <button onClick={() => markReady(j)} disabled={markingId === j.id}
+                        className="btn-secondary shrink-0 py-1 px-2.5 text-xs disabled:opacity-50">
+                        {markingId === j.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckSquare className="h-3.5 w-3.5" />}
+                        Mark invoice ready
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {jobs.length > 0 && (

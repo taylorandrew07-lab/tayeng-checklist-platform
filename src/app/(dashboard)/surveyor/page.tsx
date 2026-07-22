@@ -132,8 +132,8 @@ export default function SurveyorDashboard() {
   // Bucket by the unified workflow status (kept in sync with the checklist phase).
   // Active = live to-do queue (always shown, all-time). Submitted/Completed history
   // and the summary totals + CSV are scoped to the selected timeframe.
-  const active = jobs.filter(j => ['new', 'assigned', 'in_progress'].includes(j.workflow_status))
-  const submittedAll = jobs.filter(j => !['new', 'assigned', 'in_progress'].includes(j.workflow_status))
+  const active = jobs.filter(j => j.workflow_status === 'in_progress')
+  const submittedAll = jobs.filter(j => j.workflow_status !== 'in_progress')
   const submitted = submittedAll.filter(inRange)
 
   // Totals for the selected timeframe across ALL the surveyor's jobs in range.

@@ -350,10 +350,15 @@ export interface TemplateField {
   updated_at: string
 }
 
-/** Ops workflow lifecycle (separate from the checklist `status`). */
+/** Ops workflow lifecycle (separate from the checklist `status`). Collapsed to
+ *  four stages by migration 145:
+ *    in_progress   — job created / work ongoing
+ *    report_ready  — surveyor submitted
+ *    invoice_ready — admin finished the report; job is billable
+ *    closed        — an invoice was created; LOCKS surveyor edits (job_is_open)
+ *  Deleting the invoice reverts the job to invoice_ready and unlocks it again. */
 export type WorkflowStatus =
-  | 'new' | 'assigned' | 'in_progress' | 'report_ready' | 'approved'
-  | 'invoiced' | 'sent' | 'paid' | 'closed'
+  | 'in_progress' | 'report_ready' | 'invoice_ready' | 'closed'
 
 export interface Job {
   id: string
@@ -402,8 +407,11 @@ export interface Job {
   // 'regular' (plain billable hours) or 'fixed' (flat fee — no hours entry). Source of
   // truth for which hours UI shows on the job.
   billing_mode: 'overtime' | 'regular' | 'fixed'
+  // Stamped when the job reaches 'invoice_ready' (the admin finished the report).
   report_approved_at: string | null
   report_approved_by: string | null
+  // LEGACY (migration 145): payment is not tracked on the job. Nothing writes this
+  // any more — deleteInvoice only NULLs it to clear pre-145 values.
   paid_at: string | null
   closed_at: string | null
   closed_by: string | null

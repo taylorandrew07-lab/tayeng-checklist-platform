@@ -84,7 +84,8 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   }))
 
   const billing = [...aggregateBilling((invs ?? []) as any[]).values()].sort((a, b) => b.outstanding - a.outstanding)
-  const openJobs = ((jobs ?? []) as any[]).filter(j => j.workflow_status !== 'paid' && j.workflow_status !== 'closed').length
+  // Open = not yet invoiced. 'closed' is the only terminal stage post-145.
+  const openJobs = ((jobs ?? []) as any[]).filter(j => j.workflow_status !== 'closed').length
 
   return { client: client as Client, clientBilling, jobCount: (jobs ?? []).length, openJobs, billing, jobs: jobRows, invoices: invoiceRows }
 }

@@ -25,7 +25,7 @@ interface MonitorJob {
 }
 
 // Workflow stages that represent active/ongoing work for the office summary.
-const ONGOING: WorkflowStatus[] = ['new', 'assigned', 'in_progress', 'report_ready']
+const ONGOING: WorkflowStatus[] = ['in_progress', 'report_ready']
 
 export default function OfficeDashboard() {
   const [jobs, setJobs] = useState<MonitorJob[]>([])
@@ -72,7 +72,7 @@ export default function OfficeDashboard() {
     { label: 'Ongoing jobs', value: ongoingCount, icon: Briefcase, color: 'bg-indigo-500' },
     { label: 'In progress', value: counts['in_progress'] ?? 0, icon: Clock, color: 'bg-amber-500' },
     { label: 'Report ready', value: counts['report_ready'] ?? 0, icon: FileCheck2, color: 'bg-blue-500' },
-    { label: 'Approved', value: counts['approved'] ?? 0, icon: CheckCircle2, color: 'bg-green-500' },
+    { label: 'Invoice ready', value: counts['invoice_ready'] ?? 0, icon: CheckCircle2, color: 'bg-green-500' },
   ]
 
   return (

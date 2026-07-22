@@ -24,14 +24,14 @@ import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus,
+  WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, normalizeWorkflowStatus,
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
   type TrackerRow,
 } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
-type Filter = 'open' | 'paid' | 'closed' | 'all'
+type Filter = 'open' | 'invoice_ready' | 'closed' | 'all'
 
 // Persisted column layout (visibility + weights + order). Bumped when the schema changes.
 const COLS_STORAGE_KEY = 'te_jobs_cols_v2'
@@ -40,7 +40,7 @@ const MIN_COL_PX = 46
 const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: 'Regular', fixed: 'Fixed' }
 
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'open', label: 'Open' }, { key: 'paid', label: 'Paid' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
 
 const INV_PILL: Record<string, string> = {
@@ -150,7 +150,7 @@ function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s
       {WORKFLOW_ORDER.map(s => <option key={s} value={s}>{WORKFLOW[s].label}</option>)}
     </select>
   )
-  const w = WORKFLOW[status] ?? WORKFLOW.new
+  const w = WORKFLOW[status] ?? WORKFLOW[normalizeWorkflowStatus(status)]
   return (
     <button onClick={() => setEditing(true)} title="Change status" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
       <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>
@@ -756,7 +756,7 @@ export default function JobsTrackerPage() {
     const term = q.trim().toLowerCase()
     const filtered = rows.filter(r => {
       const ws = r.workflow_status
-      const pass = filter === 'all' ? true : filter === 'paid' ? ws === 'paid' : filter === 'closed' ? ws === 'closed' : (ws !== 'paid' && ws !== 'closed')
+      const pass = filter === 'all' ? true : filter === 'invoice_ready' ? ws === 'invoice_ready' : filter === 'closed' ? ws === 'closed' : ws !== 'closed'
       if (!pass) return false
       if (!inYearMonth(r.created_at, view.year, view.month)) return false
       if (typeFilter && (r.job_type ?? '') !== typeFilter) return false

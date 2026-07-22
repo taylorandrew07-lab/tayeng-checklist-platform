@@ -17,6 +17,7 @@ import {
   type CalendarEventRow,
 } from '@/lib/calendar/api'
 import type { CalendarJob, CalendarVisibility, UserRole } from '@/lib/types/database'
+import { WORKFLOW, normalizeWorkflowStatus } from '@/lib/jobs/tracker'
 import { confirmDialog } from '@/components/ui/confirm'
 import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 
@@ -26,16 +27,13 @@ const LEAVE_COLOR = '#f59e0b'
 const EVENT_COLOR = '#6366f1' // indigo — distinct from jobs
 
 // Jobs are coloured by workflow stage so the calendar reads at a glance.
+// NOTE: Record<string, …>, so TypeScript will NOT flag a missing stage here — keep
+// this in step with WORKFLOW_ORDER by hand.
 const JOB_STATUS_COLOR: Record<string, string> = {
-  new: '#94a3b8',          // slate
-  assigned: '#3b82f6',     // blue
-  in_progress: '#3b82f6',  // blue
-  report_ready: '#8b5cf6', // violet
-  approved: '#22c55e',     // green
-  invoiced: '#14b8a6',     // teal
-  sent: '#14b8a6',         // teal
-  paid: '#22c55e',         // green
-  closed: '#94a3b8',       // slate
+  in_progress: '#3b82f6',   // blue
+  report_ready: '#8b5cf6',  // violet
+  invoice_ready: '#22c55e', // green
+  closed: '#94a3b8',        // slate
 }
 const jobColor = (status: string) => JOB_STATUS_COLOR[status] ?? JOB_COLOR
 
@@ -255,7 +253,7 @@ function DayModal({ dayStr, jobs, events, isAdmin, onClose, onEditEvent, onChang
         {jobs.map(j => (
           <div key={j.id} className="rounded-lg border border-gray-200 p-3" style={{ borderLeftWidth: 3, borderLeftColor: jobColor(j.status) }}>
             <p className="font-medium text-gray-900 flex items-center gap-2"><Briefcase className="h-4 w-4" style={{ color: jobColor(j.status) }} />{j.vessel_name ?? j.title}<span className="text-xs text-gray-400">{j.job_number}</span></p>
-            <p className="text-xs text-gray-500 mt-0.5">{jobTimeLabel(j)} · {j.surveyor_name ?? 'No surveyor'} · {j.client_name ?? 'No client'} · {j.status}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{jobTimeLabel(j)} · {j.surveyor_name ?? 'No surveyor'} · {j.client_name ?? 'No client'} · {WORKFLOW[normalizeWorkflowStatus(j.status)].label}</p>
           </div>
         ))}
       </div>

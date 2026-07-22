@@ -3,7 +3,7 @@
 // the invoicing.view permission (enforced by RLS — this layer just queries).
 
 import { createClient } from '@/lib/supabase/client'
-import { logActivity, setWorkflowStatus, WORKFLOW_ORDER } from '@/lib/jobs/tracker'
+import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
 import { sanitizeStorageName } from '@/lib/utils'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
@@ -77,31 +77,11 @@ export async function setInvoiceStatus(invoiceId: string, status: Invoice['statu
   return {}
 }
 
-/** Mark an invoice sent/paid AND advance its job(s) to match, so the Jobs tracker
- *  reflects the billing stage. Works for consolidated (jobs.invoice_id) and legacy
- *  per-job (invoices.job_id) invoices. The invoice status is the source of truth;
- *  the job advances are best-effort. */
+/** Mark an invoice sent/paid. DECOUPLED from the job (migration 145): a job is
+ *  'closed' from the moment its invoice is created, and nothing an invoice does
+ *  afterwards moves it. Kept as a thin alias so existing callers keep working. */
 export async function setInvoiceAndJobsStatus(invoiceId: string, status: 'sent' | 'paid'): Promise<{ error?: string }> {
-  const res = await setInvoiceStatus(invoiceId, status)
-  if (res.error) return res
-  const supabase = createClient()
-  const byId = new Map<string, string>() // job id → current workflow_status
-  const { data: linked } = await supabase.from('jobs').select('id, workflow_status').eq('invoice_id', invoiceId)
-  ;(linked ?? []).forEach((j: any) => byId.set(j.id, j.workflow_status))
-  const { data: inv } = await supabase.from('invoices').select('job_id').eq('id', invoiceId).maybeSingle()
-  if (inv?.job_id && !byId.has(inv.job_id)) {
-    const { data: jr } = await supabase.from('jobs').select('workflow_status').eq('id', inv.job_id).maybeSingle()
-    if (jr) byId.set(inv.job_id, jr.workflow_status)
-  }
-  // FORWARD-ONLY: only advance jobs whose status is BEFORE the target. Without this
-  // a plain setWorkflowStatus would drag an already-'closed' job (which sorts after
-  // sent/paid) backward, re-opening its surveyor edits. Concurrent — each write
-  // still logs its own activity entry.
-  const order = WORKFLOW_ORDER as readonly string[]
-  const target = order.indexOf(status)
-  const toAdvance = [...byId.entries()].filter(([, s]) => order.indexOf(s) < target).map(([id]) => id)
-  await Promise.all(toAdvance.map(id => setWorkflowStatus(id, status)))
-  return {}
+  return setInvoiceStatus(invoiceId, status)
 }
 
 /** Record that an (overdue) invoice was chased today. */
@@ -250,17 +230,22 @@ export interface InvoiceableJob {
   time_to: string | null
 }
 
-/** Jobs whose work is done (report-ready or approved) and not yet on an invoice —
- *  the pool the Finance "create invoice" flow draws from. Report-ready is included
- *  on purpose so jobs awaiting approval aren't invisible to billing. Optionally
- *  narrowed to a client and/or a YYYY-MM month (by scheduled date, else created). */
+/** Jobs whose work is done and not yet on an invoice — the pool the Finance
+ *  "create invoice" flow draws from. Returns BOTH stages and the builder groups them:
+ *    invoice_ready — billable, selectable now
+ *    report_ready  — submitted but you haven't reviewed the report yet; shown in an
+ *                    "awaiting your review" group with a one-click Mark invoice ready,
+ *                    NOT selectable until flipped. That one deliberate look is the
+ *                    point; fetching it here is what keeps the flip one click away
+ *                    instead of a hunt through the jobs list.
+ *  Optionally narrowed to a client and/or a YYYY-MM month (scheduled date, else created). */
 export async function listInvoiceableJobs(opts: { clientId?: string; month?: string } = {}): Promise<InvoiceableJob[]> {
   const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
   let q = supabase.from('jobs')
     .select('id, report_number, vessel_name, job_type, client_id, template_id, scheduled_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
-    .in('workflow_status', ['report_ready', 'approved'])
+    .in('workflow_status', ['report_ready', 'invoice_ready'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
   if (opts.clientId) q = q.eq('client_id', opts.clientId)
   const { data } = await q
@@ -359,10 +344,17 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   return rows
 }
 
+/** Flip a submitted job to "Invoice ready" — the one-click confirmation that the
+ *  report is finished and the job can be billed. Exposed here (not just on the job
+ *  page) so it can be done straight from the Finance invoice builder. */
+export async function markJobInvoiceReady(jobId: string): Promise<{ error?: string }> {
+  return setWorkflowStatus(jobId, 'invoice_ready')
+}
+
 export interface ConsolidatedLine { job_id: string | null; description: string; qty: number; unit_price: number; is_expense?: boolean; receipt_path?: string | null }
 
 /** Create one invoice spanning many jobs/vessels, stamp each job with it, and
- *  advance those jobs to "invoiced". client_id = whose vessels these are (e.g. BP);
+ *  CLOSE those jobs. client_id = whose vessels these are (e.g. BP);
  *  bill_to_client_id = who pays / who it's addressed to (e.g. ASCO), NULL if same. */
 export async function createConsolidatedInvoice(input: {
   client_id: string | null
@@ -414,8 +406,14 @@ export async function createConsolidatedInvoice(input: {
   // reappear as "available to invoice". Roll the invoice back if it didn't.
   const jobIds = [...new Set(input.lines.map(l => l.job_id).filter(Boolean))] as string[]
   if (jobIds.length > 0) {
+    // Invoicing CLOSES the job (migration 145) — this is what locks surveyor edits
+    // via job_is_open(). These updates bypass setWorkflowStatus, so stamp the close
+    // columns here; the caller is an admin, so the mig-129 admin-column guard allows it.
     const { data: stamped, error: jErr } = await supabase.from('jobs')
-      .update({ invoice_id: invoiceId, workflow_status: 'invoiced' })
+      .update({
+        invoice_id: invoiceId, workflow_status: 'closed',
+        closed_at: new Date().toISOString(), closed_by: user?.id ?? null,
+      })
       .in('id', jobIds)
       .select('id')
     if (jErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: jErr.message } }
@@ -432,7 +430,9 @@ export async function createConsolidatedInvoice(input: {
       vessel_name: input.new_job.vessel_name ?? null,
       job_type: input.new_job.job_type ?? null,
       template_id: null,
-      workflow_status: 'invoiced',
+      workflow_status: 'closed',
+      closed_at: new Date().toISOString(),
+      closed_by: user?.id ?? null,
       invoice_id: invoiceId,
       created_by: user?.id ?? null,
     })
@@ -444,8 +444,9 @@ export async function createConsolidatedInvoice(input: {
 }
 
 /** Delete any invoice (consolidated or per-job): lines/taxes cascade, the FK frees
- *  jobs.invoice_id, and jobs still in a billing stage revert to "report approved"
- *  so they can be re-invoiced. */
+ *  jobs.invoice_id, and every job it closed reverts to "Invoice ready" so it can be
+ *  re-invoiced. NOTE this deliberately UNLOCKS surveyor edits again (job_is_open
+ *  flips back to true) — deleting the invoice is the correction flow. */
 export async function deleteInvoice(invoiceId: string): Promise<{ error?: string }> {
   const supabase = createClient()
   // Capture linked jobs before the row (and its FK link) disappears.
@@ -456,10 +457,15 @@ export async function deleteInvoice(invoiceId: string): Promise<{ error?: string
   const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
   if (error) return { error: error.message }
   if (jobIds.length) {
+    // Un-stamp the close as well as the status, else a reverted job sits at
+    // invoice_ready carrying a stale closed_at/closed_by. paid_at is pre-145 legacy.
     const { error: revErr } = await supabase.from('jobs')
-      .update({ workflow_status: 'approved', invoice_id: null, paid_at: null })
+      .update({
+        workflow_status: 'invoice_ready', invoice_id: null,
+        closed_at: null, closed_by: null, paid_at: null,
+      })
       .in('id', jobIds)
-      .in('workflow_status', ['invoiced', 'sent', 'paid'])
+      .eq('workflow_status', 'closed')
     if (revErr) return { error: revErr.message }
   }
   await logActivity('invoice', invoiceId, 'invoice:delete', { jobs: jobIds.length })

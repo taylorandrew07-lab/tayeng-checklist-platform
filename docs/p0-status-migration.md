@@ -1,5 +1,13 @@
 # P0 — `jobs.status` → `workflow_status` unification (dependency map)
 
+> **SUPERSEDED (migration 145).** This document describes the 9-stage lifecycle
+> (`new → assigned → in_progress → report_ready → approved → invoiced → sent →
+> paid → closed`). That has since been collapsed to **four** stages:
+> `in_progress → report_ready → invoice_ready → closed`, where `closed` is stamped
+> by **creating an invoice** and is what locks surveyor edits. Deleting the invoice
+> reverts the job to `invoice_ready`. Payment is no longer tracked on the job.
+> Kept for the historical dependency map only — the stage names below are stale.
+
 Goal: make **`workflow_status`** the single visible job lifecycle and retire the
 legacy checklist **`status`** column, without breaking RLS, triggers, the
 calendar, offline sync, or the client PDF gate.

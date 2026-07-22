@@ -49,6 +49,7 @@ export function aggregatePipeline(jobs: { workflow_status: WorkflowStatus }[]): 
   const c = new Map<WorkflowStatus, number>()
   for (const j of jobs ?? []) c.set(j.workflow_status, (c.get(j.workflow_status) ?? 0) + 1)
   const byStatus = WORKFLOW_ORDER.map(status => ({ status, count: c.get(status) ?? 0 }))
-  const openJobs = (jobs ?? []).filter(j => j.workflow_status !== 'paid' && j.workflow_status !== 'closed').length
+  // Open = not yet invoiced. 'closed' is the only terminal stage post-145.
+  const openJobs = (jobs ?? []).filter(j => j.workflow_status !== 'closed').length
   return { byStatus, openJobs }
 }

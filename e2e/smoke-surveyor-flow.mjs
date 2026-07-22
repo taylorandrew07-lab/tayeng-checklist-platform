@@ -68,7 +68,7 @@ try {
 
   const { data: job, error: je } = await admin.from('jobs').insert({
     template_id: tmpl.id, title: 'SMOKE TEST JOB - delete me',
-    workflow_status: 'assigned', assigned_to: userId, created_by: adminProf?.id ?? userId, surveyor_name: 'Smoke Surveyor',
+    workflow_status: 'in_progress', assigned_to: userId, created_by: adminProf?.id ?? userId, surveyor_name: 'Smoke Surveyor',
   }).select('id').single()
   if (je) throw new Error('admin insert job: ' + je.message)
   jobId = job.id
@@ -101,7 +101,7 @@ try {
   check(await sb.from('jobs').update({ submitted_at: new Date().toISOString() }).eq('id', jobId).select('id'), 'SUBMIT (set submitted_at)')
 
   check(await sb.from('jobs').update({ workflow_status: 'report_ready' }).eq('id', jobId)
-    .not('workflow_status', 'in', '(report_ready,approved,invoiced,sent,paid,closed)').select('id'), 'advance workflow to report_ready')
+    .not('workflow_status', 'in', '(report_ready,invoice_ready,closed)').select('id'), 'advance workflow to report_ready')
 
   const { data: fin } = await admin.from('jobs').select('submitted_at, workflow_status').eq('id', jobId).single()
   if (!fin?.submitted_at || fin.workflow_status !== 'report_ready') bad(`final state wrong: ${JSON.stringify(fin)}`)

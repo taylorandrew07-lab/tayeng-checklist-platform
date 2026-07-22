@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
+  WORKFLOW, WORKFLOW_ORDER, normalizeWorkflowStatus, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, updateJobField, clearJobLabourForFixed, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
@@ -31,9 +31,10 @@ function activityText(a: ActivityLogRow): string {
   if (act === 'invoice:delete') return 'Invoice deleted'
   if (act === 'invoice:email_draft') return 'Invoice email draft created'
   if (act.startsWith('workflow:')) {
+    // History is kept honest — retired slugs (new/assigned/approved/invoiced/sent/
+    // paid) are folded onto their post-145 stage only for display.
     const raw = act.slice(9)
-    const s = (raw === 'report_uploaded' ? 'report_ready' : raw === 'report_approved' ? 'approved' : raw) as WorkflowStatus
-    return `Status → ${WORKFLOW[s]?.label ?? raw}`
+    return `Status → ${WORKFLOW[normalizeWorkflowStatus(raw)]?.label ?? raw}`
   }
   if (act.startsWith('attachment:')) { const k = act.slice(11) as JobAttachmentKind; return `Uploaded ${attachmentLabel(k).toLowerCase()}` }
   return act
@@ -436,6 +437,15 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const next = idx >= 0 && idx < WORKFLOW_ORDER.length - 1 ? WORKFLOW_ORDER[idx + 1] : null
 
   async function advance(to: WorkflowStatus) {
+    // Closing is normally what CREATING AN INVOICE does. Closing by hand is allowed
+    // (report-only jobs still need a way to finish) but it locks every surveyor edit
+    // and leaves no billing record, so make that explicit first.
+    if (to === 'closed' && job.workflow_status !== 'closed' && !job.invoice_id) {
+      if (!(await confirmDialog({
+        message: 'Closing this job locks all surveyor edits (hours, overtime, km, answers and photos). There is no invoice on it, so it will show up under “Invoice missing” on the Reconcile page. Jobs are normally closed automatically when you create their invoice. Close it anyway?',
+        danger: true, confirmLabel: 'Close without invoicing',
+      }))) return
+    }
     setBusy(true)
     const res = await setWorkflowStatus(job.id, to)
     setBusy(false)
@@ -525,7 +535,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             {next && (
               <button onClick={() => advance(next)} disabled={busy} className="btn-primary text-sm">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {next === 'approved' ? 'Approve report' : `Advance to ${WORKFLOW[next].label}`}
+                {next === 'invoice_ready' ? 'Report done — mark invoice ready' : `Advance to ${WORKFLOW[next].label}`}
               </button>
             )}
             <select value="" onChange={e => { if (e.target.value) advance(e.target.value as WorkflowStatus) }} className="input-base text-sm py-1.5 w-auto" aria-label="Set status">

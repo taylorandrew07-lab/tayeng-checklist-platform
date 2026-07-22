@@ -191,7 +191,9 @@ export default function NewJobPage() {
         client_id: finalClientId,
         created_by: user.id,
         assigned_to: primary?.id ?? null,
-        workflow_status: ids.length ? 'assigned' : 'new',
+        // A job is IN PROGRESS from the moment it's created (migration 145) —
+        // assignment no longer has its own stage.
+        workflow_status: 'in_progress',
         billing_mode: billingMode,
         is_overtime: billingMode === 'overtime',
         notes: notes.trim() || null,

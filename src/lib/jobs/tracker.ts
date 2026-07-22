@@ -13,20 +13,34 @@ export { formatBytes }
 const FILES_BUCKET = 'job-files'
 
 // ── Workflow lifecycle ──────────────────────────────────────────────────────
+// ORDER IS LOAD-BEARING. Both transition helpers below derive all their index
+// math from this array: setWorkflowStatus clears the stamps that sit AHEAD of a
+// backward move, and advanceWorkflowTo refuses to move a job that is already at
+// or past the target. 'invoice_ready' must stay at index 2, before 'closed'.
 export const WORKFLOW_ORDER: WorkflowStatus[] = [
-  'new', 'assigned', 'in_progress', 'report_ready', 'approved', 'invoiced', 'sent', 'paid', 'closed',
+  'in_progress', 'report_ready', 'invoice_ready', 'closed',
 ]
 
 export const WORKFLOW: Record<WorkflowStatus, { label: string; pill: string; dot: string }> = {
-  new:          { label: 'New',          pill: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400' },
-  assigned:     { label: 'Assigned',     pill: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500' },
-  in_progress:  { label: 'In progress',  pill: 'bg-sky-100 text-sky-700',       dot: 'bg-sky-500' },
-  report_ready: { label: 'Report ready', pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
-  approved:     { label: 'Approved',     pill: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
-  invoiced:     { label: 'Invoiced',     pill: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500' },
-  sent:         { label: 'Sent',         pill: 'bg-teal-100 text-teal-700',     dot: 'bg-teal-500' },
-  paid:         { label: 'Paid',         pill: 'bg-green-100 text-green-700',   dot: 'bg-green-500' },
-  closed:       { label: 'Closed',       pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
+  in_progress:   { label: 'In progress',   pill: 'bg-sky-100 text-sky-700',       dot: 'bg-sky-500' },
+  report_ready:  { label: 'Report ready',  pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
+  invoice_ready: { label: 'Invoice ready', pill: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  closed:        { label: 'Closed',        pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
+}
+
+/** Retired pre-145 statuses → their collapsed replacement. Used to render old
+ *  `workflow:*` activity-log slugs (history stays honest; only the label folds). */
+export const LEGACY_WORKFLOW_ALIAS: Record<string, WorkflowStatus> = {
+  new: 'in_progress', assigned: 'in_progress', report_uploaded: 'report_ready',
+  approved: 'invoice_ready', report_approved: 'invoice_ready',
+  invoiced: 'closed', sent: 'closed', paid: 'closed',
+}
+
+/** Normalise any status string (incl. retired ones) to a current WorkflowStatus. */
+export function normalizeWorkflowStatus(s: string | null | undefined): WorkflowStatus {
+  if (!s) return 'in_progress'
+  if ((WORKFLOW as Record<string, unknown>)[s]) return s as WorkflowStatus
+  return LEGACY_WORKFLOW_ALIAS[s] ?? 'in_progress'
 }
 
 export const ATTACHMENT_KINDS: { kind: JobAttachmentKind; label: string }[] = [
@@ -68,12 +82,13 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
   // so closed_at/paid_at/approved never contradict a job that was pulled back (L3).
   const ni = WORKFLOW_ORDER.indexOf(next)
   const patch: Record<string, any> = { workflow_status: next }
-  if (next === 'approved') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
-  else if (ni < WORKFLOW_ORDER.indexOf('approved')) { patch.report_approved_at = null; patch.report_approved_by = null }
-  if (next === 'paid') patch.paid_at = new Date().toISOString()
-  else if (ni < WORKFLOW_ORDER.indexOf('paid')) patch.paid_at = null
+  // 'invoice_ready' is the admin "report finished" stamp (pre-145 this was 'approved').
+  if (next === 'invoice_ready') { patch.report_approved_at = new Date().toISOString(); patch.report_approved_by = user?.id ?? null }
+  else if (ni < WORKFLOW_ORDER.indexOf('invoice_ready')) { patch.report_approved_at = null; patch.report_approved_by = null }
   if (next === 'closed') { patch.closed_at = new Date().toISOString(); patch.closed_by = user?.id ?? null }
-  else if (ni < WORKFLOW_ORDER.indexOf('closed')) { patch.closed_at = null; patch.closed_by = null }
+  // Moving back out of 'closed' un-stamps the close. paid_at is legacy (payment is
+  // no longer tracked on the job) — clear any pre-145 value so it can't mislead.
+  else if (ni < WORKFLOW_ORDER.indexOf('closed')) { patch.closed_at = null; patch.closed_by = null; patch.paid_at = null }
   // .select('id') so an RLS-filtered 0-row update (e.g. a read-only office user) is
   // detected as a denial instead of silently reporting success.
   const { data, error } = await supabase.from('jobs').update(patch).eq('id', jobId).select('id')
@@ -133,9 +148,9 @@ export const CLIENT_STATUS: Record<ClientStatus, { label: string; pill: string; 
 export function clientStatusFor(ws: WorkflowStatus): ClientStatus {
   switch (ws) {
     case 'report_ready': return 'report_ready'
-    case 'approved': case 'invoiced': case 'sent': case 'paid': return 'completed'
+    case 'invoice_ready': return 'completed'
     case 'closed': return 'closed'
-    default: return 'in_progress' // new / assigned / in_progress
+    default: return 'in_progress'
   }
 }
 

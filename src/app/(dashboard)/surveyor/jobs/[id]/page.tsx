@@ -57,7 +57,7 @@ export default function SurveyorJobPage() {
 
       {job.workflow_status === 'closed' && (
         <div className="rounded-lg bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
-          This job is closed. Your hours, overtime, distance and checklist are locked and can no longer be edited.
+          This job has been invoiced and closed. Your hours, overtime, distance and checklist are locked and can no longer be edited. If something needs correcting, ask an admin.
         </div>
       )}
 

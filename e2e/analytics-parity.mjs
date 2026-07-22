@@ -52,9 +52,9 @@ const run = async () => {
   // ── JS replication of the comparable fields ──
   const js = {
     totalJobs: allJobs.length,
-    openJobs: allJobs.filter(j => j.workflow_status !== 'paid' && j.workflow_status !== 'closed').length,
+    openJobs: allJobs.filter(j => j.workflow_status !== 'closed').length,
     thisMonth: allJobs.filter(j => monthTT(j.scheduled_date ?? j.created_at, !!j.scheduled_date) === curMonth).length,
-    awaitingInvoice: allJobs.filter(j => j.workflow_status === 'approved' && !invByJob.has(j.id)).length,
+    awaitingInvoice: allJobs.filter(j => j.workflow_status === 'invoice_ready' && !invByJob.has(j.id)).length,
     otJobs: allJobs.filter(j => j.is_overtime).length,
     overdueCount: allInv.filter(i => i.status === 'overdue' || (i.status === 'sent' && i.due_date && i.due_date < today)).length,
   }

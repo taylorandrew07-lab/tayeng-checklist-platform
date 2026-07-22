@@ -1,25 +1,29 @@
 // Reconciliation red-flag: surface jobs where work is done but billing would
-// otherwise be forgotten — report approved but never invoiced, a workflow that
-// advanced past "invoiced" with no actual invoice record, a billable job with
-// no client to invoice, an invoice left unsent, or one that has gone overdue.
+// otherwise be forgotten — marked invoice-ready but never invoiced, a job CLOSED
+// with no actual invoice record, a billable job with no client to invoice, an
+// invoice left unsent, or one that has gone overdue.
 // All derived from job + invoice state (no extra tables).
+//
+// NOTE (migration 145): this list must NOT filter out 'closed' jobs. Closing is
+// now what invoicing DOES, so every billed job is closed — excluding them (as the
+// pre-145 query did) would leave four of the six categories permanently empty and
+// silently kill the only tool that catches forgotten billing.
 
 import { createClient } from '@/lib/supabase/client'
-import { WORKFLOW_ORDER } from '@/lib/jobs/tracker'
 import { isOverdue } from '@/lib/jobs/invoicing'
 import type { WorkflowStatus, Invoice, Currency } from '@/lib/types/database'
 
 export type ReconCategory =
-  | 'ready_to_invoice'        // report approved, no invoice yet — bill it
-  | 'missing_invoice_record'  // status says invoiced/sent/paid but no invoice exists
+  | 'ready_to_invoice'        // marked invoice-ready, no invoice yet — bill it
+  | 'missing_invoice_record'  // job is closed but no invoice exists
   | 'missing_client'          // billable but no client set — can't invoice
   | 'hours_changed'           // billed, but a surveyor's hours were edited afterwards
   | 'unsent_invoice'          // a draft invoice that hasn't been sent
   | 'overdue_invoice'         // sent invoice past its due date
 
 export const RECON_META: Record<ReconCategory, { label: string; blurb: string; pill: string; dot: string }> = {
-  ready_to_invoice:       { label: 'Ready to invoice',   blurb: 'Report approved — no invoice raised yet.',         pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
-  missing_invoice_record: { label: 'Invoice missing',    blurb: 'Marked invoiced/sent/paid but no invoice exists.', pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
+  ready_to_invoice:       { label: 'Ready to invoice',   blurb: 'Marked invoice-ready — no invoice raised yet.',    pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
+  missing_invoice_record: { label: 'Invoice missing',    blurb: 'Job was closed but no invoice exists.',            pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
   missing_client:         { label: 'No client',          blurb: 'Billable, but no client is set to invoice.',       pill: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
   hours_changed:          { label: 'Hours changed',      blurb: 'Labour was edited after this was invoiced — check the billed hours.', pill: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
   unsent_invoice:         { label: 'Draft — not sent',   blurb: 'An invoice is drafted but has not been sent.',      pill: 'bg-cyan-100 text-cyan-700',    dot: 'bg-cyan-500' },
@@ -44,28 +48,35 @@ export interface ReconItem {
   last_reminded_at: string | null
 }
 
-const idx = (s: WorkflowStatus) => WORKFLOW_ORDER.indexOf(s)
-
 function categorize(job: { workflow_status: WorkflowStatus; client_id: string | null }, inv: { status: Invoice['status']; due_date: string | null; created_at?: string } | undefined, hoursChanged = false): ReconCategory | null {
   if (inv) {
     if (isOverdue(inv)) return 'overdue_invoice'
     if (inv.status === 'draft') return 'unsent_invoice'
-    if (hoursChanged) return 'hours_changed' // sent/paid, but labour edited since billing
-    return null // sent / paid with a record — fine
+    if (hoursChanged) return 'hours_changed' // billed, but labour edited since
+    return null // invoiced with a record — fine
   }
-  // No invoice on the job.
-  if (idx(job.workflow_status) >= idx('invoiced')) return 'missing_invoice_record'
-  if (job.workflow_status === 'approved') return job.client_id ? 'ready_to_invoice' : 'missing_client'
-  return null // still earlier in the workflow — not yet billable
+  // No invoice on the job. 'closed' should only ever be reached BY invoicing, so a
+  // closed job with no invoice is either a manual close or a lost invoice — flag it.
+  if (job.workflow_status === 'closed') return 'missing_invoice_record'
+  if (job.workflow_status === 'invoice_ready') return job.client_id ? 'ready_to_invoice' : 'missing_client'
+  return null // in_progress / report_ready — not yet billable
 }
+
+/** How far back the reconcile list looks. Replaces the old "exclude closed jobs"
+ *  filter as the volume guard — closed jobs are now the ones we most need to see. */
+const RECON_WINDOW_MONTHS = 18
 
 export async function listReconciliation(): Promise<{ items: ReconItem[]; counts: Record<ReconCategory, number> }> {
   const supabase = createClient()
   const nowIso = new Date().toISOString()
+  const since = new Date(); since.setMonth(since.getMonth() - RECON_WINDOW_MONTHS)
   const [{ data: jobs }, { data: invoices }, { data: labour }] = await Promise.all([
     supabase.from('jobs')
       .select('id, report_number, vessel_name, client_id, workflow_status, invoice_id, client:clients(name)')
-      .neq('workflow_status', 'closed')
+      // Closed jobs are INCLUDED on purpose — post-145 they are the billed ones, and
+      // the unsent/overdue/hours-changed checks only ever apply to them. Bounded by
+      // date instead so the list stays a working queue, not the whole history.
+      .gte('created_at', since.toISOString())
       // Hide jobs an admin has snoozed (cleared) until the snooze lapses.
       .or(`recon_snoozed_until.is.null,recon_snoozed_until.lt.${nowIso}`),
     supabase.from('invoices').select('id, job_id, status, due_date, total, currency, last_reminded_at, created_at'),

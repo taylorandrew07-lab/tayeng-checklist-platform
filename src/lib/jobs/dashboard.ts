@@ -82,7 +82,8 @@ export async function getInvoicingDashboard(): Promise<InvoicingDashboard> {
   const wf = new Map<string, number>()
   for (const r of (pipelineRes.data ?? []) as any[]) wf.set(r.workflow_status, Number(r.count))
   const jobsByWorkflow = WORKFLOW_ORDER.map(status => ({ status, count: wf.get(status) ?? 0 }))
-  const openJobs = WORKFLOW_ORDER.filter(s => s !== 'paid' && s !== 'closed').reduce((n, s) => n + (wf.get(s) ?? 0), 0)
+  // Open = not yet invoiced. 'closed' is the only terminal stage post-145.
+  const openJobs = WORKFLOW_ORDER.filter(s => s !== 'closed').reduce((n, s) => n + (wf.get(s) ?? 0), 0)
 
   // ── Outstanding per client (one row per client+currency → group) ──
   const cmap = new Map<string, { name: string; amounts: Map<string, number> }>()
