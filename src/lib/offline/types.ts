@@ -9,6 +9,10 @@ export interface OfflineDraft {
   userId: string
   /** Cached job snapshot (status, title, template_id, …) from the last online load. */
   job: any
+  /** Extra surveyors to attach on create (job_surveyors), beyond the owner in
+   *  job.assigned_to. Carried here, NOT on `job`, because they are not a jobs
+   *  column — sync passes them to createDraftJob. Absent on older drafts → none. */
+  surveyorIds?: string[]
   /** Cached template_sections (each with its fields) from the last online load. */
   sections: any[]
   values: Record<string, string>

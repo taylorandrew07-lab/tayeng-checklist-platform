@@ -8,6 +8,9 @@ export interface CachedNewJobData {
   /** Optional: added after v3 shipped, so payloads cached before then won't have it.
    *  Always read it as `?? []` — no schema version bump is needed for a new key. */
   jobTypes?: any[]
+  /** Optional (added later, same rule): surveyor accounts for the co-surveyor
+   *  picker, so a surveyor can attach co-surveyors with no signal. Read as `?? []`. */
+  surveyors?: any[]
   cachedAt: number
 }
 

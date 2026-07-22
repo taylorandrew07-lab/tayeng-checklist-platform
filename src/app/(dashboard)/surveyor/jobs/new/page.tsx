@@ -9,6 +9,7 @@ import { loadNewJobData } from '@/lib/offline/newJobData'
 import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
+import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { toast } from '@/components/ui/toast'
 import { titleCaseVesselName } from '@/lib/utils'
 
@@ -41,7 +42,9 @@ export default function SurveyorNewChecklistPage() {
   const [templates, setTemplates] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [jobTypes, setJobTypes] = useState<any[]>([])
+  const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
   const [myName, setMyName] = useState('')
+  const [myId, setMyId] = useState('')
   const [fromCache, setFromCache] = useState(false)
   const [online, setOnline] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -51,8 +54,13 @@ export default function SurveyorNewChecklistPage() {
   const [templateId, setTemplateId] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [jobType, setJobType] = useState('')
+  const [showNewJobType, setShowNewJobType] = useState(false)
+  const [newJobTypeName, setNewJobTypeName] = useState('')
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
+  // Extra surveyors on this job, beyond the owner (you). The owner is always the
+  // primary via assigned_to; these attach as co-surveyors on sync (mig 150).
+  const [coSurveyors, setCoSurveyors] = useState<Set<string>>(new Set())
   const [vesselName, setVesselName] = useState('')
   const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
   const [clientId, setClientId] = useState('')
@@ -84,19 +92,22 @@ export default function SurveyorNewChecklistPage() {
       // The surveyor IS the surveyor on their own jobs — use their own name,
       // read offline-safely from the cached profile (falls back to a live fetch).
       let name = ''
-      try { const c = localStorage.getItem('te_profile'); if (c) name = JSON.parse(c)?.full_name ?? '' } catch { /* storage unavailable */ }
+      let id = ''
+      try { const c = localStorage.getItem('te_profile'); if (c) { const p = JSON.parse(c); name = p?.full_name ?? ''; id = p?.id ?? '' } } catch { /* storage unavailable */ }
       if (!name && (typeof navigator === 'undefined' || navigator.onLine)) {
         try {
           const supabase = createClient()
           const { data: { user } } = await supabase.auth.getUser()
-          if (user) { const { data: p } = await supabase.from('profiles').select('full_name').eq('id', user.id).single(); name = p?.full_name ?? '' }
+          if (user) { id = user.id; const { data: p } = await supabase.from('profiles').select('full_name').eq('id', user.id).single(); name = p?.full_name ?? '' }
         } catch { /* offline / no session */ }
       }
       setMyName(name)
+      setMyId(id)
       const d = await loadNewJobData()
       setTemplates(d.templates)
       setClients(d.clients)
       setJobTypes(d.jobTypes)
+      setSurveyors(d.surveyors)
       setFromCache(d.fromCache)
       setLoading(false)
       // Vessel datalist — online only; offline you just type (still linked on sync).
@@ -132,10 +143,29 @@ export default function SurveyorNewChecklistPage() {
       setJobType(tmpl.default_job_type)
     }
   }
-  function handleJobTypeChange(name: string) {
+  function handleJobTypeChange(val: string) {
     setJobStage('')
     setCargoType('')
+    // "+ Add new job type…" reveals an inline name box; anything else is a real type.
+    if (val === '__new__') { setShowNewJobType(true); setJobType('') }
+    else { setShowNewJobType(false); setJobType(val) }
+  }
+  // Add a job type to the shared list (mig 150 lets staff INSERT). Online only —
+  // it's a live write; the picker is hidden offline, so this can't be reached then.
+  async function addNewJobType() {
+    const name = newJobTypeName.trim()
+    if (!name) return
+    const res = await addJobType(name)
+    if (res.error) { toast.error(res.error); return }
+    const d = await loadNewJobData()
+    setJobTypes(d.jobTypes)
     setJobType(name)
+    setShowNewJobType(false)
+    setNewJobTypeName('')
+    toast.success(`Added job type “${name}”`)
+  }
+  function toggleCoSurveyor(id: string) {
+    setCoSurveyors(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
   function handleClientChange(val: string) {
     if (val === '__new__') { setShowNewClient(true); setClientId('') }
@@ -206,6 +236,8 @@ export default function SurveyorNewChecklistPage() {
       // the server row + answers — when the device next reaches Supabase.
       await putDraft({
         key: '', jobId: id, userId, job, sections: selectedTemplate.sections ?? [],
+        // Extra co-surveyors (never the owner) — attached on sync via createDraftJob.
+        surveyorIds: Array.from(coSurveyors).filter(sid => sid !== userId),
         values: {}, arrayValues: {}, signatures: {}, fieldPhotos: {}, generalPhotos: [],
         serverValues: {}, serverArrayValues: {}, serverSignatures: {},
         pendingSubmit: false, pendingCreate: true, dirty: true, needsSync: true,
@@ -272,14 +304,30 @@ export default function SurveyorNewChecklistPage() {
         <div>
           <label className="label-base">Job type{jobTypes.length > 0 ? ' *' : ''}</label>
           {jobTypes.length > 0 ? (
-            <select value={jobType} onChange={(e) => handleJobTypeChange(e.target.value)} className="input-base">
+            <select value={showNewJobType ? '__new__' : jobType} onChange={(e) => handleJobTypeChange(e.target.value)} className="input-base">
               <option value="">Select a job type…</option>
               {jobTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+              {/* Adding a type is a live write — offer it only online. */}
+              {online && <option value="__new__">+ Add new job type…</option>}
             </select>
           ) : (
             // Job types were never cached on this device — fall back to the template's
             // default rather than blocking the create (this must work with no signal).
             <div className="input-base bg-gray-50 text-gray-700 flex items-center">{jobType || 'Set from the template'}</div>
+          )}
+          {showNewJobType && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={newJobTypeName}
+                onChange={(e) => setNewJobTypeName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addNewJobType() } }}
+                className="input-base"
+                placeholder="e.g. Tank Cleaning Survey"
+                autoFocus
+              />
+              <button type="button" onClick={addNewJobType} className={`btn-secondary whitespace-nowrap ${TAP_BTN}`}>Add</button>
+            </div>
           )}
           <p className="text-xs text-gray-400 mt-1">
             {jobTypes.length > 0
@@ -389,6 +437,25 @@ export default function SurveyorNewChecklistPage() {
           <div className="input-base bg-gray-50 text-gray-700 flex items-center">{myName || 'Your account'}</div>
           <p className="text-xs text-gray-400 mt-1">This job is created under your account.</p>
         </div>
+
+        {/* Co-surveyors: anyone else who worked this job with you. Cached offline, so
+            the list shows with no signal; empty until the device has been online once. */}
+        {surveyors.filter(s => s.id !== myId).length > 0 && (
+          <div>
+            <label className="label-base">Other surveyors <span className="text-gray-400 font-normal">(optional)</span></label>
+            <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+              {surveyors.filter(s => s.id !== myId).map(s => (
+                <label key={s.id} className="flex items-center gap-3 px-3 py-3 sm:py-2 text-sm cursor-pointer hover:bg-gray-50">
+                  <input type="checkbox" checked={coSurveyors.has(s.id)} onChange={() => toggleCoSurveyor(s.id)} className="h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                  <span className="text-gray-800">{s.full_name}</span>
+                  {s.display_title && <span className="text-xs text-gray-400">{s.display_title}</span>}
+                  {s.role === 'admin' && <span className="text-xs text-gray-400">admin</span>}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Tick anyone else on this job — it&apos;ll show on their dashboard too. You can change this on the job later.</p>
+          </div>
+        )}
 
         <div>
           <label className="label-base">Notes <span className="text-gray-400 font-normal">(optional)</span></label>

@@ -109,17 +109,26 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
           end_time: j.end_time ?? null,
           started_at: j.started_at ?? new Date().toISOString(),
         },
-        surveyorIds: [], // the mig-124 trigger mirrors assigned_to → job_surveyors
+        // The mig-124 trigger mirrors assigned_to → job_surveyors for the owner;
+        // these are the EXTRA co-surveyors the form picked (mig 150 lets a surveyor
+        // attach them to their own open job). notify is best-effort and a no-op for a
+        // non-admin session today (notify.ts), so co-surveyors just see the job on
+        // their dashboard; the flag is ready for the future service-role seam.
+        surveyorIds: (draft.surveyorIds ?? []).filter(id => id !== user.id),
         actorId: user.id,
         clientId: j.client_id ?? null,
         upsert: true,
-        notify: false,
+        notify: true,
       }, 'manual')
       if (created.error) {
         await putDraft({ ...draft, syncError: created.error })
         return { ok: false, reason: 'error', message: created.error }
       }
       // The row now exists — clear the flag so later syncs treat it as a normal job.
+      // created.assignError (a co-surveyor that RLS refused) is deliberately non-fatal
+      // and not surfaced here: the job is the owner's and complete, the answers-sync
+      // below would clear any syncError we set anyway, and an admin can add the missing
+      // co-surveyor on the job page — same as the admin create path treats it.
       draft = { ...draft, pendingCreate: false }
       await putDraft(draft)
     }
