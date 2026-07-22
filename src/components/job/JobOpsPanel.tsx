@@ -655,26 +655,24 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           {billingMode !== 'fixed' && unit === 'days' && ' Days are typed in by hand — the OT time-log stays a record of the shifts worked.'}
           {' '}Distance (km) is logged per surveyor on every job.
         </p>
-        {/* The checklist figure is an hours quantity, so it has nothing to say on a
-            day-billed job (mig 148). */}
-        {billableHours != null && unit === 'hours' && (
-          <p className="text-[11px] text-brand-700 bg-brand-50/70 rounded-md px-2.5 py-1.5 mb-3">
-            Checklist billable hours: <strong>{billableHours} hrs</strong> — use the <em>“use {billableHours}h”</em> link to set a surveyor&apos;s regular (client-billed) hours.
-          </p>
-        )}
-        {allOt.length > 0 && (
-          <div className="mb-3 rounded-md bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 text-[11px] text-amber-800 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            {/* Always hours — it comes from the shift log. On a day-billed job that
-                makes it evidence of shifts worked, not the payable quantity. */}
-            <span>{unit === 'days' ? 'Shifts logged (all surveyors)' : 'Total OT (all surveyors)'}: <strong className="tnum">{otAllTotal}h</strong></span>
-            {earliest && latest && (
+        {/* One job-totals strip instead of three stacked banners. OT keeps amber
+            emphasis (it flags payable overtime); when there's no OT the strip is grey
+            for distance only. The checklist billable-hours banner was dropped — the
+            "use {n}h" link on each surveyor row already shows and applies the figure,
+            and it only applies in hours mode anyway (mig 148). */}
+        {(allOt.length > 0 || kmAllTotal > 0) && (
+          <div className={`mb-3 rounded-md border px-2.5 py-1.5 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-0.5 ${allOt.length > 0 ? 'bg-amber-50/70 border-amber-100 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+            {/* OT total is always hours — it comes from the shift log. On a day-billed
+                job that makes it evidence of shifts worked, not the payable quantity. */}
+            {allOt.length > 0 && (
+              <span>{unit === 'days' ? 'Shifts logged (all surveyors)' : 'Total OT (all surveyors)'}: <strong className="tnum">{otAllTotal}h</strong></span>
+            )}
+            {allOt.length > 0 && earliest && latest && (
               <span>Coverage: <strong className="tnum">{fmtDay(earliest.entry_date)} {earliest.start_time}</strong> → <strong className="tnum">{fmtDay(latest.end_date || latest.entry_date)} {latest.end_time}</strong></span>
             )}
-          </div>
-        )}
-        {kmAllTotal > 0 && (
-          <div className="mb-3 rounded-md bg-gray-50 border border-gray-200 px-2.5 py-1.5 text-[11px] text-gray-600 flex items-center gap-1.5">
-            <MapPin className="h-3 w-3 text-gray-400" />Total distance (all surveyors): <strong className="tnum">{kmAllTotal} km</strong>
+            {kmAllTotal > 0 && (
+              <span className="inline-flex items-center gap-1.5"><MapPin className="h-3 w-3 opacity-60" />Distance: <strong className="tnum">{kmAllTotal} km</strong></span>
+            )}
           </div>
         )}
         {surveyors.length === 0 ? (

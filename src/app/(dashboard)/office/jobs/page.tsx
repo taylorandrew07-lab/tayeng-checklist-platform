@@ -44,14 +44,16 @@ export default function OfficeJobsMonitor() {
   const filteredJobs = useMemo(() => {
     const term = q.trim().toLowerCase()
     return jobs.filter(j => {
-      if (!inYearMonth(j.created_at, view.year, view.month)) return false
+      // Filter by the job's own date (its last day), matching the Date column — not
+      // by when the row was created.
+      if (!inYearMonth(jobLastDate(j) ?? j.created_at, view.year, view.month)) return false
       if (statusFilter && j.workflow_status !== statusFilter) return false
       if (!term) return true
       return [j.title, j.job_number, j.client?.name, j.vessel_name, j.surveyor_name]
         .some(v => (v ?? '').toLowerCase().includes(term))
     })
   }, [jobs, view.year, view.month, q, statusFilter])
-  const jobYears = useMemo(() => availableYears(jobs, j => j.created_at), [jobs])
+  const jobYears = useMemo(() => availableYears(jobs, j => jobLastDate(j) ?? j.created_at), [jobs])
   const legend = useMemo(() => buildLegend(view.colorMode, filteredJobs.map(j => ({
     clientName: j.client?.name ?? null, clientColor: j.client?.color ?? null,
     typeName: j.template?.name ?? null, typeColor: j.template?.color ?? null,

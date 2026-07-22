@@ -260,10 +260,6 @@ const COLUMNS: ColumnDef[] = [
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.total_km ? r.total_km : <span className="text-gray-300">—</span>}</div> },
   { key: 'billing', label: 'Billing', defaultVisible: false, width: 110, min: 80,
     cell: r => <div className="px-3 text-gray-600 truncate">{BILLING_LABEL[r.billing_mode] ?? r.billing_mode}</div> },
-  { key: 'stage', label: 'Stage', defaultVisible: false, width: 110, min: 80,
-    cell: r => <div className="px-3 text-gray-600 truncate">{r.job_stage || <span className="text-gray-300">—</span>}</div> },
-  { key: 'cargo', label: 'Cargo', defaultVisible: false, width: 120, min: 80,
-    cell: r => <div className="px-3 text-gray-600 truncate">{r.cargo_type || <span className="text-gray-300">—</span>}</div> },
   { key: 'invoice', label: 'Invoice', defaultVisible: true, width: 140, min: 90,
     cell: r => (
       <div className="px-3">
@@ -308,8 +304,6 @@ const COLUMNS: ColumnDef[] = [
         )}
       </>
     ) },
-  { key: 'end_date', label: 'End date', defaultVisible: false, width: 110, min: 90,
-    cell: r => <div className="px-3 text-gray-600 whitespace-nowrap">{r.end_date ? formatDate(r.end_date) : <span className="text-gray-300">—</span>}</div> },
   { key: 'notes', label: 'Notes', defaultVisible: false, width: 220, min: 120,
     cell: r => <div className="px-3 text-gray-600 truncate" title={r.notes ?? ''}>{r.notes || <span className="text-gray-300">—</span>}</div> },
 ]
@@ -809,7 +803,10 @@ export default function JobsTrackerPage() {
       const ws = r.workflow_status
       const pass = filter === 'all' ? true : filter === 'invoice_ready' ? ws === 'invoice_ready' : filter === 'closed' ? ws === 'closed' : ws !== 'closed'
       if (!pass) return false
-      if (!inYearMonth(r.created_at, view.year, view.month)) return false
+      // Filter by the job's own date (its last day), matching the Date column and
+      // sort — not by when the row was created. A job created in June but run in July
+      // belongs to July here, in the count and in the CSV.
+      if (!inYearMonth(jobLastDate(r) ?? r.created_at, view.year, view.month)) return false
       if (typeFilter && (r.job_type ?? '') !== typeFilter) return false
       if (otOnly && !r.is_overtime) return false
       if (surveyorFilter && !r.surveyors.includes(surveyorFilter)) return false
@@ -855,7 +852,7 @@ export default function JobsTrackerPage() {
 
   // Colour-by years come from all rows (so the year list is stable regardless of
   // the active filter); the legend reflects the currently-visible rows.
-  const jobYears = useMemo(() => availableYears(rows, r => r.created_at), [rows])
+  const jobYears = useMemo(() => availableYears(rows, r => jobLastDate(r) ?? r.created_at), [rows])
   const legend = useMemo(() => buildLegend(view.colorMode, visible.map(r => ({
     clientName: r.client_name, clientColor: r.client_color, typeName: r.template_name, typeColor: r.template_color,
   }))), [view.colorMode, visible])

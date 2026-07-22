@@ -230,7 +230,7 @@ export default function NewJobPage() {
         <Link href="/admin/jobs" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
           <h1 className="page-title">New Job</h1>
-          <p className="text-gray-500 mt-0.5">A report number is assigned automatically (report-only kinds show N/A).</p>
+          <p className="text-gray-500 mt-0.5">A report number is assigned automatically.</p>
         </div>
       </div>
 
@@ -302,9 +302,9 @@ export default function NewJobPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="label-base">Survey date *</label>
+            <label className="label-base">Start date *</label>
             <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="input-base" />
-            <p className="text-xs text-gray-400 mt-1">Start date — drives the job name, report date and start. Defaults to today.</p>
+            <p className="text-xs text-gray-400 mt-1">Drives the job name, report date and start. Defaults to today.</p>
           </div>
           <div>
             <label className="label-base">End date <span className="text-gray-400 font-normal">(optional)</span></label>
