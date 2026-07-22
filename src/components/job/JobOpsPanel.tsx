@@ -589,8 +589,11 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
 
       {showOps && (
       <div className="card p-5">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2">
+        {/* Wraps: for an admin the heading + the Regular/Overtime/Fixed and Hours/Days
+            toggles measure ~326px against the 288px inside this card at 360px, so
+            without it the toggles were pushed off the right of the viewport. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <div className="flex min-w-0 items-center gap-2">
             <h3 className="font-medium text-gray-900">Surveyors &amp; hours</h3>
             {surveyors.length > 0 && (savingAll ? (
               <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>

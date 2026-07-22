@@ -39,6 +39,8 @@ const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placehol
 const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
 // Common cargoes — a datalist of suggestions; the field stays free text.
 const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+// Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
+const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -339,7 +341,9 @@ export default function NewJobPage() {
 
         <div>
           <label className="label-base">How is this job billed?</label>
-          <div className="grid grid-cols-3 gap-2">
+          {/* Stacks on a phone: at 360px three columns give each label a 64px text box,
+              so "Regular hours" / "Hours logged as OT" wrapped to three lines each. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {([
               { mode: 'regular' as const, label: 'Regular hours', hint: 'Billable hours' },
               { mode: 'overtime' as const, label: 'Overtime', hint: 'Hours logged as OT' },
@@ -413,9 +417,10 @@ export default function NewJobPage() {
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 animate-rise">{error}</div>}
 
+      {/* .btn-* is 36px; the ~44px phone size matches the rest of the job flow. */}
       <div className="flex items-center justify-end gap-3 pb-6">
-        <Link href="/admin/jobs" className="btn-secondary">Cancel</Link>
-        <button onClick={handleSave} disabled={saving} className="btn-primary">
+        <Link href="/admin/jobs" className={`btn-secondary ${TAP_BTN}`}>Cancel</Link>
+        <button onClick={handleSave} disabled={saving} className={`btn-primary ${TAP_BTN}`}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Creating…' : 'Create Job'}
         </button>

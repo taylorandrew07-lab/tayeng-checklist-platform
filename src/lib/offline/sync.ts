@@ -50,39 +50,79 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // activity-log entry + provenance as every other create path. upsert:true keeps
     // it idempotent/retry-safe; notify:false because the surveyor assigns themselves.
     // client_job_permissions is handled inside createDraftJob.
-    const created = await createDraftJob(supabase, {
-      job: {
-        id: jobId,
-        title: j.title,
-        template_id: j.template_id,
-        job_type: j.job_type ?? null,
-        vessel_name: j.vessel_name ?? null,
-        vessel_id: vesselId,
-        surveyor_name: j.surveyor_name ?? null,
-        client_id: j.client_id ?? null,
-        created_by: user.id,
-        assigned_to: user.id,
-        workflow_status: 'in_progress',
-        notes: j.notes ?? null,
-        // Carry the report-only flag the surveyor page stamped (report-only templates
-        // show N/A). Fall back to false; createDraftJob still applies the job_type rule.
-        report_not_required: j.report_not_required ?? false,
-        scheduled_date: j.scheduled_date ?? null,
-        started_at: j.started_at ?? new Date().toISOString(),
-      },
-      surveyorIds: [], // the mig-124 trigger mirrors assigned_to → job_surveyors
-      actorId: user.id,
-      clientId: j.client_id ?? null,
-      upsert: true,
-      notify: false,
-    }, 'manual')
-    if (created.error) {
-      await putDraft({ ...draft, syncError: created.error })
-      return { ok: false, reason: 'error', message: created.error }
+    // This list is a WHITELIST, not a spread: a field the create form puts on the
+    // draft but leaves out here is silently dropped on sync — the surveyor sees it
+    // on their dashboard until the job publishes, then it's gone. Add both sides.
+    //
+    // jobs_set_report_number is BEFORE INSERT (mig 042), so it runs — and burns a
+    // number off report_counters — before Postgres resolves ON CONFLICT. A flush
+    // retried after a lost response would therefore leave a permanent gap in the
+    // fiscal-year report sequence, so look first: if the row landed on an earlier
+    // attempt, push only what the surveyor can have corrected since (the job page's
+    // offline edit writes those back onto the draft) instead of re-upserting.
+    const { data: alreadyCreated } = await supabase.from('jobs')
+      .select('id, title, vessel_name, scheduled_date, notes').eq('id', jobId).maybeSingle()
+    if (alreadyCreated) {
+      // Only the columns that actually differ, so the ordinary retry writes nothing.
+      const patch: Record<string, unknown> = {}
+      if ((j.title ?? null) !== alreadyCreated.title) patch.title = j.title ?? null
+      if ((j.vessel_name ?? null) !== alreadyCreated.vessel_name) { patch.vessel_name = j.vessel_name ?? null; patch.vessel_id = vesselId }
+      if ((j.scheduled_date ?? null) !== alreadyCreated.scheduled_date) patch.scheduled_date = j.scheduled_date ?? null
+      if ((j.notes ?? null) !== alreadyCreated.notes) patch.notes = j.notes ?? null
+      if (Object.keys(patch).length > 0) {
+        const { error: updErr } = await supabase.from('jobs').update(patch).eq('id', jobId)
+        if (updErr) {
+          await putDraft({ ...draft, syncError: updErr.message })
+          return { ok: false, reason: 'error', message: updErr.message }
+        }
+      }
+      draft = { ...draft, pendingCreate: false }
+      await putDraft(draft)
+    } else {
+      const created = await createDraftJob(supabase, {
+        job: {
+          id: jobId,
+          title: j.title,
+          template_id: j.template_id,
+          job_type: j.job_type ?? null,
+          job_stage: j.job_stage ?? null,
+          cargo_type: j.cargo_type ?? null,
+          vessel_name: j.vessel_name ?? null,
+          vessel_id: vesselId,
+          surveyor_name: j.surveyor_name ?? null,
+          client_id: j.client_id ?? null,
+          created_by: user.id,
+          assigned_to: user.id,
+          workflow_status: 'in_progress',
+          // billing_mode + is_overtime move together (the jobs list reads is_overtime).
+          // Defaults match the column defaults, so drafts saved before the surveyor form
+          // offered billing mode publish exactly as they always did.
+          billing_mode: j.billing_mode ?? 'regular',
+          is_overtime: j.is_overtime ?? false,
+          notes: j.notes ?? null,
+          // Carry the report-only flag the surveyor page stamped (report-only templates
+          // show N/A). Fall back to false; createDraftJob still applies the job_type rule.
+          report_not_required: j.report_not_required ?? false,
+          scheduled_date: j.scheduled_date ?? null,
+          end_date: j.end_date ?? null,
+          start_time: j.start_time ?? null,
+          end_time: j.end_time ?? null,
+          started_at: j.started_at ?? new Date().toISOString(),
+        },
+        surveyorIds: [], // the mig-124 trigger mirrors assigned_to → job_surveyors
+        actorId: user.id,
+        clientId: j.client_id ?? null,
+        upsert: true,
+        notify: false,
+      }, 'manual')
+      if (created.error) {
+        await putDraft({ ...draft, syncError: created.error })
+        return { ok: false, reason: 'error', message: created.error }
+      }
+      // The row now exists — clear the flag so later syncs treat it as a normal job.
+      draft = { ...draft, pendingCreate: false }
+      await putDraft(draft)
     }
-    // The row now exists — clear the flag so later syncs treat it as a normal job.
-    draft = { ...draft, pendingCreate: false }
-    await putDraft(draft)
   } else {
     // Submitted-lock conflict: a job already submitted on the server is read-only.
     const { data: serverJob, error: jobErr } = await supabase.from('jobs').select('id, submitted_at').eq('id', jobId).single()

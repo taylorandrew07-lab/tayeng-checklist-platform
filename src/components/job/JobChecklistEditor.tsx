@@ -21,6 +21,11 @@ import { CSS } from '@dnd-kit/utilities'
 import { presentInstances, resolveEntryOrder, nextInstanceId, moveEntry } from '@/lib/checklist/entryOrder'
 import { clearHiddenAnswers, type VisibilityUnit } from '@/lib/checklist/clearHidden'
 
+// The .btn-* classes are 36px tall, under the ~44px touch target this app uses
+// elsewhere (see JobOpsPanel's log rows). Applied to the controls a surveyor taps
+// in the field — Save/Submit and the correct-a-mistake overrides.
+const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
+
 /** A required field left blank at submit, with enough to link the surveyor straight to it. */
 interface MissingField {
   /** instanceKey(field.id, instance) — also the DOM anchor. */
@@ -239,6 +244,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const draftLoadedRef = useRef(false)
     const serverBaselineRef = useRef<{ values: Record<string, string>; arrayValues: Record<string, string[]>; signatures: Record<string, string> }>({ values: {}, arrayValues: {}, signatures: {} })
     const syncNowRef = useRef<() => void>(() => {})
+    // "This job exists only in IndexedDB, the server row isn't there yet." A ref
+    // rather than state so the memoised handleSave can never read a stale copy.
+    const pendingCreateRef = useRef(false)
 
     // Expose isDirty + save + navigate to parent via ref
     useImperativeHandle(ref, () => ({
@@ -389,14 +397,21 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     ) {
       if (!offlineAvailable() || !currentUserId) return
       serverBaselineRef.current = { values: v, arrayValues: a, signatures: s }
+      // Preserve "started offline, not yet on the server" (same as persistDraft
+      // above). Dropping it would take the draft out of BOTH getPendingDrafts and
+      // getLocalCreateDrafts, so nothing would ever create the job row and the
+      // whole job — answers included — would silently disappear.
+      const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
+      const stillPendingCreate = existing?.pendingCreate || false
       await putDraft({
         key: '', jobId, userId: currentUserId, job, sections, values: v, arrayValues: a, signatures: s,
         fieldPhotos, generalPhotos,
         serverValues: v, serverArrayValues: a, serverSignatures: s,
-        pendingSubmit: false, dirty: false, needsSync: false, updatedAt: Date.now(),
+        pendingSubmit: false, pendingCreate: stillPendingCreate, dirty: false,
+        needsSync: stillPendingCreate, updatedAt: Date.now(),
         lastSyncedAt: Date.now(), syncError: null,
       }).catch(() => {})
-      setSyncStatus('idle')
+      setSyncStatus(stillPendingCreate ? 'pending' : 'idle')
       setSyncMessage(null)
     }
 
@@ -418,6 +433,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         if (result.submitted) { setIsDirty(false); setSyncStatus('synced'); router.push(backHref); return }
         // Reflect post-sync draft state (edits made during sync stay dirty/pending).
         const after = await getDraft(currentUserId, jobId).catch(() => null)
+        pendingCreateRef.current = !!after?.pendingCreate
         setIsDirty(!!after?.dirty)
         if (after) serverBaselineRef.current = { values: after.serverValues, arrayValues: after.serverArrayValues, signatures: after.serverSignatures }
         setSyncStatus(after && (after.needsSync || after.pendingSubmit) ? 'pending' : 'synced')
@@ -465,6 +481,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       if (!userId) { router.push('/login'); return }
       setCurrentUserId(userId)
+      pendingCreateRef.current = false
 
       // A job started offline lives only in the local draft until it syncs — the
       // server row may not exist yet, so load it from the draft regardless of
@@ -472,6 +489,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const localCreate = await getDraft(userId, jobId).catch(() => undefined)
       if (localCreate && localCreate.userId === userId && localCreate.pendingCreate) {
         hydrateFromDraft(localCreate)
+        pendingCreateRef.current = true
         setOnline(typeof navigator === 'undefined' ? true : navigator.onLine)
         draftLoadedRef.current = true
         setSyncStatus('pending')
@@ -777,13 +795,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setSaving(true)
       setSaveError(null)
 
-      // Offline: persist locally instead of calling Supabase.
-      if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Offline: persist locally instead of calling Supabase. A job started offline
+      // takes the same path even when we're online — its server row doesn't exist
+      // yet, so the job_field_values FK would reject every answer. Save locally and
+      // let the sync create the job first.
+      if (pendingCreateRef.current || (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine)) {
         try {
           await persistDraft(false)
           setLastSaved(new Date())
           setIsDirty(false)
           setSyncStatus('pending')
+          // Publish straight away when there IS a connection (no-op offline).
+          void syncNow()
           return true
         } catch (err: any) {
           setSaveError('Your changes are NOT saved — this device blocked local storage (' + (err?.message ?? 'unavailable') + '). Try again, or keep this page open and reconnect.')
@@ -976,11 +999,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         setMissingRequired([])
 
         // Offline: queue the submit locally; it is applied to the server on sync.
-        if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+        // A job started offline queues the same way even when we're online — the
+        // job row doesn't exist yet, so submitting it directly would just be denied.
+        // syncDraft creates the job, pushes the answers and then submits, in order.
+        if (pendingCreateRef.current || (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine)) {
           await persistDraft(true)
           setIsDirty(false)
           setSyncStatus('pending')
           setShowSubmitDialog(false)
+          // Publish straight away when there IS a connection (no-op offline).
+          void syncNow()
           router.push(backHref)
           return
         }
@@ -1306,11 +1334,14 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     return (
       <div className="space-y-5 pb-10">
-        {/* Top action bar */}
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        {/* Top action bar. Wraps so the buttons drop to their own full-width row on
+            a phone instead of being pushed off the right edge — the title's nowrap
+            min-content width alone is wider than a 360px viewport, and neither side
+            could shrink before (min-w-0 on the left, no flex-shrink-0 on the right). */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
             <h1 className="page-title truncate">{job.title}</h1>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="text-sm text-gray-500">{job.job_number}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as WorkflowStatus]?.pill ?? ''}`}>
                 {WORKFLOW[job.workflow_status as WorkflowStatus]?.label ?? job.workflow_status}
@@ -1321,20 +1352,28 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Below sm: these buttons collapse to bare icons, and the two amber
+              triangles can appear side by side — so each carries its label as a
+              title/aria-label or they're indistinguishable on a phone. */}
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-shrink-0">
             {!readOnly && isDirty && (
               <span className="hidden sm:inline text-xs text-amber-600 font-medium">Unsaved changes</span>
             )}
-            <button onClick={() => setShowPreview(true)} className="btn-secondary">
+            <button onClick={() => setShowPreview(true)} className={`btn-secondary ${TAP_BTN}`} title="Preview" aria-label="Preview">
               <Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span>
             </button>
             {readOnly && canOverride && (
-              <button onClick={() => setShowOverrideDialog(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
+              <button onClick={() => setShowOverrideDialog(true)} className={`btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50 ${TAP_BTN}`} title="Edit as admin" aria-label="Edit as admin">
                 <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Edit as admin</span>
               </button>
             )}
             {isLocked && isPrivileged && !editSubmitted && !forceReadOnly && (
-              <button onClick={() => setShowEditSubmittedDialog(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
+              <button
+                onClick={() => setShowEditSubmittedDialog(true)}
+                className={`btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50 ${TAP_BTN}`}
+                title={isClosed && !isSubmitted ? 'Edit closed' : 'Edit submitted'}
+                aria-label={isClosed && !isSubmitted ? 'Edit closed' : 'Edit submitted'}
+              >
                 <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">{isClosed && !isSubmitted ? 'Edit closed' : 'Edit submitted'}</span>
               </button>
             )}
@@ -1870,7 +1909,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 ) : null}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={handleSave} disabled={saving} className="btn-secondary">
+                <button onClick={handleSave} disabled={saving} className={`btn-secondary ${TAP_BTN}`}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {saving ? 'Saving…' : 'Save Draft'}
                 </button>
@@ -1878,7 +1917,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   <button
                     onClick={() => { setSubmitError(null); setShowSubmitDialog(true) }}
                     disabled={saving || submitting}
-                    className="btn-primary"
+                    className={`btn-primary ${TAP_BTN}`}
                   >
                     <Send className="h-4 w-4" />Submit
                   </button>

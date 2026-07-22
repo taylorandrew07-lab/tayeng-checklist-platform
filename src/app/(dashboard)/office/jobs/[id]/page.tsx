@@ -85,12 +85,14 @@ export default function OfficeJobDetail() {
         <div className="card p-10 text-center text-gray-400 text-sm">Job not found.</div>
       ) : (
         <div className="space-y-6">
+          {/* min-w-0 + flex-shrink-0: without them a long job title pushes the status
+              pill off the right edge at 360px, since neither child can shrink. */}
           <div className="flex items-start justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <h1 className="page-title">{job.title}</h1>
               <p className="text-gray-400 text-sm mt-0.5">{job.job_number ?? 'No job number'}</p>
             </div>
-            <WorkflowPill status={job.workflow_status} />
+            <div className="flex-shrink-0"><WorkflowPill status={job.workflow_status} /></div>
           </div>
 
           {/* Read-only metadata only — no checklist editor, values, signatures, photos, or PDF. */}

@@ -51,8 +51,10 @@ const INV_PILL: Record<string, string> = {
 }
 const INV_LABEL: Record<string, string> = { active: 'Invoiced', void: 'Void' }
 
-// Shared look for an editable cell's resting (button) state.
-const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
+// Shared look for an editable cell's resting (button) state. py-2.5 below sm: this
+// grid is how a job gets corrected from a phone, and py-1 made every target ~28px
+// against the ~44px touch idiom used elsewhere.
+const cellBtn = 'w-full text-left px-2 py-2.5 sm:py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-200'
 // A quiet second line inside a cell — same weight as a plain grey caption, but
 // clickable (used for the start date under a range job's last date).
@@ -106,7 +108,7 @@ function ReportCell({ reportNumber, notRequired, onSaveNumber, onSetNA }: {
         onChange={e => onSetNA(e.target.value === 'na')}
         title="Report number, or N/A if the job doesn't require a report"
         aria-label="Report number or N/A"
-        className="shrink-0 cursor-pointer rounded bg-transparent px-0.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        className="shrink-0 cursor-pointer rounded bg-transparent px-1.5 py-2.5 sm:px-0.5 sm:py-0.5 text-[11px] text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
         <option value="num">#</option>
         <option value="na">N/A</option>
@@ -908,7 +910,7 @@ export default function JobsTrackerPage() {
         </div>
         <div className="flex items-center gap-2">
           {missingCount > 0 && (
-            <button onClick={() => setNumberOpen(true)} className="btn-secondary"><Hash className="h-4 w-4" /><span className="hidden sm:inline">Number reports</span></button>
+            <button onClick={() => setNumberOpen(true)} className="btn-secondary" title="Assign report numbers to the jobs missing one" aria-label="Number reports"><Hash className="h-4 w-4" /><span className="hidden sm:inline">Number reports</span></button>
           )}
           <button onClick={exportCsv} disabled={loading || visible.length === 0} className="btn-secondary" title="Download the shown jobs as a CSV (respects filters)">
             <Download className="h-4 w-4" /><span className="hidden sm:inline">Export CSV</span>

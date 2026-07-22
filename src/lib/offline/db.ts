@@ -5,6 +5,9 @@ import { draftKey, type OfflineDraft, type QueuedPhoto } from './types'
 export interface CachedNewJobData {
   templates: any[] // active, surveyor-startable templates incl. sections + fields
   clients: any[]
+  /** Optional: added after v3 shipped, so payloads cached before then won't have it.
+   *  Always read it as `?? []` — no schema version bump is needed for a new key. */
+  jobTypes?: any[]
   cachedAt: number
 }
 

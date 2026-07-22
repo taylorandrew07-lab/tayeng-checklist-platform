@@ -101,7 +101,10 @@ export default function SurveyorDashboard() {
         if (offlineAvailable()) {
           const serverIds = new Set((jRes.data ?? []).map((x: any) => x.id))
           const drafts = await getLocalCreateDrafts(session.user.id).catch(() => [])
-          if (active) setLocalJobs(drafts.filter(d => !serverIds.has(d.jobId)).map(d => d.job))
+          // Carry the draft's last sync failure onto the card — an RLS rejection or
+          // a dropped request otherwise leaves the surveyor looking at a permanent
+          // "Will sync" pill with no idea why the job never reached the office.
+          if (active) setLocalJobs(drafts.filter(d => !serverIds.has(d.jobId)).map(d => ({ ...d.job, syncError: d.syncError })))
         }
       } catch (e: any) {
         if (active) setError(e?.message ?? 'Could not load your jobs — check your connection and try again.')
@@ -259,9 +262,10 @@ export default function SurveyorDashboard() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 truncate">{job.title}</p>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">{job.template?.name} · {job.client?.name ?? 'No client'}</p>
+                      {job.syncError && <p className="text-xs text-red-600 mt-1">{job.syncError}</p>}
                     </div>
-                    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 bg-amber-100 text-amber-700">
-                      <CloudOff className="h-3 w-3" />Will sync
+                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${job.syncError ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                      <CloudOff className="h-3 w-3" />{job.syncError ? 'Not sent' : 'Will sync'}
                     </span>
                   </Link>
                 ))}

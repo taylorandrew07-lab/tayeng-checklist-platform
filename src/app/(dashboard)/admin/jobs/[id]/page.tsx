@@ -25,13 +25,19 @@ import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
 import { titleCaseVesselName } from '@/lib/utils'
 
+// shortLabel is what a phone shows — see the tab strip below.
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: ClipboardList },
-  { id: 'checklist', label: 'Checklist', icon: ListChecks },
-  { id: 'files', label: 'Files & Reports', icon: FolderOpen },
-  { id: 'billing', label: 'Invoice', icon: Receipt },
+  { id: 'overview', label: 'Overview', shortLabel: 'Overview', icon: ClipboardList },
+  { id: 'checklist', label: 'Checklist', shortLabel: 'Checklist', icon: ListChecks },
+  { id: 'files', label: 'Files & Reports', shortLabel: 'Files', icon: FolderOpen },
+  { id: 'billing', label: 'Invoice', shortLabel: 'Invoice', icon: Receipt },
 ] as const
 type DetailTab = typeof TABS[number]['id']
+
+// The .btn-* classes are 36px tall, under the ~44px touch target this app uses
+// elsewhere (see JobOpsPanel's log rows). These are the correct-a-mistake controls,
+// so they get the taller mobile size and fall back to the compact desktop metrics.
+const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
 
 export default function AdminChecklistDetailPage() {
   const params = useParams()
@@ -242,10 +248,14 @@ export default function AdminChecklistDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
+      {/* The action group wraps to its own full-width row on a phone. Kept as one
+          non-wrapping row it needed ~294px of the 328px available at 360px, which
+          left the title ~34px and pushed Delete/Save off the edge under Android
+          font scaling — Edit and Delete became unreachable. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <button
           onClick={() => editorRef.current?.navigate('/admin/jobs')}
-          className="btn-ghost py-2 px-3"
+          className={`btn-ghost px-3 ${TAP_BTN}`}
           aria-label="Back to checklists"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -254,22 +264,22 @@ export default function AdminChecklistDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="page-title truncate">{job.title}</h1>
             {job.workflow_status && (
-              <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.pill ?? ''}`}>
+              <span className={`inline-flex flex-shrink-0 items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.pill ?? ''}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.dot ?? ''}`} />
                 {WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.label ?? job.workflow_status}
               </span>
             )}
           </div>
-          <p className="text-gray-500 mt-0.5 text-sm">
+          <p className="text-gray-500 mt-0.5 text-sm truncate">
             {job.report_number && <span className="font-medium text-gray-700 tnum">{job.report_number}</span>}
             {job.job_type ? `${job.report_number ? ' · ' : ''}${job.job_type}` : ''}
             {job.job_stage ? ` · ${job.job_stage}` : ''}
             {job.template?.name ? ` · ${job.template.name}` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-shrink-0">
           {!!job.submitted_at && (
-            <button onClick={downloadPdf} disabled={sharing} className="btn-secondary" title="Download / Share PDF">
+            <button onClick={downloadPdf} disabled={sharing} className={`btn-secondary ${TAP_BTN}`} title="Download / Share PDF" aria-label="Download / Share PDF">
               {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               <span className="hidden sm:inline">Download / Share PDF</span>
             </button>
@@ -277,22 +287,22 @@ export default function AdminChecklistDetailPage() {
           {/* Admin escape hatch when a surveyor's submit is stuck; lifecycle otherwise
               runs through the workflow stepper on the Overview tab. */}
           {!editMode && !job.submitted_at && (
-            <button onClick={markSubmitted} disabled={marking} className="btn-secondary" title="Mark as submitted">
+            <button onClick={markSubmitted} disabled={marking} className={`btn-secondary ${TAP_BTN}`} title="Mark as submitted" aria-label="Mark as submitted">
               {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               <span className="hidden sm:inline">Mark submitted</span>
             </button>
           )}
-          <button onClick={() => setEditMode(!editMode)} className={editMode ? 'btn-secondary' : 'btn-secondary'}>
+          <button onClick={() => setEditMode(!editMode)} className={`btn-secondary ${TAP_BTN}`}>
             {editMode ? 'Cancel' : 'Edit'}
           </button>
           {!editMode && (
-            <button onClick={handleDelete} disabled={deleting} className="btn-ghost text-red-600 hover:text-red-700 hover:bg-red-50">
+            <button onClick={handleDelete} disabled={deleting} className={`btn-ghost text-red-600 hover:text-red-700 hover:bg-red-50 ${TAP_BTN}`}>
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Delete
             </button>
           )}
           {editMode && (
-            <button onClick={handleSaveEdit} disabled={saving} className="btn-primary">
+            <button onClick={handleSaveEdit} disabled={saving} className={`btn-primary ${TAP_BTN}`}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save
             </button>
@@ -306,15 +316,20 @@ export default function AdminChecklistDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-0.5 border-b border-gray-200 overflow-x-auto">
+        {/* Icons and the long "Files & Reports" label are dropped below sm: with them
+            the four tabs measured ~474px against 328px at 360px, so Invoice sat
+            off-screen with nothing to hint the strip scrolls. */}
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px rounded-t-md transition-colors ${
+            className={`flex items-center gap-2 px-3.5 py-3 sm:py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px rounded-t-md transition-colors ${
               tab === t.id ? 'border-brand-600 text-brand-700 bg-brand-50/60' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
             }`}
           >
-            <t.icon className="h-4 w-4" />{t.label}
+            <t.icon className="h-4 w-4 hidden sm:block" />
+            <span className="sm:hidden">{t.shortLabel}</span>
+            <span className="hidden sm:inline">{t.label}</span>
           </button>
         ))}
       </div>
@@ -390,7 +405,9 @@ export default function AdminChecklistDetailPage() {
                 </div>
               </div>
             ) : (
-              <dl className="grid grid-cols-2 gap-4">
+              // Stacks on a phone, matching the edit-mode grids above: at 360px two
+              // columns are ~136px each and a vessel/client name wraps to three lines.
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Vessel</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.vessel_name
@@ -451,7 +468,7 @@ export default function AdminChecklistDetailPage() {
                   <dd className="mt-1 text-sm text-gray-900">{formatDateTime(job.submitted_at)}</dd>
                 </div>
                 {job.notes && (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <dt className="text-xs font-medium text-gray-500">Notes</dt>
                     <dd className="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{job.notes}</dd>
                   </div>

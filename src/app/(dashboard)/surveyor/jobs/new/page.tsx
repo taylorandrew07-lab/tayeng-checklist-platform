@@ -9,6 +9,7 @@ import { loadNewJobData } from '@/lib/offline/newJobData'
 import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
+import { toast } from '@/components/ui/toast'
 import { titleCaseVesselName } from '@/lib/utils'
 
 // Local yyyy-mm-dd for the <input type=date> default (avoids the UTC off-by-one).
@@ -22,10 +23,24 @@ function dmyFromISO(iso: string): string {
   return `${d}-${m}-${y}`
 }
 
+// Mirrors the admin New Job form (Loading/Discharging wording from migration 147).
+// Duplicated rather than shared because the admin job pages already each keep their
+// own copy — a shared module would mean editing those files too.
+const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
+  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
+  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
+  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
+}
+const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+// Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
+const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
+const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+
 export default function SurveyorNewChecklistPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
+  const [jobTypes, setJobTypes] = useState<any[]>([])
   const [myName, setMyName] = useState('')
   const [fromCache, setFromCache] = useState(false)
   const [online, setOnline] = useState(true)
@@ -35,16 +50,29 @@ export default function SurveyorNewChecklistPage() {
 
   const [templateId, setTemplateId] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
+  const [jobType, setJobType] = useState('')
+  const [jobStage, setJobStage] = useState('')
+  const [cargoType, setCargoType] = useState('')
   const [vesselName, setVesselName] = useState('')
   const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
   const [clientId, setClientId] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
   const [scheduledDate, setScheduledDate] = useState(isoDateLocal(new Date()))
+  const [endDate, setEndDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  // Only Regular/Overtime here: migrations 124 + 148 make 'fixed' admin-only on
+  // update, so a surveyor who picked it could never change it back.
+  const [billingMode, setBillingMode] = useState<'overtime' | 'regular'>('regular')
   const [notes, setNotes] = useState('')
+  const [reportNotRequired, setReportNotRequired] = useState(false)
 
-  const autoTitle = vesselName.trim() && selectedTemplate
-    ? `M.V. ${titleCaseVesselName(vesselName)} - ${selectedTemplate.name} - ${dmyFromISO(scheduledDate)}`
+  const stageConfig = STAGE_OPTIONS[jobType] ?? null
+  // Same title shape as the admin form, so the same job reads identically whoever made it.
+  const labelWithStage = selectedTemplate ? (jobStage ? `${selectedTemplate.name} (${jobStage})` : selectedTemplate.name) : ''
+  const autoTitle = vesselName.trim() && labelWithStage
+    ? `M.V. ${titleCaseVesselName(vesselName)} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
     : ''
 
   useEffect(() => {
@@ -68,6 +96,7 @@ export default function SurveyorNewChecklistPage() {
       const d = await loadNewJobData()
       setTemplates(d.templates)
       setClients(d.clients)
+      setJobTypes(d.jobTypes)
       setFromCache(d.fromCache)
       setLoading(false)
       // Vessel datalist — online only; offline you just type (still linked on sync).
@@ -83,9 +112,30 @@ export default function SurveyorNewChecklistPage() {
     return () => { window.removeEventListener('online', onStatus); window.removeEventListener('offline', onStatus) }
   }, [])
 
+  // Smart default for "No report required" — report-only kinds (hatch/cargo/initial
+  // draught) and templates with "requires report number" unticked pre-tick the box
+  // (migration 136). Same rule and same drivers as the admin form; the surveyor can
+  // still override it by hand until one of those drivers changes.
+  useEffect(() => {
+    setReportNotRequired(autoReportNotRequired({ jobType, jobStage, template: selectedTemplate }))
+  }, [jobType, jobStage, templateId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleTemplateChange(id: string) {
     setTemplateId(id)
-    setSelectedTemplate(templates.find(t => t.id === id) ?? null)
+    const tmpl = templates.find(t => t.id === id) ?? null
+    setSelectedTemplate(tmpl)
+    // A template's default job type (mig 131) fills the picker so routine jobs need
+    // nothing set by hand. The qualifiers belong to the old type — clear them.
+    if (tmpl?.default_job_type) {
+      setJobStage('')
+      setCargoType('')
+      setJobType(tmpl.default_job_type)
+    }
+  }
+  function handleJobTypeChange(name: string) {
+    setJobStage('')
+    setCargoType('')
+    setJobType(name)
   }
   function handleClientChange(val: string) {
     if (val === '__new__') { setShowNewClient(true); setClientId('') }
@@ -94,8 +144,16 @@ export default function SurveyorNewChecklistPage() {
 
   async function handleCreate() {
     if (!templateId || !selectedTemplate) return setError('Please select a template')
+    // Job type is required, exactly as on the admin form — a blank one drops the job
+    // out of the type filter and the CSV column. Only enforced when the picker is
+    // actually usable: with no cached job types the form falls back to the
+    // template's default and must still create with no signal.
+    if (jobTypes.length > 0 && !jobType) return setError('Please choose a job type')
     if (!vesselName.trim()) return setError('Vessel name is required')
     if (!scheduledDate) return setError('Please choose a survey date')
+    if (endDate && endDate < scheduledDate) return setError('The end date can’t be before the start date')
+    // On a single-day job, the end time must be after the start time.
+    if (startTime && endTime && !endDate && endTime <= startTime) return setError('The end time must be after the start time')
     const finalSurveyor = myName.trim()
     if (!finalSurveyor) return setError('Could not read your name — reconnect once so your profile loads.')
 
@@ -117,20 +175,31 @@ export default function SurveyorNewChecklistPage() {
         finalClientId = null
       }
       const id = crypto.randomUUID()
-      const startedAt = new Date(`${scheduledDate}T12:00:00`).toISOString()
+      // Start timestamp follows the chosen start time (noon when it's an all-day
+      // booking), the same derivation the admin form uses — otherwise started_at
+      // and start_time disagree and the double-booking check reads the wrong one.
+      const startedAt = new Date(`${scheduledDate}T${startTime || '12:00'}:00`).toISOString()
+      // Every key here is a jobs COLUMN (the two nested `template`/`client` objects
+      // are the exception — UI-only, deliberately ignored by sync). Anything added
+      // must also be mapped in sync.ts's create branch or it is silently dropped
+      // when the draft reaches the server.
       const job = {
         id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
-        job_type: selectedTemplate.default_job_type ?? null,
+        job_type: jobType || null,
+        job_stage: jobStage || null,
+        cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
         vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
-        started_at: startedAt, scheduled_date: scheduledDate, notes: notes.trim() || null, job_number: null,
-        // Report-only templates (e.g. hatch testing) skip the report number → N/A.
+        started_at: startedAt, scheduled_date: scheduledDate, end_date: endDate || null,
+        start_time: startTime || null, end_time: endTime || null,
+        // is_overtime moves in lockstep with billing_mode — the jobs list OT badge,
+        // filter and CSV all read is_overtime, not billing_mode.
+        billing_mode: billingMode, is_overtime: billingMode === 'overtime',
+        notes: notes.trim() || null, job_number: null,
+        // Report-only kinds (e.g. hatch testing) skip the report number → N/A.
         // Carried on the draft; sync.ts passes it through to the server row.
-        report_not_required: autoReportNotRequired({
-          jobType: selectedTemplate.default_job_type ?? null,
-          template: selectedTemplate,
-        }),
+        report_not_required: reportNotRequired,
       }
 
       // Create the job locally first (works with no signal). It syncs — creating
@@ -144,7 +213,15 @@ export default function SurveyorNewChecklistPage() {
       })
 
       // If we have a connection, publish immediately so it appears on dashboards now.
-      if (online) { try { await syncDraft(supabase, id) } catch { /* manager retries */ } }
+      // syncDraft RETURNS its failures (RLS rejection, a dropped request) instead of
+      // throwing, so say so — otherwise a job that never published looks like a clean
+      // create. Either way the draft stays on the device and the manager retries.
+      if (online) {
+        try {
+          const r = await syncDraft(supabase, id)
+          if (!r.ok) toast.error(`${r.message} The job is saved on this device and will keep trying.`)
+        } catch { /* manager retries */ }
+      }
 
       router.push(`/surveyor/jobs/${id}`)
     } catch (err: any) {
@@ -193,6 +270,44 @@ export default function SurveyorNewChecklistPage() {
         </div>
 
         <div>
+          <label className="label-base">Job type{jobTypes.length > 0 ? ' *' : ''}</label>
+          {jobTypes.length > 0 ? (
+            <select value={jobType} onChange={(e) => handleJobTypeChange(e.target.value)} className="input-base">
+              <option value="">Select a job type…</option>
+              {jobTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          ) : (
+            // Job types were never cached on this device — fall back to the template's
+            // default rather than blocking the create (this must work with no signal).
+            <div className="input-base bg-gray-50 text-gray-700 flex items-center">{jobType || 'Set from the template'}</div>
+          )}
+          <p className="text-xs text-gray-400 mt-1">
+            {jobTypes.length > 0
+              ? 'Filled in from the template — change it if this job is a different kind.'
+              : 'Job types aren’t saved on this device yet. Connect once and they’ll be selectable here.'}
+          </p>
+        </div>
+
+        {stageConfig && (
+          <div>
+            <label className="label-base">{stageConfig.label}</label>
+            <select value={jobStage} onChange={(e) => setJobStage(e.target.value)} className="input-base">
+              <option value="">{stageConfig.placeholder ?? `Select ${stageConfig.label.toLowerCase()}…`}</option>
+              {stageConfig.options.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        )}
+
+        {CARGO_JOB_TYPES.has(jobType) && (
+          <div>
+            <label className="label-base">Cargo type</label>
+            <input type="text" list="cargoList" value={cargoType} onChange={(e) => setCargoType(e.target.value)} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
+            <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
+            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' ? 'discharged' : 'loaded'}.</p>
+          </div>
+        )}
+
+        <div>
           <label className="label-base">Vessel Name *</label>
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
@@ -202,10 +317,49 @@ export default function SurveyorNewChecklistPage() {
           <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s linked to the Vessels directory automatically.</p>
         </div>
 
+        {/* One field per row on a phone; two up from sm: — never a cramped grid at 360px. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label-base">Survey date *</label>
+            <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Start date — sets the checklist name and the job&apos;s date. Defaults to today.</p>
+          </div>
+          <div>
+            <label className="label-base">End date <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="date" value={endDate} min={scheduledDate} onChange={(e) => setEndDate(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">For multi-day jobs (e.g. a 7-day loadout). Leave blank for a single day.</p>
+          </div>
+          <div>
+            <label className="label-base">Start time <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Leave blank for an all-day booking.</p>
+          </div>
+          <div>
+            <label className="label-base">End time <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input-base" />
+            <p className="text-xs text-gray-400 mt-1">Used to spot overlapping surveyor bookings.</p>
+          </div>
+        </div>
+
         <div>
-          <label className="label-base">Survey date *</label>
-          <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="input-base" />
-          <p className="text-xs text-gray-400 mt-1">Sets the checklist name and the job&apos;s date. Defaults to today.</p>
+          <label className="label-base">How is this job billed?</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {([
+              { mode: 'regular' as const, label: 'Regular hours', hint: 'Billable hours' },
+              { mode: 'overtime' as const, label: 'Overtime', hint: 'Hours logged as OT' },
+            ]).map(o => (
+              <button
+                key={o.mode}
+                type="button"
+                onClick={() => setBillingMode(o.mode)}
+                className={`rounded-lg border px-3 py-3 sm:py-2.5 text-left transition-colors ${billingMode === o.mode ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className={`block text-sm font-medium ${billingMode === o.mode ? 'text-brand-800' : 'text-gray-700'}`}>{o.label}</span>
+                <span className="block text-xs text-gray-400 mt-0.5">{o.hint}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Fixed-price jobs are set by an admin. You can change this on the job later while it&apos;s open.</p>
         </div>
 
         {autoTitle && (
@@ -241,12 +395,19 @@ export default function SurveyorNewChecklistPage() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="input-base resize-y" placeholder="e.g. call number, special instructions…" />
         </div>
 
+        {/* py-2 + the bigger phone-sized box keep this a ~44px tap target. */}
+        <label className="flex items-start gap-3 py-2 cursor-pointer">
+          <input type="checkbox" checked={reportNotRequired} onChange={(e) => setReportNotRequired(e.target.checked)} className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+          <span className="text-sm text-gray-700">No report required <span className="text-gray-400">— skips the report number (shows N/A on the jobs list)</span></span>
+        </label>
+
         {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
       </div>
 
+      {/* .btn-* is 36px; the ~44px phone size matches the rest of the field flow. */}
       <div className="flex justify-end gap-3">
-        <Link href="/surveyor" className="btn-secondary">Cancel</Link>
-        <button onClick={handleCreate} disabled={saving} className="btn-primary">
+        <Link href="/surveyor" className={`btn-secondary ${TAP_BTN}`}>Cancel</Link>
+        <button onClick={handleCreate} disabled={saving} className={`btn-primary ${TAP_BTN}`}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Starting…' : 'Start Checklist'}
         </button>
