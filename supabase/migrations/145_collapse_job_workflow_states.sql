@@ -16,14 +16,30 @@
 -- jobs.paid_at is retired — nothing writes it after this migration. Payment
 -- state is not tracked on the job at all.
 --
--- SAFE TO RUN BEFORE OR AFTER the matching app deploy: the normalizer trigger in
--- section 3 maps any retired value written by a stale client (cached JS bundle,
--- open tab, queued offline draft) onto the new set BEFORE the CHECK constraint
--- and BEFORE the admin guard triggers evaluate it.
+-- DEPLOY ORDER — this migration MUST land. The normalizer trigger in section 3
+-- protects one direction only: an OLD client writing a retired value ('assigned',
+-- 'invoiced') against the NEW constraint. It canNOT protect the NEW app writing
+-- 'invoice_ready' against the OLD constraint — if the app ships and this migration
+-- does not, every transition to Invoice ready fails with
+-- 'violates check constraint "jobs_workflow_status_chk"'. That is exactly what
+-- happened on the first attempt (the remap tripped the admin guards and the whole
+-- migration rolled back). If you see that error in the app, check the db-migrate
+-- Action first — the fix is to get this migration applied, not to change the app.
 -- ============================================================
 
 -- ── 0. Audit snapshot so the collapse is reversible ─────────────────────────
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS workflow_status_legacy TEXT;
+
+-- The row remap below writes workflow_status ('invoice_ready'/'closed') and
+-- closed_at, all of which are admin-guarded on UPDATE by enforce_job_admin_columns
+-- (049/129) and enforce_admin_paid_closed (042). The migration runner is NOT an
+-- admin session — is_admin() is false — so those guards raise "Only an
+-- administrator can set this workflow status" and abort the whole migration.
+-- Same transactional DISABLE TRIGGER pattern as migration 110. Re-enabled at the
+-- end of section 2; each migration runs in its own transaction, so a failure
+-- rolls the disable back with it and never leaves the guards off.
+ALTER TABLE public.jobs DISABLE TRIGGER jobs_admin_columns;
+ALTER TABLE public.jobs DISABLE TRIGGER jobs_admin_paid_closed;
 
 UPDATE public.jobs
    SET workflow_status_legacy = workflow_status
@@ -59,6 +75,9 @@ UPDATE public.jobs SET workflow_status = 'closed'
 UPDATE public.jobs SET workflow_status = 'in_progress'
  WHERE workflow_status IS NULL
     OR workflow_status NOT IN ('in_progress','report_ready','invoice_ready','closed');
+
+ALTER TABLE public.jobs ENABLE TRIGGER jobs_admin_columns;
+ALTER TABLE public.jobs ENABLE TRIGGER jobs_admin_paid_closed;
 
 -- ── 3. Normalizer: a stale client writing a retired value must not 500 ──────
 CREATE OR REPLACE FUNCTION public.normalize_workflow_status(p TEXT)
