@@ -10,7 +10,6 @@
 // silently kill the only tool that catches forgotten billing.
 
 import { createClient } from '@/lib/supabase/client'
-import { isOverdue } from '@/lib/jobs/invoicing'
 import type { WorkflowStatus, Invoice, Currency } from '@/lib/types/database'
 
 export type ReconCategory =
@@ -18,20 +17,16 @@ export type ReconCategory =
   | 'missing_invoice_record'  // job is closed but no invoice exists
   | 'missing_client'          // billable but no client set — can't invoice
   | 'hours_changed'           // billed, but a surveyor's hours were edited afterwards
-  | 'unsent_invoice'          // a draft invoice that hasn't been sent
-  | 'overdue_invoice'         // sent invoice past its due date
 
 export const RECON_META: Record<ReconCategory, { label: string; blurb: string; pill: string; dot: string }> = {
   ready_to_invoice:       { label: 'Ready to invoice',   blurb: 'Marked invoice-ready — no invoice raised yet.',    pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
   missing_invoice_record: { label: 'Invoice missing',    blurb: 'Job was closed but no invoice exists.',            pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
   missing_client:         { label: 'No client',          blurb: 'Billable, but no client is set to invoice.',       pill: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
   hours_changed:          { label: 'Hours changed',      blurb: 'Labour was edited after this was invoiced — check the billed hours.', pill: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-  unsent_invoice:         { label: 'Draft — not sent',   blurb: 'An invoice is drafted but has not been sent.',      pill: 'bg-cyan-100 text-cyan-700',    dot: 'bg-cyan-500' },
-  overdue_invoice:        { label: 'Overdue',            blurb: 'A sent invoice is past its due date.',              pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
 }
 
 // Display order: most urgent / most-likely-forgotten first.
-export const RECON_ORDER: ReconCategory[] = ['ready_to_invoice', 'missing_invoice_record', 'missing_client', 'hours_changed', 'overdue_invoice', 'unsent_invoice']
+export const RECON_ORDER: ReconCategory[] = ['ready_to_invoice', 'missing_invoice_record', 'missing_client', 'hours_changed']
 
 export interface ReconItem {
   job_id: string
@@ -44,14 +39,10 @@ export interface ReconItem {
   invoice_status: Invoice['status'] | null
   invoice_total: number | null
   currency: Currency | null
-  due_date: string | null
-  last_reminded_at: string | null
 }
 
-function categorize(job: { workflow_status: WorkflowStatus; client_id: string | null }, inv: { status: Invoice['status']; due_date: string | null; created_at?: string } | undefined, hoursChanged = false): ReconCategory | null {
-  if (inv) {
-    if (isOverdue(inv)) return 'overdue_invoice'
-    if (inv.status === 'draft') return 'unsent_invoice'
+function categorize(job: { workflow_status: WorkflowStatus; client_id: string | null }, inv: { status: Invoice['status']; created_at?: string } | undefined, hoursChanged = false): ReconCategory | null {
+  if (inv && inv.status !== 'void') {
     if (hoursChanged) return 'hours_changed' // billed, but labour edited since
     return null // invoiced with a record — fine
   }
@@ -79,7 +70,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
       .gte('created_at', since.toISOString())
       // Hide jobs an admin has snoozed (cleared) until the snooze lapses.
       .or(`recon_snoozed_until.is.null,recon_snoozed_until.lt.${nowIso}`),
-    supabase.from('invoices').select('id, job_id, status, due_date, total, currency, last_reminded_at, created_at'),
+    supabase.from('invoices').select('id, job_id, status, total, currency, created_at'),
     // Latest labour edit per job — to flag hours changed AFTER a job was invoiced.
     supabase.from('job_surveyors').select('job_id, updated_at'),
   ])
@@ -101,7 +92,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
     if (inv.job_id && !byJob.has(inv.job_id)) byJob.set(inv.job_id, inv)
   }
 
-  const counts: Record<ReconCategory, number> = { ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, hours_changed: 0, unsent_invoice: 0, overdue_invoice: 0 }
+  const counts: Record<ReconCategory, number> = { ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, hours_changed: 0 }
   const items: ReconItem[] = []
   for (const j of (jobs ?? []) as any[]) {
     const inv = byJob.get(j.id) ?? (j.invoice_id ? byId.get(j.invoice_id) : null)
@@ -116,7 +107,6 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
       client_name: j.client?.name ?? null, workflow_status: j.workflow_status, category,
       invoice_id: inv?.id ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, currency: inv?.currency ?? null,
-      due_date: inv?.due_date ?? null, last_reminded_at: inv?.last_reminded_at ?? null,
     })
   }
 

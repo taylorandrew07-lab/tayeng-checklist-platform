@@ -1,18 +1,18 @@
 'use client'
 
 // Shared invoices list (admin + office read-only). Responsive table → stacked
-// cards. Derives an "overdue" badge for sent invoices past their due date.
-// With `manage` (admin), each row gets actions — PDF, email draft, advance status,
-// delete — so consolidated invoices (which have no single job page) are managed here.
+// cards. With `manage` (admin), each row gets actions — PDF, email draft, void /
+// restore, delete — so consolidated invoices (which have no single job page) are
+// managed here. Payment is not tracked (migration 146): no sent/paid/overdue.
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { FileText, Mail, Send, CheckCircle2, Trash2, Loader2, Pencil } from 'lucide-react'
+import { FileText, Mail, Ban, RotateCcw, Trash2, Loader2, Pencil } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { money } from '@/lib/jobs/tracker'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import { isOverdue, setInvoiceAndJobsStatus, deleteInvoice, type InvoiceListRow } from '@/lib/jobs/invoicing'
+import { voidInvoice, restoreInvoice, deleteInvoice, type InvoiceListRow } from '@/lib/jobs/invoicing'
 import { InvoiceStatusPill } from '@/components/job/StatusPill'
 
 /** Secondary line under the client name: the vessel(s) this invoice covers, plus
@@ -30,13 +30,19 @@ function SubLine({ row }: { row: InvoiceListRow }) {
 function RowActions({ row, onChanged, onEdit }: { row: InvoiceListRow; onChanged: () => void; onEdit?: (row: InvoiceListRow) => void }) {
   const [busy, setBusy] = useState<string | null>(null)
 
-  async function advance(next: 'sent' | 'paid') {
-    if (next === 'paid' && !(await confirmDialog({ title: 'Mark invoice paid?', message: 'This records the invoice as fully paid.', confirmLabel: 'Mark paid' }))) return
-    setBusy(next)
-    const res = await setInvoiceAndJobsStatus(row.id, next)
+  // Void cancels an invoice without deleting it — it drops out of every billing
+  // total but the record (and its number) stays. Deleting is the destructive one.
+  async function setVoid(next: boolean) {
+    if (next && !(await confirmDialog({
+      title: 'Void this invoice?',
+      message: 'It stops counting towards billing totals but the record and its number are kept. The job stays closed — delete the invoice instead if you need to re-bill it.',
+      confirmLabel: 'Void invoice',
+    }))) return
+    setBusy(next ? 'void' : 'restore')
+    const res = next ? await voidInvoice(row.id) : await restoreInvoice(row.id)
     setBusy(null)
     if (res.error) { toast.error(res.error); return }
-    toast.success(next === 'sent' ? 'Invoice marked sent' : 'Invoice marked paid'); onChanged()
+    toast.success(next ? 'Invoice voided' : 'Invoice restored'); onChanged()
   }
 
   async function email() {
@@ -67,8 +73,9 @@ function RowActions({ row, onChanged, onEdit }: { row: InvoiceListRow; onChanged
       {onEdit && <button onClick={() => onEdit(row)} title="Edit" className={`${btn} hover:text-brand-600`}><Pencil className="h-3.5 w-3.5" /></button>}
       <a href={`/api/invoice-pdf/${row.id}`} target="_blank" rel="noopener noreferrer" title="PDF" className={`${btn} hover:text-brand-600`}><FileText className="h-3.5 w-3.5" /></a>
       <button onClick={email} disabled={!!busy} title="Email draft" className={`${btn} hover:text-brand-600`}>{busy === 'email' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}</button>
-      {row.status === 'draft' && <button onClick={() => advance('sent')} disabled={!!busy} title="Mark sent" className={`${btn} hover:text-cyan-700`}>{busy === 'sent' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}</button>}
-      {(row.status === 'sent') && <button onClick={() => advance('paid')} disabled={!!busy} title="Mark paid" className={`${btn} hover:text-green-700`}>{busy === 'paid' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}</button>}
+      {row.status === 'active'
+        ? <button onClick={() => setVoid(true)} disabled={!!busy} title="Void" className={`${btn} hover:text-amber-700`}>{busy === 'void' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}</button>
+        : <button onClick={() => setVoid(false)} disabled={!!busy} title="Restore" className={`${btn} hover:text-cyan-700`}>{busy === 'restore' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}</button>}
       <button onClick={remove} disabled={!!busy} title="Delete" className={`${btn} hover:text-red-600 hover:bg-red-50`}>{busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
     </div>
   )
@@ -122,7 +129,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged, onEdit
                   <td className="px-4 py-3 text-right tnum text-gray-900">{money(r.total, r.currency)}</td>
                   <td className="px-4 py-3 text-gray-500">{formatDate(r.issue_date)}</td>
                   <td className="px-4 py-3 text-gray-500">{r.due_date ? formatDate(r.due_date) : '—'}</td>
-                  <td className="px-4 py-3"><InvoiceStatusPill status={r.status} overdue={isOverdue(r)} /></td>
+                  <td className="px-4 py-3"><InvoiceStatusPill status={r.status} /></td>
                   {manage && <td className="px-4 py-3"><RowActions row={r} onChanged={refresh} onEdit={onEdit} /></td>}
                 </tr>
               )
@@ -138,7 +145,7 @@ export default function InvoicesTable({ rows, hrefFor, manage, onChanged, onEdit
           const header = (
             <div className="flex items-center justify-between gap-2">
               <span className="tnum font-medium text-gray-900">{r.invoice_number ?? '—'}</span>
-              <InvoiceStatusPill status={r.status} overdue={isOverdue(r)} />
+              <InvoiceStatusPill status={r.status} />
             </div>
           )
           return (

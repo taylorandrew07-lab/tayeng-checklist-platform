@@ -5,17 +5,16 @@ import { Receipt, Lock, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { cn } from '@/lib/utils'
-import { listInvoices, isOverdue, type InvoiceListRow } from '@/lib/jobs/invoicing'
+import { listInvoices, type InvoiceListRow } from '@/lib/jobs/invoicing'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
-import type { Invoice } from '@/lib/types/database'
 
-type StatusFilter = 'open' | 'overdue' | 'paid' | 'all'
+type StatusFilter = 'active' | 'void' | 'all'
 
 export default function OfficeInvoicing() {
   const [canView, setCanView] = useState(false)
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<InvoiceListRow[] | null>(null)
-  const [filter, setFilter] = useState<StatusFilter>('open')
+  const [filter, setFilter] = useState<StatusFilter>('active')
   const [query, setQuery] = useState('')
 
   useEffect(() => {
@@ -35,11 +34,9 @@ export default function OfficeInvoicing() {
     if (term && ![r.invoice_number, r.client_name, r.vessel_name, r.report_number]
       .some(v => (v ?? '').toLowerCase().includes(term))) return false
     if (filter === 'all') return true
-    if (filter === 'open') return r.status !== 'paid' && r.status !== 'void'
-    if (filter === 'overdue') return isOverdue(r)
-    return r.status === (filter as Invoice['status'])
+    return r.status === filter
   })
-  const filters: [StatusFilter, string][] = [['open', 'Open'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All']]
+  const filters: [StatusFilter, string][] = [['active', 'Invoiced'], ['void', 'Void'], ['all', 'All']]
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">

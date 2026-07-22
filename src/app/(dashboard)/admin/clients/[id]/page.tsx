@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Loader2, Building2, Pencil, Mail, Phone, MapPin, Briefcase, FolderOpen, AlertTriangle, Lock,
+  ArrowLeft, Loader2, Building2, Pencil, Mail, Phone, MapPin, Briefcase, FolderOpen, Lock,
 } from 'lucide-react'
 import { getClientDetail, type ClientDetail } from '@/lib/jobs/client-detail'
 import { listBankAccounts } from '@/lib/jobs/invoicing'
@@ -129,8 +129,8 @@ export default function ClientDetailPage() {
                 <div key={b.currency} className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">{b.currency}</span>
                   <span className="flex items-center gap-3">
-                    {b.outstanding > 0 && <span className="text-amber-700">{money(b.outstanding, b.currency)} due{b.overdue > 0 ? ` · ${money(b.overdue, b.currency)} overdue` : ''}</span>}
-                    <span className="text-gray-400 tnum">{money(b.paid, b.currency)} paid</span>
+                    <span className="text-gray-700 tnum">{money(b.invoiced, b.currency)} invoiced</span>
+                    <span className="text-gray-400 tnum">{b.count} invoice{b.count === 1 ? '' : 's'}</span>
                   </span>
                 </div>
               ))}
@@ -205,8 +205,8 @@ export default function ClientDetailPage() {
                         : <span className="font-medium tnum">{inv.invoice_number || '—'}</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium capitalize ${invStatusClass(inv.status, inv.overdue)}`}>
-                        {inv.overdue && <AlertTriangle className="h-3 w-3" />}{inv.overdue ? 'overdue' : inv.status}
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${invStatusClass(inv.status)}`}>
+                        {inv.status === 'void' ? 'Void' : 'Invoiced'}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 tnum text-gray-700">{money(inv.total, inv.currency)}</td>
@@ -232,13 +232,8 @@ function Stat({ label, value, icon }: { label: string; value: string; icon: Reac
   )
 }
 
-function invStatusClass(status: string, overdue: boolean): string {
-  if (overdue) return 'bg-red-100 text-red-700'
-  switch (status) {
-    case 'paid': return 'bg-green-100 text-green-700'
-    case 'sent': return 'bg-teal-100 text-teal-700'
-    case 'draft': return 'bg-gray-100 text-gray-500'
-    case 'void': return 'bg-gray-100 text-gray-400 line-through'
-    default: return 'bg-gray-100 text-gray-600'
-  }
+function invStatusClass(status: string): string {
+  return status === 'void'
+    ? 'bg-gray-100 text-gray-400 line-through'
+    : 'bg-cyan-100 text-cyan-700'
 }

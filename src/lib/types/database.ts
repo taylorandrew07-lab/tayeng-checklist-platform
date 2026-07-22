@@ -481,19 +481,23 @@ export interface Invoice {
   id: string; job_id: string | null; invoice_number: string | null; client_id: string | null
   // The payer this invoice is addressed to (migration 075). NULL = same as client_id.
   bill_to_client_id: string | null
-  currency: Currency; status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
+  // Payment is not tracked (migration 146): an invoice is either live or cancelled.
+  currency: Currency; status: 'active' | 'void'
+  // due_date is a DOCUMENT field ("payment due by") printed on the invoice — it no
+  // longer drives any overdue calculation.
   issue_date: string; due_date: string | null
   subtotal: number; tax_total: number; total: number; notes: string | null
   // Document fields for the printable PDF (migration 044)
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
-  created_by: string | null; sent_at: string | null; paid_at: string | null
-  // Follow-up reminders (migration 045)
-  last_reminded_at: string | null
+  created_by: string | null
+  // LEGACY (migration 146): payment tracking was removed. These columns remain on
+  // the table as historical record but nothing reads or writes them any more.
   created_at: string; updated_at: string
 }
 export interface InvoiceLineItem { id: string; invoice_id: string; job_id: string | null; description: string; qty: number; unit_price: number; amount: number; sort: number }
 export interface InvoiceTax { id: string; invoice_id: string; name: string; rate: number; amount: number }
-export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; overdue_days: number; bank_details_default: string | null; surveyor_km_rate: number; surveyor_km_currency: Currency }
+// overdue_days is retired (migration 146 — no overdue tracking). Column kept, unused.
+export interface AppSettings { id: boolean; default_tax_name: string; default_tax_rate: number; bank_details_default: string | null; surveyor_km_rate: number; surveyor_km_currency: Currency }
 
 // Selectable bank accounts shown on invoices (migration 080). Admin-managed.
 export interface BankAccount {

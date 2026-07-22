@@ -43,10 +43,11 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
 
+// Payment is not tracked (migration 146) — an invoice is live or cancelled.
 const INV_PILL: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600', sent: 'bg-cyan-100 text-cyan-700',
-  paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700', void: 'bg-slate-200 text-slate-500',
+  active: 'bg-cyan-100 text-cyan-700', void: 'bg-slate-200 text-slate-500',
 }
+const INV_LABEL: Record<string, string> = { active: 'Invoiced', void: 'Void' }
 
 // Shared look for an editable cell's resting (button) state.
 const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
@@ -239,9 +240,8 @@ const COLUMNS: ColumnDef[] = [
           <Link href={`/admin/jobs/${r.id}`} className="block hover:underline">
             <span className="inline-flex items-center gap-1.5">
               <span className="tnum text-gray-700">{r.invoice_number}</span>
-              {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? ''}`}>{r.invoice_status}</span>}
+              {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? INV_PILL.active}`}>{INV_LABEL[r.invoice_status] ?? 'Invoiced'}</span>}
             </span>
-            {r.invoice_sent_at && <span className="block text-[10px] text-gray-400 leading-tight">sent {formatDate(r.invoice_sent_at)}</span>}
           </Link>
         ) : <span className="text-gray-300">—</span>}
       </div>

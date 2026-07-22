@@ -1,9 +1,9 @@
 'use client'
 
 // Admin invoicing hub: the invoices ledger, reconciliation, and the invoicing
-// defaults (tax + overdue window, numbering, bank accounts). Invoices are created
-// on each job; this page is the cross-job view + settings. Per-client billing
-// rates moved to the Clients hub (Clients → Rates).
+// defaults (tax, numbering, bank accounts). Invoices are created on each job; this
+// page is the cross-job view + settings. Per-client billing rates moved to the
+// Clients hub (Clients → Rates). Payment is not tracked (migration 146).
 
 import { useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
@@ -13,8 +13,8 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { cn, formatDate } from '@/lib/utils'
 import { CURRENCIES, money, WORKFLOW } from '@/lib/jobs/tracker'
 import {
-  listInvoices, isOverdue,
-  getAppSettings, updateAppSettings, logInvoiceReminder, getInvoiceCounter, setInvoiceNextNumber,
+  listInvoices,
+  getAppSettings, updateAppSettings, getInvoiceCounter, setInvoiceNextNumber,
   listBankAccounts, saveBankAccount, deleteBankAccount, clientsPayingInto,
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
@@ -28,7 +28,7 @@ import Tabs from '@/components/ui/Tabs'
 import type { Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'settings'
-type StatusFilter = 'open' | Invoice['status'] | 'all'
+type StatusFilter = Invoice['status'] | 'all'
 
 export default function AdminInvoicingPage() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -117,13 +117,8 @@ function OverviewTab() {
                   <span className="text-xs font-semibold tracking-wide text-gray-400">{b.currency}</span>
                   <span className="text-[11px] text-gray-400">{b.count} invoice{b.count === 1 ? '' : 's'}</span>
                 </div>
-                <p className="text-2xl font-semibold text-gray-900 tnum">{money(b.outstanding, b.currency)}</p>
-                <p className="text-xs text-gray-400 mb-3">outstanding</p>
-                <div className="space-y-1 text-sm border-t border-gray-100 pt-3">
-                  {b.overdue > 0 && <div className="flex justify-between"><span className="text-red-600">Overdue</span><span className="tnum text-red-600 font-medium">{money(b.overdue, b.currency)}</span></div>}
-                  <div className="flex justify-between text-gray-500"><span>Paid</span><span className="tnum">{money(b.paid, b.currency)}</span></div>
-                  {b.draft > 0 && <div className="flex justify-between text-gray-400"><span>Draft</span><span className="tnum">{money(b.draft, b.currency)}</span></div>}
-                </div>
+                <p className="text-2xl font-semibold text-gray-900 tnum">{money(b.invoiced, b.currency)}</p>
+                <p className="text-xs text-gray-400">invoiced</p>
               </div>
             ))}
           </div>
@@ -297,7 +292,7 @@ function OverviewTab() {
 const INVOICES_PAGE = 50
 function InvoicesTab() {
   const [rows, setRows] = useState<InvoiceListRow[] | null>(null)
-  const [filter, setFilter] = useState<StatusFilter>('open')
+  const [filter, setFilter] = useState<StatusFilter>('active')
   const [q, setQ] = useState('')
   const [shown, setShown] = useState(INVOICES_PAGE)
   const [editId, setEditId] = useState<string | null>(null)
@@ -307,11 +302,7 @@ function InvoicesTab() {
 
   const term = q.trim().toLowerCase()
   const filtered = (rows ?? []).filter(r => {
-    const statusPass = filter === 'all' ? true
-      : filter === 'open' ? (r.status !== 'paid' && r.status !== 'void')
-      : filter === 'overdue' ? isOverdue(r)
-      : r.status === filter
-    if (!statusPass) return false
+    if (filter !== 'all' && r.status !== filter) return false
     if (!term) return true
     return [r.invoice_number, r.client_name, r.vessel_name, r.report_number]
       .some(v => (v ?? '').toLowerCase().includes(term))
@@ -321,7 +312,7 @@ function InvoicesTab() {
   useEffect(() => { setShown(INVOICES_PAGE) }, [filter, q])
   const paged = filtered.slice(0, shown)
 
-  const filters: [StatusFilter, string][] = [['open', 'Open'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All']]
+  const filters: [StatusFilter, string][] = [['active', 'Invoiced'], ['void', 'Void'], ['all', 'All']]
 
   return (
     <div className="space-y-4">
@@ -406,22 +397,20 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
               <span className="ml-auto text-xs text-gray-400 tnum">{group.length}</span>
             </div>
             <div className="divide-y divide-gray-50">
-              {group.map(i => cat === 'overdue_invoice'
-                ? <OverdueRow key={i.job_id} item={i} onReminded={load} onCleared={load} />
-                : (
-                  <div key={i.job_id} className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50/60 transition-colors">
-                    <Link href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-2 py-2 min-w-0 flex-1">
-                      <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
-                        {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
-                      </div>
-                      {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
-                      <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
-                    </Link>
-                    <ClearReconButton jobId={i.job_id} onCleared={load} />
-                  </div>
-                ))}
+              {group.map(i => (
+                <div key={i.job_id} className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50/60 transition-colors">
+                  <Link href={`/admin/jobs/${i.job_id}`} className="flex items-center gap-3 px-2 py-2 min-w-0 flex-1">
+                    <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
+                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
+                    </div>
+                    {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
+                    <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+                  </Link>
+                  <ClearReconButton jobId={i.job_id} onCleared={load} />
+                </div>
+              ))}
             </div>
           </div>
         )
@@ -447,46 +436,6 @@ function ClearReconButton({ jobId, onCleared }: { jobId: string; onCleared: () =
   )
 }
 
-function daysOverdue(due: string | null): number {
-  if (!due) return 0
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const d = new Date(`${due}T00:00:00`)
-  return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86_400_000))
-}
-
-function OverdueRow({ item, onReminded, onCleared }: { item: ReconItem; onReminded: () => void; onCleared: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const days = daysOverdue(item.due_date)
-
-  async function remind() {
-    if (!item.invoice_id) return
-    setBusy(true)
-    const res = await logInvoiceReminder(item.invoice_id)
-    setBusy(false)
-    if (res.error) { toast.error(res.error); return }
-    toast.success('Reminder logged'); onReminded()
-  }
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <Link href={`/admin/jobs/${item.job_id}`} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity">
-        <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{item.report_number ?? '—'}</span>
-        <div className="min-w-0">
-          <p className="text-sm text-gray-900 truncate">{item.client_name ?? 'No client'}</p>
-          <p className="text-xs text-gray-400">
-            <span className="text-red-600 font-medium">{days} day{days === 1 ? '' : 's'} overdue</span>
-            {' · '}{item.last_reminded_at ? `reminded ${formatDate(item.last_reminded_at)}` : 'not chased yet'}
-          </p>
-        </div>
-      </Link>
-      {item.invoice_total != null && <span className="tnum text-sm text-gray-600 shrink-0">{money(item.invoice_total, item.currency ?? 'USD')}</span>}
-      <button onClick={remind} disabled={busy} className="btn-secondary py-1 px-2.5 text-xs shrink-0">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />} Log reminder
-      </button>
-      <ClearReconButton jobId={item.job_id} onCleared={onCleared} />
-    </div>
-  )
-}
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 function SettingsTab() {
@@ -502,7 +451,7 @@ function SettingsTab() {
     getAppSettings().then(s => {
       setSettings(s)
       if (s) {
-        setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate)); setOverdue(String(s.overdue_days))
+        setTaxName(s.default_tax_name); setTaxRate(String(s.default_tax_rate))
         setKmRate(String(s.surveyor_km_rate ?? 0)); setKmCurrency(s.surveyor_km_currency ?? 'TTD')
       }
     })
@@ -511,7 +460,7 @@ function SettingsTab() {
   async function save() {
     setSaving(true)
     const res = await updateAppSettings({
-      default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0, overdue_days: Number(overdue) || 0,
+      default_tax_name: taxName, default_tax_rate: Number(taxRate) || 0,
       surveyor_km_rate: Number(kmRate) || 0, surveyor_km_currency: kmCurrency,
     })
     setSaving(false)
@@ -541,11 +490,6 @@ function SettingsTab() {
           <label className="label-base">Default tax rate (%)</label>
           <input type="number" min={0} step="0.01" value={taxRate} onChange={e => setTaxRate(e.target.value)} className="input-base" />
         </div>
-      </div>
-      <div>
-        <label className="label-base">Overdue after (days)</label>
-        <input type="number" min={0} value={overdue} onChange={e => setOverdue(e.target.value)} className="input-base" />
-        <p className="text-[11px] text-gray-400 mt-1">A sent invoice is flagged overdue this many days past its due date.</p>
       </div>
       <div className="pt-4 border-t border-gray-100">
         <h3 className="font-medium text-gray-900">Surveyor travel pay</h3>

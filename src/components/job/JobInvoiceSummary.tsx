@@ -57,7 +57,7 @@ export default function JobInvoiceSummary({ job }: { job: Job }) {
         <div><p className="text-[11px] text-gray-400">Invoice no.</p><p className="tnum font-medium text-gray-900">{inv.invoice_number ?? '—'}</p></div>
         <div><p className="text-[11px] text-gray-400">Total</p><p className="tnum text-gray-900">{money(Number(inv.total), inv.currency)}</p></div>
         <div><p className="text-[11px] text-gray-400">Issued</p><p className="text-gray-700">{formatDate(inv.issue_date)}</p></div>
-        <div><p className="text-[11px] text-gray-400">Sent</p><p className="text-gray-700">{inv.sent_at ? formatDate(inv.sent_at) : '—'}</p></div>
+        <div><p className="text-[11px] text-gray-400">Due</p><p className="text-gray-700">{inv.due_date ? formatDate(inv.due_date) : '—'}</p></div>
       </div>
       <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
         <a href={`/api/invoice-pdf/${inv.id}`} target="_blank" rel="noopener noreferrer" className="btn-secondary py-1.5 px-3 text-sm mt-3"><FileText className="h-4 w-4" /> PDF</a>

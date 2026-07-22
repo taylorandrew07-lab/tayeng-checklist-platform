@@ -4,7 +4,6 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { aggregateBilling, type BillingTotals } from '@/lib/jobs/metrics'
-import { isOverdue } from '@/lib/jobs/invoicing'
 import { getClientBilling } from '@/lib/clients/billing'
 import type { Client, ClientBilling, WorkflowStatus } from '@/lib/types/database'
 
@@ -30,7 +29,6 @@ export interface ClientInvoiceRow {
   currency: string
   due_date: string | null
   job_id: string | null
-  overdue: boolean
 }
 
 export interface ClientDetail {
@@ -80,10 +78,9 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const invoiceRows: ClientInvoiceRow[] = ((invs ?? []) as any[]).map(inv => ({
     id: inv.id, invoice_number: inv.invoice_number, status: inv.status,
     total: Number(inv.total ?? 0), currency: inv.currency, due_date: inv.due_date, job_id: inv.job_id,
-    overdue: inv.status === 'overdue' || isOverdue(inv),
   }))
 
-  const billing = [...aggregateBilling((invs ?? []) as any[]).values()].sort((a, b) => b.outstanding - a.outstanding)
+  const billing = [...aggregateBilling((invs ?? []) as any[]).values()].sort((a, b) => b.invoiced - a.invoiced)
   // Open = not yet invoiced. 'closed' is the only terminal stage post-145.
   const openJobs = ((jobs ?? []) as any[]).filter(j => j.workflow_status !== 'closed').length
 

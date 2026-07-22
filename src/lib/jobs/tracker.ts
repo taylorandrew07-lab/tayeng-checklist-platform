@@ -418,7 +418,6 @@ export interface TrackerRow {
   invoice_status: string | null
   invoice_total: number | null
   invoice_currency: string | null
-  invoice_sent_at: string | null
 }
 
 /** One row per job with surveyor names + hours and any invoice, joined in JS. */
@@ -430,7 +429,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
-    supabase.from('invoices').select('id, job_id, invoice_number, status, total, currency, sent_at'),
+    supabase.from('invoices').select('id, job_id, invoice_number, status, total, currency'),
   ])
 
   // Sum km per job via the job_surveyor → job_surveyor_km chain (one flat query).
@@ -474,7 +473,6 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
       surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0, total_km: kmByJob.get(j.id) ?? 0,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
-      invoice_sent_at: inv?.sent_at ?? null,
     }
   })
 }

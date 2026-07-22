@@ -1,28 +1,24 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Receipt, AlertTriangle, FileText, UserX, Clock } from 'lucide-react'
+import { Receipt, AlertTriangle, UserX, Clock } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { listReconciliation, RECON_META, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { money } from '@/lib/jobs/tracker'
 import type { AttentionItem, AttentionTone } from './AttentionCard'
 
 const TONE: Record<ReconCategory, AttentionTone> = {
-  overdue_invoice: 'danger',
   missing_invoice_record: 'danger',
   missing_client: 'warn',
   ready_to_invoice: 'warn',
   hours_changed: 'warn',
-  unsent_invoice: 'info',
 }
 
 const ICON: Record<ReconCategory, React.ElementType> = {
-  overdue_invoice: AlertTriangle,
   missing_invoice_record: AlertTriangle,
   missing_client: UserX,
   ready_to_invoice: Receipt,
   hours_changed: Clock,
-  unsent_invoice: FileText,
 }
 
 /**

@@ -40,7 +40,7 @@ const run = async () => {
   const [{ data: rpc, error: rpcErr }, { data: jobs }, { data: invoices }] = await Promise.all([
     db.rpc('metrics_analytics', { p_months_back: 12 }),
     db.from('jobs').select('id, job_type, client_id, workflow_status, is_overtime, scheduled_date, created_at, client:clients(name)'),
-    db.from('invoices').select('job_id, client_id, status, total, currency, due_date'),
+    db.from('invoices').select('job_id, client_id, status, total, currency'),
   ])
   if (rpcErr || !rpc) { console.error('✗ RPC failed:', rpcErr?.message ?? 'no data'); process.exit(1) }
 
@@ -56,7 +56,6 @@ const run = async () => {
     thisMonth: allJobs.filter(j => monthTT(j.scheduled_date ?? j.created_at, !!j.scheduled_date) === curMonth).length,
     awaitingInvoice: allJobs.filter(j => j.workflow_status === 'invoice_ready' && !invByJob.has(j.id)).length,
     otJobs: allJobs.filter(j => j.is_overtime).length,
-    overdueCount: allInv.filter(i => i.status === 'overdue' || (i.status === 'sent' && i.due_date && i.due_date < today)).length,
   }
   const typeCount = new Map()
   for (const j of allJobs) { const t = j.job_type || 'Unspecified'; typeCount.set(t, (typeCount.get(t) ?? 0) + 1) }
@@ -75,7 +74,6 @@ const run = async () => {
   eq('thisMonth', k.thisMonth, js.thisMonth)
   eq('awaitingInvoice', k.awaitingInvoice, js.awaitingInvoice)
   eq('otJobs', k.otJobs, js.otJobs)
-  eq('overdueCount', k.overdueCount, js.overdueCount)
 
   const rpcByType = [...(rpc.byType ?? [])].sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
   eq('byType', rpcByType, jsByType)

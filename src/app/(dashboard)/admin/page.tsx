@@ -34,7 +34,7 @@ export default function AdminDashboard() {
       id, title, job_number, workflow_status, created_at, vessel_name, surveyor_name,
       template:checklist_templates(name, color),
       client:clients(name, color)
-    `).order('created_at', { ascending: false }).limit(8)
+    `).order('created_at', { ascending: false }).limit(15)
     setRecentJobs(jobs ?? [])
     setLoading(false)
   }

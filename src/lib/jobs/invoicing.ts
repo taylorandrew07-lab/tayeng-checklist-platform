@@ -16,7 +16,7 @@ export async function getAppSettings(): Promise<AppSettings | null> {
   const { data } = await createClient().from('app_settings').select('*').eq('id', true).maybeSingle()
   return (data as AppSettings) ?? null
 }
-export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'overdue_days' | 'bank_details_default' | 'surveyor_km_rate' | 'surveyor_km_currency'>>): Promise<{ error?: string }> {
+export async function updateAppSettings(patch: Partial<Pick<AppSettings, 'default_tax_name' | 'default_tax_rate' | 'bank_details_default' | 'surveyor_km_rate' | 'surveyor_km_currency'>>): Promise<{ error?: string }> {
   const { error } = await createClient().from('app_settings').update(patch).eq('id', true)
   return { error: error?.message }
 }
@@ -53,48 +53,23 @@ export function computeTotals(lines: LineDraft[], taxes: TaxDraft[]) {
   return { subtotal, taxAmounts, tax_total, total: r2(subtotal + tax_total) }
 }
 
-/** Move an invoice through sent / paid / void, stamping the matching timestamp.
- *  On "sent", default a due date (issue date + overdue window) so overdue
- *  tracking has something to measure against. */
+/** Cancel an invoice, or bring a cancelled one back. Payment is not tracked
+ *  (migration 146) — 'active' and 'void' are the only states an invoice has. */
 export async function setInvoiceStatus(invoiceId: string, status: Invoice['status']): Promise<{ error?: string }> {
   const supabase = createClient()
-  const patch: Record<string, unknown> = { status }
-  if (status === 'paid') patch.paid_at = new Date().toISOString()
-  if (status === 'sent') {
-    patch.sent_at = new Date().toISOString()
-    const { data: inv } = await supabase.from('invoices').select('issue_date, due_date').eq('id', invoiceId).single()
-    if (inv && !inv.due_date) {
-      const settings = await getAppSettings()
-      const days = settings?.overdue_days ?? 30
-      const base = inv.issue_date ? new Date(`${inv.issue_date}T00:00:00`) : new Date()
-      base.setDate(base.getDate() + days)
-      patch.due_date = base.toISOString().slice(0, 10)
-    }
-  }
-  const { data, error } = await supabase.from('invoices').update(patch).eq('id', invoiceId).select('id')
+  const { data, error } = await supabase.from('invoices').update({ status }).eq('id', invoiceId).select('id')
   if (error) return { error: error.message }
   if (!data || data.length === 0) return { error: 'That change was blocked — you may not have permission to update this invoice.' }
   return {}
 }
 
-/** Mark an invoice sent/paid. DECOUPLED from the job (migration 145): a job is
- *  'closed' from the moment its invoice is created, and nothing an invoice does
- *  afterwards moves it. Kept as a thin alias so existing callers keep working. */
-export async function setInvoiceAndJobsStatus(invoiceId: string, status: 'sent' | 'paid'): Promise<{ error?: string }> {
-  return setInvoiceStatus(invoiceId, status)
-}
-
-/** Record that an (overdue) invoice was chased today. */
-export async function logInvoiceReminder(invoiceId: string): Promise<{ error?: string }> {
-  const { error } = await createClient().from('invoices').update({ last_reminded_at: new Date().toISOString() }).eq('id', invoiceId)
-  return { error: error?.message }
-}
+export const voidInvoice = (invoiceId: string) => setInvoiceStatus(invoiceId, 'void')
+export const restoreInvoice = (invoiceId: string) => setInvoiceStatus(invoiceId, 'active')
 
 // ── Invoices list (admin + office read) ──────────────────────────────────────
 export interface InvoiceListRow {
   id: string; invoice_number: string | null; status: Invoice['status']
   currency: Currency; total: number; issue_date: string; due_date: string | null
-  sent_at: string | null; paid_at: string | null
   client_name: string | null; bill_to_name: string | null
   report_number: string | null; vessel_name: string | null; job_id: string | null
   // Consolidated invoices (no single job_id) carry many vessels — one line each.
@@ -105,12 +80,12 @@ export async function listInvoices(): Promise<InvoiceListRow[]> {
   // jobs (invoices.job_id, jobs.invoice_id), so every embed is hinted by its FK.
   const { data } = await createClient()
     .from('invoices')
-    .select('id, invoice_number, status, currency, total, issue_date, due_date, sent_at, paid_at, job_id, client:clients!invoices_client_id_fkey(name), bill_to:clients!invoices_bill_to_client_id_fkey(name), job:jobs!invoices_job_id_fkey(report_number, vessel_name), line_items:invoice_line_items(count)')
+    .select('id, invoice_number, status, currency, total, issue_date, due_date, job_id, client:clients!invoices_client_id_fkey(name), bill_to:clients!invoices_bill_to_client_id_fkey(name), job:jobs!invoices_job_id_fkey(report_number, vessel_name), line_items:invoice_line_items(count)')
     .order('created_at', { ascending: false })
   return ((data ?? []) as any[]).map(r => ({
     id: r.id, invoice_number: r.invoice_number, status: r.status, currency: r.currency,
     total: Number(r.total ?? 0), issue_date: r.issue_date, due_date: r.due_date,
-    sent_at: r.sent_at, paid_at: r.paid_at, job_id: r.job_id,
+    job_id: r.job_id,
     client_name: r.client?.name ?? null,
     bill_to_name: r.bill_to?.name ?? null,
     report_number: r.job?.report_number ?? null, vessel_name: r.job?.vessel_name ?? null,
@@ -118,10 +93,6 @@ export async function listInvoices(): Promise<InvoiceListRow[]> {
   }))
 }
 
-/** True when a sent invoice is past its due date (derived, not a stored status). */
-export function isOverdue(row: { status: Invoice['status']; due_date: string | null }, today = new Date().toISOString().slice(0, 10)): boolean {
-  return row.status === 'sent' && !!row.due_date && row.due_date < today
-}
 
 // ── Bank accounts (selectable on invoices) ───────────────────────────────────
 export async function listBankAccounts(activeOnly = false): Promise<BankAccount[]> {
@@ -374,7 +345,7 @@ export async function createConsolidatedInvoice(input: {
   const { subtotal, taxAmounts, tax_total, total } = computeTotals(input.lines, input.taxes)
   const insert: Record<string, unknown> = {
     job_id: null, client_id: input.client_id, bill_to_client_id: input.bill_to_client_id,
-    status: 'draft', created_by: user?.id ?? null,
+    status: 'active', created_by: user?.id ?? null,
     currency: input.currency, due_date: input.due_date || null, notes: input.notes || null,
     description: input.description || null, reference: input.reference || null,
     attention: input.attention || null, bank_details: input.bank_details || null,
