@@ -12,7 +12,6 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import { useJobsView, rowColor, type JobColorMode } from '@/lib/jobs/view'
-import UpcomingJobs from '@/components/dashboard/UpcomingJobs'
 
 // Same three modes as the Jobs page. Colour choice is shared (persisted per-device),
 // so picking "Client" here also colours the Jobs grid by client, and vice-versa.
@@ -51,9 +50,6 @@ export default function AdminDashboard() {
           </Link>
         }
       />
-
-      {/* Upcoming — future / in-flight jobs in date order, with double-booking flags */}
-      <UpcomingJobs hrefBase="/admin/jobs" />
 
       {/* Recent Jobs — the one thing you rely on here, with the Jobs-page colour toggle */}
       <div className="card">
