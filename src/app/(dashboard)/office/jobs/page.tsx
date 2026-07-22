@@ -10,6 +10,7 @@ import { WorkflowPill } from '@/components/job/StatusPill'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
+import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import type { WorkflowStatus } from '@/lib/types/database'
 
@@ -20,6 +21,7 @@ interface MonitorJob {
   workflow_status: WorkflowStatus
   created_at: string
   scheduled_date: string | null
+  end_date: string | null
   submitted_at: string | null
   vessel_name: string | null
   surveyor_name: string | null
@@ -69,13 +71,15 @@ export default function OfficeJobsMonitor() {
         const { data } = await supabase
           .from('jobs')
           .select(`
-            id, title, job_number, workflow_status, created_at, scheduled_date, submitted_at,
+            id, title, job_number, workflow_status, created_at, scheduled_date, end_date, submitted_at,
             vessel_name, surveyor_name,
             template:checklist_templates(name, color),
             client:clients(name, color)
           `)
           .order('created_at', { ascending: false })
-        setJobs((data as unknown as MonitorJob[]) ?? [])
+        // Re-sorted by the job's LAST day (PostgREST can't ORDER BY a COALESCE), so
+        // the Date column reads top-to-bottom instead of jumping about.
+        setJobs([...((data as unknown as MonitorJob[]) ?? [])].sort(byLastDateDesc))
       }
       setLoading(false)
     }
@@ -120,7 +124,9 @@ export default function OfficeJobsMonitor() {
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Vessel</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Surveyor</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-700">Scheduled</th>
+                  {/* The cell shows the job's LAST day, so the header is "Date" — not
+                      "Scheduled", which names the start of the range. */}
+                  <th className="text-left px-4 py-3 font-medium text-gray-700">Date</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Created</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Submitted</th>
                   {canOpenDetail && <th className="text-left px-4 py-3 font-medium text-gray-700"></th>}
@@ -150,7 +156,11 @@ export default function OfficeJobsMonitor() {
                     <td className="px-4 py-3">
                       <WorkflowPill status={job.workflow_status} />
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</td>
+                    {/* The job's last day leads; a range's start date sits under it. */}
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                      {jobLastDate(job) ? formatDate(jobLastDate(job)) : '—'}
+                      {jobSpansDays(job) && <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(job.scheduled_date)}</span>}
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{formatDate(job.created_at)}</td>
                     <td className="px-4 py-3 text-gray-500">{job.submitted_at ? formatDate(job.submitted_at) : '—'}</td>
                     {canOpenDetail && (
@@ -190,7 +200,11 @@ export default function OfficeJobsMonitor() {
                 <div><p className="text-[11px] text-gray-400">Client</p><p className="text-gray-700">{job.client?.name ?? '—'}</p></div>
                 <div><p className="text-[11px] text-gray-400">Vessel</p><p className="text-gray-700">{job.vessel_name ?? '—'}</p></div>
                 <div><p className="text-[11px] text-gray-400">Surveyor</p><p className="text-gray-700">{job.surveyor_name ?? '—'}</p></div>
-                <div><p className="text-[11px] text-gray-400">Scheduled</p><p className="text-gray-700">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</p></div>
+                <div>
+                  <p className="text-[11px] text-gray-400">Date</p>
+                  <p className="text-gray-700">{jobLastDate(job) ? formatDate(jobLastDate(job)) : '—'}</p>
+                  {jobSpansDays(job) && <p className="text-[11px] text-gray-400">from {formatDate(job.scheduled_date)}</p>}
+                </div>
                 <div><p className="text-[11px] text-gray-400">Submitted</p><p className="text-gray-700">{job.submitted_at ? formatDate(job.submitted_at) : '—'}</p></div>
               </div>
             </div>

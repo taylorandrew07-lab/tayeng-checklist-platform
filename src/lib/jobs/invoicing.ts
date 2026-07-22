@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
 import { sanitizeStorageName } from '@/lib/utils'
+import { byLastDateDesc } from '@/lib/jobs/jobDate'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
 } from '@/lib/types/database'
@@ -179,12 +180,19 @@ export async function listBillingClients(): Promise<{ id: string; name: string }
 export interface InvoiceableJob {
   id: string; report_number: string | null; vessel_name: string | null
   job_type: string | null; client_id: string | null; client_name: string | null
-  scheduled_date: string | null; created_at: string; workflow_status: Job['workflow_status']
+  scheduled_date: string | null; end_date: string | null; created_at: string; workflow_status: Job['workflow_status']
   template_id: string | null
+  /** How this job's labour is measured (migration 148). 'days' means an HOURLY rate
+   *  cannot price it — billable_hours is null and billable_days carries the quantity. */
+  labour_unit: 'hours' | 'days'
   /** Billable hours for an hourly rate: the checklist's designated billable-hours
    *  field value if present, else the labour ledger (sum of regular_hours). null
-   *  when neither is set. The invoice builder seeds an hourly line's qty from it. */
+   *  when neither is set, and always null on a day-billed job. The invoice builder
+   *  seeds an hourly line's qty from it. */
   billable_hours: number | null
+  /** Days worked on a day-billed job (the labour ledger's regular quantity, which is
+   *  in days there). null on hours-billed jobs. Never priced with an hourly rate. */
+  billable_days: number | null
   /** Billable quantity for a per-unit rate: the value of the checklist field flagged
    *  is_billable_quantity (e.g. UHT "Number of holds" = holds/bilges). The invoice
    *  builder seeds a per-unit line's qty from it; null when not set. */
@@ -214,7 +222,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
   let q = supabase.from('jobs')
-    .select('id, report_number, vessel_name, job_type, client_id, template_id, scheduled_date, created_at, workflow_status, client:clients(name)')
+    .select('id, report_number, vessel_name, job_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
     .in('workflow_status', ['report_ready', 'invoice_ready'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
@@ -223,12 +231,19 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   let rows = ((data ?? []) as any[]).map(j => ({
     id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, job_type: j.job_type,
     client_id: j.client_id, client_name: j.client?.name ?? null, template_id: j.template_id ?? null,
-    scheduled_date: j.scheduled_date, created_at: j.created_at, workflow_status: j.workflow_status,
+    scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at, workflow_status: j.workflow_status,
+    labour_unit: (j.labour_unit === 'days' ? 'days' : 'hours') as 'hours' | 'days',
     billable_hours: null as number | null,
+    billable_days: null as number | null,
     billable_quantity: null as number | null,
     billable_km: null as number | null,
     job_date: null as string | null, time_from: null as string | null, time_to: null as string | null,
   })) as InvoiceableJob[]
+  // Oldest LAST day first, so the pool runs in the order work actually finished
+  // (PostgREST can't ORDER BY a COALESCE, so the .order above is a stable pre-sort).
+  rows.sort((a, b) => -byLastDateDesc(a, b))
+  // The month filter stays on the START date — that is the billing-period boundary
+  // and it mirrors the labour attribution window, not the list-display rule.
   if (opts.month) rows = rows.filter(r => (r.scheduled_date ?? r.created_at ?? '').slice(0, 7) === opts.month)
 
   // Billable hours per job (for hourly-rate lines). Prefer the value of the field a
@@ -303,7 +318,13 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
       }
     }
     rows.forEach(r => {
-      r.billable_hours = fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null)
+      // On a day-billed job (migration 148) the ledger quantity is in DAYS and the
+      // checklist's billable-hours field is an hours figure that doesn't apply here —
+      // so billable_hours stays null and the quantity goes in billable_days. That is
+      // what stops an hourly rate ever multiplying a day count on a client invoice.
+      const isDays = r.labour_unit === 'days'
+      r.billable_hours = isDays ? null : (fromChecklist[r.id] ?? (fromLedger[r.id] > 0 ? fromLedger[r.id] : null))
+      r.billable_days = isDays && fromLedger[r.id] > 0 ? fromLedger[r.id] : null
       r.billable_quantity = qtyByJob[r.id] ?? null
       r.billable_km = kmByJob[r.id] || null
       r.job_date = bestDate[r.id]?.value ?? null

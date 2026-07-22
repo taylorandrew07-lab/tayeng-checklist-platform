@@ -9,6 +9,8 @@ import { money } from '@/lib/jobs/tracker'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import CredentialsManager from '@/components/personal-docs/CredentialsManager'
 import { formatDate } from '@/lib/utils'
+import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
+import { qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', surveyor: 'Surveyor', office: 'Office', client: 'Client' }
@@ -35,7 +37,7 @@ export default function PersonRecordPage() {
     )
   }
 
-  const { profile: p, totalRegular, totalOvertime, pay, jobs } = data
+  const { profile: p, totalRegular, totalOvertime, totalRegularDays, totalOvertimeDays, pay, jobs } = data
   const isStaff = p.role === 'surveyor' || p.role === 'admin'
 
   return (
@@ -64,8 +66,10 @@ export default function PersonRecordPage() {
       {isStaff && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Stat label="Jobs" value={String(jobs.length)} icon={<Briefcase className="h-4 w-4" />} />
-          <Stat label="Regular hours" value={String(totalRegular)} icon={<Clock className="h-4 w-4" />} />
-          <Stat label="Overtime hours" value={String(totalOvertime)} icon={<Clock className="h-4 w-4 text-amber-500" />} />
+          {/* Hours-billed and day-billed work are shown side by side, never summed
+              into one number (migration 148). */}
+          <Stat label="Regular" value={splitQty(totalRegular, totalRegularDays) || '—'} icon={<Clock className="h-4 w-4" />} />
+          <Stat label="Overtime" value={splitQty(totalOvertime, totalOvertimeDays) || '—'} icon={<Clock className="h-4 w-4 text-amber-500" />} />
           <div className="card p-4">
             <p className="text-xs font-medium text-gray-400 mb-1">Pay</p>
             {pay.length === 0 ? <p className="text-sm text-gray-400">—</p> : (
@@ -92,14 +96,17 @@ export default function PersonRecordPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs text-gray-500 border-y border-gray-100 bg-gray-50/50"><th className="px-4 py-2 font-medium">Report</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Hours</th><th className="px-4 py-2 font-medium">Date</th></tr></thead>
+                <thead><tr className="text-left text-xs text-gray-500 border-y border-gray-100 bg-gray-50/50"><th className="px-4 py-2 font-medium">Report</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Quantity</th><th className="px-4 py-2 font-medium">Date</th></tr></thead>
                 <tbody>
                   {jobs.map(j => (
                     <tr key={j.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                       <td className="px-4 py-2.5"><Link href={`/admin/jobs/${j.id}`} className="text-brand-700 hover:underline font-medium tnum">{j.report_number || '—'}</Link><span className="block text-xs text-gray-400 truncate max-w-[16rem]">{j.title}</span></td>
                       <td className="px-4 py-2.5"><WorkflowPill status={j.workflow_status as WorkflowStatus} /></td>
-                      <td className="px-4 py-2.5 text-gray-600 tnum">{j.regular_hours || 0}h{j.overtime_hours ? ` +${j.overtime_hours} OT` : ''}</td>
-                      <td className="px-4 py-2.5 text-gray-500 tnum">{formatDate(j.scheduled_date ?? j.created_at)}</td>
+                      <td className="px-4 py-2.5 text-gray-600 tnum">{qtyWithUnit(j.regular_hours || 0, j.labour_unit)}{j.overtime_hours ? ` +${qtyWithUnit(j.overtime_hours, j.labour_unit)} OT` : ''}</td>
+                      <td className="px-4 py-2.5 text-gray-500 tnum">
+                        {formatDate(jobLastDate(j) ?? j.created_at)}
+                        {jobSpansDays(j) && <span className="block text-xs text-gray-400">from {formatDate(j.scheduled_date)}</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

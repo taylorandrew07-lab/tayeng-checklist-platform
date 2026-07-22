@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { WORKFLOW } from '@/lib/jobs/tracker'
+import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
+import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
@@ -77,7 +79,7 @@ export default function SurveyorDashboard() {
         const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
-              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, vessel_name, surveyor_name,
+              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, surveyor_name,
               template:checklist_templates(name),
               client:clients(name)
             `)
@@ -88,7 +90,10 @@ export default function SurveyorDashboard() {
         if (!active) return
 
         setProfile(pRes.data)
-        setJobs(jRes.data ?? [])
+        // Ordered by created_at on the wire (PostgREST can't ORDER BY a COALESCE),
+        // then re-sorted here by the job's LAST day so the cards run in the same
+        // order as the dates printed on them.
+        setJobs([...(jRes.data ?? [])].sort(byLastDateDesc))
         setMine(mineMap)
 
         // Jobs started offline live only on this device until they sync — surface
@@ -124,7 +129,12 @@ export default function SurveyorDashboard() {
   else if (period === 'custom') range = { from: customFrom || null, to: customTo || null, label: customFrom || customTo ? `${customFrom || '…'} → ${customTo || '…'}` : 'Custom range' }
   else range = { from: null, to: null, label: 'All time' }
 
-  // Each job's date for filtering = its survey (scheduled) date, falling back to created.
+  // Each job's date for filtering = its survey (scheduled) date, falling back to
+  // created. This is the pay-period rule, NOT the list-display rule: it mirrors the
+  // day-worked attribution in metrics_labour (mig 123/125/126), so a job that runs
+  // 28 Jun → 2 Jul counts as June work here exactly as it does in the Finance pay
+  // run. Do not switch it to the job's last day (jobLastDate) on its own — the
+  // surveyor's CSV would stop reconciling with the company's totals.
   const jobDate = (j: any) => (j.scheduled_date ?? j.created_at ?? '').slice(0, 10)
   const inRange = (j: any) => { const d = jobDate(j); return (!range.from || d >= range.from) && (!range.to || d <= range.to) }
 
@@ -136,23 +146,40 @@ export default function SurveyorDashboard() {
   const submitted = submittedAll.filter(inRange)
 
   // Totals for the selected timeframe across ALL the surveyor's jobs in range.
+  // Hours-billed and day-billed jobs are counted into separate buckets and shown
+  // side by side (mig 148) — adding 8 hours to 2 days would be a meaningless number
+  // on the very screen a surveyor checks their pay against.
   const periodJobs = jobs.filter(inRange)
-  const totals = periodJobs.reduce((a, j) => { const m = mine[j.id]; return m ? { reg: a.reg + m.reg, ot: a.ot + m.ot, km: a.km + m.km } : a }, { reg: 0, ot: 0, km: 0 })
+  const totals = periodJobs.reduce((a, j) => {
+    const m = mine[j.id]
+    if (!m) return a
+    const d = asLabourUnit(j.labour_unit) === 'days'
+    return {
+      reg: a.reg + (d ? 0 : m.reg), ot: a.ot + (d ? 0 : m.ot),
+      regDays: a.regDays + (d ? m.reg : 0), otDays: a.otDays + (d ? m.ot : 0),
+      km: a.km + m.km,
+    }
+  }, { reg: 0, ot: 0, regDays: 0, otDays: 0, km: 0 })
 
   // Download the selected timeframe's work as CSV (one row per job + a totals row).
   function downloadCsv() {
     const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-    const headers = ['Report #', 'Job #', 'Date', 'Vessel', 'Job type', 'Client', 'Status', 'Regular hours', 'Overtime hours', 'Distance (km)']
+    // Each row carries its job's unit and the totals are per unit — a spreadsheet
+    // must never be able to add an hours quantity to a days one (mig 148).
+    const headers = ['Report #', 'Job #', 'Date', 'Vessel', 'Job type', 'Client', 'Status', 'Unit', 'Regular qty', 'Overtime qty', 'Distance (km)']
     const lines = [headers.join(',')]
     for (const j of periodJobs) {
       const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
       lines.push([
         j.report_number, j.job_number, jobDate(j), j.vessel_name, j.job_type, j.client?.name,
         WORKFLOW[j.workflow_status as keyof typeof WORKFLOW]?.label ?? j.workflow_status,
-        m.reg || '', m.ot || '', m.km || '',
+        labourLabels(j.labour_unit).noun, m.reg || '', m.ot || '', m.km || '',
       ].map(esc).join(','))
     }
-    lines.push(['', '', '', '', '', '', 'TOTAL', totals.reg || '', totals.ot || '', totals.km || ''].map(esc).join(','))
+    lines.push(['', '', '', '', '', '', 'TOTAL (hours)', 'hours', totals.reg || '', totals.ot || '', totals.km || ''].map(esc).join(','))
+    if (totals.regDays || totals.otDays) {
+      lines.push(['', '', '', '', '', '', 'TOTAL (days)', 'days', totals.regDays || '', totals.otDays || '', ''].map(esc).join(','))
+    }
     // BOM + CRLF so Excel opens the UTF-8 cleanly.
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -163,13 +190,20 @@ export default function SurveyorDashboard() {
     URL.revokeObjectURL(url)
   }
 
-  // The surveyor's own hours + km on a job, shown under the card title for pay tracking.
-  function MyLine({ jobId }: { jobId: string }) {
+  // What a job card shows as its date: the job's LAST day, with a multi-day job
+  // noting where it started. (Separate from jobDate() above, which is the pay window.)
+  const jobDateLabel = (j: any) => jobSpansDays(j)
+    ? `${formatDate(jobLastDate(j))} (from ${formatDate(j.scheduled_date)})`
+    : formatDate(jobLastDate(j) ?? j.created_at)
+
+  // The surveyor's own quantity + km on a job, shown under the card title for pay
+  // tracking. One job has one unit, so its own numbers can carry it directly.
+  function MyLine({ jobId, unit }: { jobId: string; unit?: string | null }) {
     const m = mine[jobId]
     if (!m || (!m.reg && !m.ot && !m.km)) return null
     const parts: string[] = []
-    if (m.reg) parts.push(`${m.reg}h reg`)
-    if (m.ot) parts.push(`${m.ot}h OT`)
+    if (m.reg) parts.push(`${qtyWithUnit(m.reg, unit)} reg`)
+    if (m.ot) parts.push(`${qtyWithUnit(m.ot, unit)} OT`)
     if (m.km) parts.push(`${m.km} km`)
     return <p className="text-xs text-brand-700 mt-0.5 tnum">{parts.join(' · ')}</p>
   }
@@ -247,9 +281,9 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.scheduled_date ?? job.created_at)}
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
                       </p>
-                      <MyLine jobId={job.id} />
+                      <MyLine jobId={job.id} unit={job.labour_unit} />
                     </div>
                     <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>
@@ -270,8 +304,8 @@ export default function SurveyorDashboard() {
                 My work · {range.label} · {periodJobs.length} job{periodJobs.length === 1 ? '' : 's'}
               </span>
               <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-6">
-                <span className="text-gray-500">Reg <strong className="text-gray-800 tnum">{totals.reg}h</strong></span>
-                <span className="text-gray-500">OT <strong className="text-gray-800 tnum">{totals.ot}h</strong></span>
+                <span className="text-gray-500">Reg <strong className="text-gray-800 tnum">{splitQty(totals.reg, totals.regDays) || '0 h'}</strong></span>
+                <span className="text-gray-500">OT <strong className="text-gray-800 tnum">{splitQty(totals.ot, totals.otDays) || '0 h'}</strong></span>
                 <span className="text-gray-500">Dist <strong className="text-gray-800 tnum">{totals.km} km</strong></span>
               </span>
             </button>
@@ -307,9 +341,9 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {formatDate(job.scheduled_date ?? job.created_at)}
+                        {job.template?.name} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
                       </p>
-                      <MyLine jobId={job.id} />
+                      <MyLine jobId={job.id} unit={job.labour_unit} />
                     </div>
                     <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>

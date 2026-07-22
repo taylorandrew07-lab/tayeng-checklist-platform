@@ -88,7 +88,7 @@ export default function AdminChecklistDetailPage() {
   // Conditional Stage qualifier — only the broad survey types carry one.
   const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
     'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
-    'Cargo Survey': { label: 'Direction', options: ['Loaded', 'Discharge'] },
+    'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'] },
     'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
   }
   // Cargo Loading / Cargo Discharging jobs carry a "what's the cargo?" question.

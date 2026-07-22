@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { aggregateBilling, type BillingTotals } from '@/lib/jobs/metrics'
 import { getClientBilling } from '@/lib/clients/billing'
+import { byLastDateDesc } from '@/lib/jobs/jobDate'
 import type { Client, ClientBilling, WorkflowStatus } from '@/lib/types/database'
 
 export interface ClientJobRow {
@@ -13,7 +14,10 @@ export interface ClientJobRow {
   vessel_name: string | null
   title: string
   workflow_status: WorkflowStatus
+  /** Start of the job; end_date is set only when it spans a range (migration 111).
+   *  Lists show the LAST day — see lib/jobs/jobDate.ts. */
   scheduled_date: string | null
+  end_date: string | null
   created_at: string
   invoice_number: string | null
   invoice_status: string | null
@@ -46,7 +50,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const [{ data: client }, { data: jobs }, { data: invs }, clientBilling] = await Promise.all([
     supabase.from('clients').select('*').eq('id', clientId).single(),
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, title, workflow_status, scheduled_date, created_at, invoice_id')
+      .select('id, report_number, vessel_name, title, workflow_status, scheduled_date, end_date, created_at, invoice_id')
       .eq('client_id', clientId).order('created_at', { ascending: false }),
     supabase.from('invoices')
       .select('id, invoice_number, status, total, currency, due_date, job_id, created_at')
@@ -69,11 +73,14 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
     const inv = invByJob.get(j.id) ?? (j.invoice_id ? invById.get(j.invoice_id) : null)
     return {
       id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, title: j.title,
-      workflow_status: j.workflow_status, scheduled_date: j.scheduled_date, created_at: j.created_at,
+      workflow_status: j.workflow_status, scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
     }
   })
+  // Ordered by the job's LAST day, matching what the table prints (PostgREST can't
+  // ORDER BY a COALESCE, so the created_at order above is only a stable pre-sort).
+  jobRows.sort(byLastDateDesc)
 
   const invoiceRows: ClientInvoiceRow[] = ((invs ?? []) as any[]).map(inv => ({
     id: inv.id, invoice_number: inv.invoice_number, status: inv.status,

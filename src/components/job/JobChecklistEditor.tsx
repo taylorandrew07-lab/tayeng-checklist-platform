@@ -900,9 +900,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     }, [jobId, values, arrayValues, signatures, sections, entryOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // Date the job by the SURVEY date the surveyor entered (the first answered
-    // date field), not the day the job was created. Updates scheduled_date (drives
-    // the jobs-list Date column, sorting + the calendar) and swaps the trailing
-    // DD-MM-YYYY in the auto-generated title. No-op if no date field is filled.
+    // date field), not the day the job was created. Updates scheduled_date — the
+    // job's START day, which feeds the calendar, report numbering and the fine-print
+    // line under the jobs-list Date column — and swaps the trailing DD-MM-YYYY in
+    // the auto-generated title. No-op if no date field is filled.
     async function syncJobDateFromChecklist() {
       let surveyDate: string | null = null
       outer: for (const s of sections) {
@@ -912,11 +913,17 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       if (!surveyDate || !/^\d{4}-\d{2}-\d{2}$/.test(surveyDate)) return
       const [yy, mm, dd] = surveyDate.split('-')
-      const patch: Record<string, any> = { scheduled_date: surveyDate }
+      const patch: Record<string, any> = {}
+      // A checklist date later than the job's end date would invert the range (the
+      // lists would then show a job "ending" before it started), so on a multi-day
+      // job the start date only moves when it stays on or before end_date. The
+      // title still follows the surveyor's date either way.
+      if (!job?.end_date || surveyDate <= job.end_date) patch.scheduled_date = surveyDate
       if (job?.title) {
         const retitled = job.title.replace(/\d{2}-\d{2}-\d{4}\s*$/, `${dd}-${mm}-${yy}`)
         if (retitled !== job.title) patch.title = retitled
       }
+      if (Object.keys(patch).length === 0) return
       await createClient().from('jobs').update(patch).eq('id', jobId)
     }
 

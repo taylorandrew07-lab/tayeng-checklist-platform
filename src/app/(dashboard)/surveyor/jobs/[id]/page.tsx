@@ -22,7 +22,10 @@ export default function SurveyorJobPage() {
   async function load() {
     const { data } = await createClient()
       .from('jobs')
-      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, is_overtime, billing_mode, client:clients(name)')
+      // labour_unit must be selected: JobOpsPanel defaults a missing unit to hours,
+      // and on a day-billed job that would let the OT shift log overwrite the
+      // hand-typed day count with a sum of HOURS, paid at the day rate (mig 148).
+      .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, is_overtime, billing_mode, labour_unit, client:clients(name)')
       .eq('id', jobId).single()
     setJob(data ?? null)
     setLoading(false)

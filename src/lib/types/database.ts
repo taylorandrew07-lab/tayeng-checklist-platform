@@ -389,8 +389,8 @@ export interface Job {
   pdf_storage_path: string | null
   // Job tracker (migration 042)
   job_type: string | null
-  // Broad-type qualifier (migration 108): Draught {Initial/Interim/Final}, Cargo
-  // {Loaded/Discharge}, Hire {On/Off}. Free text; null when the type has no stage.
+  // Broad-type qualifier (migration 108/147): Draught {Initial/Interim/Final}, Cargo
+  // {Loading/Discharging}, Hire {On/Off}. Free text; null when the type has no stage.
   job_stage: string | null
   // Free-text note on the job (migration 108) — e.g. call numbers / gang counts.
   notes: string | null
@@ -407,6 +407,13 @@ export interface Job {
   // 'regular' (plain billable hours) or 'fixed' (flat fee — no hours entry). Source of
   // truth for which hours UI shows on the job.
   billing_mode: 'overtime' | 'regular' | 'fixed'
+  // Unit of the labour quantity (migration 148): 'hours' (default) or 'days'. Per job
+  // — applies to every surveyor on it, and to both regular and overtime; fixed-price
+  // is unaffected. The quantity still lives in job_surveyors.regular_hours/
+  // .overtime_hours and the rate in .pay_rate/.overtime_rate, so pay = quantity × rate
+  // holds in both units. In days mode the quantity is typed by hand and the OT shift
+  // log stays evidence only. Admin-only field.
+  labour_unit: 'hours' | 'days'
   // Stamped when the job reaches 'invoice_ready' (the admin finished the report).
   report_approved_at: string | null
   report_approved_by: string | null
@@ -431,7 +438,10 @@ export type Currency = 'USD' | 'TTD' | 'EUR' | 'GBP'
 export interface JobSurveyor {
   id: string; job_id: string; surveyor_id: string
   created_by: string | null; created_at: string
-  // Labour ledger (migration 043)
+  // Labour ledger (migration 043). These hold the QUANTITY; its unit is the parent
+  // job's labour_unit (migration 148) — hours or days — so they may only be summed
+  // with rows from jobs carrying the same unit. The pay columns below are safe to
+  // sum either way (quantity × rate).
   regular_hours: number; overtime_hours: number
   pay_rate: number | null; overtime_rate: number | null; pay_currency: Currency
   regular_pay: number; overtime_pay: number

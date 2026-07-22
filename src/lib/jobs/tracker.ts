@@ -406,6 +406,10 @@ export interface TrackerRow {
   workflow_status: WorkflowStatus
   is_overtime: boolean
   billing_mode: 'overtime' | 'regular' | 'fixed'
+  /** Unit of regular_hours/overtime_hours below (migration 148). Per job, so both
+   *  quantities on this row are always in the same unit — but rows in the list are
+   *  NOT, so anything that labels or totals them must read this. */
+  labour_unit: 'hours' | 'days'
   scheduled_date: string | null
   end_date: string | null
   created_at: string
@@ -425,7 +429,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, labour_unit, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
@@ -469,7 +473,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
       id: j.id, report_number: j.report_number, report_not_required: !!j.report_not_required, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
       client_color: j.client?.color ?? null, template_color: j.template?.color ?? null, template_name: j.template?.name ?? null,
-      workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, billing_mode: (j.billing_mode ?? 'regular') as 'overtime' | 'regular' | 'fixed', scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
+      workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, billing_mode: (j.billing_mode ?? 'regular') as 'overtime' | 'regular' | 'fixed', labour_unit: (j.labour_unit === 'days' ? 'days' : 'hours') as 'hours' | 'days', scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
       surveyors, regular_hours: s?.reg ?? 0, overtime_hours: s?.ot ?? 0, total_km: kmByJob.get(j.id) ?? 0,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,

@@ -19,7 +19,11 @@ import {
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
 import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
-import { getInvoicingDashboard, metricsLabour, metricsLabourByJob, type InvoicingDashboard, type SurveyorLabour, type SurveyorJobLabour } from '@/lib/jobs/dashboard'
+import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
+import {
+  metricsLabourSplit, metricsLabourByJobSplit, splitQty, qtyWithUnit,
+  type SurveyorLabourSplit, type SurveyorJobLabourSplit,
+} from '@/lib/jobs/labourUnit'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
@@ -76,9 +80,9 @@ function OverviewTab() {
   const [labourMode, setLabourMode] = useState<'month' | 'year' | 'all'>('month')
   const [labourMonth, setLabourMonth] = useState(thisMonth) // YYYY-MM
   const [labourYear, setLabourYear] = useState(String(new Date().getFullYear()))
-  const [labour, setLabour] = useState<SurveyorLabour[] | null>(null)
+  const [labour, setLabour] = useState<SurveyorLabourSplit[] | null>(null)
   // Per-job breakdown behind each surveyor row (same window, day-worked rule).
-  const [labourJobs, setLabourJobs] = useState<Map<string, SurveyorJobLabour[]>>(new Map())
+  const [labourJobs, setLabourJobs] = useState<Map<string, SurveyorJobLabourSplit[]>>(new Map())
   const [openSurveyor, setOpenSurveyor] = useState<string | null>(null)
   useEffect(() => {
     let from: string | null = null, to: string | null = null
@@ -91,8 +95,8 @@ function OverviewTab() {
     }
     let active = true
     setLabour(null); setOpenSurveyor(null)
-    metricsLabour(from, to).then(l => { if (active) setLabour(l) })
-    metricsLabourByJob(from, to).then(m => { if (active) setLabourJobs(m) })
+    metricsLabourSplit(from, to).then(l => { if (active) setLabour(l) })
+    metricsLabourByJobSplit(from, to).then(m => { if (active) setLabourJobs(m) })
     return () => { active = false }
   }, [labourMode, labourMonth, labourYear])
   const yearOptions = Array.from({ length: new Date().getFullYear() - 2024 + 1 }, (_, i) => String(2024 + i)).reverse()
@@ -182,8 +186,11 @@ function OverviewTab() {
               <thead>
                 <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                   <th className="font-medium px-4 py-2.5">Surveyor</th>
-                  <th className="font-medium px-4 py-2.5 text-right">Regular hrs</th>
-                  <th className="font-medium px-4 py-2.5 text-right">Overtime hrs</th>
+                  {/* Unit-neutral headings: a surveyor can have hours-billed AND
+                      day-billed jobs in the same period, and the two must never be
+                      added together — each cell states its own units (migration 148). */}
+                  <th className="font-medium px-4 py-2.5 text-right">Regular</th>
+                  <th className="font-medium px-4 py-2.5 text-right">Overtime</th>
                   <th className="font-medium px-4 py-2.5 text-right">Distance (km)</th>
                   <th className="font-medium px-4 py-2.5 text-right">Pay</th>
                   <th className="w-8" />
@@ -198,8 +205,8 @@ function OverviewTab() {
                     <tr onClick={() => setOpenSurveyor(isOpen ? null : s.surveyor_id)}
                       className={`border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50/60 ${isOpen ? 'bg-gray-50/60' : ''}`}>
                       <td className="px-4 py-3 text-gray-900">{s.name}</td>
-                      <td className="px-4 py-3 text-right tnum text-gray-600">{s.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
-                      <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{s.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
+                      <td className="px-4 py-3 text-right tnum text-gray-600">{splitQty(s.regular_hours, s.regular_days) || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 text-right tnum text-gray-900 font-medium">{splitQty(s.overtime_hours, s.overtime_days) || <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 text-right tnum text-gray-600">{s.km ? s.km.toLocaleString() : <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 text-right">
                         {s.pay.length === 0 ? <span className="text-gray-300">—</span> : (
@@ -222,8 +229,8 @@ function OverviewTab() {
                                   <tr className="text-left text-gray-400">
                                     <th className="font-medium px-3 py-1.5">Date</th>
                                     <th className="font-medium px-3 py-1.5">Job</th>
-                                    <th className="font-medium px-3 py-1.5 text-right">Reg hrs</th>
-                                    <th className="font-medium px-3 py-1.5 text-right">OT hrs</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">Regular</th>
+                                    <th className="font-medium px-3 py-1.5 text-right">Overtime</th>
                                     <th className="font-medium px-3 py-1.5 text-right">Km</th>
                                     <th className="font-medium px-3 py-1.5 text-right">Pay</th>
                                   </tr>
@@ -238,8 +245,9 @@ function OverviewTab() {
                                         </Link>
                                         {j.report_number && <span className="text-gray-400 tnum"> · {j.report_number}</span>}
                                       </td>
-                                      <td className="px-3 py-1.5 text-right tnum text-gray-600">{j.regular_hours ? j.regular_hours.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}</td>
-                                      <td className="px-3 py-1.5 text-right tnum text-gray-900 font-medium">{j.overtime_hours ? j.overtime_hours.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}</td>
+                                      {/* One job per row, so both quantities share that job's unit — stated on each. */}
+                                      <td className="px-3 py-1.5 text-right tnum text-gray-600">{j.regular_hours ? qtyWithUnit(j.regular_hours, j.labour_unit) : '—'}</td>
+                                      <td className="px-3 py-1.5 text-right tnum text-gray-900 font-medium">{j.overtime_hours ? qtyWithUnit(j.overtime_hours, j.labour_unit) : '—'}</td>
                                       <td className="px-3 py-1.5 text-right tnum text-gray-600">{j.km ? j.km.toLocaleString() : '—'}</td>
                                       <td className="px-3 py-1.5 text-right">
                                         {j.pay.length === 0 ? <span className="text-gray-300">—</span> : (
@@ -263,7 +271,7 @@ function OverviewTab() {
               </tbody>
             </table>
             </div>
-            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Overtime shifts and km trips count on the day they were worked or driven. Regular hours (and typed-in OT with no shift log) count in the month the job is scheduled. Tap a surveyor to see the jobs behind their totals.</p>
+            <p className="px-4 py-2 border-t border-gray-50 text-[11px] text-gray-400">Quantities are shown per unit — <span className="tnum">h</span> for hours-billed jobs, <span className="tnum">d</span> for day-billed ones — and are never added together. Overtime shifts and km trips count on the day they were worked or driven; regular quantities (and a day-billed job&apos;s typed overtime) count in the month the job is scheduled. On a day-billed job the shift log is evidence only. Tap a surveyor to see the jobs behind their totals.</p>
           </div>
         )}
       </section>

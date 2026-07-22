@@ -15,6 +15,7 @@ import {
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type KmEntry,
 } from '@/lib/jobs/tracker'
+import { asLabourUnit, labourLabels, type LabourUnit } from '@/lib/jobs/labourUnit'
 import { checkSurveyorConflicts } from '@/lib/jobs/conflicts'
 import { notifyAssignment } from '@/lib/jobs/notify'
 import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
@@ -49,12 +50,15 @@ function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_
   return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
 }
 
-function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
-  row: JobSurveyorRow; jobId: string; isAdmin: boolean; billingMode: 'overtime' | 'regular' | 'fixed'; locked?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; onKm?: (rowId: string, entries: KmEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
+function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
+  row: JobSurveyorRow; jobId: string; isAdmin: boolean; billingMode: 'overtime' | 'regular' | 'fixed'; unit: LabourUnit; locked?: boolean; billableHours?: number | null; defaultDate?: string | null; onRemove: () => void; onSaved: () => void; onEntries?: (rowId: string, entries: OvertimeEntry[]) => void; onKm?: (rowId: string, entries: KmEntry[]) => void; registerFlush?: (id: string, flush: (() => Promise<void>) | null) => void; onDirty?: (id: string, dirty: boolean) => void
 }) {
   const isOTMode = billingMode === 'overtime'
   const isRegMode = billingMode === 'regular'
   const isFixed = billingMode === 'fixed'
+  // Hours or days (migration 148) — same quantity columns, different words.
+  const L = labourLabels(unit)
+  const isDays = unit === 'days'
   const [reg, setReg] = useState(String(row.regular_hours ?? 0))
   const [ot, setOt] = useState(String(row.overtime_hours ?? 0))
   const [payRate, setPayRate] = useState(row.pay_rate != null ? String(row.pay_rate) : '')
@@ -73,7 +77,11 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
   const [nNote, setNNote] = useState('')
   const [logBusy, setLogBusy] = useState(false)
   const otTotal = Math.round(entries.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
-  const otFromLog = entries.length > 0
+  // The log is in HOURS, so it can only drive the OT quantity on an hours-billed job.
+  // On a day-billed job (mig 148) the quantity is typed by hand and the log is kept as
+  // evidence of the shifts worked — the mig-148 trigger guard enforces the same rule
+  // server-side, so an out-of-band shift can't overwrite the typed day count either.
+  const otFromLog = !isDays && entries.length > 0
   const preview = shiftHours(nStartDate, nStartTime, nEndDate || nStartDate, nEndTime)
 
   // Kilometre log (migration 116) — one trip per drive, 10–140 km. Shown for every
@@ -166,7 +174,9 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
     if (!dirty) return
     const t = setTimeout(() => { void flushRef.current() }, 1200)
     return () => clearTimeout(t)
-  }, [reg, ot, otTotal, payRate, otRate, cur]) // eslint-disable-line react-hooks/exhaustive-deps
+    // otFromLog is a dep so that switching the job back to hours (mig 148) re-asserts
+    // the shift-log total over the day quantity that was standing in its place.
+  }, [reg, ot, otTotal, otFromLog, payRate, otRate, cur]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function applyChecklistHours() {
     if (billableHours == null) return
@@ -184,10 +194,15 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
     if (res.error) { setLogBusy(false); toast.error(res.error); return }
     const next = await listSurveyorOvertime(row.id)
     setEntries(next); onEntries?.(row.id, next)
-    const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
-    await persistHours(total)
+    // Days mode: the log is evidence only, so it must not rewrite the hand-typed day
+    // quantity (mig 148 — the trigger enforces the same rule server-side).
+    if (!isDays) {
+      const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+      await persistHours(total)
+      setOt(String(total))
+    }
     // Keep the dates (next shift is usually the same day); clear the times + per-shift fields.
-    setOt(String(total)); setNStartTime(''); setNEndTime(''); setNLocation(''); setNNote('')
+    setNStartTime(''); setNEndTime(''); setNLocation(''); setNNote('')
     setLogBusy(false); onSaved()
   }
 
@@ -197,9 +212,11 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
     if (res.error) { setLogBusy(false); toast.error(res.error); return }
     const next = await listSurveyorOvertime(row.id)
     setEntries(next); onEntries?.(row.id, next)
-    const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
-    await persistHours(total)
-    setOt(String(total))
+    if (!isDays) {
+      const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+      await persistHours(total)
+      setOt(String(total))
+    }
     setLogBusy(false); onSaved()
   }
 
@@ -217,8 +234,10 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
         {isRegMode && (
         <div>
           <label className="text-[11px] text-gray-400 flex items-center justify-between gap-2">
-            <span>Regular hrs <span className="text-gray-300">· client</span></span>
-            {billableHours != null && Number(reg) !== billableHours && (
+            <span>{L.regular} <span className="text-gray-300">· client</span></span>
+            {/* The checklist's billable figure is an HOURS quantity — never offer it
+                as a day count (mig 148). */}
+            {!isDays && billableHours != null && Number(reg) !== billableHours && (
               <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
             )}
           </label>
@@ -227,14 +246,14 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
         )}
         {isOTMode && (
         <div>
-          <label className="text-[11px] text-amber-600 font-medium">Overtime hrs <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
+          <label className="text-[11px] text-amber-600 font-medium">{L.overtime} <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
             : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} disabled={locked} className={`${numCls} ring-1 ring-amber-300 border-amber-300`} />}
         </div>
         )}
-        {isAdmin && isRegMode && <div><label className="text-[11px] text-gray-400">Pay rate /hr</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
-        {isAdmin && isOTMode && <div><label className="text-[11px] text-gray-400">OT rate /hr</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && isRegMode && <div><label className="text-[11px] text-gray-400">{L.payRate}</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && isOTMode && <div><label className="text-[11px] text-gray-400">{L.otRate}</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
         {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
       </div>
       )}
@@ -248,6 +267,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, locked, billableHours, 
         </button>
         {logOpen && (
           <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 space-y-1.5">
+            {isDays && <p className="text-[11px] text-gray-500">This job is billed by the day — shifts here are a record of the hours worked, not the payable quantity. Type the overtime days above.</p>}
             {entries.map(e => (
               <div key={e.id} className="flex items-center gap-2 text-xs text-gray-700">
                 <span className="tnum text-gray-600 flex-shrink-0">{fmtSpan(e)}</span>
@@ -339,6 +359,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [addId, setAddId] = useState('')
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
   const [billingMode, setBillingMode] = useState<'overtime' | 'regular' | 'fixed'>(job.billing_mode ?? 'regular')
+  // Hours or days (migration 148) — per job, both billing modes, admin-only.
+  const [unit, setUnit] = useState<LabourUnit>(asLabourUnit(job.labour_unit))
+  const L = labourLabels(unit)
   const [billableHours, setBillableHours] = useState<number | null>(null)
   const [otByRow, setOtByRow] = useState<Record<string, OvertimeEntry[]>>({})
   const [kmByRow, setKmByRow] = useState<Record<string, KmEntry[]>>({})
@@ -389,7 +412,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     if (mode === 'fixed') {
       const anyHours = surveyors.some(s => Number(s.regular_hours) || Number(s.overtime_hours)) || Object.keys(otByRow).length > 0
       if (anyHours && !(await confirmDialog({
-        message: 'Switching to fixed-price clears all logged regular and overtime hours (and overtime shifts) on this job — distance/km is kept. This can’t be undone. Continue?',
+        message: `Switching to fixed-price clears all logged regular and overtime ${L.noun} (and overtime shifts) on this job — distance/km is kept. This can’t be undone. Continue?`,
         danger: true, confirmLabel: 'Switch & clear hours',
       }))) return
     }
@@ -403,6 +426,23 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
       reload()
     }
     onChanged()
+  }
+
+  // Hours ⇄ days (migration 148). Nothing is converted — a day length would have to
+  // be invented — so any quantity already entered simply changes meaning. Say so
+  // before switching when there is something to reinterpret.
+  async function setLabourUnit(next: LabourUnit) {
+    const prev = unit
+    if (next === prev) return
+    const anyQty = surveyors.some(s => Number(s.regular_hours) || Number(s.overtime_hours))
+    if (anyQty && !(await confirmDialog({
+      message: `Switching this job to ${labourLabels(next).noun} keeps the quantities already entered — they will now mean ${labourLabels(next).noun}, not ${labourLabels(prev).noun}. Check each surveyor's quantity and rate afterwards. Continue?`,
+      confirmLabel: `Switch to ${labourLabels(next).noun}`,
+    }))) return
+    setUnit(next)
+    const res = await updateJobField(job.id, { labour_unit: next })
+    if (res.error) { setUnit(prev); toast.error(res.error); return }
+    onChanged(); reload()
   }
 
   async function reload() {
@@ -562,7 +602,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
               <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><CheckCircle2 className="h-3 w-3 text-emerald-500" />Saved</span>
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {isAdmin || (!surveyorLocked && billingMode !== 'fixed') ? (
               // Admins pick all three modes; surveyors flip Regular/Overtime on their
               // own OPEN jobs (they know which jobs are OT — mig 124 gates the rest:
@@ -582,6 +622,22 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             ) : (
               <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${billingMode === 'overtime' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}><Clock className="h-3.5 w-3.5" />{billingMode === 'overtime' ? 'Overtime job' : billingMode === 'fixed' ? 'Fixed-price job' : 'Regular-hours job'}</span>
             )}
+            {/* Hours ⇄ days (migration 148) — what every quantity on this job MEANS.
+                Fixed-price has no quantity, so it has no unit. Admin-only: a surveyor
+                may flip Regular/Overtime on their own open job (mig 124) but not the
+                unit, so they get a read-only pill instead of the toggle. */}
+            {billingMode !== 'fixed' && (isAdmin ? (
+              <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-0.5 text-xs font-medium" role="group" aria-label="Labour unit">
+                {(['hours', 'days'] as const).map(u => (
+                  <button key={u} onClick={() => setLabourUnit(u)} title={`Pay and bill this job by the ${u === 'hours' ? 'hour' : 'day'}`}
+                    className={`px-2.5 py-1 rounded-full transition-colors ${unit === u ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {labourLabels(u).toggle}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-gray-100 text-gray-600">{L.pill}</span>
+            ))}
           </div>
         </div>
         {surveyorLocked && (
@@ -590,18 +646,24 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           </p>
         )}
         <p className="text-[11px] text-gray-400 mb-3">
-          {billingMode === 'overtime' ? 'Overtime hours are paid to the surveyor as OT and billed to the client.'
+          {billingMode === 'overtime' ? `Overtime ${L.noun} are paid to the surveyor as OT and billed to the client.`
             : billingMode === 'fixed' ? 'Fixed-price job — no hours; only distance is logged per surveyor.'
-            : 'Regular hours are billed to the client.'} Distance (km) is logged per surveyor on every job.
+            : `Regular ${L.noun} are billed to the client.`}
+          {billingMode !== 'fixed' && unit === 'days' && ' Days are typed in by hand — the OT time-log stays a record of the shifts worked.'}
+          {' '}Distance (km) is logged per surveyor on every job.
         </p>
-        {billableHours != null && (
+        {/* The checklist figure is an hours quantity, so it has nothing to say on a
+            day-billed job (mig 148). */}
+        {billableHours != null && unit === 'hours' && (
           <p className="text-[11px] text-brand-700 bg-brand-50/70 rounded-md px-2.5 py-1.5 mb-3">
             Checklist billable hours: <strong>{billableHours} hrs</strong> — use the <em>“use {billableHours}h”</em> link to set a surveyor&apos;s regular (client-billed) hours.
           </p>
         )}
         {allOt.length > 0 && (
           <div className="mb-3 rounded-md bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 text-[11px] text-amber-800 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            <span>Total OT (all surveyors): <strong className="tnum">{otAllTotal}h</strong></span>
+            {/* Always hours — it comes from the shift log. On a day-billed job that
+                makes it evidence of shifts worked, not the payable quantity. */}
+            <span>{unit === 'days' ? 'Shifts logged (all surveyors)' : 'Total OT (all surveyors)'}: <strong className="tnum">{otAllTotal}h</strong></span>
             {earliest && latest && (
               <span>Coverage: <strong className="tnum">{fmtDay(earliest.entry_date)} {earliest.start_time}</strong> → <strong className="tnum">{fmtDay(latest.end_date || latest.entry_date)} {latest.end_time}</strong></span>
             )}
@@ -617,7 +679,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (
-              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} billingMode={billingMode} locked={surveyorLocked} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} onKm={(rowId, es) => setKmByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
+              <SurveyorRow key={s.id} row={s} jobId={job.id} isAdmin={isAdmin} billingMode={billingMode} unit={unit} locked={surveyorLocked} billableHours={billableHours} defaultDate={job.scheduled_date} onRemove={() => remove(s)} onSaved={() => { onChanged(); reload() }} onEntries={(rowId, es) => setOtByRow(prev => ({ ...prev, [rowId]: es }))} onKm={(rowId, es) => setKmByRow(prev => ({ ...prev, [rowId]: es }))} registerFlush={registerFlush} onDirty={markDirty} />
             ))}
           </div>
         )}

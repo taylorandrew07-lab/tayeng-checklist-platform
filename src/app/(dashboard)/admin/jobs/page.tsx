@@ -18,8 +18,10 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getUiPrefs, setUiPref } from '@/lib/preferences'
-import { formatDate, dayKey, titleCaseVesselName } from '@/lib/utils'
+import { formatDate, titleCaseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
+import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
+import { qtyWithUnit } from '@/lib/jobs/labourUnit'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
@@ -52,6 +54,9 @@ const INV_LABEL: Record<string, string> = { active: 'Invoiced', void: 'Void' }
 // Shared look for an editable cell's resting (button) state.
 const cellBtn = 'w-full text-left px-2 py-1 rounded-md transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-200'
+// A quiet second line inside a cell — same weight as a plain grey caption, but
+// clickable (used for the start date under a range job's last date).
+const cellBtnFine = 'w-full text-left px-2 rounded-md leading-tight text-[11px] text-gray-400 transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 
 // CSV-escape one value: quote-wrap when it holds a comma/quote/newline; double quotes.
 function csv(v: string | number | null | undefined): string {
@@ -127,17 +132,38 @@ function EditableCombo({ value, listId, onSave }: { value: string | null; listId
   )
 }
 
-function EditableDate({ value, fallback, onSave }: { value: string | null; fallback?: string | null; onSave: (v: string | null) => void }) {
+// One editable date. `min`/`max` bound it against the job's other date so a range
+// can't be inverted (a job spans scheduled_date → end_date and nothing in the DB
+// enforces the order); `fine` renders the quiet second line under the main date.
+function EditableDate({ value, fallback, min, max, title, prefix, fine, onSave }: {
+  value: string | null; fallback?: string | null
+  min?: string | null; max?: string | null
+  title?: string; prefix?: string; fine?: boolean
+  onSave: (v: string | null) => void
+}) {
   const [editing, setEditing] = useState(false)
+  function commit(raw: string) {
+    setEditing(false)
+    const nv = raw || null
+    if (nv === (value || null)) return
+    // min/max on a date input is advisory only (a typed date still gets through),
+    // so reject an inverted range here rather than saving it.
+    if (nv && min && nv < min) { toast.error('The end date can’t be before the start date'); return }
+    if (nv && max && nv > max) { toast.error('The start date can’t be after the end date'); return }
+    onSave(nv)
+  }
   if (editing) return (
-    <input type="date" autoFocus defaultValue={value ?? (fallback ? fallback.slice(0, 10) : '')} onBlur={e => { setEditing(false); const nv = e.target.value || null; if (nv !== (value || null)) onSave(nv) }}
-      className={cellInput} />
+    <input type="date" autoFocus min={min ?? undefined} max={max ?? undefined}
+      defaultValue={value ?? (fallback ? fallback.slice(0, 10) : '')} onBlur={e => commit(e.target.value)}
+      className={`${cellInput} ${fine ? 'py-0 text-[11px]' : ''}`} />
   )
-  // Scheduled date if set, otherwise the job's own date (muted) so it's never blank.
+  // The date if set, otherwise the job's own date (muted) so it's never blank.
   return (
-    <button onClick={() => setEditing(true)} title={value ? 'Scheduled date' : 'No scheduled date — showing the job date. Click to set.'}
-      className={`${cellBtn} whitespace-nowrap ${value ? 'text-gray-600' : fallback ? 'text-gray-400 italic' : 'text-gray-400'}`}>
-      {value ? formatDate(value) : fallback ? formatDate(fallback) : 'Set date'}
+    <button onClick={() => setEditing(true)} title={title ?? (value ? 'Job date' : 'No date set — showing the job date. Click to set.')}
+      className={fine
+        ? `${cellBtnFine} ${value ? '' : 'italic'}`
+        : `${cellBtn} whitespace-nowrap ${value ? 'text-gray-600' : fallback ? 'text-gray-400 italic' : 'text-gray-400'}`}>
+      {prefix}{value ? formatDate(value) : fallback ? formatDate(fallback) : 'Set date'}
     </button>
   )
 }
@@ -210,21 +236,24 @@ const COLUMNS: ColumnDef[] = [
           : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
       </div>
     ) },
-  { key: 'hours', label: 'Hours', sortKey: 'hours', defaultVisible: true, width: 120, min: 80, align: 'right',
+  // The list mixes hours-billed and day-billed jobs, so every quantity carries its
+  // own job's unit (mig 148) — a 3-day job must never read as "3h". The column
+  // labels stay unit-neutral for the same reason.
+  { key: 'hours', label: 'Quantity', sortKey: 'hours', defaultVisible: true, width: 120, min: 80, align: 'right',
     cell: r => (
       <div className="px-3 text-right whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5 justify-end">
           {r.is_overtime && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium" title="Overtime job">OT</span>}
           {r.regular_hours + r.overtime_hours === 0
             ? <span className="text-gray-300 tnum">—</span>
-            : <span className="text-gray-700 tnum">{r.regular_hours || 0}h{r.overtime_hours ? <span className="text-amber-600"> +{r.overtime_hours} OT</span> : ''}</span>}
+            : <span className="text-gray-700 tnum">{qtyWithUnit(r.regular_hours || 0, r.labour_unit)}{r.overtime_hours ? <span className="text-amber-600"> +{qtyWithUnit(r.overtime_hours, r.labour_unit)} OT</span> : ''}</span>}
         </span>
       </div>
     ) },
-  { key: 'regular', label: 'Regular (h)', sortKey: 'regular', defaultVisible: false, width: 110, min: 80, align: 'right',
-    cell: r => <div className="px-3 text-right tnum text-gray-700">{r.regular_hours || <span className="text-gray-300">—</span>}</div> },
-  { key: 'overtime', label: 'Overtime (h)', sortKey: 'overtime', defaultVisible: false, width: 120, min: 80, align: 'right',
-    cell: r => <div className="px-3 text-right tnum">{r.overtime_hours ? <span className="text-amber-600">{r.overtime_hours}</span> : <span className="text-gray-300">—</span>}</div> },
+  { key: 'regular', label: 'Regular', sortKey: 'regular', defaultVisible: false, width: 110, min: 80, align: 'right',
+    cell: r => <div className="px-3 text-right tnum text-gray-700">{r.regular_hours ? qtyWithUnit(r.regular_hours, r.labour_unit) : <span className="text-gray-300">—</span>}</div> },
+  { key: 'overtime', label: 'Overtime', sortKey: 'overtime', defaultVisible: false, width: 120, min: 80, align: 'right',
+    cell: r => <div className="px-3 text-right tnum">{r.overtime_hours ? <span className="text-amber-600">{qtyWithUnit(r.overtime_hours, r.labour_unit)}</span> : <span className="text-gray-300">—</span>}</div> },
   { key: 'km', label: 'Distance (km)', sortKey: 'km', defaultVisible: false, width: 120, min: 90, align: 'right',
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.total_km ? r.total_km : <span className="text-gray-300">—</span>}</div> },
   { key: 'billing', label: 'Billing', defaultVisible: false, width: 110, min: 80,
@@ -250,11 +279,31 @@ const COLUMNS: ColumnDef[] = [
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.invoice_total != null ? money(r.invoice_total, r.invoice_currency ?? 'USD') : <span className="text-gray-300">—</span>}</div> },
   { key: 'status', label: 'Status', sortKey: 'status', defaultVisible: true, width: 120, min: 90,
     cell: (r, { changeStatus }) => <div className="px-3"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></div> },
+  // A job is shown (and sorted) by its LAST day — jobLastDate() — with the start
+  // date underneath in fine print, but only when the job really spans days: an
+  // end_date equal to the start would otherwise print "12 Jul / from 12 Jul".
+  // Both lines edit: the prominent one writes end_date only when the job already
+  // spans a range, otherwise scheduled_date, so re-dating a single-day job never
+  // silently turns it into a range. A same-day end_date has no fine-print line, so
+  // it moves BOTH columns together — the start date must never become uneditable.
+  // Clearing the prominent line on a range job drops end_date, collapsing it back.
   { key: 'date', label: 'Date', sortKey: 'date', defaultVisible: true, width: 130, min: 90,
     cell: (r, { patchRow }) => (
       <>
-        <EditableDate value={r.scheduled_date} fallback={r.created_at} onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
-        {r.end_date && <span className="block px-2 text-[11px] text-gray-400 leading-tight">→ {formatDate(r.end_date)}</span>}
+        <EditableDate
+          value={jobLastDate(r)} fallback={r.created_at}
+          min={jobSpansDays(r) ? r.scheduled_date : null}
+          title={jobSpansDays(r) ? 'Last day of the job' : r.scheduled_date ? 'Scheduled date' : 'No scheduled date — showing the job date. Click to set.'}
+          onSave={v => {
+            const p = jobSpansDays(r) ? { end_date: v }
+              : r.end_date ? { scheduled_date: v, end_date: v }
+              : { scheduled_date: v }
+            patchRow(r.id, p, p)
+          }} />
+        {jobSpansDays(r) && (
+          <EditableDate fine value={r.scheduled_date} max={r.end_date} prefix="from " title="Start date"
+            onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
+        )}
       </>
     ) },
   { key: 'end_date', label: 'End date', defaultVisible: false, width: 110, min: 90,
@@ -777,13 +826,25 @@ export default function JobsTrackerPage() {
         case 'overtime': return r.overtime_hours
         case 'km': return r.total_km
         case 'status': return WORKFLOW_ORDER.indexOf(r.workflow_status)
-        // Compare by the local calendar day actually shown in the Date column, so the
-        // order matches the displayed dates (raw date-vs-timestamp strings don't).
-        case 'date': default: return dayKey(r.scheduled_date ?? r.created_at)
+        // Compare by the local calendar day actually shown in the Date column — the
+        // job's LAST day — so the order matches the displayed dates (raw
+        // date-vs-timestamp strings don't compare; jobLastDateKey normalises both).
+        case 'date': default: return jobLastDateKey(r)
       }
     }
     const dir = sort.dir === 'asc' ? 1 : -1
-    return [...filtered].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0 })
+    // A quantity column mixes units (mig 148) and 3 days is not "less" than 8 hours,
+    // so those three columns group the day-billed rows apart from the hours-billed
+    // ones first and only rank within a unit. There is no honest way to interleave
+    // them without inventing a day length, which the labour-unit rule forbids.
+    const qtyCol = sort.key === 'hours' || sort.key === 'regular' || sort.key === 'overtime'
+    const unitGroup = (r: TrackerRow) => (qtyCol && r.labour_unit === 'days' ? 1 : 0)
+    return [...filtered].sort((a, b) => {
+      const ga = unitGroup(a), gb = unitGroup(b)
+      if (ga !== gb) return ga - gb
+      const va = val(a), vb = val(b)
+      return va < vb ? -dir : va > vb ? dir : 0
+    })
   }, [rows, filter, typeFilter, surveyorFilter, otOnly, q, sort, view.year, view.month])
 
   // Reset the page window whenever the filtered/sorted set changes.
@@ -811,7 +872,9 @@ export default function JobsTrackerPage() {
 
   // Download the currently-shown rows (current filters + sort + month/year) as CSV.
   function exportCsv() {
-    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular hours', 'Overtime hours', 'Billing mode', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    // Quantity columns are unit-neutral and carry a Labour unit column beside the
+    // billing mode (mig 148) — otherwise a spreadsheet would sum hours and days.
+    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular qty', 'Overtime qty', 'Billing mode', 'Labour unit', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
@@ -819,7 +882,7 @@ export default function JobsTrackerPage() {
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
         csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),
-        csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.billing_mode ?? ''), csv(r.total_km || ''),
+        csv(r.regular_hours || ''), csv(r.overtime_hours || ''), csv(r.billing_mode ?? ''), csv(r.labour_unit), csv(r.total_km || ''),
         csv(r.invoice_number), csv(r.invoice_status), csv(r.invoice_total ?? ''), csv(r.invoice_currency),
         csv(r.notes),
       ].join(','))
@@ -961,6 +1024,9 @@ export default function JobsTrackerPage() {
 }
 
 function NumberReportsModal({ open, onClose, rows, onDone }: { open: boolean; onClose: () => void; rows: TrackerRow[]; onDone: () => void }) {
+  // Report numbers sequence on the job's START date, NOT the last day the lists
+  // sort by (jobLastDate): YY-MM-NNN keys to the month the work began, matching
+  // the paper documents. Keep this in step with fillReportNumbers() in tracker.ts.
   const missing = rows.filter(r => !r.report_number && !r.report_not_required)
     .sort((a, b) => { const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at; return da < db ? -1 : da > db ? 1 : 0 })
   const [start, setStart] = useState('')

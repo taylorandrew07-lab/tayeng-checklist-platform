@@ -8,6 +8,7 @@ import { Loader2, ClipboardList } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { CLIENT_STATUS, clientStatusFor } from '@/lib/jobs/tracker'
 import { formatDate } from '@/lib/utils'
+import { byLastDateDesc, jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import type { WorkflowStatus } from '@/lib/types/database'
 
 const LOGO_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/client-logos`
@@ -22,6 +23,11 @@ type PermittedJob = {
     title: string
     workflow_status: WorkflowStatus
     scheduled_date: string | null
+    end_date: string | null
+    /** Selected so an undated job still sorts by recency — byLastDateDesc falls
+     *  back to it, and without the column every undated job would collapse to the
+     *  bottom in an arbitrary order. */
+    created_at: string
     template: { name: string } | null
   } | null
 }
@@ -60,7 +66,7 @@ export default function ClientPortal() {
         .select(`
           can_view_status, can_view_pdf, can_view_checklist_details,
           job:jobs(
-            id, job_number, title, workflow_status, scheduled_date,
+            id, job_number, title, workflow_status, scheduled_date, end_date, created_at,
             template:checklist_templates(name)
           )
         `)
@@ -78,6 +84,9 @@ export default function ClientPortal() {
           job: Array.isArray(p.job) ? (p.job[0] ?? null) : (p.job ?? null),
         }))
         .filter(p => p.job !== null)
+        // The .order() above sorts the permission GRANTS, not the jobs, so put the
+        // list in job order here: latest last day first, matching the date shown.
+        .sort((a, b) => byLastDateDesc(a.job!, b.job!))
       setJobs(normalized)
       setLoading(false)
     }
@@ -138,7 +147,8 @@ export default function ClientPortal() {
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Document</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Template</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-700">Scheduled</th>
+                  {/* The cell shows the job's LAST day, so the header is "Date". */}
+                  <th className="text-left px-4 py-3 font-medium text-gray-700">Date</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700">Access</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-700"></th>
                 </tr>
@@ -168,7 +178,11 @@ export default function ClientPortal() {
                           <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{job.scheduled_date ? formatDate(job.scheduled_date) : '—'}</td>
+                      {/* The job's last day leads; a range's start date sits under it. */}
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                        {jobLastDate(job) ? formatDate(jobLastDate(job)) : '—'}
+                        {jobSpansDays(job) && <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(job.scheduled_date)}</span>}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
                           {perm.can_view_pdf && (
@@ -220,7 +234,8 @@ export default function ClientPortal() {
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
                     <span>{job.template?.name ?? '—'}</span>
                     <span className="text-gray-300">·</span>
-                    <span>{job.scheduled_date ? formatDate(job.scheduled_date) : 'No date'}</span>
+                    <span>{jobLastDate(job) ? formatDate(jobLastDate(job)) : 'No date'}</span>
+                    {jobSpansDays(job) && <span className="text-[11px] text-gray-400">from {formatDate(job.scheduled_date)}</span>}
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="flex gap-1 flex-wrap">

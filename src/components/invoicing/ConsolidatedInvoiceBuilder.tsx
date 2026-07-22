@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
+import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
@@ -115,11 +116,22 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
     const hourly = rate?.rate_type === 'hourly'
     const perUnit = rate?.rate_type === 'per_unit'
+    // A day-billed job (migration 148) carries no billable_hours at all, so an hourly
+    // rate can never multiply its day count — it falls through to qty 1 and the day
+    // rate is entered by hand. A per-unit rate whose unit IS the day can price it.
+    const perDayUnit = perUnit && /^days?$/i.test((rate?.unit_label ?? '').trim())
     // Hourly rate → bill hours × rate (qty = billable hours). Per-unit rate → bill
     // qty × rate where qty is the job's billable quantity (e.g. UHT holds/bilges).
     // Fixed rates stay qty 1.
-    const qty = hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
+    // An hourly rate on a day-billed job is a mismatch we must not paper over: seed
+    // the DAY count as the qty but leave the price at 0, so the line reads as
+    // visibly incomplete (3 × 0) instead of a plausible-looking 1 × the hourly rate,
+    // which would undercharge three days of work by two-thirds.
+    const hourlyOnDays = hourly && job.labour_unit === 'days'
+    const qty = hourlyOnDays ? (job.billable_days && job.billable_days > 0 ? job.billable_days : 1)
+      : hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
       : perUnit && job.billable_quantity && job.billable_quantity > 0 ? job.billable_quantity
+      : perDayUnit && job.billable_days && job.billable_days > 0 ? job.billable_days
       : 1
     // Second description line spells out the job: its date, the overall work window
     // (time from–to, not each leg) and — when hourly — the hours being billed. The
@@ -128,9 +140,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
     const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
     const unitStr = perUnit && job.billable_quantity && job.billable_quantity > 0 ? `${job.billable_quantity} ${rate?.unit_label || 'units'}` : null
-    const detail = [dateStr, span, hoursStr, unitStr].filter(Boolean).join(' · ')
+    // A day-billed job says DAYS on the client's invoice — never "hrs".
+    const daysStr = !unitStr && job.billable_days && job.billable_days > 0 ? `${job.billable_days} day${job.billable_days === 1 ? '' : 's'}` : null
+    const detail = [dateStr, span, hoursStr, daysStr, unitStr].filter(Boolean).join(' · ')
     const head = job.job_type ? `${label} — ${job.job_type}` : label
-    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate ? Number(rate.rate) : 0 }
+    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0 }
   }, [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
@@ -218,16 +232,24 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   }
 
   // When the matched rate is hourly, show that the line's qty came from the job's
-  // billable hours (checklist total or labour ledger) — so it's clear the chain is linked.
+  // billable hours (checklist total or labour ledger) — so it's clear the chain is
+  // linked. Day-billed jobs (migration 148) say so instead, and never claim hours.
   function hoursHintFor(job: InvoiceableJob): string | null {
     const active = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
     const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type)
     if (rate?.rate_type === 'per_unit') {
       const unit = rate.unit_label || 'unit'
-      if (!job.billable_quantity || job.billable_quantity <= 0) return `Per-${unit} rate — no count on this job yet; enter the qty manually.`
-      return `${job.billable_quantity} ${unit} × ${money(Number(rate.rate), rate.currency)}/${unit}`
+      const perDayUnit = /^days?$/i.test(unit.trim())
+      const count = job.billable_quantity ?? (perDayUnit ? job.billable_days : null)
+      if (!count || count <= 0) return `Per-${unit} rate — no count on this job yet; enter the qty manually.`
+      return `${count} ${unit} × ${money(Number(rate.rate), rate.currency)}/${unit}`
     }
     if (rate?.rate_type !== 'hourly') return null
+    // An hourly rate cannot price a day count, so the qty is left at 1 deliberately.
+    if (job.labour_unit === 'days') {
+      const worked = job.billable_days && job.billable_days > 0 ? `${job.billable_days} day${job.billable_days === 1 ? '' : 's'} worked` : 'No days logged yet'
+      return `Billed by the day — ${worked}. This client's rate is hourly, so the unit price is left at 0 — enter the day rate by hand.`
+    }
     if (!job.billable_hours || job.billable_hours <= 0) return 'Hourly rate — no billable hours found on this job yet; enter the qty (hours) manually.'
     return `${job.billable_hours} billable hrs × ${money(Number(rate.rate), rate.currency)}/hr`
   }
@@ -360,7 +382,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
                           <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
                           {j.job_type && <span>· {j.job_type}</span>}
-                          {j.scheduled_date && <span>· {formatDate(j.scheduled_date)}</span>}
+                          {jobLastDate(j) && <span>· {formatDate(jobLastDate(j))}{jobSpansDays(j) && <span className="text-gray-300"> (from {formatDate(j.scheduled_date)})</span>}</span>}
+                          {/* Day-billed (migration 148) — flagged here so the line is never priced as hours. */}
+                          {j.labour_unit === 'days' && <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Billed by the day</span>}
                         </div>
                         {sel ? (
                           <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
@@ -394,7 +418,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
                           <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
                           {j.job_type && <span>· {j.job_type}</span>}
-                          {j.scheduled_date && <span>· {formatDate(j.scheduled_date)}</span>}
+                          {jobLastDate(j) && <span>· {formatDate(jobLastDate(j))}{jobSpansDays(j) && <span className="text-gray-300"> (from {formatDate(j.scheduled_date)})</span>}</span>}
                         </div>
                         <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
                       </div>

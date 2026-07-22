@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Anchor, Pencil, Save, Ship, FolderOpen, Briefcase }
 import { getVesselDetail, updateVessel, type VesselDetail } from '@/lib/vessels/api'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { formatDate } from '@/lib/utils'
+import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import type { WorkflowStatus } from '@/lib/types/database'
 import { toast } from '@/components/ui/toast'
 
@@ -94,7 +95,10 @@ export default function VesselDetailPage() {
                   <tr key={j.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-2.5"><Link href={`/admin/jobs/${j.id}`} className="text-brand-700 hover:underline font-medium tnum">{j.report_number || '—'}</Link><span className="block text-xs text-gray-400 truncate max-w-[16rem]">{j.title}</span></td>
                     <td className="px-4 py-2.5"><WorkflowPill status={j.workflow_status as WorkflowStatus} /></td>
-                    <td className="px-4 py-2.5 text-gray-500 tnum">{formatDate(j.scheduled_date ?? j.created_at)}</td>
+                    <td className="px-4 py-2.5 text-gray-500 tnum">
+                      {formatDate(jobLastDate(j) ?? j.created_at)}
+                      {jobSpansDays(j) && <span className="block text-xs text-gray-400">from {formatDate(j.scheduled_date)}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { titleCaseVesselName } from '@/lib/utils'
+import { byLastDateDesc } from '@/lib/jobs/jobDate'
 
 export interface Vessel {
   id: string
@@ -67,7 +68,7 @@ export async function findOrCreateVessel(name: string): Promise<string | null> {
 
 export interface VesselJob {
   id: string; report_number: string | null; title: string
-  workflow_status: string; scheduled_date: string | null; created_at: string
+  workflow_status: string; scheduled_date: string | null; end_date: string | null; created_at: string
 }
 export interface VesselVoyage { id: string; voyage_number: string | null; status: string; updated_at: string }
 export interface VesselDetail { vessel: Vessel; jobs: VesselJob[]; voyages: VesselVoyage[] }
@@ -76,9 +77,15 @@ export async function getVesselDetail(id: string): Promise<VesselDetail | null> 
   const supabase = createClient()
   const [{ data: vessel }, { data: jobs }, { data: voyages }] = await Promise.all([
     supabase.from('vessels').select(COLS).eq('id', id).single(),
-    supabase.from('jobs').select('id, report_number, title, workflow_status, scheduled_date, created_at').eq('vessel_id', id).order('created_at', { ascending: false }),
+    supabase.from('jobs').select('id, report_number, title, workflow_status, scheduled_date, end_date, created_at').eq('vessel_id', id).order('created_at', { ascending: false }),
     supabase.from('cargo_voyages').select('id, voyage_number, status, updated_at').eq('vessel_id', id).order('updated_at', { ascending: false }),
   ])
   if (!vessel) return null
-  return { vessel: vessel as Vessel, jobs: (jobs ?? []) as VesselJob[], voyages: (voyages ?? []) as VesselVoyage[] }
+  // Re-sorted by the job's LAST day (PostgREST can't ORDER BY a COALESCE), matching
+  // every other job list.
+  return {
+    vessel: vessel as Vessel,
+    jobs: ((jobs ?? []) as VesselJob[]).sort(byLastDateDesc),
+    voyages: (voyages ?? []) as VesselVoyage[],
+  }
 }

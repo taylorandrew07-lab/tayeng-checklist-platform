@@ -27,10 +27,11 @@ function dmyFromISO(iso: string): string {
 }
 
 // Conditional Stage picker: the broad survey types carry a qualifier (jobs.job_stage).
-// Other types show no picker.
-const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
+// Other types show no picker. `placeholder` is only set where "Select {label}…" would
+// read badly — Cargo Survey's label is two words joined by a slash (migration 147).
+const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
   'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
-  'Cargo Survey': { label: 'Direction', options: ['Loaded', 'Discharge'] },
+  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
   'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
 }
 
@@ -264,7 +265,7 @@ export default function NewJobPage() {
           <div>
             <label className="label-base">{stageConfig.label}</label>
             <select value={jobStage} onChange={e => setJobStage(e.target.value)} className="input-base">
-              <option value="">Select {stageConfig.label.toLowerCase()}…</option>
+              <option value="">{stageConfig.placeholder ?? `Select ${stageConfig.label.toLowerCase()}…`}</option>
               {stageConfig.options.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           </div>
@@ -280,9 +281,9 @@ export default function NewJobPage() {
         )}
 
         <div>
-          <label className="label-base">Checklist template <span className="text-gray-400 font-normal">(optional — leave empty for a report-only job)</span></label>
+          <label className="label-base">Checklist template <span className="text-gray-400 font-normal">(optional)</span></label>
           <select value={templateId} onChange={e => handleTemplateChange(e.target.value)} className="input-base">
-            <option value="">No checklist (report only)</option>
+            <option value="">No checklist</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
