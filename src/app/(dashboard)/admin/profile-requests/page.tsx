@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, X, ShieldCheck } from 'lucide-react'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import EmptyState from '@/components/ui/EmptyState'
+import { formatDate } from '@/lib/utils'
 
 interface Req {
   id: string
@@ -75,7 +76,7 @@ export default function ProfileRequestsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-gray-900">{r.user?.full_name ?? 'Unknown user'}</p>
-                  <p className="text-sm text-gray-500">{r.user?.email} · requested {r.created_at?.slice(0, 10)}</p>
+                  <p className="text-sm text-gray-500">{r.user?.email} · requested {formatDate(r.created_at)}</p>
                 </div>
               </div>
 

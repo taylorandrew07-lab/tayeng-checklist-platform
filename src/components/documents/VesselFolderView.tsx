@@ -7,7 +7,7 @@ import {
   getVessel, listDocuments, uploadDocument, deleteDocument, renameVessel, deleteVesselFolder,
   signedUrl, formatBytes, DOC_CATEGORIES, type VesselFolder, type VesselDocument,
 } from '@/lib/documents/api'
-import { withTimeout } from '@/lib/utils'
+import { withTimeout, formatDate } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
 import EmptyState from '@/components/ui/EmptyState'
 
@@ -147,7 +147,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
               <FileText className="h-5 w-5 text-gray-400 flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-gray-900 truncate">{d.name}</p>
-                <p className="text-xs text-gray-500">{d.category ? `${d.category} · ` : ''}{formatBytes(d.size_bytes)} · {d.created_at?.slice(0, 10)}</p>
+                <p className="text-xs text-gray-500">{d.category ? `${d.category} · ` : ''}{formatBytes(d.size_bytes)} · {formatDate(d.created_at)}</p>
               </div>
               <button onClick={() => download(d)} className="btn-secondary py-1.5 px-3 text-xs"><Download className="h-3.5 w-3.5" />Open</button>
               {isAdmin && <button onClick={() => removeDoc(d)} className="btn-ghost py-1.5 px-2 text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>}

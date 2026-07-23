@@ -9,6 +9,7 @@ import {
 } from '@/lib/personal-docs/api'
 import { confirmDialog } from '@/components/ui/confirm'
 import EmptyState from '@/components/ui/EmptyState'
+import { formatDate } from '@/lib/utils'
 
 function StatusChip({ expiry, lead }: { expiry: string | null; lead: number }) {
   const { status, days } = expiryStatus(expiry, lead)
@@ -133,7 +134,7 @@ export default function PersonalDocsManager({ profileId, canManage }: { profileI
                   <StatusChip expiry={d.expiry_date} lead={d.reminder_lead_days} />
                 </div>
                 <p className="text-xs text-gray-500">
-                  {d.doc_type ? `${d.doc_type} · ` : ''}{d.issue_date ? `issued ${d.issue_date} · ` : ''}{d.expiry_date ? `expires ${d.expiry_date}` : 'no expiry'}
+                  {d.doc_type ? `${d.doc_type} · ` : ''}{d.issue_date ? `issued ${formatDate(d.issue_date)} · ` : ''}{d.expiry_date ? `expires ${formatDate(d.expiry_date)}` : 'no expiry'}
                   {d.storage_path ? ` · ${formatBytes(d.size_bytes)}` : ''}
                 </p>
               </div>

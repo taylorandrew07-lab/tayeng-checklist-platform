@@ -10,6 +10,7 @@ import {
 } from '@/lib/personal-docs/api'
 import PersonalDocsManager from './PersonalDocsManager'
 import { confirmDialog } from '@/components/ui/confirm'
+import { formatDate } from '@/lib/utils'
 
 function StatusChip({ expiry, lead }: { expiry: string | null; lead: number }) {
   const { status, days } = expiryStatus(expiry, lead)
@@ -86,8 +87,8 @@ function CredentialCard({ profileId, def, stage, row, canManage, label, hint, on
             {def.insurance && <Field label="Company" value={row?.insurance_company} />}
             {def.insurance && <Field label="Type" value={row?.insurance_type} />}
             <Field label={def.numberLabel} value={row?.doc_number} />
-            <Field label="Issued" value={row?.issue_date} />
-            <Field label="Expires" value={row?.expiry_date} />
+            <Field label="Issued" value={row?.issue_date ? formatDate(row.issue_date) : null} />
+            <Field label="Expires" value={row?.expiry_date ? formatDate(row.expiry_date) : null} />
             <div>
               <p className="text-[11px] text-gray-400">File</p>
               {row?.storage_path
