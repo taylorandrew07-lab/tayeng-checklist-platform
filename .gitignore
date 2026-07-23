@@ -41,3 +41,6 @@ yarn-error.log*
 
 # graphify knowledge-graph output
 graphify-out/
+
+# Local codex dev logs
+.codex-next-dev.*.log
