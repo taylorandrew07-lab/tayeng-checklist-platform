@@ -21,6 +21,10 @@ export default function SurveyorDashboard() {
   // jobId → this surveyor's own regular/OT hours + km on that job (for pay tracking).
   const [mine, setMine] = useState<Record<string, { reg: number; ot: number; km: number }>>({})
   const [localJobs, setLocalJobs] = useState<any[]>([])
+  // Open jobs the surveyor isn't on yet — they can add themselves to log their times
+  // (mig 152). Empty offline (it's a live join) and when there's nothing to join.
+  const [joinable, setJoinable] = useState<any[]>([])
+  const [joiningId, setJoiningId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -95,6 +99,24 @@ export default function SurveyorDashboard() {
         // order as the dates printed on them.
         setJobs([...(jRes.data ?? [])].sort(byLastDateDesc))
         setMine(mineMap)
+
+        // Open jobs this surveyor ISN'T on yet — so they can add themselves and log
+        // their hours (e.g. a cargo loadout the office set up). RLS already lets a
+        // surveyor read every job (mig 056); we scope the browse list to OPEN ones
+        // and drop the ones they're already on. Online-only: joining is a live write,
+        // and a failed fetch just leaves the section empty (never blocks the board).
+        const mineIds = new Set((jRes.data ?? []).map((x: any) => x.id))
+        const jn = await withTimeout(
+          supabase.from('jobs')
+            .select(`
+              id, title, job_number, job_type, workflow_status, created_at, scheduled_date, end_date, vessel_name, surveyor_name,
+              template:checklist_templates(name),
+              client:clients(name)
+            `)
+            .eq('workflow_status', 'in_progress')
+            .order('created_at', { ascending: false }),
+          15_000, 'Loading jobs you can join').catch(() => ({ data: [] as any[] }))
+        if (active) setJoinable([...((jn.data ?? []) as any[])].filter(j => !mineIds.has(j.id)).sort(byLastDateDesc))
 
         // Jobs started offline live only on this device until they sync — surface
         // them so the surveyor can reopen them (server list won't include them yet).
@@ -191,6 +213,23 @@ export default function SurveyorDashboard() {
     a.download = `my-work-${range.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // Add myself to an open job (mig 152) so I can log my hours/OT/km on it. The row
+  // lands under my own session; the mig-152 policy checks surveyor_id = me + open.
+  // On success we reload so the job hops from "can join" into Active Jobs.
+  async function joinJob(jobId: string) {
+    if (!profile?.id) return
+    setJoiningId(jobId)
+    try {
+      const supabase = createClient()
+      const { error: jErr } = await supabase.from('job_surveyors')
+        .insert({ job_id: jobId, surveyor_id: profile.id, created_by: profile.id })
+      if (jErr) { setError(`Couldn't add you to that job: ${jErr.message}`); return }
+      setReloadKey(k => k + 1)
+    } finally {
+      setJoiningId(null)
+    }
   }
 
   // What a job card shows as its date: the job's LAST day, with a multi-day job
@@ -291,6 +330,38 @@ export default function SurveyorDashboard() {
                     </div>
                     <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
                   </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Jobs someone else set up that are still open — add yourself to log your
+              own hours/OT/km (e.g. a cargo loadout the office created). Online-only. */}
+          {joinable.length > 0 && (
+            <div>
+              <h2 className="section-title mb-3">Jobs you can join</h2>
+              <p className="text-sm text-gray-500 -mt-2 mb-3">Open jobs you&apos;re not on yet. Add yourself to log your hours, overtime and distance.</p>
+              <div className="space-y-3">
+                {joinable.map(job => (
+                  <div key={job.id} className="card p-4 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">{job.title}</p>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                        {job.template?.name ?? job.job_type ?? 'No checklist'} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => joinJob(job.id)}
+                      disabled={joiningId === job.id}
+                      className="btn-secondary py-2 px-3 text-sm flex-shrink-0 disabled:opacity-50"
+                    >
+                      {joiningId === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      Add me
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
