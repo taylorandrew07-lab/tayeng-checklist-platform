@@ -838,7 +838,15 @@ export default function JobsTrackerPage() {
     // them without inventing a day length, which the labour-unit rule forbids.
     const qtyCol = sort.key === 'hours' || sort.key === 'regular' || sort.key === 'overtime'
     const unitGroup = (r: TrackerRow) => (qtyCol && r.labour_unit === 'days' ? 1 : 0)
+    // When sorting by DATE only, a still-running (in_progress) job is pinned to the top
+    // regardless of its date OR the sort direction — it has no final date yet, so it
+    // shouldn't sink below finished jobs. Once it's completed and given a final date it
+    // falls back into normal date order. Other sort columns are untouched.
+    const dateSort = sort.key === 'date'
+    const pinGroup = (r: TrackerRow) => (dateSort && r.workflow_status === 'in_progress' ? 0 : 1)
     return [...filtered].sort((a, b) => {
+      const pa = pinGroup(a), pb = pinGroup(b)
+      if (pa !== pb) return pa - pb
       const ga = unitGroup(a), gb = unitGroup(b)
       if (ga !== gb) return ga - gb
       const va = val(a), vb = val(b)

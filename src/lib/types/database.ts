@@ -609,6 +609,8 @@ export interface ClientRequest {
   reviewed_by: string | null
   reviewed_at: string | null
   created_at: string
+  // The job that raised this request (mig 155); approval auto-links the client to it.
+  job_id: string | null
 }
 
 // Extended types with joins

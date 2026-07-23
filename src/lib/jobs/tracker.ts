@@ -128,9 +128,13 @@ export async function clearJobLabourForFixed(jobId: string): Promise<{ error?: s
   if (rErr) return { error: rErr.message }
   const ids = (rows ?? []).map((r: any) => r.id)
   if (ids.length) {
-    // Delete the OT shift log first — else metrics_labour re-derives OT from it.
+    // Delete BOTH shift logs first — else their AFTER-write triggers re-derive the
+    // hours back onto job_surveyors (OT via metrics_labour, regular via mig-157's
+    // sync_regular_hours). Order matters: clear the logs, then zero the columns.
     const { error: oErr } = await supabase.from('job_surveyor_overtime').delete().in('job_surveyor_id', ids)
     if (oErr) return { error: oErr.message }
+    const { error: rErr2 } = await supabase.from('job_surveyor_regular').delete().in('job_surveyor_id', ids)
+    if (rErr2) return { error: rErr2.message }
     const { error: hErr } = await supabase.from('job_surveyors').update({ regular_hours: 0, overtime_hours: 0 }).eq('job_id', jobId)
     if (hErr) return { error: hErr.message }
   }
@@ -198,17 +202,24 @@ export interface JobSurveyorRow {
   pay_rate: number | null; overtime_rate: number | null; pay_currency: string
   regular_pay: number; overtime_pay: number
 }
-export async function listJobSurveyors(jobId: string): Promise<JobSurveyorRow[]> {
-  const { data } = await createClient()
-    .from('job_surveyors')
-    .select('id, surveyor_id, regular_hours, overtime_hours, pay_rate, overtime_rate, pay_currency, regular_pay, overtime_pay, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, role, display_title)')
-    .eq('job_id', jobId)
+// `includeRates` MUST be false for non-admin callers. Postgres RLS can't hide columns
+// (see CLAUDE.md), and a surveyor can SELECT their own job_surveyors row — so the pay
+// rate / OT rate / currency / computed pay would otherwise travel to the surveyor's
+// browser even though the UI hides them. When false we simply never request those
+// columns and report them as null/0, so nothing sensitive leaves the server.
+export async function listJobSurveyors(jobId: string, opts?: { includeRates?: boolean }): Promise<JobSurveyorRow[]> {
+  const includeRates = opts?.includeRates ?? false
+  const cols = includeRates
+    ? 'id, surveyor_id, regular_hours, overtime_hours, pay_rate, overtime_rate, pay_currency, regular_pay, overtime_pay, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, role, display_title)'
+    : 'id, surveyor_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, role, display_title)'
+  const { data } = await createClient().from('job_surveyors').select(cols).eq('job_id', jobId)
   return ((data ?? []) as any[]).map(r => ({
     id: r.id, surveyor_id: r.surveyor_id,
     full_name: r.surveyor?.full_name ?? '', role: r.surveyor?.role ?? '', display_title: r.surveyor?.display_title ?? null,
     regular_hours: Number(r.regular_hours ?? 0), overtime_hours: Number(r.overtime_hours ?? 0),
-    pay_rate: r.pay_rate, overtime_rate: r.overtime_rate, pay_currency: r.pay_currency ?? 'TTD',
-    regular_pay: Number(r.regular_pay ?? 0), overtime_pay: Number(r.overtime_pay ?? 0),
+    pay_rate: includeRates ? r.pay_rate : null, overtime_rate: includeRates ? r.overtime_rate : null,
+    pay_currency: includeRates ? (r.pay_currency ?? 'TTD') : 'TTD',
+    regular_pay: includeRates ? Number(r.regular_pay ?? 0) : 0, overtime_pay: includeRates ? Number(r.overtime_pay ?? 0) : 0,
   }))
 }
 
@@ -270,6 +281,35 @@ export async function addSurveyorOvertime(jobSurveyorId: string, e: { entry_date
 
 export async function deleteSurveyorOvertime(id: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('job_surveyor_overtime').delete().eq('id', id)
+  return error ? { error: error.message } : {}
+}
+
+// ── Per-surveyor REGULAR time-log (migration 157) ────────────────────────────
+// The regular-hours twin of the overtime log above: for multi-day regular jobs a
+// surveyor logs each shift (start date/time → stop date/time) and mig-157's
+// sync_regular_hours trigger sums the entries into job_surveyors.regular_hours,
+// exactly as the OT log drives overtime_hours. Same shape, so the UI reuses shiftHours.
+export type RegularEntry = OvertimeEntry
+
+export async function listSurveyorRegular(jobSurveyorId: string): Promise<RegularEntry[]> {
+  const { data } = await createClient().from('job_surveyor_regular')
+    .select('id, entry_date, start_time, end_date, end_time, hours, location, note')
+    .eq('job_surveyor_id', jobSurveyorId)
+    .order('entry_date', { ascending: true }).order('start_time', { ascending: true })
+  return ((data ?? []) as any[]).map(r => ({ id: r.id, entry_date: r.entry_date, start_time: r.start_time, end_date: r.end_date, end_time: r.end_time, hours: Number(r.hours ?? 0), location: r.location, note: r.note }))
+}
+
+export async function addSurveyorRegular(jobSurveyorId: string, e: { entry_date: string | null; start_time: string | null; end_date: string | null; end_time: string | null; hours: number; location: string | null; note: string | null }): Promise<{ error?: string; id?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase.from('job_surveyor_regular')
+    .insert({ job_surveyor_id: jobSurveyorId, ...e, created_by: user?.id ?? null }).select('id').single()
+  if (error) return { error: error.message }
+  return { id: data?.id }
+}
+
+export async function deleteSurveyorRegular(id: string): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_surveyor_regular').delete().eq('id', id)
   return error ? { error: error.message } : {}
 }
 

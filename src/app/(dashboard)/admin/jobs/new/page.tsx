@@ -170,9 +170,15 @@ export default function NewJobPage() {
     if (!user) { setError('Not authenticated'); setSaving(false); return }
 
     let finalClientId = clientId || null
+    // A requested new client is linked back to this job (mig 155) so that when an admin
+    // approves the request, the job is auto-filled with the approved client. We capture
+    // the request id now and patch its job_id once the job exists (below).
+    let pendingRequestId: string | null = null
     if (showNewClient && newClientName.trim()) {
-      const { error: reqErr } = await supabase.from('client_requests').insert({ requested_name: newClientName.trim(), requested_by: user.id })
+      const { data: reqRow, error: reqErr } = await supabase.from('client_requests')
+        .insert({ requested_name: newClientName.trim(), requested_by: user.id }).select('id').single()
       if (reqErr) { setError('Failed to submit client request: ' + reqErr.message); setSaving(false); return }
+      pendingRequestId = reqRow?.id ?? null
       finalClientId = null
     }
 
@@ -221,6 +227,12 @@ export default function NewJobPage() {
     if (jobErr || !job) { setError(jobErr ?? 'Failed to create job'); setSaving(false); return }
     if (assignError) toast.error(`Job created, but assigning surveyors failed: ${assignError} — add them on the job page.`)
     // Assigned surveyors are notified inside createDraftJob (the create choke-point).
+
+    // Link the pending client request to this job so approval auto-fills the client
+    // (mig 155). Best-effort — the request/job both exist regardless.
+    if (pendingRequestId && job) {
+      await supabase.from('client_requests').update({ job_id: job.id }).eq('id', pendingRequestId)
+    }
 
     toast.success(`Job created — ${job.report_number ?? job.title}`)
     router.push(`/admin/jobs/${job.id}`)

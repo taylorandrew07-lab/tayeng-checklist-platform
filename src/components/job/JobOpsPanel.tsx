@@ -11,9 +11,10 @@ import {
   setWorkflowStatus, updateJobField, clearJobLabourForFixed, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
+  listSurveyorRegular, addSurveyorRegular, deleteSurveyorRegular,
   listSurveyorKm, addSurveyorKm, deleteSurveyorKm, KM_MIN, KM_MAX,
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
-  type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type KmEntry,
+  type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type RegularEntry, type KmEntry,
 } from '@/lib/jobs/tracker'
 import { asLabourUnit, labourLabels, type LabourUnit } from '@/lib/jobs/labourUnit'
 import { checkSurveyorConflicts } from '@/lib/jobs/conflicts'
@@ -84,6 +85,23 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
   const otFromLog = !isDays && entries.length > 0
   const preview = shiftHours(nStartDate, nStartTime, nEndDate || nStartDate, nEndTime)
 
+  // Regular time-log (migration 157) — the exact twin of the OT log above, shown in
+  // regular mode for multi-day jobs. When entries exist they ARE the regular hours.
+  const [regEntries, setRegEntries] = useState<RegularEntry[]>([])
+  const [regLogOpen, setRegLogOpen] = useState(false)
+  const [rStartDate, setRStartDate] = useState(defaultDate ?? '')
+  const [rStartTime, setRStartTime] = useState('')
+  const [rEndDate, setREndDate] = useState(defaultDate ?? '')
+  const [rEndTime, setREndTime] = useState('')
+  const [rLocation, setRLocation] = useState('')
+  const [rNote, setRNote] = useState('')
+  const [regLogBusy, setRegLogBusy] = useState(false)
+  const regTotal = Math.round(regEntries.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+  // Same rule as OT: the log is in HOURS, so it drives the regular quantity only on an
+  // hours-billed job. On a day-billed job the day count is typed by hand (mig 148/157).
+  const regFromLog = !isDays && regEntries.length > 0
+  const rPreview = shiftHours(rStartDate, rStartTime, rEndDate || rStartDate, rEndTime)
+
   // Kilometre log (migration 116) — one trip per drive, 10–140 km. Shown for every
   // job regardless of billing mode; the per-surveyor total rolls up to the job total.
   const [kmEntries, setKmEntries] = useState<KmEntry[]>([])
@@ -95,8 +113,9 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
   const kmTotal = kmEntries.reduce((s, e) => s + (e.km || 0), 0)
 
   async function loadEntries() { const next = await listSurveyorOvertime(row.id); setEntries(next); onEntries?.(row.id, next) }
+  async function loadRegEntries() { const next = await listSurveyorRegular(row.id); setRegEntries(next) }
   async function loadKm() { const next = await listSurveyorKm(row.id); setKmEntries(next); onKm?.(row.id, next) }
-  useEffect(() => { void loadEntries(); void loadKm() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadEntries(); void loadRegEntries(); void loadKm() }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function addKm() {
     const n = Number(nKm)
@@ -140,7 +159,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
   async function flush(): Promise<void> {
     if (locked) return // closed job — RLS blocks writes; don't even try
     const otValue = otFromLog ? otTotal : Number(ot) || 0
-    const regValue = Number(reg) || 0
+    const regValue = regFromLog ? regTotal : Number(reg) || 0
     const needHours = regValue !== savedRef.current.reg || otValue !== savedRef.current.ot
     const needRates = isAdmin && (payRate !== savedRef.current.payRate || otRate !== savedRef.current.otRate || cur !== savedRef.current.cur)
     if (!needHours && !needRates) return
@@ -167,16 +186,16 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
   // is what keeps the "unsaved changes" prompt from ever really showing.
   useEffect(() => {
     const otValue = otFromLog ? otTotal : Number(ot) || 0
-    const regValue = Number(reg) || 0
+    const regValue = regFromLog ? regTotal : Number(reg) || 0
     const dirty = regValue !== savedRef.current.reg || otValue !== savedRef.current.ot ||
       (isAdmin && (payRate !== savedRef.current.payRate || otRate !== savedRef.current.otRate || cur !== savedRef.current.cur))
     onDirty?.(row.id, dirty)
     if (!dirty) return
     const t = setTimeout(() => { void flushRef.current() }, 1200)
     return () => clearTimeout(t)
-    // otFromLog is a dep so that switching the job back to hours (mig 148) re-asserts
-    // the shift-log total over the day quantity that was standing in its place.
-  }, [reg, ot, otTotal, otFromLog, payRate, otRate, cur]) // eslint-disable-line react-hooks/exhaustive-deps
+    // otFromLog/regFromLog are deps so that switching the job back to hours (mig 148)
+    // re-asserts each shift-log total over the day quantity that was standing in.
+  }, [reg, ot, otTotal, otFromLog, regTotal, regFromLog, payRate, otRate, cur]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function applyChecklistHours() {
     if (billableHours == null) return
@@ -220,6 +239,43 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
     setLogBusy(false); onSaved()
   }
 
+  // Regular-log add/remove — twins of addEntry/removeEntry above. On an hours-billed
+  // job the log total becomes job_surveyors.regular_hours (the DB trigger enforces the
+  // same on its side); on a day-billed job the log is evidence only (mig 148/157 guard).
+  const otNow = () => otFromLog ? otTotal : Number(ot) || 0
+  async function addRegEntry() {
+    const sd = rStartDate || defaultDate || ''
+    const ed = rEndDate || sd
+    if (!sd || !rStartTime || !rEndTime) { toast.error('Enter a start date, start time and stop time'); return }
+    const hrs = shiftHours(sd, rStartTime, ed, rEndTime)
+    if (hrs <= 0) { toast.error('The stop date/time must be after the start'); return }
+    setRegLogBusy(true)
+    const res = await addSurveyorRegular(row.id, { entry_date: sd, start_time: rStartTime, end_date: ed, end_time: rEndTime, hours: hrs, location: rLocation.trim() || null, note: rNote.trim() || null })
+    if (res.error) { setRegLogBusy(false); toast.error(res.error); return }
+    const next = await listSurveyorRegular(row.id)
+    setRegEntries(next)
+    if (!isDays) {
+      const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+      await persistHours(otNow(), total)
+      setReg(String(total))
+    }
+    setRStartTime(''); setREndTime(''); setRLocation(''); setRNote('')
+    setRegLogBusy(false); onSaved()
+  }
+  async function removeRegEntry(id: string) {
+    setRegLogBusy(true)
+    const res = await deleteSurveyorRegular(id)
+    if (res.error) { setRegLogBusy(false); toast.error(res.error); return }
+    const next = await listSurveyorRegular(row.id)
+    setRegEntries(next)
+    if (!isDays) {
+      const total = Math.round(next.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100
+      await persistHours(otNow(), total)
+      setReg(String(total))
+    }
+    setRegLogBusy(false); onSaved()
+  }
+
   const numCls = 'input-base py-1 text-sm'
   return (
     <div className="rounded-lg border border-gray-200 p-3">
@@ -233,28 +289,30 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
       <div className="grid grid-cols-2 gap-2">
         {isRegMode && (
         <div>
-          <label className="text-[11px] text-gray-400 flex items-center justify-between gap-2">
-            <span>{L.regular} <span className="text-gray-300">· client</span></span>
-            {/* The checklist's billable figure is an HOURS quantity — never offer it
-                as a day count (mig 148). */}
-            {!isDays && billableHours != null && Number(reg) !== billableHours && (
-              <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium">use {billableHours}h</button>
+          <label className="h-4 leading-4 text-[11px] text-sky-600 font-medium flex items-center justify-between gap-2">
+            <span className="truncate min-w-0">{L.regular} <span className="text-gray-300">{regFromLog ? '· from log' : '· client'}</span></span>
+            {/* The checklist's billable figure is an HOURS quantity — never offer it as a
+                day count (mig 148), and it's moot once the shift log drives regular. */}
+            {!isDays && !regFromLog && billableHours != null && Number(reg) !== billableHours && (
+              <button type="button" onClick={applyChecklistHours} className="text-brand-600 hover:underline font-medium flex-shrink-0">use {billableHours}h</button>
             )}
           </label>
-          <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} disabled={locked} className={numCls} />
+          {regFromLog
+            ? <input type="number" value={regTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
+            : <input type="number" min={0} step="0.5" value={reg} onChange={e => setReg(e.target.value)} disabled={locked} className={`${numCls} ring-1 ring-sky-300 border-sky-300`} />}
         </div>
         )}
         {isOTMode && (
         <div>
-          <label className="text-[11px] text-amber-600 font-medium">{L.overtime} <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
+          <label className="h-4 leading-4 text-[11px] text-amber-600 font-medium flex items-center">{L.overtime} <span className="text-gray-300">{otFromLog ? '· from log' : '· OT pay'}</span></label>
           {otFromLog
             ? <input type="number" value={otTotal} readOnly className={`${numCls} bg-gray-50 text-gray-600`} title="Driven by the time-log below" />
             : <input type="number" min={0} step="0.5" value={ot} onChange={e => setOt(e.target.value)} disabled={locked} className={`${numCls} ring-1 ring-amber-300 border-amber-300`} />}
         </div>
         )}
-        {isAdmin && isRegMode && <div><label className="text-[11px] text-gray-400">{L.payRate}</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
-        {isAdmin && isOTMode && <div><label className="text-[11px] text-gray-400">{L.otRate}</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
-        {isAdmin && <div><label className="text-[11px] text-gray-400">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
+        {isAdmin && isRegMode && <div><label className="block h-4 leading-4 text-[11px] text-gray-400 truncate">{L.payRate}</label><input type="number" min={0} step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && isOTMode && <div><label className="block h-4 leading-4 text-[11px] text-gray-400 truncate">{L.otRate}</label><input type="number" min={0} step="0.01" value={otRate} onChange={e => setOtRate(e.target.value)} className={numCls} /></div>}
+        {isAdmin && <div><label className="block h-4 leading-4 text-[11px] text-gray-400 truncate">Currency</label><select value={cur} onChange={e => setCur(e.target.value)} className={numCls}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>}
       </div>
       )}
 
@@ -301,6 +359,48 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
       </div>
       )}
 
+      {/* Regular time-log — only in regular mode (twin of the OT log, for multi-day jobs) */}
+      {isRegMode && (
+      <div className="mt-2">
+        <button type="button" onClick={() => setRegLogOpen(o => !o)} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800">
+          <Clock className="h-3 w-3" />Regular time-log{regEntries.length ? ` · ${regEntries.length} shift${regEntries.length === 1 ? '' : 's'} · ${regTotal}h` : ''}
+          <ChevronRight className={`h-3 w-3 transition-transform ${regLogOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {regLogOpen && (
+          <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 space-y-1.5">
+            {isDays && <p className="text-[11px] text-gray-500">This job is billed by the day — shifts here are a record of the hours worked, not the payable quantity. Type the regular days above.</p>}
+            {regEntries.map(e => (
+              <div key={e.id} className="flex items-center gap-2 text-xs text-gray-700">
+                <span className="tnum text-gray-600 flex-shrink-0">{fmtSpan(e)}</span>
+                <span className="font-medium tnum flex-shrink-0">{e.hours}h</span>
+                {e.location && <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100">{e.location}</span>}
+                {e.note && <span className="text-gray-400 truncate flex-1 min-w-0">{e.note}</span>}
+                {!locked && <button onClick={() => removeRegEntry(e.id)} disabled={regLogBusy} className="ml-auto btn-ghost p-2 sm:py-0.5 sm:px-1 text-gray-400 hover:text-red-600 flex-shrink-0"><X className="h-3 w-3" /></button>}
+              </div>
+            ))}
+            {regEntries.length === 0 && <p className="text-[11px] text-gray-400">No shifts logged yet{locked ? '.' : ' — add each shift below (a shift can run from one day into the next).'}</p>}
+            {!locked && (
+            <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Start date</label><input type="date" value={rStartDate} onChange={e => { const v = e.target.value; setRStartDate(v); if (!rEndDate || rEndDate < v) setREndDate(v) }} className="input-base w-full py-2.5 px-3 text-base sm:w-32 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Start time</label><input type="time" value={rStartTime} onChange={e => setRStartTime(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-24 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <span className="hidden sm:inline text-gray-300 pb-1.5">→</span>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Stop date</label><input type="date" value={rEndDate} min={rStartDate || undefined} onChange={e => setREndDate(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-32 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Stop time</label><input type="time" value={rEndTime} onChange={e => setREndTime(e.target.value)} className="input-base w-full py-2.5 px-3 text-base sm:w-24 sm:py-0.5 sm:px-1.5 sm:text-xs" /></div>
+                <span className="w-full sm:w-auto text-sm sm:text-xs text-gray-500 sm:pb-1.5">= <span className="font-medium tnum">{rPreview}h</span></span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
+                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`rloc-${row.id}`} value={rLocation} onChange={e => setRLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base w-full py-2.5 px-3 text-base sm:w-36 sm:py-0.5 sm:px-1.5 sm:text-xs" /><datalist id={`rloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
+                <input type="text" value={rNote} onChange={e => setRNote(e.target.value)} placeholder="note (optional)" className="input-base w-full py-2.5 px-3 text-base sm:flex-1 sm:min-w-[80px] sm:py-0.5 sm:px-1.5 sm:text-xs" />
+                <button onClick={addRegEntry} disabled={regLogBusy} className="btn-secondary w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs">{regLogBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}Add</button>
+              </div>
+            </div>
+            )}
+          </div>
+        )}
+      </div>
+      )}
+
       {/* Kilometre log — shown for every job (all billing modes) */}
       <div className="mt-2">
         <button type="button" onClick={() => setKmOpen(o => !o)} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800">
@@ -330,7 +430,10 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
         )}
       </div>
 
-      {!isFixed && (
+      {/* Pay is admin-only: rates, currency and the computed pay never show to a
+          surveyor (they also never reach the browser — listJobSurveyors drops the
+          columns for non-admins). */}
+      {isAdmin && !isFixed && (
       <div className="mt-2">
         <p className="text-xs text-gray-500">
           {isOTMode
@@ -449,7 +552,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   }
 
   async function reload() {
-    const [s, at] = await Promise.all([listJobSurveyors(job.id), listJobAttachments(job.id)])
+    const [s, at] = await Promise.all([listJobSurveyors(job.id, { includeRates: isAdmin }), listJobAttachments(job.id)])
     setSurveyors(s); setAttachments(at)
     if (isAdmin) setActivity(await listJobActivity(job.id)) // activity_log is admin/office-only under RLS
     // The checklist's calculated billable hours (e.g. OVID "Total hours"), so it can

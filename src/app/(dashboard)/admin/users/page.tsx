@@ -305,10 +305,20 @@ export default function UsersPage() {
   async function approveClientRequest(req: ClientRequest) {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const { error: insErr } = await supabase.from('clients').insert({ name: req.requested_name, is_active: true })
+    const { data: newClient, error: insErr } = await supabase.from('clients').insert({ name: req.requested_name, is_active: true }).select('id').single()
     if (insErr) { toast.error(insErr.message); return }
     const { error: updErr } = await supabase.from('client_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.id)
     if (updErr) { toast.error(updErr.message); return }
+    // Auto-fill the requesting job with the approved client (mig 155). Guarded with
+    // .is('client_id', null) so a client someone set on the job in the meantime is
+    // never clobbered. Best-effort; the client is created either way.
+    if (req.job_id && newClient?.id) {
+      const { error: linkErr } = await supabase.from('jobs').update({ client_id: newClient.id }).eq('id', req.job_id).is('client_id', null)
+      if (linkErr) toast.error(`Client created, but linking it to the job failed: ${linkErr.message}`)
+      else toast.success('Client approved and added to its job')
+    } else {
+      toast.success('Client approved')
+    }
     load()
   }
 
