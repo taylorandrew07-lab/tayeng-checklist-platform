@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, ChevronRight, ListOrdered } from 'lucide-react'
+import { Ship, ChevronRight, ListOrdered } from 'lucide-react'
 import { CargoStatusPill } from '@/components/job/StatusPill'
+import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
 import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
@@ -26,21 +28,17 @@ export default function OfficeCargoListPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="page-title">Cargo Monitoring</h1>
-          <p className="text-gray-500 mt-0.5">Synced cargo voyages. Open one to generate the DRI Production Report (PDF/.docx). Read-only — figures update as the surveyor syncs.</p>
-        </div>
-        <Link href="/office/cargo/register" className="btn-secondary flex-shrink-0"><ListOrdered className="h-4 w-4" />Register</Link>
-      </div>
+      <PageHeader
+        icon={Ship}
+        title="Cargo Monitoring"
+        subtitle="Synced cargo voyages. Open one to generate the DRI Production Report (PDF/.docx). Read-only — figures update as the surveyor syncs."
+        actions={<Link href="/office/cargo/register" className="btn-secondary flex-shrink-0"><ListOrdered className="h-4 w-4" />Register</Link>}
+      />
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-20 w-full" />)}</div>
       ) : voyages.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Ship className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No synced cargo voyages yet.</p>
-        </div>
+        <EmptyState icon={Ship} title="No synced voyages yet" description="Synced cargo voyages appear here once a surveyor uploads one." />
       ) : (
         <div className="space-y-2">
           {voyages.map(v => {
