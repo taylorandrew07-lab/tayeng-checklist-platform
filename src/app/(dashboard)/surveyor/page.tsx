@@ -6,6 +6,7 @@ import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download, ChevronDow
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import EmptyState from '@/components/ui/EmptyState'
 import { deliverFile, PDF_MIME } from '@/lib/pdf/deliver'
 import { WORKFLOW } from '@/lib/jobs/tracker'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
@@ -334,9 +335,7 @@ export default function SurveyorDashboard() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
-        </div>
+        <div className="space-y-3">{[0, 1, 2].map(i => <div key={i} className="skeleton h-24 w-full" />)}</div>
       ) : error ? (
         <div className="card p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
@@ -584,12 +583,12 @@ export default function SurveyorDashboard() {
           )}
 
           {jobs.length === 0 && (
-            <div className="card p-10 text-center text-gray-400">
-              <p className="mb-3">You haven&apos;t created any jobs yet.</p>
-              <Link href="/surveyor/jobs/new" className="btn-primary inline-flex">
-                <Plus className="h-4 w-4" />Start your first job
-              </Link>
-            </div>
+            <EmptyState
+              icon={Plus}
+              title="No jobs yet"
+              description="Start a job to log your checklist, hours and kilometres."
+              action={<Link href="/surveyor/jobs/new" className="btn-primary inline-flex"><Plus className="h-4 w-4" />Start your first job</Link>}
+            />
           )}
         </>
       )}

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Folder, FolderPlus, Loader2, Search, ChevronRight, FileText } from 'lucide-react'
+import { Folder, FolderPlus, Search, ChevronRight, FileText } from 'lucide-react'
+import EmptyState from '@/components/ui/EmptyState'
 import { listVesselFolders, createVessel, searchDocuments, signedUrl, formatBytes, type VesselFolder, type DocumentHit } from '@/lib/documents/api'
 
 export default function DocumentLibraryView() {
@@ -87,7 +88,7 @@ export default function DocumentLibraryView() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
       ) : (
         <>
           {/* Document name matches */}
@@ -110,10 +111,11 @@ export default function DocumentLibraryView() {
           <div className="space-y-2">
             {query.trim().length >= 2 && <h2 className="section-title">Vessels</h2>}
             {filteredVessels.length === 0 ? (
-              <div className="card p-12 text-center text-gray-400">
-                <Folder className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                {vessels.length === 0 ? (isAdmin ? 'No vessel folders yet. Create one to start uploading documents.' : 'No vessel documents yet.') : 'No vessels match your search.'}
-              </div>
+              <EmptyState
+                icon={Folder}
+                title={vessels.length === 0 ? 'No vessel documents yet' : 'No vessels match'}
+                description={vessels.length === 0 ? (isAdmin ? 'A folder is created per vessel as jobs link to them.' : undefined) : 'Try a different search.'}
+              />
             ) : filteredVessels.map(v => (
               <Link key={v.id} href={`${base}/${v.id}`} className="card p-4 flex items-center gap-4 hover:bg-gray-50">
                 <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">

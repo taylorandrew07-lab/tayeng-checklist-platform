@@ -8,6 +8,7 @@ import {
   formatBytes, expiryStatus, DOC_TYPES, type DocInput,
 } from '@/lib/personal-docs/api'
 import { confirmDialog } from '@/components/ui/confirm'
+import EmptyState from '@/components/ui/EmptyState'
 
 function StatusChip({ expiry, lead }: { expiry: string | null; lead: number }) {
   const { status, days } = expiryStatus(expiry, lead)
@@ -120,7 +121,7 @@ export default function PersonalDocsManager({ profileId, canManage }: { profileI
       )}
 
       {docs.length === 0 && !editing ? (
-        <div className="card p-8 text-center text-gray-400"><FileText className="h-8 w-8 mx-auto mb-2 text-gray-300" />No documents yet.</div>
+        <EmptyState icon={FileText} title="No documents yet" description="Add certificates and other personal documents to keep them on file." />
       ) : (
         <div className="space-y-2">
           {docs.map(d => (
