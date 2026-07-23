@@ -6,6 +6,7 @@ import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search } from '
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
+import { ResponsiveTable } from '@/components/ui/ResponsiveTable'
 import { RolePill } from '@/components/job/StatusPill'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
@@ -456,84 +457,65 @@ export default function UsersPage() {
       </div>
 
       {/* Active users table */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Name</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Email</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Role</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700">Joined</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-700"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {active.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No active users match your search.</td></tr>
-            )}
-            {active.map(user => (
-              <tr key={user.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm flex-shrink-0">
-                      {user.full_name.charAt(0)}
-                    </div>
-                    <div>
-                      <a href={`/admin/users/${user.id}`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{user.full_name}</a>
-                      {(user as any).is_super_admin && (
-                        <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
-                          <ShieldCheck className="h-3 w-3" />Super Admin
-                        </span>
-                      )}
-                    </div>
+      {active.length === 0 ? (
+        <div className="card p-10 text-center text-gray-400">No active users match your search.</div>
+      ) : (
+        <ResponsiveTable
+          rows={active}
+          rowKey={user => user.id}
+          columns={[
+            {
+              key: 'name', header: 'Name', primary: true,
+              cell: user => (
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm flex-shrink-0">
+                    {user.full_name.charAt(0)}
                   </div>
-                </td>
-                <td className="px-4 py-3 text-gray-600">{user.email}</td>
-                <td className="px-4 py-3">
-                  <RolePill role={user.role} label={(user as any).display_title ?? undefined} />
-                </td>
-                <td className="px-4 py-3">
-                  {user.is_active ? (
-                    <span className="flex items-center gap-1 text-green-600 text-xs font-medium">
-                      <Check className="h-3.5 w-3.5" /> Active
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-gray-400 text-xs font-medium">
-                      <X className="h-3.5 w-3.5" /> Inactive
-                    </span>
+                  <div>
+                    <a href={`/admin/users/${user.id}`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{user.full_name}</a>
+                    {(user as any).is_super_admin && (
+                      <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                        <ShieldCheck className="h-3 w-3" />Super Admin
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ),
+            },
+            { key: 'email', header: 'Email', cell: user => <span className="text-gray-600">{user.email}</span> },
+            { key: 'role', header: 'Role', cell: user => <RolePill role={user.role} label={(user as any).display_title ?? undefined} /> },
+            {
+              key: 'status', header: 'Status',
+              cell: user => user.is_active
+                ? <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium"><Check className="h-3.5 w-3.5" /> Active</span>
+                : <span className="inline-flex items-center gap-1 text-gray-400 text-xs font-medium"><X className="h-3.5 w-3.5" /> Inactive</span>,
+            },
+            { key: 'joined', header: 'Joined', cell: user => <span className="text-gray-500">{formatDate(user.created_at)}</span> },
+            {
+              key: 'actions', header: '', mobileLabel: '',
+              cell: user => (
+                <div className="flex items-center gap-2 flex-wrap justify-end md:justify-start">
+                  {(isSuperAdmin || user.role !== 'admin') && !(user as any).is_super_admin && (
+                    <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
+                      <Pencil className="h-3.5 w-3.5" />Edit
+                    </button>
                   )}
-                </td>
-                <td className="px-4 py-3 text-gray-500">{formatDate(user.created_at)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {(isSuperAdmin || user.role !== 'admin') && !(user as any).is_super_admin && (
-                      <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
-                        <Pencil className="h-3.5 w-3.5" />Edit
-                      </button>
-                    )}
-                    {(user.role === 'surveyor' || user.role === 'admin') && (
-                      <a href={`/admin/users/${user.id}/documents`} className="text-xs btn-ghost py-1 px-2">
-                        <FileText className="h-3.5 w-3.5" />Docs
-                      </a>
-                    )}
-                    {(isSuperAdmin || !(user as any).is_super_admin) && (
-                      <button
-                        onClick={() => toggleActive(user)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        {user.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </div>
+                  {(user.role === 'surveyor' || user.role === 'admin') && (
+                    <a href={`/admin/users/${user.id}/documents`} className="text-xs btn-ghost py-1 px-2">
+                      <FileText className="h-3.5 w-3.5" />Docs
+                    </a>
+                  )}
+                  {(isSuperAdmin || !(user as any).is_super_admin) && (
+                    <button onClick={() => toggleActive(user)} className="text-xs text-gray-500 hover:text-gray-700 py-1 px-2">
+                      {user.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {/* Create / Edit user modal */}
       <Modal
