@@ -99,7 +99,7 @@ export default function ClientDetailPage() {
             <ColorSwatchPicker value={colorOverride !== undefined ? colorOverride : client.color} onChange={saveColor} />
           </div>
         </div>
-        <Link href={`/admin/clients?focus=${client.id}`} className="btn-secondary flex-shrink-0"><Pencil className="h-4 w-4" /><span className="hidden sm:inline">Edit</span></Link>
+        <Link href={`/admin/clients?focus=${client.id}`} aria-label="Edit client" className="btn-secondary flex-shrink-0"><Pencil className="h-4 w-4" /><span className="hidden sm:inline">Edit</span></Link>
       </div>
 
       {cb?.notes && <div className="card p-4 text-sm text-gray-600"><span className="text-xs font-medium text-gray-400 block mb-1">Notes</span>{cb.notes}</div>}
