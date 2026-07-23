@@ -13,11 +13,12 @@
 // Pure functions only (no supabase import) so drafts.ts stays client-agnostic and safe
 // to run on the future server intake path.
 
-/** Job types that are report-only — no report number, regardless of any template. */
+/** Job types that are report-only — no report number, regardless of any template.
+ *  'Cargo Loading' / 'Cargo Discharging' used to live here, but mig 154 merged them
+ *  into 'Cargo Survey' (which DOES get a number by default); the admin ticks
+ *  "No report required" per job for the occasional report-only cargo survey. */
 const NO_REPORT_JOB_TYPES = new Set<string>([
   'Ultrasonic Hatch Testing',
-  'Cargo Loading',
-  'Cargo Discharging',
 ])
 
 /** Whether a job's type/stage alone means it never gets a report number. Draught

@@ -61,7 +61,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
     const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
-      .select('id, title, vessel_name, scheduled_date, port_location, notes').eq('id', jobId).maybeSingle()
+      .select('id, title, vessel_name, scheduled_date, port_location, job_stage, cargo_type, notes').eq('id', jobId).maybeSingle()
     // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
     // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
     // a fresh report number off the counter even though the row already exists (the
@@ -78,6 +78,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       if ((j.vessel_name ?? null) !== alreadyCreated.vessel_name) { patch.vessel_name = j.vessel_name ?? null; patch.vessel_id = vesselId }
       if ((j.scheduled_date ?? null) !== alreadyCreated.scheduled_date) patch.scheduled_date = j.scheduled_date ?? null
       if ((j.port_location ?? null) !== alreadyCreated.port_location) patch.port_location = j.port_location ?? null
+      if ((j.job_stage ?? null) !== alreadyCreated.job_stage) patch.job_stage = j.job_stage ?? null
+      if ((j.cargo_type ?? null) !== alreadyCreated.cargo_type) patch.cargo_type = j.cargo_type ?? null
       if ((j.notes ?? null) !== alreadyCreated.notes) patch.notes = j.notes ?? null
       if (Object.keys(patch).length > 0) {
         const { error: updErr } = await supabase.from('jobs').update(patch).eq('id', jobId)

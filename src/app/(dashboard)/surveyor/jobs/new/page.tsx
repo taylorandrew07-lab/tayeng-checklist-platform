@@ -32,7 +32,9 @@ const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placehol
   'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
   'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
 }
-const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+// Cargo Survey carries a "what's the cargo?" question; the retired Cargo Loading /
+// Cargo Discharging types (merged by mig 154) stay in the set for historic jobs.
+const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
 // Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
 const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
 const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
@@ -353,7 +355,7 @@ export default function SurveyorNewChecklistPage() {
             <label className="label-base">Cargo type</label>
             <input type="text" list="cargoList" value={cargoType} onChange={(e) => setCargoType(e.target.value)} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
             <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
-            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' ? 'discharged' : 'loaded'}.</p>
+            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' || jobStage === 'Discharging' ? 'discharged' : 'loaded'}.</p>
           </div>
         )}
 

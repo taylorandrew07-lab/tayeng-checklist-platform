@@ -98,8 +98,9 @@ export default function AdminChecklistDetailPage() {
     'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'] },
     'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
   }
-  // Cargo Loading / Cargo Discharging jobs carry a "what's the cargo?" question.
-  const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+  // Cargo Survey jobs carry a "what's the cargo?" question; the retired Cargo Loading /
+  // Cargo Discharging types (merged by mig 154) stay in the set for historic jobs.
+  const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
   const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
   const showCargoType = CARGO_JOB_TYPES.has(job?.job_type ?? '')
 

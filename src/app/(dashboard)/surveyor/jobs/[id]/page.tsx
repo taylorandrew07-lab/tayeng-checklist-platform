@@ -20,6 +20,18 @@ import type { WorkflowStatus } from '@/lib/types/database'
 // on a phone, so they get the taller mobile size and the compact desktop metrics.
 const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
 
+// The broad survey types carry a qualifier (jobs.job_stage); mirror the New Job forms
+// so a surveyor can set Loading/Discharging (etc.) here on both PC and mobile.
+const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
+  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
+  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
+  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
+}
+// Cargo Survey carries a "what's the cargo?" question; the retired Cargo Loading /
+// Cargo Discharging types (merged by mig 154) stay in the set for historic jobs.
+const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
+const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+
 // Both New Job forms build the title as "M.V. <vessel> - <template> - <date>", so
 // correcting a mistyped vessel name here must swap that segment too — the admin job
 // page, the jobs CSV and global search all read jobs.title, not vessel_name. Any
@@ -39,13 +51,13 @@ export default function SurveyorJobPage() {
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', port_location: '', notes: '' })
+  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', port_location: '', notes: '', job_stage: '', cargo_type: '' })
   // The job exists only in this device's IndexedDB draft — no server row yet.
   const [localOnly, setLocalOnly] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
 
   function fillEditForm(j: any) {
-    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', port_location: j?.port_location ?? '', notes: j?.notes ?? '' })
+    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', port_location: j?.port_location ?? '', notes: j?.notes ?? '', job_stage: j?.job_stage ?? '', cargo_type: j?.cargo_type ?? '' })
   }
 
   async function load() {
@@ -63,7 +75,7 @@ export default function SurveyorJobPage() {
         // labour_unit must be selected: JobOpsPanel defaults a missing unit to hours,
         // and on a day-billed job that would let the OT shift log overwrite the
         // hand-typed day count with a sum of HOURS, paid at the day rate (mig 148).
-        .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
+        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -118,6 +130,8 @@ export default function SurveyorJobPage() {
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
+          job_stage: editForm.job_stage || null,
+          cargo_type: CARGO_JOB_TYPES.has(draft.job?.job_type ?? '') ? (editForm.cargo_type.trim() || null) : (draft.job?.cargo_type ?? null),
         }
         await putDraft({ ...draft, job: nextJob, updatedAt: Date.now() })
         setEditMode(false)
@@ -137,6 +151,10 @@ export default function SurveyorJobPage() {
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
+          // job_stage / cargo_type aren't in enforce_surveyor_job_update's blacklist
+          // (mig 148), so a surveyor may set them. Only write cargo_type on cargo jobs.
+          job_stage: editForm.job_stage || null,
+          cargo_type: CARGO_JOB_TYPES.has(job.job_type ?? '') ? (editForm.cargo_type.trim() || null) : (job.cargo_type ?? null),
         }).eq('id', jobId).select('id'),
         15_000, 'Saving job'
       )
@@ -162,6 +180,8 @@ export default function SurveyorJobPage() {
 
   const w = WORKFLOW[job.workflow_status as WorkflowStatus]
   const locked = job.workflow_status === 'closed'
+  const stageConfig = STAGE_OPTIONS[job.job_type ?? ''] ?? null
+  const showCargoType = CARGO_JOB_TYPES.has(job.job_type ?? '')
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-rise">
@@ -205,6 +225,23 @@ export default function SurveyorJobPage() {
             <label className="label-base">Survey date</label>
             <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
           </div>
+          {stageConfig && (
+            <div>
+              <label className="label-base">{stageConfig.label}</label>
+              <select value={editForm.job_stage} onChange={(e) => setEditForm(p => ({ ...p, job_stage: e.target.value }))} className="input-base">
+                <option value="">{stageConfig.placeholder ?? `Select ${stageConfig.label.toLowerCase()}…`}</option>
+                {stageConfig.options.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          )}
+          {showCargoType && (
+            <div>
+              <label className="label-base">Cargo type</label>
+              <input type="text" list="cargoList" value={editForm.cargo_type} onChange={(e) => setEditForm(p => ({ ...p, cargo_type: e.target.value }))} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
+              <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
+              <p className="text-xs text-gray-400 mt-1">The product being {editForm.job_stage === 'Discharging' ? 'discharged' : 'loaded'}.</p>
+            </div>
+          )}
           <div>
             <label className="label-base">Port / Location</label>
             <input type="text" value={editForm.port_location} onChange={(e) => setEditForm(p => ({ ...p, port_location: e.target.value }))} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />

@@ -35,8 +35,10 @@ const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placehol
   'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
 }
 
-// Cargo Loading / Cargo Discharging jobs carry a "what's the cargo?" question.
-const CARGO_JOB_TYPES = new Set(['Cargo Loading', 'Cargo Discharging'])
+// Cargo Survey jobs carry a "what's the cargo?" question. The retired 'Cargo Loading' /
+// 'Cargo Discharging' types (merged into Cargo Survey by mig 154) are kept in the set so
+// any historic job of those names still shows the field.
+const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
 // Common cargoes — a datalist of suggestions; the field stays free text.
 const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
 // Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
@@ -280,7 +282,7 @@ export default function NewJobPage() {
             <label className="label-base">Cargo type</label>
             <input type="text" list="cargoList" value={cargoType} onChange={e => setCargoType(e.target.value)} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
             <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
-            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' ? 'discharged' : 'loaded'}.</p>
+            <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' || jobStage === 'Discharging' ? 'discharged' : 'loaded'}.</p>
           </div>
         )}
 
