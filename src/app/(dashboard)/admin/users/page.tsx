@@ -6,6 +6,7 @@ import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search } from '
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
+import { RolePill } from '@/components/job/StatusPill'
 import { toast } from '@/components/ui/toast'
 import PeopleTabs from '@/components/admin/PeopleTabs'
 import { formatDate, withTimeout } from '@/lib/utils'
@@ -338,12 +339,6 @@ export default function UsersPage() {
     )
   }
 
-  const roleColor: Record<string, string> = {
-    admin: 'bg-red-100 text-red-700',
-    surveyor: 'bg-blue-100 text-blue-700',
-    client: 'bg-green-100 text-green-700',
-    office: 'bg-teal-100 text-teal-700',
-  }
 
   const pending = users.filter(u => !u.is_active)
   const term = q.trim().toLowerCase()
@@ -393,9 +388,7 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColor[user.role]}`}>
-                      Requested: {user.role}
-                    </span>
+                    <RolePill role={user.role} label={`Requested: ${user.role}`} />
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-3">
@@ -499,9 +492,7 @@ export default function UsersPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-600">{user.email}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColor[user.role]}`}>
-                    {(user as any).display_title ?? user.role}
-                  </span>
+                  <RolePill role={user.role} label={(user as any).display_title ?? undefined} />
                 </td>
                 <td className="px-4 py-3">
                   {user.is_active ? (

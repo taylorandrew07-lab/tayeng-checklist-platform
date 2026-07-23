@@ -13,24 +13,8 @@ import { toast } from '@/components/ui/toast'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { getDraft, putDraft, offlineAvailable } from '@/lib/offline/db'
 import { titleCaseVesselName, withTimeout } from '@/lib/utils'
+import { STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 import type { WorkflowStatus } from '@/lib/types/database'
-
-// The .btn-* classes are 36px tall, under the ~44px touch target this app uses
-// elsewhere (see JobOpsPanel's log rows). These are the correct-a-mistake controls
-// on a phone, so they get the taller mobile size and the compact desktop metrics.
-const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
-
-// The broad survey types carry a qualifier (jobs.job_stage); mirror the New Job forms
-// so a surveyor can set Loading/Discharging (etc.) here on both PC and mobile.
-const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
-  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
-  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
-  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
-}
-// Cargo Survey carries a "what's the cargo?" question; the retired Cargo Loading /
-// Cargo Discharging types (merged by mig 154) stay in the set for historic jobs.
-const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
-const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
 
 // Both New Job forms build the title as "M.V. <vessel> - <template> - <date>", so
 // correcting a mistyped vessel name here must swap that segment too — the admin job

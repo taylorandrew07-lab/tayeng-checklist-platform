@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, CheckCircle2, CircleDot, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Loader2, Settings, Table, Images, FileDown, LineChart, RefreshCw, Cloud, CloudOff, ClipboardList, Anchor, Navigation, PackageOpen, FileText, ChevronRight } from 'lucide-react'
+import { CargoStatusPill } from '@/components/job/StatusPill'
 import { type Voyage } from '@/lib/cargo/types'
 import { ensureDri, type DriReport } from '@/lib/cargo/dri'
 import { getVoyage, putVoyage, getPhotosForVoyage, countPhotosForVoyage } from '@/lib/cargo/db'
@@ -185,10 +186,7 @@ export default function VoyageWorkspace() {
           const dirty = voyageDirty(voyage)
           return (
             <>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${finalized ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                {finalized ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-                {finalized ? 'Finalised' : 'In progress'}
-              </span>
+              <CargoStatusPill status={voyage.status} />
               <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
                 {dirty ? <CloudOff className="h-3.5 w-3.5 text-amber-500" /> : <Cloud className="h-3.5 w-3.5 text-green-500" />}
                 {dirty ? 'Changes not yet synced' : voyage.lastSyncedAt ? 'Synced to cloud' : 'Not synced yet'}

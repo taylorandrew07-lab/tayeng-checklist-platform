@@ -13,32 +13,7 @@ import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { toast } from '@/components/ui/toast'
 import { titleCaseVesselName } from '@/lib/utils'
-
-// Local yyyy-mm-dd for the <input type=date> default (avoids the UTC off-by-one).
-function isoDateLocal(date: Date): string {
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${m}-${d}`
-}
-function dmyFromISO(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
-
-// Mirrors the admin New Job form (Loading/Discharging wording from migration 147).
-// Duplicated rather than shared because the admin job pages already each keep their
-// own copy — a shared module would mean editing those files too.
-const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
-  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
-  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
-  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
-}
-// Cargo Survey carries a "what's the cargo?" question; the retired Cargo Loading /
-// Cargo Discharging types (merged by mig 154) stay in the set for historic jobs.
-const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
-// Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
-const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
-const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
+import { isoDateLocal, dmyFromISO, STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 
 export default function SurveyorNewChecklistPage() {
   const router = useRouter()

@@ -12,37 +12,8 @@ import { titleCaseVesselName } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
+import { isoDateLocal, dmyFromISO, STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 import type { ChecklistTemplate, Client, JobType } from '@/lib/types/database'
-
-// Local yyyy-mm-dd (for the <input type=date> default — avoids the UTC off-by-one
-// that toISOString() causes around midnight in Trinidad, UTC-4).
-function isoDateLocal(date: Date): string {
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${m}-${d}`
-}
-function dmyFromISO(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
-
-// Conditional Stage picker: the broad survey types carry a qualifier (jobs.job_stage).
-// Other types show no picker. `placeholder` is only set where "Select {label}…" would
-// read badly — Cargo Survey's label is two words joined by a slash (migration 147).
-const STAGE_OPTIONS: Record<string, { label: string; options: string[]; placeholder?: string }> = {
-  'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
-  'Cargo Survey': { label: 'Loading/Discharging', options: ['Loading', 'Discharging'], placeholder: 'Select loading or discharging…' },
-  'Hire Survey': { label: 'Status', options: ['On-hire', 'Off-hire'] },
-}
-
-// Cargo Survey jobs carry a "what's the cargo?" question. The retired 'Cargo Loading' /
-// 'Cargo Discharging' types (merged into Cargo Survey by mig 154) are kept in the set so
-// any historic job of those names still shows the field.
-const CARGO_JOB_TYPES = new Set(['Cargo Survey', 'Cargo Loading', 'Cargo Discharging'])
-// Common cargoes — a datalist of suggestions; the field stays free text.
-const CARGO_SUGGESTIONS = ['Methanol', 'Crude Oil', 'Gasoil / Diesel', 'Gasoline', 'Jet A-1 / Kerosene', 'Fuel Oil', 'LPG', 'Anhydrous Ammonia', 'Urea', 'DRI', 'Iron Ore', 'Coal']
-// Same ~44px phone tap target the job pages use (see JobOpsPanel's log rows).
-const TAP_BTN = 'py-2.5 text-base sm:py-2 sm:text-sm'
 
 export default function NewJobPage() {
   const router = useRouter()

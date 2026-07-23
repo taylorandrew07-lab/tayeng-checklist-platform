@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, ChevronRight, CheckCircle2, CircleDot } from 'lucide-react'
+import { Ship, Loader2, ChevronRight } from 'lucide-react'
+import { CargoStatusPill } from '@/components/job/StatusPill'
+import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
 
@@ -36,7 +38,6 @@ export default function ClientCargoListPage() {
       ) : (
         <div className="space-y-2">
           {voyages.map(v => {
-            const finalized = v.status === 'finalized'
             return (
               <Link key={v.id} href={`/client/cargo/${v.id}`} className="card p-4 flex items-center gap-4 hover:bg-gray-50">
                 <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
@@ -46,10 +47,7 @@ export default function ClientCargoListPage() {
                   <p className="font-medium text-gray-900 truncate">M.V. {v.vessel_name} — {v.voyage_number}</p>
                   <p className="text-sm text-gray-500">Updated {v.updated_at?.slice(0, 10)}</p>
                 </div>
-                <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${finalized ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {finalized ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-                  {finalized ? 'Finalised' : 'In progress'}
-                </span>
+                <CargoStatusPill status={v.status as VoyageStatus} />
                 <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
               </Link>
             )

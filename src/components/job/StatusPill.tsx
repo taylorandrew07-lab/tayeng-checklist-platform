@@ -2,6 +2,7 @@
 // way. Staff see the full workflow; clients see the simplified version. One pill
 // per domain — never re-declare a status/role colour map inline at a call site.
 
+import type { ReactNode } from 'react'
 import { CheckCircle2, CircleDot } from 'lucide-react'
 import { WORKFLOW, normalizeWorkflowStatus } from '@/lib/jobs/tracker'
 import type { WorkflowStatus, Invoice, UserRole, TemplateStatus } from '@/lib/types/database'
@@ -49,8 +50,9 @@ const ROLE_PILL: Record<UserRole, string> = {
   office: 'bg-teal-100 text-teal-700',
 }
 const ROLE_LABEL: Record<UserRole, string> = { admin: 'Admin', surveyor: 'Surveyor', client: 'Client', office: 'Office' }
-export function RolePill({ role, className }: { role: UserRole; className?: string }) {
-  return <span className={`${PILL_BASE} ${ROLE_PILL[role] ?? 'bg-gray-100 text-gray-700'} ${className ?? ''}`}>{ROLE_LABEL[role] ?? role}</span>
+/** `label` overrides the displayed text (e.g. a person's display title) while keeping the role colour. */
+export function RolePill({ role, label, className }: { role: UserRole; label?: ReactNode; className?: string }) {
+  return <span className={`${PILL_BASE} ${ROLE_PILL[role] ?? 'bg-gray-100 text-gray-700'} ${className ?? ''}`}>{label ?? ROLE_LABEL[role] ?? role}</span>
 }
 
 // Template publish state (draft / active / archived) — one source for the colour map.
@@ -66,7 +68,7 @@ export function TemplateStatusPill({ status, className }: { status: TemplateStat
 
 // Cargo voyage state — one colour + spelling ("Finalised") app-wide. Previously
 // inlined with disagreeing colours (amber vs sky) and two spellings.
-export function CargoStatusPill({ status, className }: { status: VoyageStatus; className?: string }) {
+export function CargoStatusPill({ status, className }: { status: VoyageStatus | null | undefined; className?: string }) {
   const finalized = status === 'finalized'
   return (
     <span className={`${PILL_BASE} ${finalized ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} ${className ?? ''}`}>

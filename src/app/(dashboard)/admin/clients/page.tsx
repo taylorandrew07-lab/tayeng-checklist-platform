@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Building2, Pencil, Check, X, Upload, Trash2, Search } from 'lucide-react'
+import { Plus, Loader2, Building2, Pencil, X, Upload, Trash2, Search } from 'lucide-react'
+import { ClientStatusPill } from '@/components/job/StatusPill'
 import { Modal } from '@/components/ui/Modal'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
@@ -293,11 +294,7 @@ export default function ClientsPage() {
             <div key={client.id} className={`card p-5 sm:p-6 flex flex-col ${!client.is_active ? 'opacity-60' : ''}`}>
               {/* Status */}
               <div className="flex justify-end mb-3">
-                {client.is_active ? (
-                  <span className="text-xs text-green-600 font-medium flex items-center gap-0.5"><Check className="h-3 w-3" />Active</span>
-                ) : (
-                  <span className="text-xs text-gray-400 font-medium">Inactive</span>
-                )}
+                <ClientStatusPill active={client.is_active} />
               </div>
 
               {/* Logo */}
