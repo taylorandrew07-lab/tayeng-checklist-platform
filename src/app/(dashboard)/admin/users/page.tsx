@@ -372,43 +372,26 @@ export default function UsersPage() {
             <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
             <span className="text-sm font-semibold text-yellow-800">{pending.length} account{pending.length > 1 ? 's' : ''} awaiting approval</span>
           </div>
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-gray-100">
-              {pending.map(user => (
-                <tr key={user.id} className="hover:bg-yellow-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-medium text-sm flex-shrink-0">
-                        {user.full_name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{user.full_name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <RolePill role={user.role} label={`Requested: ${user.role}`} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(user.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => startApprove(user)}
-                        className="btn-primary py-1 px-3 text-xs"
-                      >
-                        Review &amp; Approve
-                      </button>
-                      <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
-                        Reject
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y divide-gray-100">
+            {pending.map(user => (
+              <div key={user.id} className="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 hover:bg-yellow-50">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-medium text-sm flex-shrink-0">
+                    {user.full_name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{user.full_name}</p>
+                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  </div>
+                </div>
+                <RolePill role={user.role} label={`Requested: ${user.role}`} />
+                <span className="text-gray-500 text-xs">{formatDate(user.created_at)}</span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button onClick={() => startApprove(user)} className="btn-primary py-1 px-3 text-xs">Review &amp; Approve</button>
+                  <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">Reject</button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -420,23 +403,17 @@ export default function UsersPage() {
             <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
             <span className="text-sm font-semibold text-pink-800">{clientRequests.length} new client request{clientRequests.length > 1 ? 's' : ''}</span>
           </div>
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-gray-100">
-              {clientRequests.map(req => (
-                <tr key={req.id} className="hover:bg-pink-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{req.requested_name}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(req.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => approveClientRequest(req)} className="btn-primary py-1 px-3 text-xs">Approve</button>
-                      <button onClick={() => rejectClientRequest(req)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:bg-red-50">Reject</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y divide-gray-100">
+            {clientRequests.map(req => (
+              <div key={req.id} className="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 hover:bg-pink-50">
+                <span className="font-medium text-gray-900 flex-1 min-w-0 truncate">{req.requested_name}</span>
+                <span className="text-gray-500 text-xs">{formatDate(req.created_at)}</span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button onClick={() => approveClientRequest(req)} className="btn-primary py-1 px-3 text-xs">Approve</button>
+                  <button onClick={() => rejectClientRequest(req)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:bg-red-50">Reject</button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
