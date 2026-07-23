@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, Copy, Edit, Loader2, Archive, RotateCcw, Trash2, Eye, ClipboardList, Ship } from 'lucide-react'
+import { Plus, FileText, Copy, Pencil, Loader2, Archive, RotateCcw, Trash2, Eye, ClipboardList, Ship } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -382,7 +382,7 @@ function TemplateRow({
             <Eye className="h-3.5 w-3.5" />Preview
           </Link>
           <Link href={`/admin/templates/${template.id}/edit`} className="btn-secondary py-1.5 px-3 text-xs">
-            <Edit className="h-3.5 w-3.5" />Edit
+            <Pencil className="h-3.5 w-3.5" />Edit
           </Link>
           <button
             onClick={() => onCopy(template)}

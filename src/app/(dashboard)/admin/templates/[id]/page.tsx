@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Edit, Loader2, FileText, CheckSquare, AlignLeft, Hash, Type, Calendar, Clock, List, Camera, PenLine, Minus, Video, User } from 'lucide-react'
+import { ArrowLeft, Pencil, Loader2, FileText, CheckSquare, AlignLeft, Hash, Type, Calendar, Clock, List, Camera, PenLine, Minus, Video, User } from 'lucide-react'
 import { getFieldTypeLabel } from '@/lib/utils'
 
 const FIELD_TYPE_ICONS: Record<string, React.ElementType> = {
@@ -84,7 +84,7 @@ export default function TemplatePreviewPage() {
           </p>
         </div>
         <Link href={`/admin/templates/${templateId}/edit`} className="btn-secondary">
-          <Edit className="h-4 w-4" />Edit Template
+          <Pencil className="h-4 w-4" />Edit Template
         </Link>
       </div>
 

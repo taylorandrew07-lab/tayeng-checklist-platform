@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Ship, Edit, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Ship, Pencil, Trash2, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
 import { type CargoTemplate } from '@/lib/cargo/types'
@@ -85,7 +85,7 @@ export default function CargoTemplatesPanel() {
               </div>
             </div>
             <div className="flex flex-wrap gap-1.5 border-t border-gray-100 pt-2.5 sm:border-t-0 sm:pt-0 sm:flex-nowrap sm:gap-2 sm:flex-shrink-0">
-              <Link href={`/admin/templates/cargo/${t.id}/edit`} className="btn-secondary py-1.5 px-3 text-xs"><Edit className="h-3.5 w-3.5" />Edit</Link>
+              <Link href={`/admin/templates/cargo/${t.id}/edit`} className="btn-secondary py-1.5 px-3 text-xs"><Pencil className="h-3.5 w-3.5" />Edit</Link>
               <button onClick={() => handleDelete(t)} disabled={deleting === t.id} className="btn-ghost py-1.5 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
                 {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Delete
               </button>
