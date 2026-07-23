@@ -194,6 +194,25 @@ export default function SurveyorDashboard() {
     }
   }, { reg: 0, ot: 0, regDays: 0, otDays: 0, km: 0 })
 
+  // Month-by-month breakdown for the year view, so a surveyor can see their workload
+  // trend across the year (all 12 months, empty ones shown as a dash).
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthly = period !== 'this_year' ? [] : MONTHS.map((label, mi) => {
+    const t = periodJobs.reduce((a, j) => {
+      const d = jobDate(j)
+      if (!d || Number(d.slice(5, 7)) !== mi + 1) return a
+      const m = mine[j.id]
+      if (!m) return { ...a, jobs: a.jobs + 1 }
+      const isDays = asLabourUnit(j.labour_unit) === 'days'
+      return {
+        reg: a.reg + (isDays ? 0 : m.reg), ot: a.ot + (isDays ? 0 : m.ot),
+        regDays: a.regDays + (isDays ? m.reg : 0), otDays: a.otDays + (isDays ? m.ot : 0),
+        km: a.km + m.km, jobs: a.jobs + 1,
+      }
+    }, { reg: 0, ot: 0, regDays: 0, otDays: 0, km: 0, jobs: 0 })
+    return { label, ...t }
+  })
+
   // Download the selected timeframe's work as CSV (one row per job + a totals row).
   function downloadCsv() {
     const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
@@ -452,8 +471,45 @@ export default function SurveyorDashboard() {
                   </div>
                 )}
 
-                {/* Per-vessel breakdown, tallied + totalled. */}
-                {periodJobs.length > 0 ? (
+                {/* Breakdown: month-by-month for the year, per-vessel otherwise —
+                    both tallied + totalled (hours and days never summed). */}
+                {periodJobs.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-2">No jobs in this period.</p>
+                ) : period === 'this_year' ? (
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-400 bg-gray-50/60">
+                          <th className="font-medium py-2 px-3">Month</th>
+                          <th className="font-medium py-2 px-2 text-right">Jobs</th>
+                          <th className="font-medium py-2 px-2 text-right">Reg</th>
+                          <th className="font-medium py-2 px-2 text-right">OT</th>
+                          <th className="font-medium py-2 px-3 text-right">Km</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthly.map(mo => (
+                          <tr key={mo.label} className={`border-t border-gray-50 ${mo.jobs === 0 ? 'text-gray-300' : ''}`}>
+                            <td className="py-2 px-3 text-gray-800">{mo.label}</td>
+                            <td className="py-2 px-2 text-right tnum">{mo.jobs || '—'}</td>
+                            <td className="py-2 px-2 text-right tnum">{splitQty(mo.reg, mo.regDays) || '—'}</td>
+                            <td className="py-2 px-2 text-right tnum">{splitQty(mo.ot, mo.otDays) || '—'}</td>
+                            <td className="py-2 px-3 text-right tnum">{mo.km || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-gray-200 font-semibold">
+                          <td className="py-2 px-3 text-gray-800">Total</td>
+                          <td className="py-2 px-2 text-right tnum text-gray-900">{periodJobs.length}</td>
+                          <td className="py-2 px-2 text-right tnum text-gray-900">{splitQty(totals.reg, totals.regDays) || '—'}</td>
+                          <td className="py-2 px-2 text-right tnum text-gray-900">{splitQty(totals.ot, totals.otDays) || '—'}</td>
+                          <td className="py-2 px-3 text-right tnum text-gray-900">{totals.km || '—'}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
                   <div className="overflow-x-auto rounded-lg border border-gray-100">
                     <table className="w-full text-sm">
                       <thead>
@@ -490,8 +546,6 @@ export default function SurveyorDashboard() {
                       </tfoot>
                     </table>
                   </div>
-                ) : (
-                  <p className="text-sm text-gray-400 py-2">No jobs in this period.</p>
                 )}
 
                 {/* Export: printable statement + raw CSV. */}
