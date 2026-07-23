@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download, ChevronDown } from 'lucide-react'
+import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download, ChevronDown, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import { deliverFile, PDF_MIME } from '@/lib/pdf/deliver'
 import { WORKFLOW } from '@/lib/jobs/tracker'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
@@ -33,9 +34,11 @@ export default function SurveyorDashboard() {
   const [period, setPeriod] = useState<'this_month' | 'last_month' | 'this_year' | 'all' | 'custom'>('this_month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
-  // The pay/work summary is secondary in the field — collapsed by default so the
-  // job lists sit at the top; its totals stay visible in the collapsed header.
-  const [summaryOpen, setSummaryOpen] = useState(false)
+  // The work summary is where a surveyor verifies their month — open by default so
+  // the period picker, per-vessel breakdown and export are right there. The glanceable
+  // totals stay in the header when collapsed.
+  const [summaryOpen, setSummaryOpen] = useState(true)
+  const [statementBusy, setStatementBusy] = useState(false)
   const tick = useRealtimeRefresh('jobs')
   // Your own documents expired or expiring soon.
   const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
@@ -220,6 +223,47 @@ export default function SurveyorDashboard() {
     URL.revokeObjectURL(url)
   }
 
+  // A clean, branded PDF work statement for the selected period — the jobs, tallied
+  // and totalled by vessel. Mobile-aware delivery (share sheet on a phone, save on
+  // desktop). react-pdf is code-split so it never loads on the field board itself.
+  async function downloadStatement() {
+    if (!periodJobs.length) return
+    setStatementBusy(true)
+    try {
+      const rows = periodJobs.map(j => {
+        const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
+        return {
+          date: jobDate(j),
+          vessel: j.vessel_name || j.title || '—',
+          client: j.client?.name ?? '—',
+          reg: m.reg ? qtyWithUnit(m.reg, j.labour_unit) : '—',
+          ot: m.ot ? qtyWithUnit(m.ot, j.labour_unit) : '—',
+          km: m.km ? String(m.km) : '—',
+        }
+      })
+      const [{ pdf }, { SurveyorStatementPDF }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('@/lib/pdf/SurveyorStatementPDF'),
+      ])
+      const blob = await pdf(
+        <SurveyorStatementPDF
+          surveyorName={profile?.full_name ?? 'Surveyor'}
+          periodLabel={range.label}
+          generatedLabel={formatDate(ymd(new Date()))}
+          rows={rows}
+          totalReg={splitQty(totals.reg, totals.regDays) || '—'}
+          totalOt={splitQty(totals.ot, totals.otDays) || '—'}
+          totalKm={`${totals.km} km`}
+        />,
+      ).toBlob()
+      await deliverFile(blob, `work-statement-${range.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`, PDF_MIME, { title: 'Work statement' })
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not create the statement')
+    } finally {
+      setStatementBusy(false)
+    }
+  }
+
   // Add myself to an open job (mig 152) so I can log my hours/OT/km on it. The row
   // lands under my own session; the mig-152 policy checks surveyor_id = me + open.
   // On success we reload so the job hops from "can join" into Active Jobs.
@@ -377,12 +421,13 @@ export default function SurveyorDashboard() {
 
           <AttentionCard items={docAttention} />
 
-          {/* My work summary — collapsed by default; totals stay glanceable in the
-              header, the period pills + custom range + CSV live inside. The period
-              still drives the Submitted/Completed list below. */}
+          {/* My work summary — the surveyor's own record: totals, a per-vessel
+              breakdown for the chosen period, and a printable statement. Open by
+              default; the header totals stay visible when collapsed. The period also
+              drives the Completed list below. */}
           <div className="card p-4">
             <button onClick={() => setSummaryOpen(o => !o)} className="w-full flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-left">
-              <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <span className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                 <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${summaryOpen ? '' : '-rotate-90'}`} />
                 My work · {range.label} · {periodJobs.length} job{periodJobs.length === 1 ? '' : 's'}
               </span>
@@ -394,20 +439,69 @@ export default function SurveyorDashboard() {
             </button>
             {summaryOpen && (
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
-                      <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
-                    ))}
-                  </div>
-                  <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
+                {/* Period picker — ~44px tap targets for the field. */}
+                <div className="flex flex-wrap gap-1.5">
+                  {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
+                    <button key={k} onClick={() => setPeriod(k)} className={`min-h-[40px] px-3.5 rounded-lg text-sm font-medium border transition-colors active:scale-[0.98] ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                  ))}
                 </div>
                 {period === 'custom' && (
                   <div className="flex flex-wrap items-end gap-2">
-                    <div><label className="block text-[11px] text-gray-400">From</label><input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input-base py-1 text-sm" /></div>
-                    <div><label className="block text-[11px] text-gray-400">To</label><input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input-base py-1 text-sm" /></div>
+                    <div><label className="block text-[11px] text-gray-400">From</label><input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input-base py-2 text-sm" /></div>
+                    <div><label className="block text-[11px] text-gray-400">To</label><input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input-base py-2 text-sm" /></div>
                   </div>
                 )}
+
+                {/* Per-vessel breakdown, tallied + totalled. */}
+                {periodJobs.length > 0 ? (
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-400 bg-gray-50/60">
+                          <th className="font-medium py-2 px-3">Vessel</th>
+                          <th className="font-medium py-2 px-2 text-right">Reg</th>
+                          <th className="font-medium py-2 px-2 text-right">OT</th>
+                          <th className="font-medium py-2 px-3 text-right">Km</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {periodJobs.map(j => {
+                          const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
+                          return (
+                            <tr key={j.id} className="border-t border-gray-50">
+                              <td className="py-2 px-3">
+                                <span className="text-gray-800">{j.vessel_name || j.title}</span>
+                                <span className="block text-xs text-gray-400">{jobDateLabel(j)}</span>
+                              </td>
+                              <td className="py-2 px-2 text-right tnum text-gray-700">{m.reg ? qtyWithUnit(m.reg, j.labour_unit) : '—'}</td>
+                              <td className="py-2 px-2 text-right tnum text-gray-700">{m.ot ? qtyWithUnit(m.ot, j.labour_unit) : '—'}</td>
+                              <td className="py-2 px-3 text-right tnum text-gray-700">{m.km || '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-gray-200 font-semibold">
+                          <td className="py-2 px-3 text-gray-800">Total</td>
+                          <td className="py-2 px-2 text-right tnum text-gray-900">{splitQty(totals.reg, totals.regDays) || '—'}</td>
+                          <td className="py-2 px-2 text-right tnum text-gray-900">{splitQty(totals.ot, totals.otDays) || '—'}</td>
+                          <td className="py-2 px-3 text-right tnum text-gray-900">{totals.km || '—'}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 py-2">No jobs in this period.</p>
+                )}
+
+                {/* Export: printable statement + raw CSV. */}
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={downloadStatement} disabled={periodJobs.length === 0 || statementBusy} className="btn-primary py-2 px-3 text-sm disabled:opacity-40">
+                    {statementBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Statement (PDF)
+                  </button>
+                  <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-2 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
+                </div>
               </div>
             )}
           </div>
