@@ -12,6 +12,7 @@ import { CURRENCIES } from '@/lib/jobs/tracker'
 import { getInvoiceForEdit, updateInvoice, listBankAccounts, type TaxDraft } from '@/lib/jobs/invoicing'
 import LineItemsEditor, { type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
+import { BankAccountPicker } from '@/components/invoicing/BankAccountPicker'
 import { useAutoSave } from '@/lib/useAutoSave'
 import type { Currency, BankAccount } from '@/lib/types/database'
 
@@ -68,12 +69,6 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
   }
 
   const drafts = lines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price }))
-
-  // Same money-safety warning the create builder shows: the chosen bank account's
-  // currency vs the invoice currency (no conversion happens, so a mismatch is a
-  // real risk). The edit path previously had no guard here at all.
-  const selectedBank = bankAccounts.find(a => a.id === bankAccountId)
-  const bankCurrencyMismatch = !!selectedBank?.currency && selectedBank.currency !== currency
 
   // Mark dirty after load, skipping the hydration batch (mirrors the template editor).
   useEffect(() => {
@@ -149,21 +144,14 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
 
           <TotalsSummary lines={drafts} taxes={taxes} currency={currency} />
 
-          <div>
-            <label className="text-[11px] text-gray-400">Bank account <span className="text-gray-300">— shown on the invoice</span></label>
-            {bankAccounts.length > 0 && (
-              <select value={bankAccountId} onChange={e => pickBank(e.target.value)} className="input-base text-sm">
-                <option value="">Custom / keep current</option>
-                {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
-              </select>
-            )}
-            <textarea value={bankDetails} onChange={e => { setBankDetails(e.target.value); setBankAccountId('') }} rows={2} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
-            {bankCurrencyMismatch && (
-              <p className="mt-1.5 text-xs text-amber-700">
-                This bank account is in <span className="font-medium tnum">{selectedBank?.currency}</span> but the invoice is <span className="font-medium tnum">{currency}</span>. Match them or pick a different account.
-              </p>
-            )}
-          </div>
+          <BankAccountPicker
+            bankAccounts={bankAccounts}
+            bankAccountId={bankAccountId}
+            bankDetails={bankDetails}
+            currency={currency}
+            onPickAccount={pickBank}
+            onDetailsChange={d => { setBankDetails(d); setBankAccountId('') }}
+          />
           <div><label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base text-sm resize-none" /></div>
         </div>
       )}

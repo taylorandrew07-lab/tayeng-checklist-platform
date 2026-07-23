@@ -22,6 +22,7 @@ import {
 import { listClientBilling } from '@/lib/clients/billing'
 import LineItemsEditor, { blankLine, type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
+import { BankAccountPicker } from '@/components/invoicing/BankAccountPicker'
 import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 
 interface LineState { description: string; qty: number; unit_price: number }
@@ -100,12 +101,6 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       ?? bankAccounts.find(a => a.is_default) ?? bankAccounts[0]
     if (acct) { setBankAccountId(acct.id); setBankDetails(acct.details) }
   }, [payerId, bankAccounts, clientBankLinks]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Warnings under the bank picker: the chosen account's currency vs the invoice
-  // currency, and a linked account that couldn't be applied (e.g. deactivated).
-  const selectedBank = bankAccounts.find(a => a.id === bankAccountId)
-  const bankCurrencyMismatch = selectedBank?.currency && selectedBank.currency !== currency
-  const linkedUnavailable = !!payerId && !!clientBankLinks[payerId] && !bankAccounts.some(a => a.id === clientBankLinks[payerId])
 
   const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
     const active = clientRates.filter(r => r.is_active)
@@ -509,29 +504,16 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           {/* Totals */}
           <TotalsSummary lines={allDrafts} taxes={taxes} currency={currency} />
 
-          <div>
-            <label className="text-[11px] text-gray-400">Bank account <span className="text-gray-300">— shown on the invoice</span></label>
-            {bankAccounts.length > 0 ? (
-              <>
-              <select value={bankAccountId} onChange={e => pickBank(e.target.value)} className={cell}>
-                {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.label}{a.currency ? ` (${a.currency})` : ''}</option>)}
-                <option value="">Custom / none</option>
-              </select>
-              {bankAccountId && payerId && clientBankLinks[payerId] === bankAccountId && (
-                <p className="text-[11px] text-brand-700 mt-1">{billToId ? billToName : clientName} is linked to this account — auto-selected.</p>
-              )}
-              {bankCurrencyMismatch && (
-                <p className="text-[11px] text-amber-700 bg-amber-50/70 rounded-md px-2 py-1 mt-1">This account is {selectedBank?.currency}, but the invoice is {currency} — double-check the client pays to the right account.</p>
-              )}
-              {linkedUnavailable && (
-                <p className="text-[11px] text-amber-700 mt-1">{billToId ? billToName : clientName}&apos;s linked account is unavailable — using the default instead.</p>
-              )}
-              </>
-            ) : (
-              <p className="text-[11px] text-gray-400">No saved bank accounts — add them in Settings, or type details below.</p>
-            )}
-            <textarea value={bankDetails} onChange={e => { bankTouched.current = true; setBankDetails(e.target.value); setBankAccountId('') }} rows={3} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
-          </div>
+          <BankAccountPicker
+            bankAccounts={bankAccounts}
+            bankAccountId={bankAccountId}
+            bankDetails={bankDetails}
+            currency={currency}
+            onPickAccount={pickBank}
+            onDetailsChange={d => { bankTouched.current = true; setBankDetails(d); setBankAccountId('') }}
+            linkedAccountId={payerId ? clientBankLinks[payerId] : null}
+            linkedPartyName={billToId ? billToName : clientName}
+          />
           <div>
             <label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base text-sm resize-none" />
