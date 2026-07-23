@@ -397,6 +397,9 @@ export interface Job {
   // Product being loaded/discharged (migration 112) — e.g. Methanol, Crude Oil, Urea.
   // Used by the Cargo Loading / Cargo Discharging job types. Free text; null otherwise.
   cargo_type: string | null
+  // Free-text port / location of the survey (migration 153). Mainly for report-only
+  // (no-checklist) jobs that have nowhere else to record where the survey happened.
+  port_location: string | null
   report_number: string | null
   // When true the job does not require a report — no report number, shown as "N/A" (migration 119).
   report_not_required: boolean

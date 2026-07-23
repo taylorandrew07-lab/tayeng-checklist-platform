@@ -12,6 +12,7 @@ import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/la
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getLocalCreateDrafts, offlineAvailable } from '@/lib/offline/db'
 import { loadNewJobData } from '@/lib/offline/newJobData'
+import { toast } from '@/components/ui/toast'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
 
@@ -83,7 +84,7 @@ export default function SurveyorDashboard() {
         const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
-              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, surveyor_name,
+              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, surveyor_name, port_location,
               template:checklist_templates(name),
               client:clients(name)
             `)
@@ -102,9 +103,11 @@ export default function SurveyorDashboard() {
 
         // Open jobs this surveyor ISN'T on yet — so they can add themselves and log
         // their hours (e.g. a cargo loadout the office set up). RLS already lets a
-        // surveyor read every job (mig 056); we scope the browse list to OPEN ones
-        // and drop the ones they're already on. Online-only: joining is a live write,
-        // and a failed fetch just leaves the section empty (never blocks the board).
+        // surveyor read every job (mig 056) and join any OPEN one (mig 152 =
+        // job_is_open = not 'closed'), so match that: any non-closed job, not just
+        // in_progress — a report-ready/invoice-ready job is still open and still
+        // takes km/OT (mig 117). Drop the ones they're already on. Online-only: a
+        // failed fetch just leaves the section empty (never blocks the board).
         const mineIds = new Set((jRes.data ?? []).map((x: any) => x.id))
         const jn = await withTimeout(
           supabase.from('jobs')
@@ -113,7 +116,7 @@ export default function SurveyorDashboard() {
               template:checklist_templates(name),
               client:clients(name)
             `)
-            .eq('workflow_status', 'in_progress')
+            .neq('workflow_status', 'closed')
             .order('created_at', { ascending: false }),
           15_000, 'Loading jobs you can join').catch(() => ({ data: [] as any[] }))
         if (active) setJoinable([...((jn.data ?? []) as any[])].filter(j => !mineIds.has(j.id)).sort(byLastDateDesc))
@@ -163,11 +166,13 @@ export default function SurveyorDashboard() {
   const jobDate = (j: any) => (j.scheduled_date ?? j.created_at ?? '').slice(0, 10)
   const inRange = (j: any) => { const d = jobDate(j); return (!range.from || d >= range.from) && (!range.to || d <= range.to) }
 
-  // Bucket by the unified workflow status (kept in sync with the checklist phase).
-  // Active = live to-do queue (always shown, all-time). Submitted/Completed history
-  // and the summary totals + CSV are scoped to the selected timeframe.
-  const active = jobs.filter(j => j.workflow_status === 'in_progress')
-  const submittedAll = jobs.filter(j => j.workflow_status !== 'in_progress')
+  // Bucket by OPEN vs CLOSED, not by in_progress. A job stays editable — the surveyor
+  // can still add km/OT — on ANY non-closed status (mig 117 job_is_open), so every open
+  // job (in_progress / report_ready / invoice_ready) is ALWAYS shown, all-time; a job
+  // that advanced to report_ready must never fall off the board just because its date is
+  // outside the current pay period. Only CLOSED jobs are history and get period-scoped.
+  const active = jobs.filter(j => j.workflow_status !== 'closed')
+  const submittedAll = jobs.filter(j => j.workflow_status === 'closed')
   const submitted = submittedAll.filter(inRange)
 
   // Totals for the selected timeframe across ALL the surveyor's jobs in range.
@@ -191,19 +196,19 @@ export default function SurveyorDashboard() {
     const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
     // Each row carries its job's unit and the totals are per unit — a spreadsheet
     // must never be able to add an hours quantity to a days one (mig 148).
-    const headers = ['Report #', 'Job #', 'Date', 'Vessel', 'Job type', 'Client', 'Status', 'Unit', 'Regular qty', 'Overtime qty', 'Distance (km)']
+    const headers = ['Report #', 'Job #', 'Date', 'Vessel', 'Job type', 'Port / Location', 'Client', 'Status', 'Unit', 'Regular qty', 'Overtime qty', 'Distance (km)']
     const lines = [headers.join(',')]
     for (const j of periodJobs) {
       const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
       lines.push([
-        j.report_number, j.job_number, jobDate(j), j.vessel_name, j.job_type, j.client?.name,
+        j.report_number, j.job_number, jobDate(j), j.vessel_name, j.job_type, j.port_location, j.client?.name,
         WORKFLOW[j.workflow_status as keyof typeof WORKFLOW]?.label ?? j.workflow_status,
         labourLabels(j.labour_unit).noun, m.reg || '', m.ot || '', m.km || '',
       ].map(esc).join(','))
     }
-    lines.push(['', '', '', '', '', '', 'TOTAL (hours)', 'hours', totals.reg || '', totals.ot || '', totals.km || ''].map(esc).join(','))
+    lines.push(['', '', '', '', '', '', '', 'TOTAL (hours)', 'hours', totals.reg || '', totals.ot || '', totals.km || ''].map(esc).join(','))
     if (totals.regDays || totals.otDays) {
-      lines.push(['', '', '', '', '', '', 'TOTAL (days)', 'days', totals.regDays || '', totals.otDays || '', ''].map(esc).join(','))
+      lines.push(['', '', '', '', '', '', '', 'TOTAL (days)', 'days', totals.regDays || '', totals.otDays || '', ''].map(esc).join(','))
     }
     // BOM + CRLF so Excel opens the UTF-8 cleanly.
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
@@ -225,7 +230,10 @@ export default function SurveyorDashboard() {
       const supabase = createClient()
       const { error: jErr } = await supabase.from('job_surveyors')
         .insert({ job_id: jobId, surveyor_id: profile.id, created_by: profile.id })
-      if (jErr) { setError(`Couldn't add you to that job: ${jErr.message}`); return }
+      // A join failure is a per-job problem — surface it on a toast, NOT the shared
+      // `error` state, which would replace the whole board with "Couldn't load your jobs".
+      if (jErr) { toast.error(`Couldn't add you to that job: ${jErr.message}`); return }
+      toast.success('Added you to the job — you can log your hours now.')
       setReloadKey(k => k + 1)
     } finally {
       setJoiningId(null)
@@ -279,15 +287,15 @@ export default function SurveyorDashboard() {
         </div>
       ) : (
         <>
-          {/* At-a-glance counts (the third "Total" tile was just Active+Submitted). */}
+          {/* At-a-glance counts: open (still workable) vs closed (invoiced history). */}
           <div className="grid grid-cols-2 gap-4">
             <div className="card p-4 text-center">
               <p className="text-3xl font-bold text-yellow-600 tnum">{active.length}</p>
-              <p className="text-sm text-gray-500 mt-1">Active</p>
+              <p className="text-sm text-gray-500 mt-1">Open</p>
             </div>
             <div className="card p-4 text-center">
               <p className="text-3xl font-bold text-purple-600 tnum">{submittedAll.length}</p>
-              <p className="text-sm text-gray-500 mt-1">Submitted</p>
+              <p className="text-sm text-gray-500 mt-1">Completed</p>
             </div>
           </div>
 
@@ -300,7 +308,7 @@ export default function SurveyorDashboard() {
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow border-amber-200">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 truncate">{job.title}</p>
-                      <p className="text-sm text-gray-500 mt-0.5 truncate">{job.template?.name} · {job.client?.name ?? 'No client'}</p>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">{job.template?.name ?? job.job_type ?? 'No checklist'} · {job.client?.name ?? 'No client'}</p>
                       {job.syncError && <p className="text-xs text-red-600 mt-1">{job.syncError}</p>}
                     </div>
                     <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${job.syncError ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -314,7 +322,7 @@ export default function SurveyorDashboard() {
 
           {active.length > 0 && (
             <div>
-              <h2 className="section-title mb-3">Active Jobs</h2>
+              <h2 className="section-title mb-3">Open Jobs</h2>
               <div className="space-y-3">
                 {active.map(job => (
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -324,7 +332,7 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
+                        {job.template?.name ?? job.job_type ?? 'No checklist'} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
                       </p>
                       <MyLine jobId={job.id} unit={job.labour_unit} />
                     </div>
@@ -406,7 +414,7 @@ export default function SurveyorDashboard() {
 
           {submitted.length > 0 && (
             <div>
-              <h2 className="section-title mb-3">Submitted / Completed{period !== 'all' ? ` · ${range.label}` : ''}</h2>
+              <h2 className="section-title mb-3">Completed{period !== 'all' ? ` · ${range.label}` : ''}</h2>
               <div className="space-y-3">
                 {submitted.map(job => (
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -416,7 +424,7 @@ export default function SurveyorDashboard() {
                         <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {job.template?.name} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
+                        {job.template?.name ?? job.job_type ?? 'No checklist'} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
                       </p>
                       <MyLine jobId={job.id} unit={job.labour_unit} />
                     </div>

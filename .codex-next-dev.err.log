@@ -1,0 +1,8 @@
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          27968
+- Dir:          C:\Users\Andrew\OneDrive\Documents\Tayeng Checklist App
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 27968 /F to stop it.

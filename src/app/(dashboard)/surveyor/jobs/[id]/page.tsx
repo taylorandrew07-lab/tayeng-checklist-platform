@@ -39,13 +39,13 @@ export default function SurveyorJobPage() {
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', notes: '' })
+  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', port_location: '', notes: '' })
   // The job exists only in this device's IndexedDB draft — no server row yet.
   const [localOnly, setLocalOnly] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
 
   function fillEditForm(j: any) {
-    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', notes: j?.notes ?? '' })
+    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', port_location: j?.port_location ?? '', notes: j?.notes ?? '' })
   }
 
   async function load() {
@@ -63,7 +63,7 @@ export default function SurveyorJobPage() {
         // labour_unit must be selected: JobOpsPanel defaults a missing unit to hours,
         // and on a day-billed job that would let the OT shift log overwrite the
         // hand-typed day count with a sum of HOURS, paid at the day rate (mig 148).
-        .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, is_overtime, billing_mode, labour_unit, client:clients(name)')
+        .select('id, title, report_number, job_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -116,6 +116,7 @@ export default function SurveyorJobPage() {
           title: retitleForVessel(draft.job?.title ?? null, draft.job?.vessel_name ?? null, vessel),
           vessel_name: vessel || null,
           scheduled_date: editForm.scheduled_date || null,
+          port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
         }
         await putDraft({ ...draft, job: nextJob, updatedAt: Date.now() })
@@ -134,6 +135,7 @@ export default function SurveyorJobPage() {
           // Keep the stored title in step with the vessel name (see retitleForVessel).
           title: retitleForVessel(job.title ?? null, job.vessel_name ?? null, vessel),
           scheduled_date: editForm.scheduled_date || null,
+          port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
         }).eq('id', jobId).select('id'),
         15_000, 'Saving job'
@@ -202,6 +204,11 @@ export default function SurveyorJobPage() {
           <div>
             <label className="label-base">Survey date</label>
             <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} className="input-base" />
+          </div>
+          <div>
+            <label className="label-base">Port / Location</label>
+            <input type="text" value={editForm.port_location} onChange={(e) => setEditForm(p => ({ ...p, port_location: e.target.value }))} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
+            <p className="text-xs text-gray-400 mt-1">Where the survey took place.</p>
           </div>
           <div>
             <label className="label-base">Notes</label>

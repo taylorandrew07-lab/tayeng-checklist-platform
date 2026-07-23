@@ -70,6 +70,7 @@ export default function NewJobPage() {
   const [conflicts, setConflicts] = useState<Map<string, JobConflict[]>>(new Map())
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
+  const [portLocation, setPortLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [reportNotRequired, setReportNotRequired] = useState(false)
 
@@ -202,6 +203,7 @@ export default function NewJobPage() {
         notes: notes.trim() || null,
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
+        port_location: portLocation.trim() || null,
         report_not_required: reportNotRequired,
         scheduled_date: scheduledDate,
         end_date: endDate || null,
@@ -298,6 +300,12 @@ export default function NewJobPage() {
             <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
           <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Port / Location <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input type="text" value={portLocation} onChange={e => setPortLocation(e.target.value)} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
+          <p className="text-xs text-gray-400 mt-1">Where the survey takes place — useful on report-only jobs with no checklist.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -58,6 +58,7 @@ export default function SurveyorNewChecklistPage() {
   const [newJobTypeName, setNewJobTypeName] = useState('')
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
+  const [portLocation, setPortLocation] = useState('')
   // Extra surveyors on this job, beyond the owner (you). The owner is always the
   // primary via assigned_to; these attach as co-surveyors on sync (mig 150).
   const [coSurveyors, setCoSurveyors] = useState<Set<string>>(new Set())
@@ -222,6 +223,7 @@ export default function SurveyorNewChecklistPage() {
         job_type: jobType || null,
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
+        port_location: portLocation.trim() || null,
         vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
@@ -288,13 +290,13 @@ export default function SurveyorNewChecklistPage() {
         <Link href="/surveyor" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
           <h1 className="page-title">New Job</h1>
-          <p className="text-gray-500 mt-0.5">Create a new survey checklist</p>
+          <p className="text-gray-500 mt-0.5">Create a new job{selectedTemplate ? ' with a checklist' : ''}</p>
         </div>
       </div>
 
       {!online && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
-          <WifiOff className="h-4 w-4 flex-shrink-0" />You&apos;re offline. The checklist will be saved on this device and sync automatically when you reconnect.
+          <WifiOff className="h-4 w-4 flex-shrink-0" />You&apos;re offline. This job will be saved on this device and sync automatically when you reconnect.
         </div>
       )}
 
@@ -376,6 +378,12 @@ export default function SurveyorNewChecklistPage() {
             <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
           <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s linked to the Vessels directory automatically.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Port / Location <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input type="text" value={portLocation} onChange={(e) => setPortLocation(e.target.value)} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
+          <p className="text-xs text-gray-400 mt-1">Where the survey takes place — useful on report-only jobs with no checklist.</p>
         </div>
 
         {/* One field per row on a phone; two up from sm: — never a cramped grid at 360px. */}
@@ -489,7 +497,7 @@ export default function SurveyorNewChecklistPage() {
         <Link href="/surveyor" className={`btn-secondary ${TAP_BTN}`}>Cancel</Link>
         <button onClick={handleCreate} disabled={saving} className={`btn-primary ${TAP_BTN}`}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Starting…' : 'Start Checklist'}
+          {saving ? 'Starting…' : selectedTemplate ? 'Start Checklist' : 'Start Job'}
         </button>
       </div>
     </div>

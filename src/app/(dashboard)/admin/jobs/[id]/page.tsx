@@ -89,6 +89,7 @@ export default function AdminChecklistDetailPage() {
     end_date: '',
     job_stage: '',
     cargo_type: '',
+    port_location: '',
     notes: '',
   })
   // Conditional Stage qualifier — only the broad survey types carry one.
@@ -152,6 +153,7 @@ export default function AdminChecklistDetailPage() {
       end_date: jobData.end_date ?? '',
       job_stage: jobData.job_stage ?? '',
       cargo_type: jobData.cargo_type ?? '',
+      port_location: jobData.port_location ?? '',
       notes: jobData.notes ?? '',
     })
     setLoading(false)
@@ -187,6 +189,7 @@ export default function AdminChecklistDetailPage() {
           end_date: editForm.end_date || null,
           job_stage: editForm.job_stage || null,
           cargo_type: showCargoType ? (editForm.cargo_type.trim() || null) : null,
+          port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
         }).eq('id', jobId).select('id'),
         15_000, 'Saving job'
@@ -400,6 +403,11 @@ export default function AdminChecklistDetailPage() {
                   )}
                 </div>
                 <div>
+                  <label className="label-base">Port / Location</label>
+                  <input type="text" value={editForm.port_location} onChange={(e) => setEditForm(p => ({ ...p, port_location: e.target.value }))} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
+                  <p className="text-[11px] text-gray-400 mt-1">Where the survey took place — handy on report-only jobs with no checklist.</p>
+                </div>
+                <div>
                   <label className="label-base">Notes</label>
                   <textarea value={editForm.notes} onChange={(e) => setEditForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="input-base resize-y" placeholder="e.g. call number, gang count, special instructions…" />
                 </div>
@@ -447,6 +455,12 @@ export default function AdminChecklistDetailPage() {
                   <div>
                     <dt className="text-xs font-medium text-gray-500">Cargo type</dt>
                     <dd className="mt-1 text-sm text-gray-900">{job.cargo_type}</dd>
+                  </div>
+                )}
+                {job.port_location && (
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">Port / Location</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{job.port_location}</dd>
                   </div>
                 )}
                 <div>

@@ -357,6 +357,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [activityOpen, setActivityOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [addId, setAddId] = useState('')
+  // The signed-in user — lets a non-admin surveyor add THEMSELVES to an open job they
+  // aren't on yet (mig 152), the detail-page counterpart of the dashboard "Add me".
+  const [selfId, setSelfId] = useState<string | null>(null)
   const [kind, setKind] = useState<JobAttachmentKind>('preliminary')
   const [billingMode, setBillingMode] = useState<'overtime' | 'regular' | 'fixed'>(job.billing_mode ?? 'regular')
   // Hours or days (migration 148) — per job, both billing modes, admin-only.
@@ -467,7 +470,12 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void reload(); if (isAdmin) listSurveyorAccounts().then(setAccounts) }, [job.id])
+  useEffect(() => {
+    void reload()
+    if (isAdmin) listSurveyorAccounts().then(setAccounts)
+    // Identify the viewer so a surveyor who isn't on this job can add themselves.
+    createClient().auth.getUser().then(({ data }) => setSelfId(data.user?.id ?? null)).catch(() => {})
+  }, [job.id])
 
   const current = job.workflow_status
   // Once an admin closes a job, surveyors can no longer edit it (RLS enforces this;
@@ -526,6 +534,19 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     if (!(await confirmDialog({ message: `Remove ${row.full_name} from this job?`, confirmLabel: 'Remove' }))) return
     await removeJobSurveyor(row.id, job.id); onChanged(); reload()
   }
+  // A surveyor adds THEMSELVES to an open job they aren't on yet (mig 152). Direct
+  // insert under their own session — same shape the dashboard "Add me" uses — so the
+  // self-only + job_is_open policy accepts it. Then their hours row appears below.
+  async function joinSelf() {
+    if (!selfId) return
+    setBusy(true)
+    const { error } = await createClient().from('job_surveyors')
+      .insert({ job_id: job.id, surveyor_id: selfId, created_by: selfId })
+    setBusy(false)
+    if (error) { toast.error(`Couldn't add you to this job: ${error.message}`); return }
+    toast.success('You’re on this job — log your hours below.')
+    onChanged(); reload()
+  }
 
   async function upload(file: File | null) {
     if (!file) return
@@ -547,6 +568,10 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   }
 
   const available = accounts.filter(a => !surveyors.some(s => s.surveyor_id === a.id))
+  // A non-admin's job_surveyors read is scoped to their own row (RLS), so an empty
+  // list means they're not on this job. They may self-join any OPEN job (mig 152).
+  const isMember = selfId ? surveyors.some(s => s.surveyor_id === selfId) : false
+  const canSelfJoin = !isAdmin && !isMember && !!selfId && current !== 'closed'
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -676,7 +701,18 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
           </div>
         )}
         {surveyors.length === 0 ? (
-          <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
+          canSelfJoin ? (
+            // The surveyor isn't on this job yet — one tap adds them so they can log
+            // their own hours/OT/km (the detail-page twin of the dashboard "Add me").
+            <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-brand-900">You&apos;re not on this job yet. Add yourself to log your hours, overtime and distance.</p>
+              <button onClick={joinSelf} disabled={busy} className="btn-secondary text-sm disabled:opacity-50">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Add me
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 mb-3">No surveyors assigned yet.</p>
+          )
         ) : (
           <div className="space-y-3 mb-3">
             {surveyors.map(s => (

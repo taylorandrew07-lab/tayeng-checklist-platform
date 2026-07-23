@@ -60,14 +60,24 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // fiscal-year report sequence, so look first: if the row landed on an earlier
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
-    const { data: alreadyCreated } = await supabase.from('jobs')
-      .select('id, title, vessel_name, scheduled_date, notes').eq('id', jobId).maybeSingle()
+    const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
+      .select('id, title, vessel_name, scheduled_date, port_location, notes').eq('id', jobId).maybeSingle()
+    // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
+    // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
+    // a fresh report number off the counter even though the row already exists (the
+    // upsert collapses to DO UPDATE and discards it), leaving a permanent gap in the
+    // fiscal-year sequence. Treat a transient check failure as retryable instead.
+    if (preErr) {
+      await putDraft({ ...draft, syncError: preErr.message })
+      return { ok: false, reason: 'error', message: preErr.message }
+    }
     if (alreadyCreated) {
       // Only the columns that actually differ, so the ordinary retry writes nothing.
       const patch: Record<string, unknown> = {}
       if ((j.title ?? null) !== alreadyCreated.title) patch.title = j.title ?? null
       if ((j.vessel_name ?? null) !== alreadyCreated.vessel_name) { patch.vessel_name = j.vessel_name ?? null; patch.vessel_id = vesselId }
       if ((j.scheduled_date ?? null) !== alreadyCreated.scheduled_date) patch.scheduled_date = j.scheduled_date ?? null
+      if ((j.port_location ?? null) !== alreadyCreated.port_location) patch.port_location = j.port_location ?? null
       if ((j.notes ?? null) !== alreadyCreated.notes) patch.notes = j.notes ?? null
       if (Object.keys(patch).length > 0) {
         const { error: updErr } = await supabase.from('jobs').update(patch).eq('id', jobId)
@@ -87,6 +97,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
           job_type: j.job_type ?? null,
           job_stage: j.job_stage ?? null,
           cargo_type: j.cargo_type ?? null,
+          port_location: j.port_location ?? null,
           vessel_name: j.vessel_name ?? null,
           vessel_id: vesselId,
           surveyor_name: j.surveyor_name ?? null,
