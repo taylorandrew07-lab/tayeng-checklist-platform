@@ -7,6 +7,7 @@ import { listVessels, findOrCreateVessel, deleteVessel, type VesselRow } from '@
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
+import { ResponsiveTable } from '@/components/ui/ResponsiveTable'
 
 export default function VesselsPage() {
   const [rows, setRows] = useState<VesselRow[]>([])
@@ -80,43 +81,34 @@ export default function VesselsPage() {
           <p className="text-gray-500">{rows.length === 0 ? 'No vessels yet. Add one above, or they appear as jobs link to them.' : 'No vessels match.'}</p>
         </div>
       ) : (
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50/50">
-                <th className="px-4 py-2.5 font-medium">Vessel</th>
-                <th className="px-4 py-2.5 font-medium">IMO</th>
-                <th className="px-4 py-2.5 font-medium">Official #</th>
-                <th className="px-4 py-2.5 font-medium">Jobs</th>
-                <th className="px-4 py-2.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(v => (
-                <tr key={v.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-2.5">
-                    <Link href={`/admin/vessels/${v.id}`} className="group inline-flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0"><Anchor className="h-4 w-4 text-brand-600" /></span>
-                      <span className="font-medium text-gray-900 group-hover:text-brand-700 truncate">M.V. {v.name}</span>
-                      {!v.is_active && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400">Inactive</span>}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-600 tnum">{v.imo || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-2.5 text-gray-600 tnum">{v.official_number || <span className="text-gray-300">—</span>}</td>
-                  <td className="px-4 py-2.5 text-gray-700 tnum">{v.jobs}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <button onClick={() => removeVessel(v)} title="Delete vessel" className="text-gray-300 hover:text-red-600 p-1"><Trash2 className="h-4 w-4" /></button>
-                      <Link href={`/admin/vessels/${v.id}`} title="Open" className="text-gray-300 hover:text-brand-600 p-1"><ChevronRight className="h-4 w-4 inline" /></Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </div>
+        <ResponsiveTable
+          rows={visible}
+          rowKey={v => v.id}
+          columns={[
+            {
+              key: 'name', header: 'Vessel', primary: true,
+              cell: v => (
+                <Link href={`/admin/vessels/${v.id}`} className="group inline-flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0"><Anchor className="h-4 w-4 text-brand-600" /></span>
+                  <span className="font-medium text-gray-900 group-hover:text-brand-700 truncate">M.V. {v.name}</span>
+                  {!v.is_active && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400">Inactive</span>}
+                </Link>
+              ),
+            },
+            { key: 'imo', header: 'IMO', cell: v => <span className="tnum text-gray-600">{v.imo || <span className="text-gray-300">—</span>}</span> },
+            { key: 'official', header: 'Official #', cell: v => <span className="tnum text-gray-600">{v.official_number || <span className="text-gray-300">—</span>}</span> },
+            { key: 'jobs', header: 'Jobs', cell: v => <span className="tnum text-gray-700">{v.jobs}</span> },
+            {
+              key: 'actions', header: '', align: 'right', mobileLabel: '',
+              cell: v => (
+                <div className="inline-flex items-center gap-1">
+                  <button onClick={() => removeVessel(v)} aria-label="Delete vessel" title="Delete vessel" className="text-gray-400 transition-colors hover:text-red-600 p-1"><Trash2 className="h-4 w-4" /></button>
+                  <Link href={`/admin/vessels/${v.id}`} aria-label="Open vessel" title="Open" className="text-gray-400 transition-colors hover:text-brand-600 p-1"><ChevronRight className="h-4 w-4 inline" /></Link>
+                </div>
+              ),
+            },
+          ]}
+        />
       )}
     </div>
   )
