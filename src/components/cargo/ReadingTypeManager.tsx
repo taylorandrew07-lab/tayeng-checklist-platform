@@ -163,7 +163,7 @@ function SortableTypeCard({ rt, holds, isOpen, onToggleOpen, onPatch, onRemove, 
         <button onClick={() => onDuplicate(rt)} className="text-gray-300 hover:text-brand-600" title="Duplicate">
           <Copy className="h-4 w-4" />
         </button>
-        <button onClick={() => onRemove(rt.id)} className="text-gray-300 hover:text-red-500" title="Remove">
+        <button onClick={() => onRemove(rt.id)} aria-label="Remove reading type" className="text-gray-400 transition-colors hover:text-red-600" title="Remove">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>

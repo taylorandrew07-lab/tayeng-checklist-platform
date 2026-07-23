@@ -137,7 +137,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
                 </span>
                 <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
               </Link>
-              <button onClick={() => handleDelete(v)} disabled={deleting === v.id} className="p-4 text-gray-300 hover:text-red-500">
+              <button onClick={() => handleDelete(v)} disabled={deleting === v.id} aria-label="Delete voyage" className="p-4 text-gray-400 transition-colors hover:text-red-600">
                 {deleting === v.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             </div>

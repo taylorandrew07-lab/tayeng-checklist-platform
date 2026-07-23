@@ -125,7 +125,7 @@ export default function CargoOperationsView() {
                     <button
                       onClick={() => handleDelete(r)}
                       disabled={deleting === r.id}
-                      className="p-1.5 text-gray-300 hover:text-red-500 disabled:opacity-50"
+                      className="p-1.5 text-gray-400 transition-colors hover:text-red-600 disabled:opacity-50"
                       aria-label={`Delete voyage ${r.vessel_name || ''}`.trim()}
                     >
                       {deleting === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
