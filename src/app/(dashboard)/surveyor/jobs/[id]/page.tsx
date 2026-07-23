@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, CloudOff, Loader2, Save } from 'lucide-react'
+import { ArrowLeft, CloudOff, Loader2, Save, FileQuestion } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
-import { WORKFLOW } from '@/lib/jobs/tracker'
+import { WorkflowPill } from '@/components/job/StatusPill'
+import EmptyState from '@/components/ui/EmptyState'
 import { toast } from '@/components/ui/toast'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { getDraft, putDraft, offlineAvailable } from '@/lib/offline/db'
@@ -160,9 +161,16 @@ export default function SurveyorJobPage() {
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
-  if (!job) return <div className="max-w-3xl mx-auto py-16 text-center text-gray-400">Job not found.</div>
-
-  const w = WORKFLOW[job.workflow_status as WorkflowStatus]
+  if (!job) return (
+    <div className="max-w-3xl mx-auto py-10">
+      <EmptyState
+        icon={FileQuestion}
+        title="Job not found"
+        description="This job may have been removed, or it hasn’t synced to this device yet."
+        action={<button onClick={back} className="btn-secondary">Back to dashboard</button>}
+      />
+    </div>
+  )
   const locked = job.workflow_status === 'closed'
   const stageConfig = STAGE_OPTIONS[job.job_type ?? ''] ?? null
   const showCargoType = CARGO_JOB_TYPES.has(job.job_type ?? '')
@@ -176,7 +184,7 @@ export default function SurveyorJobPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="page-title truncate">{job.vessel_name ?? job.title}</h1>
-            {w && <span className={`inline-flex flex-shrink-0 items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>}
+            <WorkflowPill status={job.workflow_status as WorkflowStatus} className="flex-shrink-0" />
           </div>
           <p className="text-gray-500 mt-0.5 text-sm truncate">
             {job.report_number && <span className="font-medium text-gray-700 tnum">{job.report_number}</span>}

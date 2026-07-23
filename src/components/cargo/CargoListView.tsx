@@ -10,6 +10,7 @@ import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageDate } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
+import EmptyState from '@/components/ui/EmptyState'
 import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
@@ -108,13 +109,14 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
       {syncMsg && <p className="text-xs text-gray-500 -mt-3">{syncMsg}</p>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
       ) : voyages.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Ship className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 mb-4">No voyages yet.</p>
-          <Link href={`${base}/new`} className="btn-primary inline-flex"><Plus className="h-4 w-4" />Create your first voyage</Link>
-        </div>
+        <EmptyState
+          icon={Ship}
+          title="No voyages yet"
+          description="Create a voyage to start logging cargo monitoring readings."
+          action={<Link href={`${base}/new`} className="btn-primary inline-flex"><Plus className="h-4 w-4" />Create your first voyage</Link>}
+        />
       ) : (
         <div className="space-y-2">
           {voyages.map(v => (

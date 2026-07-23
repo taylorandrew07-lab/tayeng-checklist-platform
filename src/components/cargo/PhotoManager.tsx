@@ -314,7 +314,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
         <DropZone id="bin:unassigned" className="card p-3 mt-3">
           <p className="font-semibold text-gray-800 mb-2">Unassigned Photos {unassigned.length > 0 && <span className="text-amber-600">({unassigned.length})</span>}</p>
           {unassigned.length === 0 ? (
-            <p className="text-xs text-gray-400 py-4 text-center">Nothing here. Photos the app couldn&apos;t place confidently land here for manual assignment.</p>
+            <p className="text-xs text-gray-400 py-4 text-center">Photos the app couldn&apos;t place confidently land here for manual assignment.</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {unassigned.map(p => (
