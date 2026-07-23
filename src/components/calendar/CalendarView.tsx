@@ -48,11 +48,18 @@ function jobTimeLabel(j: CalendarJob): string {
   return `All day${span}`
 }
 
+// Derived from JOB_STATUS_COLOR so the legend can never drift from the grid again.
+const JOB_STATUS_LABEL: Record<string, string> = {
+  in_progress: 'In progress',
+  report_ready: 'Report ready',
+  invoice_ready: 'Invoice ready',
+  closed: 'Closed',
+}
 const LEGEND: { color: string; label: string }[] = [
-  { color: '#3b82f6', label: 'Job — in progress' },
-  { color: '#8b5cf6', label: 'Job — report ready' },
-  { color: '#22c55e', label: 'Job — approved' },
-  { color: '#14b8a6', label: 'Job — invoiced' },
+  ...Object.entries(JOB_STATUS_COLOR).map(([status, color]) => ({
+    color,
+    label: `Job — ${JOB_STATUS_LABEL[status] ?? status}`,
+  })),
   { color: LEAVE_COLOR, label: 'Leave' },
   { color: EVENT_COLOR, label: 'Event' },
 ]

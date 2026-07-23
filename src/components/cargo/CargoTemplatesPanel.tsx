@@ -7,12 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
 import { type CargoTemplate } from '@/lib/cargo/types'
 import { confirmDialog } from '@/components/ui/confirm'
-
-const statusColor: Record<string, string> = {
-  active: 'bg-green-100 text-green-700',
-  draft: 'bg-gray-100 text-gray-700',
-  archived: 'bg-red-100 text-red-700',
-}
+import { TemplateStatusPill } from '@/components/job/StatusPill'
+import type { TemplateStatus } from '@/lib/types/database'
 
 export default function CargoTemplatesPanel() {
   const [templates, setTemplates] = useState<CargoTemplate[]>([])
@@ -76,7 +72,7 @@ export default function CargoTemplatesPanel() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-medium text-gray-900 truncate">{t.name}</h3>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColor[t.status] ?? statusColor.draft}`}>{t.status}</span>
+                  <TemplateStatusPill status={t.status as TemplateStatus} className="flex-shrink-0" />
                 </div>
                 <p className="text-sm text-gray-500 mt-0.5 truncate">
                   {t.description && `${t.description} · `}

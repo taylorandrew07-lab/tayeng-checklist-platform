@@ -64,6 +64,7 @@ import { toast } from '@/components/ui/toast'
 import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/deliver'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
 import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
@@ -1343,9 +1344,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             <h1 className="page-title truncate">{job.title}</h1>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="text-sm text-gray-500">{job.job_number}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as WorkflowStatus]?.pill ?? ''}`}>
-                {WORKFLOW[job.workflow_status as WorkflowStatus]?.label ?? job.workflow_status}
-              </span>
+              <WorkflowPill status={job.workflow_status as WorkflowStatus} />
               {lastSaved && !isDirty && (
                 <span className="text-xs text-gray-400">Saved {lastSaved.toLocaleTimeString()}</span>
               )}

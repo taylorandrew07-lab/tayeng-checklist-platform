@@ -260,7 +260,7 @@ export default function AdminChecklistDetailPage() {
         <button
           onClick={() => editorRef.current?.navigate('/admin/jobs')}
           className={`btn-ghost px-3 ${TAP_BTN}`}
-          aria-label="Back to checklists"
+          aria-label="Back to jobs"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>

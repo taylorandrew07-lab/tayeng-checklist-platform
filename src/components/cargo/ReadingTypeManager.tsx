@@ -13,6 +13,7 @@ import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/carg
 import { defaultColorRules } from '@/lib/cargo/colors'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
+import { confirmDialog } from '@/components/ui/confirm'
 
 interface Props {
   readingTypes: ReadingType[]
@@ -43,7 +44,13 @@ export default function ReadingTypeManager({ readingTypes, holdCount, onChange }
     setExpanded(rt.id)
   }
 
-  function removeType(id: string) {
+  async function removeType(id: string) {
+    const rt = readingTypes.find(t => t.id === id)
+    if (!(await confirmDialog({
+      message: `Delete the "${rt?.name || 'reading'}" reading type? Any values already recorded for it will be lost.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    }))) return
     onChange(readingTypes.filter(rt => rt.id !== id))
   }
 
@@ -315,7 +322,14 @@ function PointsEditor({ rt, onChange }: { rt: ReadingType; onChange: (id: string
                 onChange={e => patchPoint(pt.id, { group: e.target.value || undefined })}
                 placeholder="Group"
               />
-              <button onClick={() => setPoints(rt.points.filter(p => p.id !== pt.id))} className="text-gray-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+              <button
+                aria-label="Delete point"
+                onClick={async () => {
+                  if (pt.name && !(await confirmDialog({ message: `Delete point "${pt.name}"? Any recorded values are lost.`, confirmLabel: 'Delete', danger: true }))) return
+                  setPoints(rt.points.filter(p => p.id !== pt.id))
+                }}
+                className="text-gray-400 transition-colors hover:text-red-600"
+              ><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </div>

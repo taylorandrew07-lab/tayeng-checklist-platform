@@ -69,6 +69,12 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
 
   const drafts = lines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price }))
 
+  // Same money-safety warning the create builder shows: the chosen bank account's
+  // currency vs the invoice currency (no conversion happens, so a mismatch is a
+  // real risk). The edit path previously had no guard here at all.
+  const selectedBank = bankAccounts.find(a => a.id === bankAccountId)
+  const bankCurrencyMismatch = !!selectedBank?.currency && selectedBank.currency !== currency
+
   // Mark dirty after load, skipping the hydration batch (mirrors the template editor).
   useEffect(() => {
     if (!loadedRef.current) return
@@ -152,6 +158,11 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
               </select>
             )}
             <textarea value={bankDetails} onChange={e => { setBankDetails(e.target.value); setBankAccountId('') }} rows={2} placeholder="Bank name, account, SWIFT…" className="input-base text-sm resize-y mt-2" />
+            {bankCurrencyMismatch && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                This bank account is in <span className="font-medium tnum">{selectedBank?.currency}</span> but the invoice is <span className="font-medium tnum">{currency}</span>. Match them or pick a different account.
+              </p>
+            )}
           </div>
           <div><label className="text-[11px] text-gray-400">Internal notes (not on the invoice)</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="input-base text-sm resize-none" /></div>
         </div>

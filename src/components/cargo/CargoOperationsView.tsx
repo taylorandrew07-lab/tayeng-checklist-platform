@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, Cloud, CheckCircle2, ListOrdered, Trash2 } from 'lucide-react'
+import { Ship, Loader2, Cloud, ListOrdered, Trash2 } from 'lucide-react'
+import { CargoStatusPill } from '@/components/job/StatusPill'
+import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
 import { deleteRemoteVoyage } from '@/lib/cargo/sync'
@@ -111,15 +113,7 @@ export default function CargoOperationsView() {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{r.owner_name ?? '—'}</td>
                   <td className="px-4 py-3">
-                    {r.status === 'finalized' ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                        <CheckCircle2 className="h-3 w-3" />Finalized
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
-                        In progress
-                      </span>
-                    )}
+                    <CargoStatusPill status={r.status as VoyageStatus} />
                   </td>
                   <td className="px-4 py-3">
                     {r.job_id

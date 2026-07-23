@@ -7,19 +7,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, Plus, X, CheckCircle2 } from 'lucide-react'
+import { Ship, Loader2, Plus, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
+import { CargoStatusPill } from '@/components/job/StatusPill'
+import type { VoyageStatus } from '@/lib/cargo/types'
 import { listVoyagesForJob, listUnlinkedVoyages, setVoyageJob, type LinkedVoyageRow } from '@/lib/cargo/remote'
 
 function StatusPill({ status }: { status: string }) {
-  return status === 'finalized' ? (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-      <CheckCircle2 className="h-3 w-3" />Finalized
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">In progress</span>
-  )
+  return <CargoStatusPill status={status as VoyageStatus} />
 }
 
 function voyageLabel(v: LinkedVoyageRow): string {

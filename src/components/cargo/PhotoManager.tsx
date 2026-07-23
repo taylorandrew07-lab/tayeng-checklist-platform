@@ -13,6 +13,7 @@ import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/peri
 import { autoAssign } from '@/lib/cargo/assign'
 import { getPhotosForVoyage, putPhotos, deletePhoto, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
+import { confirmDialog } from '@/components/ui/confirm'
 
 interface Props {
   voyage: Voyage
@@ -183,6 +184,12 @@ export default function PhotoManager({ voyage, onChange }: Props) {
   }
 
   async function handleDelete(photo: CargoPhoto) {
+    // Photos may be offline-only and not yet synced — a mis-tap here is irreversible.
+    if (!(await confirmDialog({
+      message: 'Delete this photo? If it has not synced yet this cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    }))) return
     try {
       setError(null)
       await deletePhoto(photo.localId)

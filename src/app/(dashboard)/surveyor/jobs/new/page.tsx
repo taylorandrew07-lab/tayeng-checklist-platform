@@ -10,6 +10,7 @@ import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
+import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { toast } from '@/components/ui/toast'
 import { titleCaseVesselName } from '@/lib/utils'
 
@@ -73,6 +74,7 @@ export default function SurveyorNewChecklistPage() {
   const [endDate, setEndDate] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [conflicts, setConflicts] = useState<Map<string, JobConflict[]>>(new Map())
   // Only Regular/Overtime here: migrations 124 + 148 make 'fixed' admin-only on
   // update, so a surveyor who picked it could never change it back.
   const [billingMode, setBillingMode] = useState<'overtime' | 'regular'>('regular')
@@ -136,6 +138,20 @@ export default function SurveyorNewChecklistPage() {
   useEffect(() => {
     setReportNotRequired(autoReportNotRequired({ jobType, jobStage, template: selectedTemplate }))
   }, [jobType, jobStage, templateId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Double-booking check — same warn-only guard the admin New Job form runs, so a
+  // field-scheduled overlap isn't silently created. Checks the surveyor themselves
+  // plus any co-surveyors. Online only (it's a live DB read; offline it just skips
+  // and clears any stale warning) and errors are swallowed on weak signal.
+  useEffect(() => {
+    if (!online || !myId) { setConflicts(new Map()); return }
+    const ids = [myId, ...Array.from(coSurveyors)]
+    const schedule = { scheduled_date: scheduledDate, end_date: endDate || null, start_time: startTime || null, end_time: endTime || null }
+    const t = setTimeout(() => {
+      checkConflictsForSurveyors(ids, schedule).then(setConflicts).catch(() => setConflicts(new Map()))
+    }, 400)
+    return () => clearTimeout(t)
+  }, [online, myId, scheduledDate, endDate, startTime, endTime, coSurveyors])
 
   function handleTemplateChange(id: string) {
     setTemplateId(id)
@@ -287,7 +303,7 @@ export default function SurveyorNewChecklistPage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto space-y-6">
+    <div className="max-w-lg mx-auto space-y-6 animate-rise">
       <div className="flex items-center gap-4">
         <Link href="/surveyor" className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
@@ -480,6 +496,22 @@ export default function SurveyorNewChecklistPage() {
           </div>
         )}
 
+        {conflicts.size > 0 && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 space-y-1.5 animate-rise">
+            <p className="text-sm font-semibold text-amber-800">Possible double-booking</p>
+            {Array.from(conflicts.entries()).map(([sid, clashes]) => {
+              const name = sid === myId ? (myName || 'You') : (surveyors.find(s => s.id === sid)?.full_name ?? 'This surveyor')
+              return (
+                <p key={sid} className="text-xs text-amber-700">
+                  <span className="font-medium">{name}</span> already {sid === myId ? 'have' : 'has'}{' '}
+                  {clashes.map(c => `${c.vessel_name ?? c.title} (${c.scheduled_date}${c.start_time ? ` ${c.start_time.slice(0, 5)}` : ', all-day'})`).join('; ')}.
+                </p>
+              )
+            })}
+            <p className="text-xs text-amber-600 pt-0.5">You can still create it — this is just a heads-up.</p>
+          </div>
+        )}
+
         <div>
           <label className="label-base">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="input-base resize-y" placeholder="e.g. call number, special instructions…" />
@@ -499,7 +531,7 @@ export default function SurveyorNewChecklistPage() {
         <Link href="/surveyor" className={`btn-secondary ${TAP_BTN}`}>Cancel</Link>
         <button onClick={handleCreate} disabled={saving} className={`btn-primary ${TAP_BTN}`}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Starting…' : selectedTemplate ? 'Start Checklist' : 'Start Job'}
+          {saving ? 'Creating…' : 'Create Job'}
         </button>
       </div>
     </div>

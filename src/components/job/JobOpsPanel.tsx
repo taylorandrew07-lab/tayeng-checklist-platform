@@ -16,6 +16,7 @@ import {
   listJobAttachments, uploadJobAttachment, deleteJobAttachment, jobFileUrl, listJobActivity,
   type JobSurveyorRow, type SurveyorAccount, type OvertimeEntry, type RegularEntry, type KmEntry,
 } from '@/lib/jobs/tracker'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import { asLabourUnit, labourLabels, type LabourUnit } from '@/lib/jobs/labourUnit'
 import { checkSurveyorConflicts } from '@/lib/jobs/conflicts'
 import { notifyAssignment } from '@/lib/jobs/notify'
@@ -685,9 +686,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
       <div className="card p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h3 className="font-medium text-gray-900">Workflow</h3>
-          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${WORKFLOW[current]?.pill}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${WORKFLOW[current]?.dot}`} />{WORKFLOW[current]?.label}
-          </span>
+          <WorkflowPill status={current} />
         </div>
         {/* compact stepper */}
         <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-gray-400 mb-4">

@@ -30,7 +30,8 @@ import {
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
   type TrackerRow,
 } from '@/lib/jobs/tracker'
-import type { WorkflowStatus } from '@/lib/types/database'
+import type { WorkflowStatus, Invoice } from '@/lib/types/database'
+import { InvoiceStatusPill } from '@/components/job/StatusPill'
 
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
 type Filter = 'open' | 'invoice_ready' | 'closed' | 'all'
@@ -44,12 +45,6 @@ const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: '
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
-
-// Payment is not tracked (migration 146) — an invoice is live or cancelled.
-const INV_PILL: Record<string, string> = {
-  active: 'bg-cyan-100 text-cyan-700', void: 'bg-slate-200 text-slate-500',
-}
-const INV_LABEL: Record<string, string> = { active: 'Invoiced', void: 'Void' }
 
 // Shared look for an editable cell's resting (button) state. py-2.5 below sm: this
 // grid is how a job gets corrected from a phone, and py-1 made every target ~28px
@@ -267,7 +262,7 @@ const COLUMNS: ColumnDef[] = [
           <Link href={`/admin/jobs/${r.id}`} className="block hover:underline">
             <span className="inline-flex items-center gap-1.5">
               <span className="tnum text-gray-700">{r.invoice_number}</span>
-              {r.invoice_status && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${INV_PILL[r.invoice_status] ?? INV_PILL.active}`}>{INV_LABEL[r.invoice_status] ?? 'Invoiced'}</span>}
+              {r.invoice_status && <InvoiceStatusPill status={r.invoice_status as Invoice['status']} />}
             </span>
           </Link>
         ) : <span className="text-gray-300">—</span>}
