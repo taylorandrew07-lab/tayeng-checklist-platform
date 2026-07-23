@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
 import EmptyState from '@/components/ui/EmptyState'
+import Tabs from '@/components/ui/Tabs'
 import { Loader2, Mail, Send, Plus, Archive, Reply, Inbox as InboxIcon, ArchiveRestore } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -95,10 +96,14 @@ export default function InboxPage() {
         <button onClick={() => setCompose({ open: true })} className="btn-primary"><Plus className="h-4 w-4" />New message</button>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-200">
-        <TabButton active={tab === 'inbox'} onClick={() => setTab('inbox')} icon={InboxIcon} label="Inbox" />
-        <TabButton active={tab === 'sent'} onClick={() => setTab('sent')} icon={Send} label="Sent" />
-      </div>
+      <Tabs
+        active={tab}
+        onChange={k => setTab(k as 'inbox' | 'sent')}
+        tabs={[
+          { key: 'inbox', label: <span className="inline-flex items-center gap-2"><InboxIcon className="h-4 w-4" />Inbox</span> },
+          { key: 'sent', label: <span className="inline-flex items-center gap-2"><Send className="h-4 w-4" />Sent</span> },
+        ]}
+      />
 
       {tab === 'inbox' && (
         <div className="flex gap-2">
@@ -203,12 +208,4 @@ export default function InboxPage() {
   )
 }
 
-function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string }) {
-  return (
-    <button onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${active ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-      <Icon className="h-4 w-4" />{label}
-    </button>
-  )
-}
 

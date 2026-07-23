@@ -14,6 +14,7 @@ import ClientReadingsView from '@/components/cargo/ClientReadingsView'
 import ClientPhotoGallery from '@/components/cargo/ClientPhotoGallery'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
 import DriReportBuilder from '@/components/cargo/DriReportBuilder'
+import Tabs from '@/components/ui/Tabs'
 
 type Tab = 'readings' | 'charts' | 'photos' | 'dri'
 const BASE_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -98,15 +99,11 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap -mb-px ${tab === t.id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            <t.icon className="h-4 w-4" />{t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        active={tab}
+        onChange={k => setTab(k as Tab)}
+        tabs={tabs.map(t => ({ key: t.id, label: <span className="inline-flex items-center gap-2"><t.icon className="h-4 w-4" />{t.label}</span> }))}
+      />
 
       {tab === 'readings' && <ClientReadingsView voyage={voyage} />}
       {tab === 'charts' && <ChartsPanel voyage={voyage} onChange={() => {}} />}
