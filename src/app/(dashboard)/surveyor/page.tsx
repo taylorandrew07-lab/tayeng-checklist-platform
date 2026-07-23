@@ -329,7 +329,7 @@ export default function SurveyorDashboard() {
           <h1 className="page-title">Dashboard</h1>
           <p className="text-gray-500 mt-1">Welcome, {profile?.full_name ?? '…'}</p>
         </div>
-        <Link href="/surveyor/jobs/new" className="btn-primary">
+        <Link href="/surveyor/jobs/new" className="btn-primary min-h-11 sm:min-h-0">
           <Plus className="h-4 w-4" />New Job
         </Link>
       </div>
@@ -426,7 +426,7 @@ export default function SurveyorDashboard() {
                     <button
                       onClick={() => joinJob(job.id)}
                       disabled={joiningId === job.id}
-                      className="btn-secondary py-2 px-3 text-sm flex-shrink-0 disabled:opacity-50"
+                      className="btn-secondary py-2 px-3 text-sm flex-shrink-0 min-h-11 sm:min-h-0 disabled:opacity-50"
                     >
                       {joiningId === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                       Add me
@@ -460,7 +460,7 @@ export default function SurveyorDashboard() {
                 {/* Period picker — ~44px tap targets for the field. */}
                 <div className="flex flex-wrap gap-1.5">
                   {([['this_month', 'This month'], ['last_month', 'Last month'], ['this_year', 'This year'], ['all', 'All time'], ['custom', 'Custom']] as const).map(([k, l]) => (
-                    <button key={k} onClick={() => setPeriod(k)} className={`min-h-[40px] px-3.5 rounded-lg text-sm font-medium border transition-colors active:scale-[0.98] ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                    <button key={k} onClick={() => setPeriod(k)} className={`min-h-11 sm:min-h-[38px] px-3.5 rounded-lg text-sm font-medium border transition-colors active:scale-[0.98] ${period === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
                   ))}
                 </div>
                 {period === 'custom' && (
@@ -549,11 +549,11 @@ export default function SurveyorDashboard() {
 
                 {/* Export: printable statement + raw CSV. */}
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={downloadStatement} disabled={periodJobs.length === 0 || statementBusy} className="btn-primary py-2 px-3 text-sm disabled:opacity-40">
+                  <button onClick={downloadStatement} disabled={periodJobs.length === 0 || statementBusy} className="btn-primary py-2 px-3 text-sm min-h-11 sm:min-h-0 disabled:opacity-40">
                     {statementBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                     Statement (PDF)
                   </button>
-                  <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-2 px-3 text-sm disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
+                  <button onClick={downloadCsv} disabled={periodJobs.length === 0} className="btn-secondary py-2 px-3 text-sm min-h-11 sm:min-h-0 disabled:opacity-40"><Download className="h-4 w-4" />CSV</button>
                 </div>
               </div>
             )}
