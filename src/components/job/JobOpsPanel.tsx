@@ -776,13 +776,6 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             <CheckCircle2 className="h-3.5 w-3.5 text-gray-500" />This job is closed — your hours, overtime and distance are locked for payment and can no longer be edited.
           </p>
         )}
-        <p className="text-[11px] text-gray-400 mb-3">
-          {billingMode === 'overtime' ? `Overtime ${L.noun} are paid to the surveyor as OT and billed to the client.`
-            : billingMode === 'fixed' ? 'Fixed-price job — no hours; only distance is logged per surveyor.'
-            : `Regular ${L.noun} are billed to the client.`}
-          {billingMode !== 'fixed' && unit === 'days' && ' Days are typed in by hand — the OT time-log stays a record of the shifts worked.'}
-          {' '}Distance (km) is logged per surveyor on every job.
-        </p>
         {/* One job-totals strip instead of three stacked banners. OT keeps amber
             emphasis (it flags payable overtime); when there's no OT the strip is grey
             for distance only. The checklist billable-hours banner was dropped — the
