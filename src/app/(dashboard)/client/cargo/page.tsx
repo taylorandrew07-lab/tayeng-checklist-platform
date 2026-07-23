@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, ChevronRight } from 'lucide-react'
+import { Ship, ChevronRight } from 'lucide-react'
 import { CargoStatusPill } from '@/components/job/StatusPill'
+import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
 import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
@@ -23,18 +25,12 @@ export default function ClientCargoListPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="page-title">Cargo Monitoring</h1>
-        <p className="text-gray-500 mt-0.5">Live monitoring reports shared with you. Read-only; figures update as the surveyor syncs.</p>
-      </div>
+      <PageHeader icon={Ship} title="Cargo Monitoring" subtitle="Live monitoring reports shared with you. Read-only; figures update as the surveyor syncs." />
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-20 w-full" />)}</div>
       ) : voyages.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Ship className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No cargo monitoring reports have been shared with you yet.</p>
-        </div>
+        <EmptyState icon={Ship} title="No reports shared yet" description="Cargo monitoring reports will appear here once a surveyor shares one with you." />
       ) : (
         <div className="space-y-2">
           {voyages.map(v => {

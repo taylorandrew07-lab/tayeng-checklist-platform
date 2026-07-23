@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { X, ImageOff } from 'lucide-react'
 import { type Voyage, type Period, PERIODS, PERIOD_LABELS, CAMERA_LABELS } from '@/lib/cargo/types'
 import { monitoringDates, formatVoyageDate } from '@/lib/cargo/periods'
+import EmptyState from '@/components/ui/EmptyState'
 import type { RemotePhoto } from '@/lib/cargo/remote'
 
 /** Read-only photo gallery for clients. Shows only photos that exist. */
@@ -35,10 +36,7 @@ export default function ClientPhotoGallery({ voyage, photos }: { voyage: Voyage;
       </div>
 
       {here.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400">
-          <ImageOff className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-          No photos for {PERIOD_LABELS[period]} on {formatVoyageDate(date)}.
-        </div>
+        <EmptyState icon={ImageOff} title="No photos" description={`No photos for ${PERIOD_LABELS[period]} on ${formatVoyageDate(date)}.`} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {here.map(p => (

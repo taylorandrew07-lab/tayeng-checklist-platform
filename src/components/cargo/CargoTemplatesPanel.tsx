@@ -8,6 +8,7 @@ import { withTimeout } from '@/lib/utils'
 import { type CargoTemplate } from '@/lib/cargo/types'
 import { confirmDialog } from '@/components/ui/confirm'
 import { TemplateStatusPill } from '@/components/job/StatusPill'
+import EmptyState from '@/components/ui/EmptyState'
 import type { TemplateStatus } from '@/lib/types/database'
 
 export default function CargoTemplatesPanel() {
@@ -57,11 +58,14 @@ export default function CargoTemplatesPanel() {
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
 
       {loading ? (
-        <div className="card p-10 flex items-center justify-center text-gray-400"><Loader2 className="h-6 w-6 animate-spin mr-2" />Loading…</div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-20 w-full" />)}</div>
       ) : templates.length === 0 ? (
-        <div className="card p-10 text-center text-gray-400">
-          No cargo templates yet. <Link href="/admin/templates/cargo/new" className="text-brand-600 hover:underline">Create one →</Link>
-        </div>
+        <EmptyState
+          icon={Ship}
+          title="No cargo templates yet"
+          description="Create a cargo template to start monitoring voyages."
+          action={<Link href="/admin/templates/cargo/new" className="btn-primary inline-flex"><Plus className="h-4 w-4" />New cargo template</Link>}
+        />
       ) : templates.map(t => (
         <div key={t.id} className="card p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">

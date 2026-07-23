@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Ship, Loader2, Cloud, ListOrdered, Trash2 } from 'lucide-react'
 import { CargoStatusPill } from '@/components/job/StatusPill'
+import EmptyState from '@/components/ui/EmptyState'
 import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
@@ -75,14 +76,11 @@ export default function CargoOperationsView() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>
+        <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
       ) : error ? (
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
       ) : rows.length === 0 ? (
-        <div className="card p-10 text-center">
-          <Cloud className="h-9 w-9 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No synced voyages yet. Surveyor voyages appear here once they sync.</p>
-        </div>
+        <EmptyState icon={Cloud} title="No synced voyages yet" description="Surveyor voyages appear here once they sync." />
       ) : (
         <div className="card p-0 overflow-hidden">
           <div className="overflow-x-auto">
