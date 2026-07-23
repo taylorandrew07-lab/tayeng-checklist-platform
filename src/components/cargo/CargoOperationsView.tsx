@@ -2,9 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Ship, Loader2, Cloud, CheckCircle2, ListOrdered } from 'lucide-react'
+import { Ship, Loader2, Cloud, CheckCircle2, ListOrdered, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
+import { deleteRemoteVoyage } from '@/lib/cargo/sync'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
+import { withTimeout } from '@/lib/utils'
 
 /** Company-wide, cloud-backed view of every voyage surveyors have SYNCED.
  *  Distinct from the device-local list below it: this is the real operational
@@ -15,6 +19,7 @@ export default function CargoOperationsView() {
   const [rows, setRows] = useState<OpsVoyageRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -30,6 +35,32 @@ export default function CargoOperationsView() {
     })()
     return () => { active = false }
   }, [])
+
+  // Remove a synced voyage from the cloud (blobs + row, photos cascade). Admins
+  // have FOR ALL on cargo_voyages (mig 028), so this is RLS-permitted. NB it only
+  // removes the CLOUD copy — the owning surveyor's device copy is untouched and
+  // would re-publish on their next sync, so the confirm says so.
+  async function handleDelete(r: OpsVoyageRow) {
+    const name = `M.V. ${r.vessel_name || '—'}${r.voyage_number ? ` — ${r.voyage_number}` : ''}`
+    const jobNote = r.job_id ? ' It will also be unlinked from its job (the job and its billing are not deleted).' : ''
+    const ok = await confirmDialog({
+      title: 'Delete voyage',
+      message: `Delete ${name} and all its photos from Cargo Monitoring? This revokes client access and cannot be undone.${jobNote} The surveyor's own device copy is not affected — if they sync again it will reappear here.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
+    setDeleting(r.id)
+    try {
+      await withTimeout(deleteRemoteVoyage(createClient(), r.id), 15_000, 'Deleting voyage')
+      setRows(prev => prev.filter(x => x.id !== r.id))
+      toast.success('Voyage deleted')
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not delete the voyage — please try again.')
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-4">
@@ -61,6 +92,7 @@ export default function CargoOperationsView() {
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5 font-medium">Job</th>
                 <th className="px-4 py-2.5 font-medium">Last synced</th>
+                <th className="px-4 py-2.5 font-medium"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -95,6 +127,16 @@ export default function CargoOperationsView() {
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-500 tnum">{formatWhen(r.synced_at)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleDelete(r)}
+                      disabled={deleting === r.id}
+                      className="p-1.5 text-gray-300 hover:text-red-500 disabled:opacity-50"
+                      aria-label={`Delete voyage ${r.vessel_name || ''}`.trim()}
+                    >
+                      {deleting === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
