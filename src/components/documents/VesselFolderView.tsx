@@ -9,6 +9,7 @@ import {
 } from '@/lib/documents/api'
 import { withTimeout } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/confirm'
+import EmptyState from '@/components/ui/EmptyState'
 
 export default function VesselFolderView({ id, basePath }: { id: string; basePath: string }) {
   // Surveyors reach this view read-only (search/open/download). Upload, rename and
@@ -138,9 +139,7 @@ export default function VesselFolderView({ id, basePath }: { id: string; basePat
 
       {/* Documents */}
       {docs.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400">
-          <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />{isAdmin ? 'No documents yet. Upload sounding tables, hydrostatic tables, spreadsheets…' : 'No documents yet.'}
-        </div>
+        <EmptyState icon={FileText} title="No documents yet" description={isAdmin ? 'Upload sounding tables, hydrostatic tables, spreadsheets…' : undefined} />
       ) : (
         <div className="space-y-2">
           {filtered.map(d => (

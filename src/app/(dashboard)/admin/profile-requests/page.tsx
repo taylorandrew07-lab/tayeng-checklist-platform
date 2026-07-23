@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, X, ShieldCheck } from 'lucide-react'
 import PeopleTabs from '@/components/admin/PeopleTabs'
+import EmptyState from '@/components/ui/EmptyState'
 
 interface Req {
   id: string
@@ -64,11 +65,9 @@ export default function ProfileRequestsPage() {
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <div className="space-y-3">{[0, 1, 2].map(i => <div key={i} className="skeleton h-24 w-full" />)}</div>
       ) : requests.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400">
-          <ShieldCheck className="h-10 w-10 text-gray-300 mx-auto mb-3" />No pending requests.
-        </div>
+        <EmptyState icon={ShieldCheck} title="No pending requests" description="Profile change requests from staff will appear here for review." />
       ) : (
         <div className="space-y-4">
           {requests.map(r => (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
+import EmptyState from '@/components/ui/EmptyState'
 import { Loader2, Mail, Send, Plus, Archive, Reply, Inbox as InboxIcon, ArchiveRestore } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -114,7 +115,7 @@ export default function InboxPage() {
         <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
       ) : tab === 'inbox' ? (
         inbox.length === 0 ? (
-          <Empty icon={Mail} text={filter === 'archived' ? 'No archived messages.' : filter === 'unread' ? 'No unread messages.' : 'Your inbox is empty.'} />
+          <EmptyState icon={Mail} title={filter === 'archived' ? 'No archived messages' : filter === 'unread' ? 'No unread messages' : 'Your inbox is empty'} />
         ) : (
           <>
           <div className="card divide-y divide-gray-100">
@@ -143,7 +144,7 @@ export default function InboxPage() {
         )
       ) : (
         sent.length === 0 ? (
-          <Empty icon={Send} text="You haven't sent any messages." />
+          <EmptyState icon={Send} title="No sent messages" description="Messages you send will appear here." />
         ) : (
           <>
           <div className="card divide-y divide-gray-100">
@@ -211,6 +212,3 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   )
 }
 
-function Empty({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
-  return <div className="card p-12 text-center text-gray-400"><Icon className="h-10 w-10 text-gray-300 mx-auto mb-3" />{text}</div>
-}
