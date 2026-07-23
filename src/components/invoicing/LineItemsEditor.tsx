@@ -7,7 +7,7 @@
 // vessel and can't be removed here (unlink from the job instead).
 
 import { useState } from 'react'
-import { Plus, X, Loader2, Upload, FileText } from 'lucide-react'
+import { Plus, X, Trash2, Loader2, Upload, FileText } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { money } from '@/lib/jobs/tracker'
 import { uploadInvoiceReceipt, invoiceReceiptUrl } from '@/lib/jobs/invoicing'
@@ -72,7 +72,7 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
               <input type="number" min={0} step="0.5" value={l.qty} onChange={e => patch(l.key, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
               <input type="number" min={0} step="0.01" value={l.unit_price} onChange={e => patch(l.key, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
               <span className="text-sm text-gray-700 text-right tnum">{amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <button onClick={() => remove(l.key)} disabled={!!l.job_id} title={l.job_id ? 'Linked to a job — edit on the job instead' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"><X className="h-3.5 w-3.5" /></button>
+              <button onClick={() => remove(l.key)} disabled={!!l.job_id} aria-label="Remove line" title={l.job_id ? 'Linked to a job — edit on the job instead' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {/* A vessel's job-linked survey-fee line can't be flipped to an expense

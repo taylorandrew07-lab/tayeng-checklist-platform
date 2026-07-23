@@ -7,7 +7,7 @@
 
 import { useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
-import { Receipt, Plus, X, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search } from 'lucide-react'
+import { Receipt, Plus, X, Trash2, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { cn, formatDate } from '@/lib/utils'
@@ -569,7 +569,7 @@ function BankAccountsCard() {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => setEditing(a)} className="text-xs text-brand-600 hover:text-brand-800 font-medium px-2">Edit</button>
-                  <button onClick={() => remove(a)} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => remove(a)} aria-label="Delete bank account" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               </div>
             ))}

@@ -5,7 +5,7 @@
 // Clients hub (was a Finance tab) so client billing sits with the client record.
 
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Save, X } from 'lucide-react'
+import { Plus, Loader2, Save, X, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -136,7 +136,7 @@ function RateRow({ rate, jobTypes, onChanged }: { rate: ClientRate; jobTypes: st
       </div>
       <div className="flex items-center gap-1">
         <button onClick={() => setEditing(true)} className="text-xs text-brand-600 hover:text-brand-800 font-medium px-2">Edit</button>
-        <button onClick={del} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><X className="h-3.5 w-3.5" /></button>
+        <button onClick={del} aria-label="Delete rate" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
     </div>
   )
