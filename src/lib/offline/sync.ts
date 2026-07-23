@@ -136,6 +136,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
         return { ok: false, reason: 'error', message: created.error }
       }
       // The row now exists — clear the flag so later syncs treat it as a normal job.
+      // created.permissionError (client status grant) is non-fatal for the same reason
+      // as assignError below; with ignoreDuplicates it no longer even fires on retries.
       // created.assignError (a co-surveyor that RLS refused) is deliberately non-fatal
       // and not surfaced here: the job is the owner's and complete, the answers-sync
       // below would clear any syncError we set anyway, and an admin can add the missing

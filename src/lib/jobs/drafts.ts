@@ -37,6 +37,8 @@ export interface DraftJobResult {
   error?: string
   /** Non-fatal: the job was created but attaching extra surveyors failed. */
   assignError?: string
+  /** Non-fatal: the job was created but granting the client status view failed. */
+  permissionError?: string
 }
 
 export async function createDraftJob(
@@ -78,12 +80,17 @@ export async function createDraftJob(
     if (jsErr) assignError = jsErr.message
   }
 
+  let permissionError: string | undefined
   if (input.clientId) {
-    // Upsert so a retried offline sync doesn't trip the (client_id, job_id) PK.
-    await supabase.from('client_job_permissions').upsert({
+    // ignoreDuplicates: on a retried offline sync the row already exists, and the
+    // surveyor RLS policy (mig 053) grants INSERT only — a plain upsert would take
+    // the ON CONFLICT DO UPDATE path and get rejected (silently, before this fix).
+    // DO NOTHING needs no UPDATE grant, so the retry is a no-op instead of an error.
+    const { error: cpErr } = await supabase.from('client_job_permissions').upsert({
       client_id: input.clientId, job_id: job.id,
       can_view_status: true, can_view_pdf: false, can_view_checklist_details: false,
-    }, { onConflict: 'client_id,job_id' })
+    }, { onConflict: 'client_id,job_id', ignoreDuplicates: true })
+    if (cpErr) permissionError = cpErr.message
   }
 
   await supabase.from('activity_log').insert({
@@ -105,5 +112,5 @@ export async function createDraftJob(
     }
   }
 
-  return { job, assignedIds: input.surveyorIds, assignError }
+  return { job, assignedIds: input.surveyorIds, assignError, permissionError }
 }
