@@ -77,9 +77,12 @@ export default function SurveyorNewChecklistPage() {
   const [reportNotRequired, setReportNotRequired] = useState(false)
 
   const stageConfig = STAGE_OPTIONS[jobType] ?? null
-  // Same title shape as the admin form, so the same job reads identically whoever made it.
-  const labelWithStage = selectedTemplate ? (jobStage ? `${selectedTemplate.name} (${jobStage})` : selectedTemplate.name) : ''
-  const autoTitle = vesselName.trim() && labelWithStage
+  // Same title shape as the admin form, so the same job reads identically whoever
+  // made it. The label is the template name when one is picked, else the job type —
+  // report-only jobs (Draught Survey, Hatch, Cargo…) have no template.
+  const label = selectedTemplate?.name ?? jobType
+  const labelWithStage = label && jobStage ? `${label} (${jobStage})` : label
+  const autoTitle = vesselName.trim() && label
     ? `M.V. ${titleCaseVesselName(vesselName)} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
     : ''
 
@@ -173,12 +176,12 @@ export default function SurveyorNewChecklistPage() {
   }
 
   async function handleCreate() {
-    if (!templateId || !selectedTemplate) return setError('Please select a template')
-    // Job type is required, exactly as on the admin form — a blank one drops the job
-    // out of the type filter and the CSV column. Only enforced when the picker is
-    // actually usable: with no cached job types the form falls back to the
-    // template's default and must still create with no signal.
+    // Job type is the primary field now (the template is optional — report-only
+    // jobs like Draught Survey have no checklist). Enforced whenever the picker is
+    // usable: with no cached job types the form falls back to the template's default
+    // and must still create with no signal, so don't block that offline case.
     if (jobTypes.length > 0 && !jobType) return setError('Please choose a job type')
+    if (jobTypes.length === 0 && !jobType) return setError('Please pick a template to set the job type')
     if (!vesselName.trim()) return setError('Vessel name is required')
     if (!scheduledDate) return setError('Please choose a survey date')
     if (endDate && endDate < scheduledDate) return setError('The end date can’t be before the start date')
@@ -214,7 +217,8 @@ export default function SurveyorNewChecklistPage() {
       // must also be mapped in sync.ts's create branch or it is silently dropped
       // when the draft reaches the server.
       const job = {
-        id, title: autoTitle, template_id: templateId, template: { id: templateId, name: selectedTemplate.name },
+        id, title: autoTitle, template_id: templateId || null,
+        template: selectedTemplate ? { id: templateId, name: selectedTemplate.name } : null,
         job_type: jobType || null,
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
@@ -235,7 +239,7 @@ export default function SurveyorNewChecklistPage() {
       // Create the job locally first (works with no signal). It syncs — creating
       // the server row + answers — when the device next reaches Supabase.
       await putDraft({
-        key: '', jobId: id, userId, job, sections: selectedTemplate.sections ?? [],
+        key: '', jobId: id, userId, job, sections: selectedTemplate?.sections ?? [],
         // Extra co-surveyors (never the owner) — attached on sync via createDraftJob.
         surveyorIds: Array.from(coSurveyors).filter(sid => sid !== userId),
         values: {}, arrayValues: {}, signatures: {}, fieldPhotos: {}, generalPhotos: [],
@@ -266,11 +270,13 @@ export default function SurveyorNewChecklistPage() {
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
   }
-  if (templates.length === 0) {
+  // Only a dead end when there's NOTHING to create from — no checklist templates AND
+  // no job types. With job types alone the surveyor can still start a report-only job.
+  if (templates.length === 0 && jobTypes.length === 0) {
     return (
       <div className="max-w-lg mx-auto text-center py-16">
-        <h1 className="page-title mb-2">No Templates Available</h1>
-        <p className="text-gray-500 mb-6">{fromCache ? 'No templates are saved on this device yet. Connect to the internet once to download them.' : 'There are no templates you can start. Contact your administrator.'}</p>
+        <h1 className="page-title mb-2">Nothing to Start Yet</h1>
+        <p className="text-gray-500 mb-6">{fromCache ? 'No templates or job types are saved on this device yet. Connect to the internet once to download them.' : 'There are no templates or job types you can start. Contact your administrator.'}</p>
         <Link href="/surveyor" className="btn-secondary">Back to Dashboard</Link>
       </div>
     )
@@ -293,14 +299,8 @@ export default function SurveyorNewChecklistPage() {
       )}
 
       <div className="card p-6 space-y-5">
-        <div>
-          <label className="label-base">Template *</label>
-          <select value={templateId} onChange={(e) => handleTemplateChange(e.target.value)} className="input-base">
-            <option value="">Select a template…</option>
-            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </div>
-
+        {/* Job type leads now — it's the one required kind field. The checklist below
+            is optional, so report-only jobs (Draught Survey, Hatch, Cargo…) start here. */}
         <div>
           <label className="label-base">Job type{jobTypes.length > 0 ? ' *' : ''}</label>
           {jobTypes.length > 0 ? (
@@ -313,7 +313,7 @@ export default function SurveyorNewChecklistPage() {
           ) : (
             // Job types were never cached on this device — fall back to the template's
             // default rather than blocking the create (this must work with no signal).
-            <div className="input-base bg-gray-50 text-gray-700 flex items-center">{jobType || 'Set from the template'}</div>
+            <div className="input-base bg-gray-50 text-gray-700 flex items-center">{jobType || 'Pick a template below to set this'}</div>
           )}
           {showNewJobType && (
             <div className="mt-2 flex items-center gap-2">
@@ -331,7 +331,7 @@ export default function SurveyorNewChecklistPage() {
           )}
           <p className="text-xs text-gray-400 mt-1">
             {jobTypes.length > 0
-              ? 'Filled in from the template — change it if this job is a different kind.'
+              ? 'Pick the kind of job. A checklist below is optional — leave it as “No checklist” for report-only jobs like a draught survey.'
               : 'Job types aren’t saved on this device yet. Connect once and they’ll be selectable here.'}
           </p>
         </div>
@@ -352,6 +352,19 @@ export default function SurveyorNewChecklistPage() {
             <input type="text" list="cargoList" value={cargoType} onChange={(e) => setCargoType(e.target.value)} className="input-base" placeholder="e.g. Methanol, Crude Oil, Urea…" />
             <datalist id="cargoList">{CARGO_SUGGESTIONS.map(c => <option key={c} value={c} />)}</datalist>
             <p className="text-xs text-gray-400 mt-1">The product being {jobType === 'Cargo Discharging' ? 'discharged' : 'loaded'}.</p>
+          </div>
+        )}
+
+        {/* Optional checklist. Hidden when no templates are cached — there'd be nothing
+            to pick. Leave it as “No checklist” for report-only jobs. */}
+        {templates.length > 0 && (
+          <div>
+            <label className="label-base">Checklist template <span className="text-gray-400 font-normal">(optional)</span></label>
+            <select value={templateId} onChange={(e) => handleTemplateChange(e.target.value)} className="input-base">
+              <option value="">No checklist</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Adds a fillable checklist. Report-only jobs (e.g. a draught survey) don&apos;t need one.</p>
           </div>
         )}
 
