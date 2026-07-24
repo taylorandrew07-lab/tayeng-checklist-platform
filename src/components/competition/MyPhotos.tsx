@@ -1,11 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Upload, FolderOpen, Trash2, Video, Loader2, Lock, Info } from 'lucide-react'
+import { Camera, Trash2, Video, Loader2, Lock, Info } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/confirm'
-import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import { COMPETITION_VIDEO_ENABLED } from '@/lib/features'
 import { formatDate } from '@/lib/utils'
 import {
@@ -14,6 +13,7 @@ import {
 } from '@/lib/competition/api'
 import type { CompetitionRound, EntryWithUrl } from '@/lib/competition/types'
 import { EntryThumb, EntryLightbox } from './media'
+import MediaDropZone from './MediaDropZone'
 
 export default function MyPhotos() {
   const month = currentCompetitionMonth()
@@ -23,7 +23,6 @@ export default function MyPhotos() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [previewIdx, setPreviewIdx] = useState<number | null>(null)
-  const photoInput = useRef<HTMLInputElement>(null)
   const videoInput = useRef<HTMLInputElement>(null)
 
   const closed = round?.status === 'closed'
@@ -89,31 +88,23 @@ export default function MyPhotos() {
         </div>
 
         {!closed && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button className="btn-primary" onClick={() => photoInput.current?.click()} disabled={!!busy}>
-              <Upload className="h-4 w-4" /> Add photos
-            </button>
-            <button className="btn-secondary" onClick={() => pickImageFiles((imgs) => handleFiles(imgs, 'photo'))} disabled={!!busy}>
-              <FolderOpen className="h-4 w-4" /> Files / USB
-            </button>
+          <div className="mt-4 space-y-2">
+            <MediaDropZone onFiles={imgs => handleFiles(imgs, 'photo')} disabled={!!busy} busy={busy} />
             {COMPETITION_VIDEO_ENABLED && (
               <button className="btn-secondary" onClick={() => videoInput.current?.click()} disabled={!!busy}>
                 <Video className="h-4 w-4" /> Add video
               </button>
             )}
-            {busy && <span className="inline-flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> {busy}</span>}
           </div>
         )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
-        <input
-          ref={photoInput} type="file" accept="image/*" multiple className="hidden"
-          onChange={e => { handleFiles(Array.from(e.target.files ?? []), 'photo'); e.target.value = '' }}
-        />
-        <input
-          ref={videoInput} type="file" accept="video/*" multiple className="hidden"
-          onChange={e => { handleFiles(Array.from(e.target.files ?? []), 'video'); e.target.value = '' }}
-        />
+        {COMPETITION_VIDEO_ENABLED && (
+          <input
+            ref={videoInput} type="file" accept="video/*" multiple className="hidden"
+            onChange={e => { handleFiles(Array.from(e.target.files ?? []), 'video'); e.target.value = '' }}
+          />
+        )}
       </div>
 
       {/* My grid */}

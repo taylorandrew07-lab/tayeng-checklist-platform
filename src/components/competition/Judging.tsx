@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Trophy, Medal, Star, Loader2, UploadCloud, Check, Eye, EyeOff, ImageOff,
 } from 'lucide-react'
@@ -14,6 +14,7 @@ import {
 } from '@/lib/competition/api'
 import type { CompetitionRound, EntryWithUrl, RoundStatus } from '@/lib/competition/types'
 import { EntryThumb, EntryLightbox } from './media'
+import MediaDropZone from './MediaDropZone'
 
 export default function Judging() {
   const [months, setMonths] = useState<MonthSummary[]>([])
@@ -244,7 +245,6 @@ function OnBehalfUploader({ month, onUploaded }: { month: string; onUploaded: ()
   const [entrantId, setEntrantId] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (open && !entrants.length) listEntrants().then(setEntrants).catch(() => {}) }, [open, entrants.length])
 
@@ -261,7 +261,7 @@ function OnBehalfUploader({ month, onUploaded }: { month: string; onUploaded: ()
       ok++
     }
     setBusy(null)
-    if (ok) { onUploaded(); }
+    if (ok) onUploaded()
   }
 
   if (!open) {
@@ -272,8 +272,10 @@ function OnBehalfUploader({ month, onUploaded }: { month: string; onUploaded: ()
     )
   }
 
+  const entrantName = entrants.find(p => p.id === entrantId)?.full_name
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[12rem] flex-1">
           <label className="label-base">Whose photo is this?</label>
@@ -282,18 +284,18 @@ function OnBehalfUploader({ month, onUploaded }: { month: string; onUploaded: ()
             {entrants.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
           </select>
         </div>
-        <button className="btn-primary" onClick={() => fileInput.current?.click()} disabled={!!busy || !entrantId}>
-          <UploadCloud className="h-4 w-4" /> Choose photo
-        </button>
         <button className="btn-ghost" onClick={() => setOpen(false)} disabled={!!busy}>Cancel</button>
-        {busy && <span className="inline-flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> {busy}</span>}
       </div>
-      <p className="mt-2 text-xs text-gray-500">Files into <strong>{monthLabel(month)}</strong> and shows up in that person’s own gallery.</p>
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
-      <input
-        ref={fileInput} type="file" accept="image/*" multiple className="hidden"
-        onChange={e => { handleFiles(Array.from(e.target.files ?? [])); e.target.value = '' }}
+      <MediaDropZone
+        onFiles={handleFiles}
+        disabled={!entrantId || !!busy}
+        pasteActive={open}
+        busy={busy}
+        hint={entrantId
+          ? <>Drag, paste (great for WhatsApp Web), or tap — files into <strong>{monthLabel(month)}</strong> as {entrantName}</>
+          : 'Choose a staff member first, then drag / paste / tap a photo'}
       />
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   )
 }

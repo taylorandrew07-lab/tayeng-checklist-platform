@@ -44,21 +44,18 @@ export async function POST(request: Request) {
 
   const db = createServiceClient()
 
-  // Reset any previous placements for this month before applying the new picks,
-  // so re-judging is idempotent and never leaves a stale winner behind.
-  await db.from('competition_entries')
-    .update({ placement: null, winner_name: null, placed_at: null })
-    .eq('month', month).not('placement', 'is', null)
-
   const picks: { entryId: string; placement: Placement }[] = []
   if (winnerId) picks.push({ entryId: winnerId, placement: 'winner' })
   if (runnerUpId) picks.push({ entryId: runnerUpId, placement: 'runner_up' })
 
-  const notified: { placement: Placement; name: string; recipientId: string; email: string | null }[] = []
   const now = new Date().toISOString()
 
+  // VALIDATE + resolve identities for ALL picks FIRST — before touching any
+  // existing placement — so a bad request can never wipe the month's current
+  // result and leave it winner-less. (PostgREST isn't transactional across
+  // statements; validating up front is the cheap guarantee.)
+  const resolved: { entryId: string; placement: Placement; name: string; recipientId: string | null; email: string | null }[] = []
   for (const pick of picks) {
-    // Confirm the entry is in this month.
     const { data: entry } = await db.from('competition_entries')
       .select('id, month').eq('id', pick.entryId).single()
     if (!entry || entry.month !== month) {
@@ -67,28 +64,37 @@ export async function POST(request: Request) {
     // Reveal: read the owner link (service role only) → entrant profile.
     const { data: link } = await db.from('competition_entry_owners')
       .select('entrant_id').eq('entry_id', pick.entryId).single()
-    let name = 'Unknown'
-    let recipientId: string | null = null
-    let email: string | null = null
+    let name = 'Unknown', recipientId: string | null = null, email: string | null = null
     if (link?.entrant_id) {
       recipientId = link.entrant_id
       const { data: prof } = await db.from('profiles')
         .select('full_name, email').eq('id', link.entrant_id).single()
       if (prof) { name = prof.full_name ?? 'Unknown'; email = prof.email ?? null }
     }
-    const { error: upErr } = await db.from('competition_entries')
-      .update({ placement: pick.placement, winner_name: name, placed_at: now })
-      .eq('id', pick.entryId)
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 400 })
-    if (recipientId) notified.push({ placement: pick.placement, name, recipientId, email })
+    resolved.push({ entryId: pick.entryId, placement: pick.placement, name, recipientId, email })
   }
 
-  // Close the round when a winner exists (freezes entrant edits); reopen if the
-  // picks were cleared. Upsert so a round row is created on demand.
+  // Now it's safe to reset the month's previous placements and apply the new ones.
+  await db.from('competition_entries')
+    .update({ placement: null, winner_name: null, placed_at: null })
+    .eq('month', month).not('placement', 'is', null)
+
+  const notified: { placement: Placement; name: string; recipientId: string; email: string | null }[] = []
+  for (const r of resolved) {
+    const { error: upErr } = await db.from('competition_entries')
+      .update({ placement: r.placement, winner_name: r.name, placed_at: now })
+      .eq('id', r.entryId)
+    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 400 })
+    if (r.recipientId) notified.push({ placement: r.placement, name: r.name, recipientId: r.recipientId, email: r.email })
+  }
+
+  // Close the round whenever ANY placement exists (freezes entrant edits so a
+  // placed photo can't be deleted); reopen only if picks were fully cleared.
+  const anyPlacement = !!(winnerId || runnerUpId)
   await db.from('competition_rounds').upsert({
     month,
-    status: winnerId ? 'closed' : 'open',
-    closed_at: winnerId ? now : null,
+    status: anyPlacement ? 'closed' : 'open',
+    closed_at: anyPlacement ? now : null,
     created_by: user.id,
   }, { onConflict: 'month' })
 

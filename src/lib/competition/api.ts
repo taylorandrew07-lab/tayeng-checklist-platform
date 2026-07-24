@@ -13,7 +13,9 @@ import {
   type MediaType, type Placement, type RoundStatus,
 } from './types'
 
-const SIGN_TTL = 3600
+// 6h — comfortably outlasts a long judging session so thumbnails don't expire
+// to broken images mid-review (private buckets; URLs still expire).
+const SIGN_TTL = 21600
 
 async function myId(): Promise<string | null> {
   const { data: { user } } = await createClient().auth.getUser()
@@ -99,7 +101,10 @@ export async function uploadEntry(
 
   const mediaType: MediaType = opts.mediaType ?? 'photo'
   const bucket = bucketFor(mediaType)
-  const path = `${uid}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
+  // Opaque key — the object name must NOT encode the entrant's identity, or a
+  // blind-judging admin could read it off the path. Ownership is tracked by the
+  // competition_entry_owners link and enforced by storage RLS (mig 160).
+  const path = `${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
 
   // NOTE: single-shot upload. Fine for photos; when video is switched on, large
   // files over marine wifi should move to a resumable (TUS) upload with progress.
@@ -182,12 +187,17 @@ export async function listRounds(): Promise<CompetitionRound[]> {
 // Admin side (judging). Entries here carry NO entrant identity — blind by design.
 // ---------------------------------------------------------------------------
 
-/** Every entry for a month, in submission order. Admin-only via RLS. Blind. */
+/** Every entry for a month, in submission order. Admin-only via RLS. Blind:
+ *  filename and caption are deliberately NOT selected — a filename like
+ *  "john_selfie.jpg" (or a self-identifying caption) would leak the entrant to
+ *  a judge, so the blind view never loads them. */
 export async function adminListEntries(month: string): Promise<CompetitionEntry[]> {
   const { data } = await createClient()
-    .from('competition_entries').select('*').eq('month', month)
+    .from('competition_entries')
+    .select('id, month, media_type, storage_path, content_type, size_bytes, captured_at, placement, placed_at, winner_name, created_at')
+    .eq('month', month)
     .order('created_at', { ascending: true })
-  return (data ?? []) as CompetitionEntry[]
+  return ((data ?? []) as any[]).map(e => ({ ...e, filename: null, caption: null })) as CompetitionEntry[]
 }
 
 /** The set of entry ids the current admin submitted themselves — used to flag
@@ -226,7 +236,8 @@ export async function adminUploadOnBehalf(
   const supabase = createClient()
   const mediaType: MediaType = opts.mediaType ?? 'photo'
   const bucket = bucketFor(mediaType)
-  const path = `${entrantId}/${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
+  // Opaque key (see uploadEntry) — no entrant id in the path.
+  const path = `${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
 
   const { error: upErr } = await supabase.storage.from(bucket)
     .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
