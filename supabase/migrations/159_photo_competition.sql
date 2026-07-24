@@ -20,6 +20,12 @@
 -- client feature flag (src/lib/features.ts COMPETITION_VIDEO_ENABLED).
 -- ============================================================
 
+-- competition_round_open() below is a SQL-language function whose body reads
+-- competition_rounds, which is created further down in THIS file. Postgres
+-- validates SQL function bodies at CREATE time, so defer that check — the table
+-- exists by the time the function is ever called.
+SET check_function_bodies = off;
+
 -- ------------------------------------------------------------
 -- Helpers (SECURITY DEFINER STABLE, search_path pinned — see mig 013).
 -- ------------------------------------------------------------
