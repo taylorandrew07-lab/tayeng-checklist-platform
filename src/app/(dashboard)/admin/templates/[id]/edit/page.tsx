@@ -5,6 +5,8 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TemplateBuilder from '@/components/template-builder/TemplateBuilder'
 import ColorSwatchPicker from '@/components/ui/ColorSwatchPicker'
+import { SaveStatus } from '@/components/ui/SaveStatus'
+import { FloatingSave } from '@/components/ui/FloatingSave'
 import type { BuilderSection } from '@/components/template-builder/types'
 import { Save, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react'
 import type { TemplateStatus, JobType } from '@/lib/types/database'
@@ -36,6 +38,7 @@ export default function EditTemplatePage() {
   const [color, setColor] = useState<string | null>(null)
   const [sections, setSections] = useState<BuilderSection[]>([])
   const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [jobCount, setJobCount] = useState(0)
@@ -332,6 +335,7 @@ export default function EditTemplatePage() {
 
     setSaving(false)
     setIsDirty(false)
+    setSavedAt(new Date())
     dirtyState.set(false)
     dirtyState.setHandler(null)
     const dest = opts?.redirectTo !== undefined ? opts.redirectTo : '/admin/templates'
@@ -388,12 +392,7 @@ export default function EditTemplatePage() {
           <h1 className="page-title">Edit Template</h1>
           <p className="text-gray-500 mt-0.5">{jobCount > 0 ? `${jobCount} job${jobCount !== 1 ? 's' : ''} using this template` : 'No jobs yet'}</p>
         </div>
-        {isDirty && (
-          <button onClick={() => handleSave({ redirectTo: null })} disabled={saving} className="btn-primary">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        )}
+        <SaveStatus saving={saving} dirty={isDirty} savedAt={savedAt} className="flex-shrink-0" />
       </div>
 
       {jobCount > 0 && (
@@ -557,6 +556,8 @@ export default function EditTemplatePage() {
 
       {/* Edits autosave (debounced); the header carries the single manual "Save"
           flush + status, so no bottom row or sticky save bar is needed here. */}
+
+      <FloatingSave onSave={() => { void handleSave({ redirectTo: null }) }} saving={saving} dirty={isDirty} savedAt={savedAt} />
 
       {/* Leave dialog */}
       {showLeaveDialog && (
