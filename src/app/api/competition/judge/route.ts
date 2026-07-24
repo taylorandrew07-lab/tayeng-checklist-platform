@@ -74,6 +74,13 @@ export async function POST(request: Request) {
     resolved.push({ entryId: pick.entryId, placement: pick.placement, name, recipientId, email })
   }
 
+  // Snapshot existing placements so we only NOTIFY people whose placement
+  // actually changed — re-saving a month must not re-email the same winner.
+  const { data: prior } = await db.from('competition_entries')
+    .select('id, placement').eq('month', month).not('placement', 'is', null)
+  const priorPlacement = new Map<string, string>()
+  for (const p of (prior ?? []) as any[]) priorPlacement.set(p.id, p.placement)
+
   // Now it's safe to reset the month's previous placements and apply the new ones.
   await db.from('competition_entries')
     .update({ placement: null, winner_name: null, placed_at: null })
@@ -85,7 +92,10 @@ export async function POST(request: Request) {
       .update({ placement: r.placement, winner_name: r.name, placed_at: now })
       .eq('id', r.entryId)
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 400 })
-    if (r.recipientId) notified.push({ placement: r.placement, name: r.name, recipientId: r.recipientId, email: r.email })
+    // Notify only if this is a newly-assigned or changed placement for them.
+    if (r.recipientId && priorPlacement.get(r.entryId) !== r.placement) {
+      notified.push({ placement: r.placement, name: r.name, recipientId: r.recipientId, email: r.email })
+    }
   }
 
   // Close the round whenever ANY placement exists (freezes entrant edits so a

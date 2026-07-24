@@ -7,7 +7,6 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { format, parseISO } from 'date-fns'
-import { sanitizeStorageName } from '@/lib/utils'
 import {
   bucketFor, type CompetitionEntry, type CompetitionRound, type EntryWithUrl,
   type MediaType, type Placement, type RoundStatus,
@@ -16,6 +15,18 @@ import {
 // 6h — comfortably outlasts a long judging session so thumbnails don't expire
 // to broken images mid-review (private buckets; URLs still expire).
 const SIGN_TTL = 21600
+
+/** An OPAQUE object key carrying no identity — just a random id + the file
+ *  extension. The original filename would otherwise sit in the storage_path (and
+ *  the signed image URL), leaking the entrant to a blind judge who inspects the
+ *  request. The real filename lives in the `filename` column, which the blind
+ *  admin view withholds. */
+function opaqueKey(file: File): string {
+  const fromName = /\.([a-zA-Z0-9]{1,8})$/.exec(file.name)?.[1]
+  const fromType = file.type.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '')
+  const ext = (fromName || fromType || 'bin').toLowerCase()
+  return `${crypto.randomUUID()}.${ext}`
+}
 
 async function myId(): Promise<string | null> {
   const { data: { user } } = await createClient().auth.getUser()
@@ -101,10 +112,10 @@ export async function uploadEntry(
 
   const mediaType: MediaType = opts.mediaType ?? 'photo'
   const bucket = bucketFor(mediaType)
-  // Opaque key — the object name must NOT encode the entrant's identity, or a
-  // blind-judging admin could read it off the path. Ownership is tracked by the
-  // competition_entry_owners link and enforced by storage RLS (mig 160).
-  const path = `${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
+  // Opaque key (id + extension only) — no entrant identity, no original
+  // filename. Ownership is tracked by the competition_entry_owners link and
+  // enforced by storage RLS (mig 160).
+  const path = opaqueKey(file)
 
   // NOTE: single-shot upload. Fine for photos; when video is switched on, large
   // files over marine wifi should move to a resumable (TUS) upload with progress.
@@ -236,8 +247,8 @@ export async function adminUploadOnBehalf(
   const supabase = createClient()
   const mediaType: MediaType = opts.mediaType ?? 'photo'
   const bucket = bucketFor(mediaType)
-  // Opaque key (see uploadEntry) — no entrant id in the path.
-  const path = `${crypto.randomUUID()}_${sanitizeStorageName(file.name)}`
+  // Opaque key (see uploadEntry) — no entrant id, no filename in the path.
+  const path = opaqueKey(file)
 
   const { error: upErr } = await supabase.storage.from(bucket)
     .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Trash2, Video, Loader2, Lock, Info } from 'lucide-react'
+import { Camera, Trash2, Video, Loader2, Lock, Info, Gavel } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -34,7 +34,8 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
   const [entrants, setEntrants] = useState<Entrant[]>([])
   const [myUid, setMyUid] = useState<string | null>(null)
 
-  const closed = round?.status === 'closed'
+  const status = round?.status ?? 'open'
+  const acceptingEntries = status === 'open'
 
   async function refresh() {
     const rows = await listMyEntries(month)
@@ -73,19 +74,31 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
     const targetId = isSuperAdmin ? attributeTo : ''
     const targetName = entrants.find(p => p.id === targetId)?.full_name
     let ok = 0
+    const problems: string[] = []
     for (let i = 0; i < files.length; i++) {
+      const f = files[i]
       setBusy(`Uploading ${i + 1} of ${files.length}…`)
-      const capturedAt = mediaType === 'photo' ? await readCapturedAt(files[i]) : null
+      // Reject unsupported formats up front with a friendly message instead of a
+      // raw storage error, and keep going through the rest of the batch.
+      if (mediaType === 'photo' && !isSupportedImage(f)) {
+        problems.push(`${f.name}: use a JPG, PNG or WebP (an iPhone HEIC won’t upload)`); continue
+      }
+      const capturedAt = mediaType === 'photo' ? await readCapturedAt(f) : null
       const res = targetId
-        ? await adminUploadOnBehalf(files[i], targetId, { mediaType, capturedAt })
-        : await uploadEntry(files[i], { mediaType, capturedAt })
-      if (res.error) { setError(res.error); break }
+        ? await adminUploadOnBehalf(f, targetId, { mediaType, capturedAt })
+        : await uploadEntry(f, { mediaType, capturedAt })
+      if (res.error) { problems.push(`${f.name}: ${friendlyUploadError(res.error)}`); continue }
       ok++
     }
     setBusy(null)
-    if (!ok) return
-    if (targetId) setNotice(`Added ${ok} ${ok === 1 ? 'photo' : 'photos'} to ${targetName ?? 'that person'}. Find it under Staff Photos.`)
-    else await refresh()
+    if (ok && !targetId) await refresh()
+    if (ok && targetId) {
+      setNotice(`Added ${ok} ${ok === 1 ? 'photo' : 'photos'} to ${targetName ?? 'that person'}. Find it under Staff Photos.`)
+      setAttributeTo('') // reset so the next upload defaults back to "Yours"
+    }
+    setError(problems.length === 0 ? null
+      : problems.length === 1 ? problems[0]
+      : `${problems.length} not added — ${problems.slice(0, 2).join('; ')}${problems.length > 2 ? '…' : ''}`)
   }
 
   async function remove(entry: EntryWithUrl) {
@@ -111,12 +124,14 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
               Only you and the admins can see your entries. Winners are shown to everyone.
             </p>
           </div>
-          {closed
-            ? <Badge tone="neutral"><Lock className="mr-1 h-3 w-3" />Results are in</Badge>
-            : <Badge tone="success">Open for entries</Badge>}
+          {status === 'open'
+            ? <Badge tone="success">Open for entries</Badge>
+            : status === 'judging'
+              ? <Badge tone="neutral"><Gavel className="mr-1 h-3 w-3" />Judging under way</Badge>
+              : <Badge tone="neutral"><Lock className="mr-1 h-3 w-3" />Results are in</Badge>}
         </div>
 
-        {!closed && (
+        {acceptingEntries && (
           <div className="mt-4 space-y-2">
             {isSuperAdmin && (
               <div>
@@ -160,7 +175,9 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
         <EmptyState
           icon={Camera}
           title="No photos yet"
-          description={closed ? 'This month is closed for entries.' : 'Add your best shots for this month — dockside, aboard, sunrise at sea, whatever tells the story.'}
+          description={acceptingEntries
+            ? 'Add your best shots for this month — dockside, aboard, sunrise at sea, whatever tells the story.'
+            : status === 'judging' ? 'Judging is under way — entries are closed for this month.' : 'This month is closed.'}
         />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -169,7 +186,7 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
               key={e.id}
               entry={e}
               onClick={() => setPreviewIdx(i)}
-              overlay={!closed && (
+              overlay={acceptingEntries && (
                 <button
                   onClick={ev => { ev.stopPropagation(); remove(e) }}
                   aria-label="Remove"
@@ -191,14 +208,27 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
         footer={preview && (
           <CaptionFooter
             entry={preview}
-            editable={!closed}
+            editable={acceptingEntries}
             onSaved={cap => { setEntries(list => list.map(x => x.id === preview.id ? { ...x, caption: cap } : x)) }}
-            onRemove={!closed ? () => remove(preview) : undefined}
+            onRemove={acceptingEntries ? () => remove(preview) : undefined}
           />
         )}
       />
     </div>
   )
+}
+
+/** The photo bucket only accepts JPG/PNG/WebP (mig 159). Pre-check so an
+ *  unsupported file (e.g. an iPhone HEIC that Safari didn't transcode) gets a
+ *  friendly message rather than a raw storage error. */
+function isSupportedImage(f: File): boolean {
+  return /^image\/(jpe?g|png|webp)$/i.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name)
+}
+function friendlyUploadError(msg: string): string {
+  const m = msg.toLowerCase()
+  if (m.includes('mime') || m.includes('not supported') || m.includes('invalid')) return 'that format isn’t supported — use JPG, PNG or WebP'
+  if (m.includes('maximum') || m.includes('exceed') || m.includes('too large') || m.includes('payload')) return 'it’s over the 25 MB limit'
+  return msg
 }
 
 function CaptionFooter({ entry, editable, onSaved, onRemove }: {

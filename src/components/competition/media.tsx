@@ -63,6 +63,10 @@ export function EntryLightbox({ entry, onClose, onPrev, onNext, footer }: {
   useEffect(() => {
     if (!entry) return
     function onKey(e: KeyboardEvent) {
+      // Don't steal keys while typing in the caption field (arrow keys would
+      // navigate away and lose the edit).
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.key === 'Escape') onClose()
       else if (e.key === 'ArrowLeft') onPrev?.()
       else if (e.key === 'ArrowRight') onNext?.()

@@ -70,6 +70,8 @@ export default function Judging() {
     const entry = visible[lightboxIdx]
     if (!entry) return
     function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       const k = e.key.toLowerCase()
       if (k === 'w') { e.preventDefault(); pickWinner(entry.id) }
       else if (k === 'r') { e.preventDefault(); pickRunnerUp(entry.id) }
@@ -206,7 +208,10 @@ function RoundControls({ round, month, onSaved }: { round: CompetitionRound | nu
   const [theme, setTheme] = useState(round?.theme ?? '')
   const [status, setStatus] = useState<RoundStatus>(round?.status ?? 'open')
   const [saving, setSaving] = useState(false)
-  useEffect(() => { setTheme(round?.theme ?? ''); setStatus(round?.status ?? 'open') }, [round?.month, round?.theme, round?.status])
+  // Key on `month` (always changes on switch) as well — two round-less months
+  // both give round===null, so syncing on round?.* alone would keep a typed-but-
+  // unsaved theme when moving between them and could save it to the wrong month.
+  useEffect(() => { setTheme(round?.theme ?? ''); setStatus(round?.status ?? 'open') }, [month, round?.theme, round?.status])
 
   async function save() {
     setSaving(true)
