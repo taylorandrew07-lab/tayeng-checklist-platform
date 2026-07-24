@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Users, ArrowLeft, ImageOff, User } from 'lucide-react'
+import { Users, ArrowLeft, ImageOff, User, Trash2 } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
-import { adminListStaffRoster, adminStaffEntries, monthLabel, type StaffRosterEntry } from '@/lib/competition/api'
+import { confirmDialog } from '@/components/ui/confirm'
+import { adminListStaffRoster, adminStaffEntries, deleteEntry, monthLabel, type StaffRosterEntry } from '@/lib/competition/api'
 import type { EntryWithUrl } from '@/lib/competition/types'
 import { EntryThumb, EntryLightbox } from './media'
 
@@ -61,12 +62,28 @@ function PersonView({ person, onBack }: { person: StaffRosterEntry; onBack: () =
   const [entries, setEntries] = useState<EntryWithUrl[]>([])
   const [loading, setLoading] = useState(true)
   const [previewIdx, setPreviewIdx] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
     adminStaffEntries(person.entrantId).then(e => { if (alive) { setEntries(e); setLoading(false) } })
     return () => { alive = false }
   }, [person.entrantId])
+
+  // Super-admin only (this whole tab is): delete a photo — e.g. one added to the
+  // wrong person. Admins can delete any entry per RLS (bytes + row + owner link).
+  async function remove(entry: EntryWithUrl) {
+    if (!(await confirmDialog({
+      title: 'Delete photo',
+      message: `Delete this photo from ${person.name}’s entries? This can’t be undone.`,
+      danger: true, confirmLabel: 'Delete',
+    }))) return
+    setPreviewIdx(null)
+    setError(null)
+    const res = await deleteEntry(entry)
+    if (res.error) { setError(res.error); return }
+    setEntries(list => list.filter(x => x.id !== entry.id))
+  }
 
   // Group by month (newest first) while keeping a flat index for lightbox nav.
   const { months, flat } = useMemo(() => {
@@ -89,6 +106,7 @@ function PersonView({ person, onBack }: { person: StaffRosterEntry; onBack: () =
           <span className="tnum text-sm text-gray-400">{entries.length}</span>
         </div>
       </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       {loading ? (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
@@ -107,11 +125,20 @@ function PersonView({ person, onBack }: { person: StaffRosterEntry; onBack: () =
                     key={e.id}
                     entry={e}
                     onClick={() => setPreviewIdx(flat.findIndex(x => x.id === e.id))}
-                    overlay={e.placement && (
-                      <span className="absolute left-1 top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        {e.placement === 'winner' ? 'Winner' : 'Runner-up'}
-                      </span>
-                    )}
+                    overlay={<>
+                      {e.placement && (
+                        <span className="absolute left-1 top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          {e.placement === 'winner' ? 'Winner' : 'Runner-up'}
+                        </span>
+                      )}
+                      <button
+                        onClick={ev => { ev.stopPropagation(); remove(e) }}
+                        aria-label="Delete photo"
+                        className="absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity duration-150 hover:bg-red-600 group-hover:opacity-100"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </>}
                   />
                 ))}
               </div>
@@ -126,9 +153,12 @@ function PersonView({ person, onBack }: { person: StaffRosterEntry; onBack: () =
         onPrev={preview && previewIdx! > 0 ? () => setPreviewIdx(previewIdx! - 1) : undefined}
         onNext={preview && previewIdx! < flat.length - 1 ? () => setPreviewIdx(previewIdx! + 1) : undefined}
         footer={preview && (
-          <div>
+          <div className="flex flex-col items-center gap-2">
             <p className="font-medium">{person.name} · {monthLabel(preview.month)}</p>
             {preview.caption && <p className="text-white/80">{preview.caption}</p>}
+            <button onClick={() => remove(preview)} className="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white">
+              <Trash2 className="h-4 w-4" /> Delete photo
+            </button>
           </div>
         )}
       />

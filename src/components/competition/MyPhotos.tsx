@@ -93,8 +93,9 @@ export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: bool
     setBusy(null)
     if (ok && !targetId) await refresh()
     if (ok && targetId) {
-      setNotice(`Added ${ok} ${ok === 1 ? 'photo' : 'photos'} to ${targetName ?? 'that person'}. Find it under Staff Photos.`)
-      setAttributeTo('') // reset so the next upload defaults back to "Yours"
+      // Keep the selected person sticky — you're usually adding several of their
+      // photos in a row. Switch it back to "Yours" yourself when you're done.
+      setNotice(`Added ${ok} ${ok === 1 ? 'photo' : 'photos'} to ${targetName ?? 'that person'}. Still uploading as ${targetName ?? 'them'} — switch to “Yours” when done.`)
     }
     setError(problems.length === 0 ? null
       : problems.length === 1 ? problems[0]
