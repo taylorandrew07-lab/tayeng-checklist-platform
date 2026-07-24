@@ -136,7 +136,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // user who lands on another role's area; shared routes are open to everyone.
   useEffect(() => {
     if (!profile) return
-    const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel']
+    const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel', '/competition']
     const expectedPrefix = ROLE_HOME[profile.role]
     const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
     if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {

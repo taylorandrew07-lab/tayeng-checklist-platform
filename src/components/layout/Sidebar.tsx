@@ -10,7 +10,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator,
-  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2,
+  Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2, Camera,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -28,6 +28,7 @@ const adminNav: NavItem[] = [
   { label: 'Team', href: '/admin/users', icon: Users },
   { label: 'Templates', href: '/admin/templates', icon: FileText },
   { label: 'Cargo Monitoring', href: '/admin/cargo', icon: Ship },
+  { label: 'Photo Competition', href: '/competition', icon: Camera },
   { label: 'Tools', href: '/admin/tools/interpolation', icon: Calculator },
   { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
@@ -42,6 +43,7 @@ const surveyorNav: NavItem[] = [
   { label: 'Dashboard', href: '/surveyor', icon: LayoutDashboard },
   { label: 'Cargo Monitoring', href: '/surveyor/cargo', icon: Ship },
   { label: 'Vessel Documents', href: '/surveyor/documents', icon: FolderOpen },
+  { label: 'Photo Competition', href: '/competition', icon: Camera },
   { label: 'Profile', href: '/profile', icon: FileText },
   { label: 'Calendar', href: '/calendar', icon: CalendarDays },
   { label: 'Inbox', href: '/inbox', icon: Mail },
@@ -59,6 +61,7 @@ const clientNav: NavItem[] = [
 const officeBaseNav: NavItem[] = [
   { label: 'Dashboard', href: '/office', icon: LayoutDashboard },
   { label: 'Jobs', href: '/office/jobs', icon: Briefcase },
+  { label: 'Photo Competition', href: '/competition', icon: Camera },
   { label: 'Inbox', href: '/inbox', icon: Mail },
 ]
 
