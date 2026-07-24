@@ -5,8 +5,8 @@
 // vessel and can't be removed here. Used from the Finance invoices ledger.
 
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Check } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
+import { SaveStatus } from '@/components/ui/SaveStatus'
 import { toast } from '@/components/ui/toast'
 import { CURRENCIES } from '@/lib/jobs/tracker'
 import { getInvoiceForEdit, updateInvoice, listBankAccounts, type TaxDraft } from '@/lib/jobs/invoicing'
@@ -111,12 +111,7 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
   return (
     <Modal open onClose={done} size="xl" title="Edit invoice" footer={
       <>
-        <span className="text-xs text-gray-400 mr-auto inline-flex items-center gap-1.5">
-          {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
-            : dirty ? 'Unsaved changes…'
-            : savedAt ? <><Check className="h-3.5 w-3.5 text-green-600" /> All changes saved</>
-            : null}
-        </span>
+        <span className="mr-auto"><SaveStatus saving={saving} dirty={dirty} savedAt={savedAt} /></span>
         <button onClick={done} disabled={loading} className="btn-primary">Done</button>
       </>
     }>

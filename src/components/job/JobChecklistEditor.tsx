@@ -65,6 +65,7 @@ import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/de
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
 import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
 import { WorkflowPill } from '@/components/job/StatusPill'
+import { SaveStatus } from '@/components/ui/SaveStatus'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
@@ -1345,9 +1346,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="text-sm text-gray-500">{job.job_number}</span>
               <WorkflowPill status={job.workflow_status as WorkflowStatus} />
-              {lastSaved && !isDirty && (
-                <span className="text-xs text-gray-400">Saved {lastSaved.toLocaleTimeString()}</span>
-              )}
+              {!readOnly && <SaveStatus saving={saving} dirty={isDirty} savedAt={lastSaved} />}
             </div>
           </div>
 
@@ -1355,9 +1354,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               triangles can appear side by side — so each carries its label as a
               title/aria-label or they're indistinguishable on a phone. */}
           <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-shrink-0">
-            {!readOnly && isDirty && (
-              <span className="hidden sm:inline text-xs text-amber-600 font-medium">Unsaved changes</span>
-            )}
             <button onClick={() => setShowPreview(true)} className={`btn-secondary ${TAP_BTN}`} title="Preview" aria-label="Preview">
               <Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span>
             </button>
