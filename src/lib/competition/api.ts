@@ -293,6 +293,26 @@ export async function listMonthSummaries(): Promise<MonthSummary[]> {
     .sort((a, b) => (a.month < b.month ? 1 : -1))
 }
 
+export interface StaffRosterEntry { entrantId: string; name: string; count: number; coverUrl: string | null }
+
+/** Super-admin only: every staff member who has entered, with a photo count and
+ *  a cover thumbnail. Non-blind — served by the service-role roster route. */
+export async function adminListStaffRoster(): Promise<StaffRosterEntry[]> {
+  const res = await fetch('/api/competition/roster')
+  if (!res.ok) return []
+  const json = await res.json().catch(() => ({}))
+  return (json.people ?? []) as StaffRosterEntry[]
+}
+
+/** Super-admin only: one staff member's entries across all months, with signed
+ *  URLs. Newest month first. */
+export async function adminStaffEntries(entrantId: string): Promise<EntryWithUrl[]> {
+  const res = await fetch(`/api/competition/roster?entrantId=${encodeURIComponent(entrantId)}`)
+  if (!res.ok) return []
+  const json = await res.json().catch(() => ({}))
+  return (json.entries ?? []) as EntryWithUrl[]
+}
+
 /** Admin: set (or clear) the theme + lifecycle status for a month. Upserts the
  *  round row. */
 export async function saveRound(month: string, patch: { theme?: string | null; status?: RoundStatus }): Promise<{ error?: string }> {

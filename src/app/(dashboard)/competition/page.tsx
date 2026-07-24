@@ -7,12 +7,14 @@ import Tabs from '@/components/ui/Tabs'
 import { createClient } from '@/lib/supabase/client'
 import MyPhotos from '@/components/competition/MyPhotos'
 import WinnersWall from '@/components/competition/WinnersWall'
+import StaffPhotos from '@/components/competition/StaffPhotos'
 import Judging from '@/components/competition/Judging'
 
-type TabKey = 'mine' | 'winners' | 'judging'
+type TabKey = 'mine' | 'staff' | 'winners' | 'judging'
 
 export default function CompetitionPage() {
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [tab, setTab] = useState<TabKey>('mine')
 
   useEffect(() => {
@@ -21,12 +23,15 @@ export default function CompetitionPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data } = await supabase.from('profiles').select('role, is_super_admin').eq('id', user.id).single()
-      setIsAdmin(data?.role === 'admin' || data?.is_super_admin === true)
+      const superAdmin = data?.is_super_admin === true
+      setIsSuperAdmin(superAdmin)
+      setIsAdmin(data?.role === 'admin' || superAdmin)
     })()
   }, [])
 
   const tabs = [
     { key: 'mine', label: 'My Photos' },
+    ...(isSuperAdmin ? [{ key: 'staff', label: 'Staff Photos' }] : []),
     { key: 'winners', label: 'Winners' },
     ...(isAdmin ? [{ key: 'judging', label: 'Judging' }] : []),
   ]
@@ -39,7 +44,8 @@ export default function CompetitionPage() {
         subtitle="Share your best shots from the field. A winner and runner-up are chosen each month."
       />
       <Tabs tabs={tabs} active={tab} onChange={k => setTab(k as TabKey)} />
-      {tab === 'mine' && <MyPhotos />}
+      {tab === 'mine' && <MyPhotos isSuperAdmin={isSuperAdmin} />}
+      {tab === 'staff' && isSuperAdmin && <StaffPhotos />}
       {tab === 'winners' && <WinnersWall />}
       {tab === 'judging' && isAdmin && <Judging />}
     </div>

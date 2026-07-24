@@ -5,25 +5,34 @@ import { Camera, Trash2, Video, Loader2, Lock, Info } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/confirm'
+import { createClient } from '@/lib/supabase/client'
 import { COMPETITION_VIDEO_ENABLED } from '@/lib/features'
 import { formatDate } from '@/lib/utils'
 import {
   currentCompetitionMonth, monthLabel, listMyEntries, withUrls, uploadEntry,
   deleteEntry, updateCaption, readCapturedAt, getRound,
+  adminUploadOnBehalf, listEntrants, type Entrant,
 } from '@/lib/competition/api'
 import type { CompetitionRound, EntryWithUrl } from '@/lib/competition/types'
 import { EntryThumb, EntryLightbox } from './media'
 import MediaDropZone from './MediaDropZone'
 
-export default function MyPhotos() {
+export default function MyPhotos({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const month = currentCompetitionMonth()
   const [entries, setEntries] = useState<EntryWithUrl[]>([])
   const [round, setRound] = useState<CompetitionRound | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [previewIdx, setPreviewIdx] = useState<number | null>(null)
   const videoInput = useRef<HTMLInputElement>(null)
+
+  // Super-admin only: attribute an upload to another staff member (e.g. a photo
+  // sent over WhatsApp). '' = yourself.
+  const [attributeTo, setAttributeTo] = useState('')
+  const [entrants, setEntrants] = useState<Entrant[]>([])
+  const [myUid, setMyUid] = useState<string | null>(null)
 
   const closed = round?.status === 'closed'
 
@@ -44,19 +53,39 @@ export default function MyPhotos() {
     return () => { alive = false }
   }, [month])
 
+  // Load the staff list + own id once, only for the super-admin attribute picker.
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    let alive = true
+    ;(async () => {
+      const { data: { user } } = await createClient().auth.getUser()
+      const list = await listEntrants()
+      if (!alive) return
+      setMyUid(user?.id ?? null)
+      setEntrants(list)
+    })()
+    return () => { alive = false }
+  }, [isSuperAdmin])
+
   async function handleFiles(files: File[], mediaType: 'photo' | 'video') {
     if (!files.length) return
-    setError(null)
+    setError(null); setNotice(null)
+    const targetId = isSuperAdmin ? attributeTo : ''
+    const targetName = entrants.find(p => p.id === targetId)?.full_name
     let ok = 0
     for (let i = 0; i < files.length; i++) {
       setBusy(`Uploading ${i + 1} of ${files.length}…`)
       const capturedAt = mediaType === 'photo' ? await readCapturedAt(files[i]) : null
-      const res = await uploadEntry(files[i], { mediaType, capturedAt })
+      const res = targetId
+        ? await adminUploadOnBehalf(files[i], targetId, { mediaType, capturedAt })
+        : await uploadEntry(files[i], { mediaType, capturedAt })
       if (res.error) { setError(res.error); break }
       ok++
     }
     setBusy(null)
-    if (ok) await refresh()
+    if (!ok) return
+    if (targetId) setNotice(`Added ${ok} ${ok === 1 ? 'photo' : 'photos'} to ${targetName ?? 'that person'}. Find it under Staff Photos.`)
+    else await refresh()
   }
 
   async function remove(entry: EntryWithUrl) {
@@ -89,7 +118,21 @@ export default function MyPhotos() {
 
         {!closed && (
           <div className="mt-4 space-y-2">
-            <MediaDropZone onFiles={imgs => handleFiles(imgs, 'photo')} disabled={!!busy} busy={busy} />
+            {isSuperAdmin && (
+              <div>
+                <label className="label-base">Whose photo is this?</label>
+                <select className="input-base sm:max-w-xs" value={attributeTo} onChange={e => setAttributeTo(e.target.value)}>
+                  <option value="">Yours</option>
+                  {entrants.filter(p => p.id !== myUid).map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                </select>
+              </div>
+            )}
+            <MediaDropZone
+              onFiles={imgs => handleFiles(imgs, 'photo')}
+              disabled={!!busy}
+              busy={busy}
+              hint={attributeTo ? <>Uploading as <strong>{entrants.find(p => p.id === attributeTo)?.full_name}</strong></> : undefined}
+            />
             {COMPETITION_VIDEO_ENABLED && (
               <button className="btn-secondary" onClick={() => videoInput.current?.click()} disabled={!!busy}>
                 <Video className="h-4 w-4" /> Add video
@@ -97,6 +140,7 @@ export default function MyPhotos() {
             )}
           </div>
         )}
+        {notice && <p className="mt-2 text-sm text-brand-700">{notice}</p>}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
         {COMPETITION_VIDEO_ENABLED && (

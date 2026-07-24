@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Trophy, Medal, Star, Loader2, UploadCloud, Check, Eye, EyeOff, ImageOff,
+  Trophy, Medal, Star, Loader2, Check, Eye, EyeOff, ImageOff,
 } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
 import { cn, formatDate } from '@/lib/utils'
 import {
   currentCompetitionMonth, monthLabel, listMonthSummaries, adminListEntries,
   myOwnEntryIds, withUrls, getRound, saveRound, savePlacements,
-  listEntrants, adminUploadOnBehalf, readCapturedAt,
-  type MonthSummary, type Entrant,
+  type MonthSummary,
 } from '@/lib/competition/api'
 import type { CompetitionRound, EntryWithUrl, RoundStatus } from '@/lib/competition/types'
 import { EntryThumb, EntryLightbox } from './media'
-import MediaDropZone from './MediaDropZone'
 
 export default function Judging() {
   const [months, setMonths] = useState<MonthSummary[]>([])
@@ -114,9 +112,8 @@ export default function Judging() {
         </div>
         <p className="flex items-center gap-1.5 text-sm text-gray-500">
           <EyeOff className="h-3.5 w-3.5 shrink-0" />
-          Blind judging — entrant names are hidden until you save your picks. Only your own submissions are flagged so you can recuse.
+          Blind judging — entrant names are hidden here, and only this month’s photos are shown. Your own submissions are flagged so you can recuse.
         </p>
-        <OnBehalfUploader month={month} onUploaded={() => loadMonth(month)} />
       </div>
 
       {/* Toolbar */}
@@ -236,66 +233,5 @@ function RoundControls({ round, month, onSaved }: { round: CompetitionRound | nu
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
       </button>
     </>
-  )
-}
-
-function OnBehalfUploader({ month, onUploaded }: { month: string; onUploaded: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [entrants, setEntrants] = useState<Entrant[]>([])
-  const [entrantId, setEntrantId] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => { if (open && !entrants.length) listEntrants().then(setEntrants).catch(() => {}) }, [open, entrants.length])
-
-  async function handleFiles(files: File[]) {
-    if (!entrantId) { setError('Choose whose photo this is first.'); return }
-    if (!files.length) return
-    setError(null)
-    let ok = 0
-    for (let i = 0; i < files.length; i++) {
-      setBusy(`Uploading ${i + 1} of ${files.length}…`)
-      const capturedAt = await readCapturedAt(files[i])
-      const res = await adminUploadOnBehalf(files[i], entrantId, { caption: null, capturedAt, month })
-      if (res.error) { setError(res.error); break }
-      ok++
-    }
-    setBusy(null)
-    if (ok) onUploaded()
-  }
-
-  if (!open) {
-    return (
-      <button className="btn-ghost" onClick={() => setOpen(true)}>
-        <UploadCloud className="h-4 w-4" /> Upload a photo on someone’s behalf
-      </button>
-    )
-  }
-
-  const entrantName = entrants.find(p => p.id === entrantId)?.full_name
-
-  return (
-    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[12rem] flex-1">
-          <label className="label-base">Whose photo is this?</label>
-          <select className="input-base" value={entrantId} onChange={e => setEntrantId(e.target.value)}>
-            <option value="">Select staff member…</option>
-            {entrants.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
-        </div>
-        <button className="btn-ghost" onClick={() => setOpen(false)} disabled={!!busy}>Cancel</button>
-      </div>
-      <MediaDropZone
-        onFiles={handleFiles}
-        disabled={!entrantId || !!busy}
-        pasteActive={open}
-        busy={busy}
-        hint={entrantId
-          ? <>Drag, paste (great for WhatsApp Web), or tap — files into <strong>{monthLabel(month)}</strong> as {entrantName}</>
-          : 'Choose a staff member first, then drag / paste / tap a photo'}
-      />
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </div>
   )
 }
