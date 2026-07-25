@@ -20,7 +20,8 @@ import JobInvoiceSummary from '@/components/job/JobInvoiceSummary'
 import JobCargoVoyages from '@/components/job/JobCargoVoyages'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
-import { WORKFLOW, advanceWorkflowTo } from '@/lib/jobs/tracker'
+import { WORKFLOW } from '@/lib/jobs/tracker'
+import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
 import { titleCaseVesselName } from '@/lib/utils'
@@ -54,7 +55,6 @@ export default function AdminChecklistDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [marking, setMarking] = useState(false)
   const [sharing, setSharing] = useState(false)
 
   // Share (mobile) or download (desktop) the server-rendered checklist PDF.
@@ -209,26 +209,6 @@ export default function AdminChecklistDetailPage() {
     }
   }
 
-  // Admin escape hatch: push a completed-but-stuck checklist through, regardless
-  // of the surveyor's device/state. Sets submitted + advances the workflow.
-  async function markSubmitted() {
-    setMarking(true)
-    const supabase = createClient()
-    // .select('id') so a 0-row RLS denial on this escape-hatch is surfaced rather
-    // than reporting a false "Marked as submitted".
-    const { data, error: err } = await supabase.from('jobs')
-      .update({ submitted_at: job.submitted_at ?? new Date().toISOString() })
-      .eq('id', jobId).select('id')
-    if (err) { toast.error(err.message); setMarking(false); return }
-    if (!data || data.length === 0) { toast.error('Could not mark as submitted — permission denied or the job no longer exists.'); setMarking(false); return }
-    // Best-effort workflow advance — time-bounded so a stalled request can't hang
-    // the button (the submit itself is already verified above).
-    await withTimeout(advanceWorkflowTo(jobId, 'report_ready'), 8_000, 'Updating status').catch(() => {})
-    toast.success('Marked as submitted')
-    setMarking(false)
-    load()
-  }
-
   async function handleDelete() {
     if (!(await confirmDialog({ message: `Delete "${job.title}"? This cannot be undone.`, danger: true, confirmLabel: 'Delete' }))) return
     setDeleting(true)
@@ -288,13 +268,27 @@ export default function AdminChecklistDetailPage() {
               <span className="hidden sm:inline">Download / Share PDF</span>
             </button>
           )}
-          {/* Admin escape hatch when a surveyor's submit is stuck; lifecycle otherwise
-              runs through the workflow stepper on the Overview tab. */}
-          {!editMode && !job.submitted_at && (
-            <button onClick={markSubmitted} disabled={marking} className={`btn-secondary ${TAP_BTN}`} title="Mark as submitted" aria-label="Mark as submitted">
-              {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              <span className="hidden sm:inline">Mark submitted</span>
-            </button>
+          {/* The SAME control a surveyor gets — admins do fieldwork too, so the word
+              and the behaviour must not differ by role. The old "Mark submitted"
+              button was gated on !job.submitted_at, which hid it in precisely the
+              broken state it existed to repair (submitted, but the status write
+              never landed). The shared button shows whenever the job is still
+              in_progress, so that state is now recoverable. */}
+          {!editMode && (
+            <MarkJobCompleteButton
+              job={job}
+              onChanged={load}
+              className={TAP_BTN}
+              requestChecklistComplete={() => {
+                // The editor stays mounted on every tab (only CSS-hidden), so its
+                // required-question check is available from the header regardless
+                // of which tab is showing.
+                if (!editorRef.current) return false
+                setTab('checklist')
+                editorRef.current.requestComplete()
+                return true
+              }}
+            />
           )}
           <button onClick={() => setEditMode(!editMode)} className={`btn-secondary ${TAP_BTN}`}>
             {editMode ? 'Cancel' : 'Edit'}

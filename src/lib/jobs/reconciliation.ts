@@ -13,20 +13,30 @@ import { createClient } from '@/lib/supabase/client'
 import type { WorkflowStatus, Invoice, Currency } from '@/lib/types/database'
 
 export type ReconCategory =
+  | 'not_completed'           // work looks done but the job was never marked complete
   | 'ready_to_invoice'        // marked invoice-ready, no invoice yet — bill it
   | 'missing_invoice_record'  // job is closed but no invoice exists
   | 'missing_client'          // billable but no client set — can't invoice
   | 'hours_changed'           // billed, but a surveyor's hours were edited afterwards
 
 export const RECON_META: Record<ReconCategory, { label: string; blurb: string; pill: string; dot: string }> = {
+  not_completed:          { label: 'Not completed',      blurb: 'Work looks finished but nobody marked the job complete — it can’t be invoiced until they do.', pill: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
   ready_to_invoice:       { label: 'Ready to invoice',   blurb: 'Marked invoice-ready — no invoice raised yet.',    pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
   missing_invoice_record: { label: 'Invoice missing',    blurb: 'Job was closed but no invoice exists.',            pill: 'bg-red-100 text-red-700',      dot: 'bg-red-500' },
   missing_client:         { label: 'No client',          blurb: 'Billable, but no client is set to invoice.',       pill: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
   hours_changed:          { label: 'Hours changed',      blurb: 'Labour was edited after this was invoiced — check the billed hours.', pill: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
 }
 
-// Display order: most urgent / most-likely-forgotten first.
-export const RECON_ORDER: ReconCategory[] = ['ready_to_invoice', 'missing_invoice_record', 'missing_client', 'hours_changed']
+// Display order: most urgent / most-likely-forgotten first. 'not_completed' leads —
+// it is the earliest point at which billing can silently stall, and every category
+// below it is unreachable until the job is completed.
+export const RECON_ORDER: ReconCategory[] = ['not_completed', 'ready_to_invoice', 'missing_invoice_record', 'missing_client', 'hours_changed']
+
+/** A job whose checklist was submitted is flagged immediately (submitted means the
+ *  surveyor declared it done, so a still-'in_progress' status is a stuck write).
+ *  A job with nothing submitted is only stale after this many days — report-only
+ *  jobs have no submit event, and multi-day loadouts legitimately run for weeks. */
+export const STALE_IN_PROGRESS_DAYS = 21
 
 export interface ReconItem {
   job_id: string
@@ -41,7 +51,16 @@ export interface ReconItem {
   currency: Currency | null
 }
 
-function categorize(job: { workflow_status: WorkflowStatus; client_id: string | null }, inv: { status: Invoice['status']; created_at?: string } | undefined, hoursChanged = false): ReconCategory | null {
+interface ReconJob {
+  workflow_status: WorkflowStatus
+  client_id: string | null
+  submitted_at?: string | null
+  scheduled_date?: string | null
+  end_date?: string | null
+  created_at?: string | null
+}
+
+function categorize(job: ReconJob, inv: { status: Invoice['status']; created_at?: string } | undefined, hoursChanged = false, staleBefore?: string): ReconCategory | null {
   if (inv && inv.status !== 'void') {
     if (hoursChanged) return 'hours_changed' // billed, but labour edited since
     return null // invoiced with a record — fine
@@ -50,7 +69,19 @@ function categorize(job: { workflow_status: WorkflowStatus; client_id: string | 
   // closed job with no invoice is either a manual close or a lost invoice — flag it.
   if (job.workflow_status === 'closed') return 'missing_invoice_record'
   if (job.workflow_status === 'invoice_ready') return job.client_id ? 'ready_to_invoice' : 'missing_client'
-  return null // in_progress / report_ready — not yet billable
+  // Jobs that never got marked complete. Nothing downstream can see them — the
+  // invoice builder only lists report_ready/invoice_ready — so before this check
+  // the reconcile page, the one tool built to catch forgotten billing, stayed
+  // silent on the single most common way billing is forgotten.
+  if (job.workflow_status === 'in_progress') {
+    // Submitted checklist + still in_progress = the status write never landed.
+    // Unambiguous; no age grace period.
+    if (job.submitted_at) return 'not_completed'
+    // Otherwise judge by the job's last working day, falling back to created.
+    const worked = job.end_date || job.scheduled_date || (job.created_at ?? '').slice(0, 10)
+    if (staleBefore && worked && worked < staleBefore) return 'not_completed'
+  }
+  return null // in_progress but still recent, or report_ready — not yet billable
 }
 
 /** How far back the reconcile list looks. Replaces the old "exclude closed jobs"
@@ -63,7 +94,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
   const since = new Date(); since.setMonth(since.getMonth() - RECON_WINDOW_MONTHS)
   const [{ data: jobs }, { data: invoices }, { data: labour }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, client_id, workflow_status, invoice_id, client:clients(name)')
+      .select('id, report_number, vessel_name, client_id, workflow_status, invoice_id, submitted_at, scheduled_date, end_date, created_at, client:clients(name)')
       // Closed jobs are INCLUDED on purpose — post-145 they are the billed ones, and
       // the unsent/overdue/hours-changed checks only ever apply to them. Bounded by
       // date instead so the list stays a working queue, not the whole history.
@@ -92,14 +123,19 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
     if (inv.job_id && !byJob.has(inv.job_id)) byJob.set(inv.job_id, inv)
   }
 
-  const counts: Record<ReconCategory, number> = { ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, hours_changed: 0 }
+  // Cut-off for "this job has been sitting in progress too long" (date-only, so it
+  // compares directly against scheduled_date/end_date).
+  const staleCut = new Date(); staleCut.setDate(staleCut.getDate() - STALE_IN_PROGRESS_DAYS)
+  const staleBefore = staleCut.toISOString().slice(0, 10)
+
+  const counts: Record<ReconCategory, number> = { not_completed: 0, ready_to_invoice: 0, missing_invoice_record: 0, missing_client: 0, hours_changed: 0 }
   const items: ReconItem[] = []
   for (const j of (jobs ?? []) as any[]) {
     const inv = byJob.get(j.id) ?? (j.invoice_id ? byId.get(j.invoice_id) : null)
     // Labour edited after the invoice was created → likely under/over-billing.
     const lm = labourMax.get(j.id)
     const hoursChanged = !!(inv?.created_at && lm && lm > inv.created_at)
-    const category = categorize(j, inv, hoursChanged)
+    const category = categorize(j, inv, hoursChanged, staleBefore)
     if (!category) continue
     counts[category]++
     items.push({

@@ -3,6 +3,7 @@ import { getDraft, putDraft, deleteDraft, getPhotosForJob, putPhoto, deletePhoto
 import { instanceKey, parseInstanceKey } from './instanceKeys'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { createDraftJob } from '@/lib/jobs/drafts'
+import { advanceWorkflowTo } from '@/lib/jobs/tracker'
 
 export type SyncResult =
   | { ok: true; submitted: boolean; nothing?: boolean }
@@ -260,16 +261,30 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
         })
         return { ok: true, submitted: false }
       }
+      // Two writes, not one. The status must NOT ride along on this update: a draft
+      // can sit in IndexedDB for days, and a blind `workflow_status:'report_ready'`
+      // would drag a job an admin had already pushed to invoice_ready/closed back
+      // down — while leaving report_approved_at stamped, which only an admin can
+      // clear (mig 148). advanceWorkflowTo is forward-only, so a late sync can now
+      // never regress a job.
       const { data: updatedRows, error } = await supabase.from('jobs')
-        .update({ submitted_at: new Date().toISOString(), workflow_status: 'report_ready' }).eq('id', jobId).select('id')
+        .update({ submitted_at: new Date().toISOString() }).eq('id', jobId).select('id')
       if (error) throw error
       // RLS can filter the update to zero rows with no error (e.g. the submitter
       // isn't assigned to this job). Keep the draft + surface it rather than
       // silently reporting a successful submit.
       if (!updatedRows || updatedRows.length === 0) {
-        const message = 'Saved, but could not submit — this job is not assigned to you. Ask an admin to assign you so it can be submitted.'
+        const message = 'Saved, but could not complete this job — it is not assigned to you. Ask an admin to assign you so it can be completed.'
         await putDraft({ ...draft, syncError: message })
         return { ok: false, reason: 'conflict', message }
+      }
+      const adv = await advanceWorkflowTo(jobId, 'report_ready')
+      if (adv.error) {
+        // submitted_at landed but the status didn't — exactly the state that used to
+        // strand a job at in_progress with a locked checklist. Keep the draft queued
+        // so the next sync retries; both writes are idempotent.
+        await putDraft({ ...draft, syncError: adv.error })
+        return { ok: false, reason: 'conflict', message: adv.error }
       }
       submitted = true
     }

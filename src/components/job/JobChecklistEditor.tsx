@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Loader2, Save, Send, Download, Camera, X, CheckCircle2,
+  Loader2, Save, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2, Usb,
 } from 'lucide-react'
@@ -64,6 +64,7 @@ import { toast } from '@/components/ui/toast'
 import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/deliver'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
 import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
+import { completeJob, COMPLETE_LABEL } from '@/lib/jobs/complete'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { SaveStatus } from '@/components/ui/SaveStatus'
 import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
@@ -110,6 +111,10 @@ export interface JobChecklistEditorHandle {
   isDirty: boolean
   save: () => Promise<boolean>
   navigate: (destination: string) => void
+  /** Open the completion dialog (recomputing unanswered required questions first).
+   *  Lets the job page's "Mark complete" button drive the same flow as the sticky
+   *  bar instead of writing its own, weaker, validation-free version. */
+  requestComplete: () => void
 }
 
 interface Props {
@@ -120,45 +125,6 @@ interface Props {
   /** Hide the editor's own "Download PDF" buttons when the page already shows one
    *  in its header (e.g. the admin job page) — avoids duplicate download buttons. */
   hideInlinePdf?: boolean
-}
-
-type SubmitOutcome = 'ok' | 'denied' | 'failed'
-
-/**
- * Mark a job submitted, resiliently. Setting `submitted_at` is a tiny, idempotent
- * write, so on flaky field wifi we RETRY it and, after any error/timeout, VERIFY by
- * re-reading `submitted_at` — because the write often lands even when the response is
- * lost. This is the core reliability fix: a surveyor on a weak connection can no
- * longer end up with a fully-filled checklist that silently never submitted.
- *  - 'ok'     → submitted (this call, a prior attempt, or already submitted)
- *  - 'denied' → 0 rows AND not submitted → genuine RLS/permission denial
- *  - 'failed' → couldn't reach the server after retries (answers are safe; retry)
- */
-async function submitJobWithRetry(jobId: string): Promise<SubmitOutcome> {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const supabase = createClient()
-    try {
-      const { data, error } = await withTimeout(
-        supabase.from('jobs').update({ submitted_at: new Date().toISOString() }).eq('id', jobId).select('id'),
-        20_000, 'Submitting checklist'
-      )
-      if (!error && data && data.length > 0) return 'ok'
-      if (!error && data && data.length === 0) {
-        // 0 rows: either a real RLS denial or it's already submitted — verify.
-        const { data: chk } = await supabase.from('jobs').select('submitted_at').eq('id', jobId).maybeSingle()
-        return chk?.submitted_at ? 'ok' : 'denied'
-      }
-      // An error fell through — the write may still have landed; verify below.
-    } catch { /* network/timeout — verify below, then retry */ }
-
-    try {
-      const { data: chk } = await createClient().from('jobs').select('submitted_at').eq('id', jobId).maybeSingle()
-      if (chk?.submitted_at) return 'ok'
-    } catch { /* couldn't verify either — retry */ }
-
-    if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1500))
-  }
-  return 'failed'
 }
 
 const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
@@ -250,11 +216,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // rather than state so the memoised handleSave can never read a stale copy.
     const pendingCreateRef = useRef(false)
 
-    // Expose isDirty + save + navigate to parent via ref
+    // Expose isDirty + save + navigate + requestComplete to parent via ref
     useImperativeHandle(ref, () => ({
       get isDirty() { return isDirty },
       save: handleSave,
       navigate: requestNavigate,
+      requestComplete,
     }))
 
     // Sync isDirty to global dirty-state so sidebar links respect it
@@ -1024,42 +991,30 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         if (isDirty) {
           const saved = await handleSave()
           if (!saved) {
-            const message = 'The latest edits could not be saved, so the checklist was not submitted. Please try Save Draft first, then submit again.'
+            const message = 'The latest edits could not be saved, so the job was not completed. Please try Save Draft first, then tap ' + COMPLETE_LABEL + ' again.'
             setSubmitError(message)
             return
           }
         }
 
-        // Retry + verify so a dropped request on weak field wifi can't leave a
-        // finished checklist unsubmitted (the real-world failure surveyors hit).
-        const outcome = await submitJobWithRetry(jobId)
-
-        if (outcome === 'denied') {
-          console.error('[submit:jobUpdate] denied (0 rows, not submitted) for', jobId)
-          const message = 'The checklist could not be submitted — your account may not have permission to update this job. Your answers are saved; please tell an admin so they can assign you or submit it.'
-          setSaveError(message)
-          setSubmitError(message)
+        // Submit + advance behind ONE seam, and its failure is a hard stop.
+        // Previously the advance was fire-and-forget alongside the date sync: on
+        // flaky wifi the submit landed, the advance didn't, and the surveyor was
+        // navigated away from a now-locked checklist sitting at 'in_progress' with
+        // nothing to retry. Both writes are idempotent, so keeping the dialog open
+        // on failure is always safe — tapping again finishes the job.
+        const res = await completeJob(jobId)
+        if (res.error) {
+          console.error('[complete] failed for', jobId, res.error)
+          setSaveError(res.error)
+          setSubmitError(res.error)
           return
         }
 
-        if (outcome === 'failed') {
-          console.error('[submit:jobUpdate] could not reach server after retries for', jobId)
-          const message = 'Submit could not reach the server after several tries. Your answers are saved — check your connection and tap Submit again.'
-          setSaveError(message)
-          setSubmitError(message)
-          return
-        }
-
-        // The checklist IS submitted now. The remaining steps are best-effort
-        // bookkeeping (advance the workflow to "report ready" + date the job by the
-        // survey date). They must NEVER block the surveyor on a frozen grey dialog:
-        // on a flaky connection the submit write can land while a follow-up request
-        // stalls, so each is bounded by a timeout and failures are swallowed — the
-        // surveyor is always taken back, and an admin can correct status if needed.
-        await Promise.allSettled([
-          withTimeout(advanceWorkflowTo(jobId, 'report_ready'), 8_000, 'Updating status'),
-          withTimeout(syncJobDateFromChecklist(), 8_000, 'Dating the job'),
-        ])
+        // Dating the job by the survey date stays best-effort bookkeeping — it is
+        // cosmetic, an admin can correct it, and it must never block a finished job.
+        await withTimeout(syncJobDateFromChecklist(), 8_000, 'Dating the job').catch(() => {})
+        toast.success('Job marked complete')
         setShowSubmitDialog(false)
         if (currentUserId) await withTimeout(deleteDraft(currentUserId, jobId), 5_000, 'Clearing draft').catch(() => {})
         router.push(backHref)
@@ -1070,6 +1025,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       } finally {
         setSubmitting(false)
       }
+    }
+
+    /** Open the completion dialog. Shared by the sticky bar and the job page's
+     *  header button so both routes run the same required-question check. */
+    function requestComplete() {
+      setSubmitError(null)
+      setShowSubmitDialog(true)
     }
 
     // --- Navigation guard ---
@@ -1908,13 +1870,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {saving ? 'Saving…' : 'Save Draft'}
                 </button>
+                {/* Same word, same action as the job page header — a surveyor
+                    finishing a long checklist shouldn't have to scroll back up to
+                    find it. One seam (completeJob) underneath both. */}
                 {!isSubmitted && (
                   <button
-                    onClick={() => { setSubmitError(null); setShowSubmitDialog(true) }}
+                    onClick={requestComplete}
                     disabled={saving || submitting}
                     className={`btn-primary ${TAP_BTN}`}
                   >
-                    <Send className="h-4 w-4" />Submit
+                    <CheckCircle2 className="h-4 w-4" />{COMPLETE_LABEL}
                   </button>
                 )}
               </div>
@@ -1956,12 +1921,12 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           open={showSubmitDialog}
           onClose={() => { if (!submitting) setShowSubmitDialog(false) }}
           onConfirm={handleSubmit}
-          title="Submit Checklist"
+          title={COMPLETE_LABEL}
           message={isDirty
-            ? 'You have unsaved changes. The app will save your latest answers first, then submit the checklist. Once submitted you will not be able to edit it.'
-            : 'Once submitted you will not be able to edit the checklist. Make sure all required fields are completed.'
+            ? 'You have unsaved changes. Your latest answers are saved first, then the job is marked complete and moves to “Report ready”. The checklist locks — an admin can reopen it if something needs correcting.'
+            : 'This marks the job complete and moves it to “Report ready” for the office. The checklist locks, so make sure every required question is answered — an admin can reopen it if something needs correcting.'
           }
-          confirmLabel={isDirty ? 'Save and Submit' : 'Submit Checklist'}
+          confirmLabel={isDirty ? `Save and ${COMPLETE_LABEL.toLowerCase()}` : COMPLETE_LABEL}
           loading={submitting}
           error={missingRequired.length > 0 ? (
             <div className="space-y-2">

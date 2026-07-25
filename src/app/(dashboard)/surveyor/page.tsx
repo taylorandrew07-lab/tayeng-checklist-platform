@@ -179,6 +179,14 @@ export default function SurveyorDashboard() {
   const submittedAll = jobs.filter(j => j.workflow_status === 'closed')
   const submitted = submittedAll.filter(inRange)
 
+  // Split the open board by "have I finished this?". Both halves stay open and
+  // editable (hours/OT/km on any non-closed job — mig 117), but a surveyor could
+  // not previously tell the two apart at a glance, so finished and unfinished jobs
+  // sat in one undifferentiated "Open Jobs" pile and nothing ever got marked
+  // complete. The unfinished list is the one that needs their attention.
+  const needsCompleting = active.filter(j => j.workflow_status === 'in_progress')
+  const withOffice = active.filter(j => j.workflow_status !== 'in_progress')
+
   // Totals for the selected timeframe across ALL the surveyor's jobs in range.
   // Hours-billed and day-billed jobs are counted into separate buckets and shown
   // side by side (mig 148) — adding 8 hours to 2 days would be a meaningless number
@@ -382,11 +390,40 @@ export default function SurveyorDashboard() {
             </div>
           )}
 
-          {active.length > 0 && (
+          {needsCompleting.length > 0 && (
             <div>
               <h2 className="section-title mb-3">Open Jobs</h2>
+              <p className="text-sm text-gray-500 -mt-2 mb-3">
+                Still in progress. When you&apos;ve finished on board, open the job and tap <span className="font-medium text-gray-700">Mark complete</span> so the office can raise the report.
+              </p>
               <div className="space-y-3">
-                {active.map(job => (
+                {needsCompleting.map(job => (
+                  <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">{job.title}</p>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                        {job.template?.name ?? job.job_type ?? 'No checklist'} · {job.client?.name ?? 'No client'} · {jobDateLabel(job)}
+                      </p>
+                      <MyLine jobId={job.id} unit={job.labour_unit} />
+                    </div>
+                    <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Finished by the surveyor, now with the office. Still open and still
+              editable — hours, overtime and distance can be added after completing. */}
+          {withOffice.length > 0 && (
+            <div>
+              <h2 className="section-title mb-3">Completed — with the office</h2>
+              <p className="text-sm text-gray-500 -mt-2 mb-3">You&apos;ve marked these complete. You can still add hours, overtime and distance until they&apos;re invoiced.</p>
+              <div className="space-y-3">
+                {withOffice.map(job => (
                   <Link key={job.id} href={`/surveyor/jobs/${job.id}`} className="card p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

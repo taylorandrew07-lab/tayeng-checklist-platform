@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Receipt, AlertTriangle, UserX, Clock } from 'lucide-react'
+import { Receipt, AlertTriangle, UserX, Clock, CircleDashed } from 'lucide-react'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { listReconciliation, RECON_META, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { money } from '@/lib/jobs/tracker'
@@ -12,6 +12,9 @@ const TONE: Record<ReconCategory, AttentionTone> = {
   missing_client: 'warn',
   ready_to_invoice: 'warn',
   hours_changed: 'warn',
+  // A job nobody completed isn't wrong yet — it's unfinished. 'warn' would put it
+  // alongside real billing faults; it needs a nudge, not an alarm.
+  not_completed: 'info',
 }
 
 const ICON: Record<ReconCategory, React.ElementType> = {
@@ -19,6 +22,7 @@ const ICON: Record<ReconCategory, React.ElementType> = {
   missing_client: UserX,
   ready_to_invoice: Receipt,
   hours_changed: Clock,
+  not_completed: CircleDashed,
 }
 
 /**

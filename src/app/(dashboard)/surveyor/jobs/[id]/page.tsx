@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, CloudOff, Loader2, Save, FileQuestion } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
+import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
@@ -60,7 +61,10 @@ export default function SurveyorJobPage() {
         // labour_unit must be selected: JobOpsPanel defaults a missing unit to hours,
         // and on a day-billed job that would let the OT shift log overwrite the
         // hand-typed day count with a sum of HOURS, paid at the day rate (mig 148).
-        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, workflow_status, template_id, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
+        // submitted_at drives MarkJobCompleteButton's repair path: with the checklist
+        // already submitted it completes directly instead of reopening the (locked)
+        // checklist dialog.
+        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -201,6 +205,23 @@ export default function SurveyorJobPage() {
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save
               </button>
+            )}
+            {/* Deliberately OUTSIDE the template_id gate below: report-only jobs
+                (draught surveys, hatch inspections — mig 151) have no checklist and
+                so had no way for a surveyor to finish them at all. Not shown while
+                editing, and not for a local-only job whose server row doesn't exist
+                yet — that one completes after it syncs. */}
+            {!editMode && !localOnly && (
+              <MarkJobCompleteButton
+                job={job}
+                onChanged={load}
+                className={TAP_BTN}
+                requestChecklistComplete={() => {
+                  if (!editorRef.current) return false
+                  editorRef.current.requestComplete()
+                  return true
+                }}
+              />
             )}
           </div>
         )}

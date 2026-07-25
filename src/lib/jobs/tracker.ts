@@ -99,22 +99,41 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
 }
 
 /** Advance a job to `target` only if it hasn't already reached/passed it — used
- *  to sync the workflow from checklist activity without ever pulling it back. */
-export async function advanceWorkflowTo(jobId: string, target: WorkflowStatus): Promise<void> {
+ *  to sync the workflow from checklist activity without ever pulling it back.
+ *
+ *  REPORTS FAILURE ON PURPOSE. This used to return Promise<void> and swallow the
+ *  error, which is how jobs ended up submitted-but-still-in_progress: the checklist
+ *  submit landed, this write didn't, nobody found out, and the checklist locked
+ *  behind them. Callers must decide what a failure means; `changed:false` with no
+ *  error is the benign "already at or past the target" case, NOT a problem. */
+export async function advanceWorkflowTo(
+  jobId: string, target: WorkflowStatus,
+): Promise<{ error?: string; changed: boolean }> {
   const supabase = createClient()
   const ti = WORKFLOW_ORDER.indexOf(target)
-  if (ti < 0) return
+  if (ti < 0) return { error: `Unknown status "${target}"`, changed: false }
   // Atomic forward-only advance: the DB itself excludes rows already at/after the
   // target (the WHERE is evaluated at update time), so two concurrent advances
   // can't race a read-then-write and pull the stage backward. Only log when a row
   // actually changed.
   const atOrAfter = WORKFLOW_ORDER.slice(ti)
-  const { data } = await supabase.from('jobs')
+  const { data, error } = await supabase.from('jobs')
     .update({ workflow_status: target })
     .eq('id', jobId)
     .not('workflow_status', 'in', `(${atOrAfter.join(',')})`)
     .select('id')
-  if (data && data.length) await logActivity('job', jobId, `workflow:${target}`)
+  if (error) return { error: error.message, changed: false }
+  if (!data || data.length === 0) {
+    // 0 rows is ambiguous — the forward-only WHERE excluded it (fine), or RLS did
+    // (not fine). Re-read to tell them apart so a permission denial can't pass as
+    // "already done". A job we genuinely can't read is treated as a denial.
+    const { data: row } = await supabase.from('jobs').select('workflow_status').eq('id', jobId).maybeSingle()
+    const reached = row && WORKFLOW_ORDER.indexOf(normalizeWorkflowStatus(row.workflow_status)) >= ti
+    if (reached) return { changed: false }
+    return { error: 'That change was blocked — you may not have permission to update this job.', changed: false }
+  }
+  await logActivity('job', jobId, `workflow:${target}`)
+  return { changed: true }
 }
 
 /** Switching a job to fixed-price means it has no billable hours — clear the
