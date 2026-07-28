@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search, KeyRound } from 'lucide-react'
+import { Plus, Loader2, Pencil, ShieldCheck, FileText, Search, KeyRound } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
@@ -391,7 +391,10 @@ export default function UsersPage() {
   const totalPendingRequests = clientRequests.length
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    // Wider than the app's usual max-w-7xl: this is a dense data table with four row
+    // actions, and at 7xl a ~1600px screen wasted ~380px of margin on each side while
+    // the actions wrapped onto a second line.
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <PeopleTabs />
       <PageHeader
         title="Team"
@@ -480,16 +483,16 @@ export default function UsersPage() {
           rowKey={user => user.id}
           columns={[
             {
-              key: 'name', header: 'Name', primary: true,
+              key: 'name', header: 'Name', primary: true, className: 'w-[23%]',
               cell: user => (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm flex-shrink-0">
                     {user.full_name.charAt(0)}
                   </div>
-                  <div>
-                    <a href={`/admin/users/${user.id}`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{user.full_name}</a>
+                  <div className="min-w-0">
+                    <a href={`/admin/users/${user.id}`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline block truncate">{user.full_name}</a>
                     {(user as any).is_super_admin && (
-                      <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                      <span className="mt-0.5 inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">
                         <ShieldCheck className="h-3 w-3" />Super Admin
                       </span>
                     )}
@@ -497,19 +500,22 @@ export default function UsersPage() {
                 </div>
               ),
             },
-            { key: 'email', header: 'Email', cell: user => <span className="text-gray-600">{user.email}</span> },
-            { key: 'role', header: 'Role', cell: user => <RolePill role={user.role} label={(user as any).display_title ?? undefined} /> },
+            // Status and Joined are dropped from this table on purpose. `active` filters
+            // out every inactive user (see above), so the Status cell read "Active" on
+            // literally every row — two columns of width for zero information. Joined
+            // is still on the user's own detail page.
             {
-              key: 'status', header: 'Status',
-              cell: user => user.is_active
-                ? <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium"><Check className="h-3.5 w-3.5" /> Active</span>
-                : <span className="inline-flex items-center gap-1 text-gray-400 text-xs font-medium"><X className="h-3.5 w-3.5" /> Inactive</span>,
+              key: 'email', header: 'Email', className: 'w-[26%]',
+              cell: user => <span className="text-gray-600 block truncate">{user.email}</span>,
             },
-            { key: 'joined', header: 'Joined', cell: user => <span className="text-gray-500">{formatDate(user.created_at)}</span> },
+            { key: 'role', header: 'Role', className: 'w-[13%]', cell: user => <RolePill role={user.role} label={(user as any).display_title ?? undefined} /> },
             {
-              key: 'actions', header: '', mobileLabel: '',
+              key: 'actions', header: '', mobileLabel: '', align: 'right', className: 'w-[38%]',
               cell: user => (
-                <div className="flex items-center gap-2 flex-wrap justify-end md:justify-start">
+                // nowrap: these four actions must stay on ONE line. With flex-wrap the
+                // last one ("Deactivate") dropped to a second row and knocked every row
+                // out of alignment.
+                <div className="flex items-center gap-1 flex-nowrap justify-end whitespace-nowrap">
                   {(isSuperAdmin || user.role !== 'admin') && !(user as any).is_super_admin && (
                     <button onClick={() => openEdit(user)} className="text-xs btn-ghost py-1 px-2">
                       <Pencil className="h-3.5 w-3.5" />Edit
