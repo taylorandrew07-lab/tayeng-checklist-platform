@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Trash2, Check, X, Pencil, Eye, EyeOff, Bell } from 'lucide-react'
-import { listAllJobTypes, addJobType, renameJobType, setJobTypeActive, setJobTypeReminderHours, deleteJobType, type JobTypeRow } from '@/lib/jobs/tracker'
+import { Loader2, Plus, Trash2, Check, X, Pencil, Eye, EyeOff, Bell, History } from 'lucide-react'
+import { listAllJobTypes, addJobType, renameJobType, setJobTypeActive, setJobTypeReminderHours, countOpenJobsMissingReminder, applyReminderToOpenJobs, deleteJobType, type JobTypeRow } from '@/lib/jobs/tracker'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import { REMINDER_WINDOW_LABEL } from '@/lib/jobs/reminderWindow'
@@ -68,6 +68,24 @@ export default function JobTypesManager() {
     load()
   }
 
+  /** Arm the jobs that already exist. New jobs copy the default automatically; these
+   *  were created before it was set, so they need an explicit opt-in. */
+  async function applyToExisting(r: JobTypeRow) {
+    if (r.reminder_hours == null) return
+    setBusy(true)
+    const n = await countOpenJobsMissingReminder(r.name)
+    setBusy(false)
+    if (n === 0) { toast.success(`No open ${r.name} jobs need arming — they all have a setting already.`); return }
+    if (!(await confirmDialog({
+      title: 'Apply to existing jobs',
+      message: `Set a ${r.reminder_hours}-hour report reminder on ${n} open ${r.name} job${n === 1 ? '' : 's'}? Closed and invoiced jobs are left alone, and any job you've already given its own setting keeps it. Anything whose ${r.reminder_hours}h has already elapsed will show up as due right away.`,
+      confirmLabel: `Arm ${n} job${n === 1 ? '' : 's'}`,
+    }))) return
+    const { count, error } = await applyReminderToOpenJobs(r.name, r.reminder_hours)
+    if (error) { toast.error(error); return }
+    toast.success(`Reminder set on ${count} ${r.name} job${count === 1 ? '' : 's'}`)
+  }
+
   async function remove(r: JobTypeRow) {
     if (!(await confirmDialog({ title: 'Delete job type', message: `Delete "${r.name}"? It disappears from the New Job dropdown. Existing jobs keep their recorded type.`, danger: true, confirmLabel: 'Delete' }))) return
     const { error } = await deleteJobType(r.id)
@@ -84,6 +102,7 @@ export default function JobTypesManager() {
           <Bell className="h-3 w-3 inline-block -mt-0.5 text-amber-500" /> <strong>Report reminder</strong> — hours after a job finishes before it shows up as a report you need to write. Blank = no reminder.
           Delivered {REMINDER_WINDOW_LABEL}; if it comes due outside those hours it waits for the next working morning.
           Applies to <em>new</em> jobs of that type — existing jobs keep their own setting, which you can change on the job itself.
+          To also arm the jobs you already have, use the <History className="h-3 w-3 inline-block -mt-0.5" /> button (open jobs only; closed and invoiced ones are left alone).
         </p>
       </div>
 
@@ -121,6 +140,15 @@ export default function JobTypesManager() {
                     />
                     <span className="w-2">h</span>
                   </label>
+                  {/* Only meaningful once a delay exists. New jobs inherit it
+                      automatically; this is the opt-in for jobs already in flight. */}
+                  {r.reminder_hours != null && (
+                    <button onClick={() => applyToExisting(r)} disabled={busy}
+                      title={`Also set this ${r.reminder_hours}h reminder on existing open ${r.name} jobs`}
+                      className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-amber-600 disabled:opacity-40">
+                      <History className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button onClick={() => { setEditId(r.id); setEditName(r.name) }} title="Rename" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
                   <button onClick={() => toggle(r)} title={r.is_active ? 'Hide from dropdown' : 'Show in dropdown'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-gray-700">{r.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>
                   <button onClick={() => remove(r)} title="Delete" className="btn-ghost py-1 px-1.5 text-gray-300 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>

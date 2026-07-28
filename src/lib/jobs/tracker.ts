@@ -202,6 +202,45 @@ export async function setJobTypeReminderHours(id: string, hours: number | null):
   const { error } = await createClient().from('job_types').update({ reminder_hours: hours }).eq('id', id)
   return { error: error?.message }
 }
+
+// ── Arming jobs that already exist ──────────────────────────────────────────
+// A job COPIES its type's delay when it is created, so changing a type default
+// only ever affects future jobs. That is deliberate (it stops a default change
+// silently re-arming history), but it leaves the jobs already in flight silent.
+// These two let an admin opt those in explicitly, from the Job Types screen.
+//
+// Scoped to OPEN jobs — in_progress and report_ready. A closed or invoiced job's
+// report is done, so arming it would be pure noise.
+//
+// This deliberately runs as the signed-in ADMIN, not as a migration: migration 162
+// added reminder_hours to the enforce_job_admin_columns denylist, and the migration
+// runner is not an admin (is_admin() is false there), so a migration doing this
+// would raise "Only an administrator can change this job field" and roll back —
+// the exact failure migration 145 had to work around with DISABLE TRIGGER.
+const OPEN_STATUSES = ['in_progress', 'report_ready']
+
+/** How many existing open jobs of this type would be armed. */
+export async function countOpenJobsMissingReminder(typeName: string): Promise<number> {
+  const { count } = await createClient()
+    .from('jobs').select('id', { count: 'exact', head: true })
+    .eq('job_type', typeName)
+    .is('reminder_hours', null)
+    .in('workflow_status', OPEN_STATUSES)
+  return count ?? 0
+}
+
+/** Copy this type's delay onto its existing open jobs that have no reminder set.
+ *  Never overwrites a job that already has one — an explicit per-job choice
+ *  (including "off") always wins. Returns how many were actually armed. */
+export async function applyReminderToOpenJobs(typeName: string, hours: number): Promise<{ count: number; error?: string }> {
+  const { data, error } = await createClient()
+    .from('jobs').update({ reminder_hours: hours })
+    .eq('job_type', typeName)
+    .is('reminder_hours', null)
+    .in('workflow_status', OPEN_STATUSES)
+    .select('id')
+  return { count: data?.length ?? 0, error: error?.message }
+}
 export async function addJobType(name: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('job_types').insert({ name: name.trim() })
   return { error: error?.message }
