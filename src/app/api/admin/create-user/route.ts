@@ -43,10 +43,17 @@ export async function POST(request: Request) {
   }
 
   if (data.user) {
-    // handle_new_user trigger creates the profile with is_active=false.
-    // Admin-created users are pre-approved — activate immediately and set phone.
+    // handle_new_user trigger creates the profile with is_active=false. It also
+    // CLAMPS the role: migration 068 only honours 'client' from user_metadata and
+    // forces everything else (including 'admin' and 'office') to 'surveyor', because
+    // that metadata is attacker-controlled on the self-signup path. That migration
+    // assumes privileged roles are set here instead — so we must set `role`
+    // explicitly. Without it every admin/office account created through the UI was
+    // silently a surveyor, and the new user got bounced out of their own app.
+    // Authorization for the role was already checked above (super-admin for 'admin').
     const { error: profileErr } = await serviceClient.from('profiles').update({
       is_active: true,
+      role,
       phone: phone || null,
     }).eq('id', data.user.id)
 

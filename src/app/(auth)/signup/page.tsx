@@ -35,9 +35,14 @@ export default function SignUpPage() {
     let signUpErr
     try {
       ({ error: signUpErr } = await withTimeout(supabase.auth.signUp({
-        email: form.email,
+        email: form.email.trim().toLowerCase(),
         password: form.password,
         options: {
+          // Without emailRedirectTo, a confirmation email falls back to whatever the
+          // Supabase dashboard's Site URL happens to be — which is how every
+          // confirmation link ended up pointing at localhost. Route it through the
+          // callback like the reset flow does, so the code is exchanged server-side.
+          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
           data: {
             full_name: form.fullName,
             role,

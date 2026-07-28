@@ -78,6 +78,14 @@ export default function ResetPasswordPage() {
       return
     }
 
+    // Arriving here via the reset link means no sign-in ran, so the dashboard's
+    // idle-timeout stamp is stale (or absent) and its inactivity check can sign the
+    // user straight back out the moment they land. Stamp it now.
+    try {
+      localStorage.setItem('te_last_activity', String(Date.now()))
+      if (localStorage.getItem('te_remember') === null) localStorage.setItem('te_remember', '1')
+    } catch { /* storage unavailable */ }
+
     // Redirect to the role-appropriate dashboard. The password is already changed,
     // so if the role lookup stalls we still move the user on rather than hang.
     try {

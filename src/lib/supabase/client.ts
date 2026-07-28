@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { isAuthSessionCookie } from './cookies'
 
 // Persist the auth cookies (~400 days — the browser cap) instead of letting them
 // default to session cookies. Without this, the mobile OS killing the browser /
@@ -29,5 +30,5 @@ export function hasAuthCookie(): boolean {
   if (typeof document === 'undefined') return false
   return document.cookie
     .split('; ')
-    .some(c => c.startsWith('sb-') && c.includes('-auth-token'))
+    .some(c => isAuthSessionCookie(c.split('=')[0]))
 }

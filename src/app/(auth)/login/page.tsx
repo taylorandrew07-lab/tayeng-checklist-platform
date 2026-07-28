@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
+import { signInErrorMessage, readAuthErrorFromUrl } from '@/lib/auth/errors'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import logoFull from '../../../../public/logo-full.png'
@@ -23,14 +24,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Show errors passed via URL (e.g. from callback redirect for pending/expired users)
+  // Show errors passed via URL. Two channels: ?error=… from our own callback
+  // redirect, and Supabase's #error_code=… fragment, which rides along when the
+  // browser follows the redirect from an expired/!used email link. The fragment
+  // never reaches the server, so this is the only place it can be surfaced.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const err = params.get('error')
-    if (err === 'pending') {
-      setError('Your account is pending administrator approval. Please wait for an admin to activate your account.')
-    } else if (err === 'auth_callback_failed') {
-      setError('Authentication failed. Please try again or contact your administrator.')
+    const urlError = readAuthErrorFromUrl(window.location.search, window.location.hash)
+    if (urlError) {
+      setError(urlError)
+      // Strip the noise from the address bar so a refresh doesn't re-show it.
+      window.history.replaceState(null, '', window.location.pathname)
     }
     // Prefill the last-used email (fallback for weak iOS standalone-PWA autofill).
     try { const last = localStorage.getItem('te_last_email'); if (last) setEmail(last) } catch { /* storage unavailable */ }
@@ -42,7 +45,15 @@ export default function LoginPage() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
+      // No readable profile: do NOT bounce into the app. The dashboard would fail the
+      // same lookup and send the user back here — an endless flicker between the two.
+      // Stay put and explain it.
+      if (!profile?.role) {
+        await supabase.auth.signOut().catch(() => {})
+        setError('Your sign-in worked but your account profile could not be loaded. Please contact your administrator.')
+        return
+      }
+      window.location.href = ROLE_REDIRECT[profile.role] ?? '/surveyor'
     }).catch(() => { /* stay on login */ })
   }, [])
 
@@ -52,9 +63,19 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
+    // Supabase stores addresses lower-cased, and an iOS keyboard readily adds a
+    // trailing space (or a capital first letter) that turns a correct login into
+    // "invalid credentials". The PASSWORD is never touched — trimming it would
+    // silently break legitimately space-padded passwords.
+    const cleanEmail = email.trim().toLowerCase()
+
     let authError
     try {
-      ({ error: authError } = await withTimeout(supabase.auth.signInWithPassword({ email, password }), 15_000, 'Signing in'))
+      ({ error: authError } = await withTimeout(
+        supabase.auth.signInWithPassword({ email: cleanEmail, password }),
+        15_000,
+        'Signing in'
+      ))
     } catch {
       setError('Sign-in timed out — check your connection and try again.')
       setLoading(false)
@@ -62,7 +83,10 @@ export default function LoginPage() {
     }
 
     if (authError) {
-      setError('Invalid email or password. Please try again.')
+      // Report what actually went wrong. Collapsing rate limits, unconfirmed
+      // accounts and network failures into "invalid password" made users retype a
+      // password that was already correct.
+      setError(signInErrorMessage(authError))
       setLoading(false)
       return
     }
@@ -77,12 +101,14 @@ export default function LoginPage() {
     // preference as a simple flag and treat a MISSING flag as "remembered", so if
     // a mobile browser clears storage it can only relax the timeout — never wrongly
     // sign a user out. No passwords or tokens are stored here.
-    localStorage.setItem('te_remember', rememberMe ? '1' : '0')
-    localStorage.setItem('te_last_activity', String(Date.now()))
-
-    // Remember the email for prefill on the next visit (no password stored here).
+    // Guarded: sign-in has ALREADY succeeded by this point, so a storage failure
+    // (iOS Private Browsing, blocked cookies) must not throw and strand the user on
+    // a permanent "Signing in…" spinner.
     try {
-      if (rememberMe) localStorage.setItem('te_last_email', email)
+      localStorage.setItem('te_remember', rememberMe ? '1' : '0')
+      localStorage.setItem('te_last_activity', String(Date.now()))
+      // Remember the email for prefill on the next visit (no password stored here).
+      if (rememberMe) localStorage.setItem('te_last_email', cleanEmail)
       else localStorage.removeItem('te_last_email')
     } catch { /* storage unavailable */ }
 
@@ -158,6 +184,12 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 enterKeyHint="go"
+                // type="password" implies these, but the eye toggle flips the field
+                // to type="text" — at which point iOS re-enables auto-capitalisation
+                // and smart punctuation and can silently mangle what is typed.
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

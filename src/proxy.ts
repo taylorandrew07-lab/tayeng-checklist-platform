@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAuthSessionCookie } from '@/lib/supabase/cookies'
 
 const PROTECTED_PREFIXES = ['/admin', '/surveyor', '/client', '/office']
 
@@ -21,7 +22,10 @@ export async function proxy(request: NextRequest) {
   //     single, Web-Lock-serialised refresher.
   // Security is unchanged: no cookie → still redirected to /login, and RLS remains
   // the authoritative gate on every row for any request that gets through.
-  const hasAuthCookie = request.cookies.getAll().some(c => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
+  // isAuthSessionCookie deliberately ignores the PKCE `-code-verifier` cookie, which
+  // is written merely by requesting a password reset. Counting it as a session let a
+  // signed-out user through this guard onto a page with no session behind it.
+  const hasAuthCookie = request.cookies.getAll().some(c => isAuthSessionCookie(c.name))
 
   if (!hasAuthCookie) {
     return NextResponse.redirect(new URL('/login', request.url))

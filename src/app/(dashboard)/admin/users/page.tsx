@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search } from 'lucide-react'
+import { Plus, Loader2, Check, X, Pencil, ShieldCheck, FileText, Search, KeyRound } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
@@ -51,6 +51,13 @@ export default function UsersPage() {
   const [approvalRole, setApprovalRole] = useState<UserRole>('surveyor')
   const [approvingSaving, setApprovingSaving] = useState(false)
   const [approvalError, setApprovalError] = useState<string | null>(null)
+
+  // Direct password reset (no email round trip) — see submitSetPassword.
+  const [passwordTarget, setPasswordTarget] = useState<Profile | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   async function load() {
     const supabase = createClient()
@@ -280,11 +287,42 @@ export default function UsersPage() {
 
   async function rejectUser(user: Profile) {
     if (!(await confirmDialog({ title: 'Reject account', message: `Reject and delete the account for ${user.full_name}?`, danger: true, confirmLabel: 'Reject & delete' }))) return
-    const supabase = createClient()
-    const { error } = await supabase.from('profiles').delete().eq('id', user.id)
-    if (error) { toast.error(error.message); return }
+    // Goes through the service role so the auth.users row is deleted too. Deleting
+    // only the profiles row left the person able to authenticate but with no
+    // profile — invisible to every admin screen, bounced from the app with no
+    // explanation, and unable to re-register because their email was still taken.
+    const res = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id }),
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) { toast.error(body.error ?? 'Could not reject that account'); return }
     toast.success('Account rejected')
     load()
+  }
+
+  // Set a password directly, with no email involved. Auth email runs on Supabase's
+  // built-in mailer (a couple per hour project-wide, unreliable to external domains),
+  // so "Forgot password?" cannot be relied on as the only way back in.
+  async function submitSetPassword() {
+    if (!passwordTarget) return
+    if (newPassword.length < 8) { setPasswordError('Password must be at least 8 characters'); return }
+    if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match'); return }
+    setPasswordSaving(true)
+    setPasswordError(null)
+    const res = await fetch('/api/admin/set-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: passwordTarget.id, password: newPassword }),
+    })
+    const body = await res.json().catch(() => ({}))
+    setPasswordSaving(false)
+    if (!res.ok) { setPasswordError(body.error ?? 'Could not set that password'); return }
+    toast.success(`Password set for ${passwordTarget.full_name}`)
+    setPasswordTarget(null)
+    setNewPassword('')
+    setConfirmPassword('')
   }
 
   async function toggleActive(user: Profile) {
@@ -482,6 +520,14 @@ export default function UsersPage() {
                       <FileText className="h-3.5 w-3.5" />Docs
                     </a>
                   )}
+                  {(isSuperAdmin || (user.role !== 'admin' && !(user as any).is_super_admin)) && (
+                    <button
+                      onClick={() => { setPasswordTarget(user); setNewPassword(''); setConfirmPassword(''); setPasswordError(null) }}
+                      className="text-xs btn-ghost py-1 px-2"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />Password
+                    </button>
+                  )}
                   {(isSuperAdmin || !(user as any).is_super_admin) && (
                     <button onClick={() => toggleActive(user)} className="text-xs text-gray-500 hover:text-gray-700 py-1 px-2">
                       {user.is_active ? 'Deactivate' : 'Activate'}
@@ -636,6 +682,72 @@ export default function UsersPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* Set-password modal — the email-free recovery path for a locked-out user */}
+      <Modal
+        open={!!passwordTarget}
+        onClose={() => setPasswordTarget(null)}
+        title={`Set Password — ${passwordTarget?.full_name ?? ''}`}
+        size="sm"
+        footer={
+          <>
+            <button onClick={() => setPasswordTarget(null)} className="btn-secondary">Cancel</button>
+            <button onClick={submitSetPassword} disabled={passwordSaving} className="btn-primary">
+              {passwordSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {passwordSaving ? 'Saving…' : 'Set password'}
+            </button>
+          </>
+        }
+      >
+        {passwordTarget && (
+          <div className="space-y-4">
+            {passwordError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{passwordError}</div>
+            )}
+
+            <p className="text-sm text-gray-600">
+              Sets a new password for <strong>{passwordTarget.full_name}</strong> ({passwordTarget.email})
+              immediately. No email is sent — give them the password directly, and ask
+              them to change it from their Profile once they are back in.
+            </p>
+
+            <div>
+              <label htmlFor="sp-new" className="label-base">New password</label>
+              <input
+                id="sp-new"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="input-base"
+                placeholder="Min. 8 characters"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Shown in plain text so you can read it out accurately.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="sp-confirm" className="label-base">Confirm password</label>
+              <input
+                id="sp-confirm"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="input-base"
+                placeholder="Repeat password"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Approval modal — always shown; client-role users require a client selection */}

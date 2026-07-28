@@ -107,7 +107,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             } catch { /* fall through to login */ }
           }
         }
-        router.push('/login'); return
+        // The session is VALID but the profile row is unreadable (deleted, or an RLS
+        // denial). Bouncing to /login alone caused an infinite loop: /login sees a
+        // live session and sends the user straight back here. Sign out first so the
+        // loop is broken, and say what actually happened instead of showing a login
+        // form that will keep "failing" for a reason that is not the password.
+        await supabase.auth.signOut()
+        router.push('/login?error=no_profile'); return
       }
       try { localStorage.setItem('te_profile', JSON.stringify(data)) } catch { /* storage may be unavailable */ }
       setProfile(data)

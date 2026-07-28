@@ -21,7 +21,7 @@ export default function ForgotPasswordPage() {
     // then redirected to /reset-password with a live session.
     const redirectTo = `${window.location.origin}/api/auth/callback?next=/reset-password`
 
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo })
 
     if (err) {
       setError(err.message)
@@ -52,6 +52,20 @@ export default function ForgotPasswordPage() {
           <div className="space-y-4">
             <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-700">
               If an account exists for that email address, a reset link has been sent. Check your inbox.
+            </div>
+            {/* The reset code is tied to THIS browser (PKCE stores a verifier here).
+                Tapping the link inside a mail app's built-in browser opens a different
+                one, which fails — and burns the single-use link. */}
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 space-y-2">
+              <p className="font-medium">Open the link in this same browser.</p>
+              <p>
+                If tapping it from your email app doesn&apos;t work, press and hold the
+                link, copy it, and paste it into this browser instead.
+              </p>
+              <p>
+                No email after a few minutes? Ask an administrator to set a password for
+                you directly — they don&apos;t need email to do it.
+              </p>
             </div>
             <Link href="/login" className="btn-secondary w-full justify-center">
               Back to sign in
