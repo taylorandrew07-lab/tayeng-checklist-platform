@@ -65,25 +65,35 @@ export default function JobTypesManager() {
     const { error } = await setJobTypeReminderHours(r.id, hours)
     if (error) { toast.error(error); return }
     toast.success(hours === null ? `${r.name}: reminder off` : `${r.name}: remind after ${hours}h`)
-    load()
+    await load()
+    // Setting a delay here only reaches FUTURE jobs — a job copies the number when
+    // it is created. Offering the existing ones immediately is the whole difference
+    // between this working and it looking like it silently did nothing; the ⟲ button
+    // stays for re-running it later.
+    if (hours !== null) await applyToExisting(r.name, hours, true)
   }
 
   /** Arm the jobs that already exist. New jobs copy the default automatically; these
-   *  were created before it was set, so they need an explicit opt-in. */
-  async function applyToExisting(r: JobTypeRow) {
-    if (r.reminder_hours == null) return
+   *  were created before it was set, so they need an explicit opt-in.
+   *
+   *  `quiet` suppresses the "nothing to do" toast — used when this runs automatically
+   *  straight after saving a delay, where silence is the right answer. */
+  async function applyToExisting(name: string, hours: number, quiet = false) {
     setBusy(true)
-    const n = await countOpenJobsMissingReminder(r.name)
+    const n = await countOpenJobsMissingReminder(name)
     setBusy(false)
-    if (n === 0) { toast.success(`No open ${r.name} jobs need arming — they all have a setting already.`); return }
+    if (n === 0) {
+      if (!quiet) toast.success(`No open ${name} jobs need arming — they all have a setting already.`)
+      return
+    }
     if (!(await confirmDialog({
-      title: 'Apply to existing jobs',
-      message: `Set a ${r.reminder_hours}-hour report reminder on ${n} open ${r.name} job${n === 1 ? '' : 's'}? Closed and invoiced jobs are left alone, and any job you've already given its own setting keeps it. Anything whose ${r.reminder_hours}h has already elapsed will show up as due right away.`,
+      title: 'Apply to existing jobs too?',
+      message: `${name} has ${n} open job${n === 1 ? '' : 's'} with no reminder. Set the ${hours}-hour reminder on ${n === 1 ? 'it' : 'them'} as well? Cancel = new jobs only.\n\nClosed and invoiced jobs are left alone, and any job you've already given its own setting keeps it. Anything whose ${hours}h has already elapsed shows up as due straight away.`,
       confirmLabel: `Arm ${n} job${n === 1 ? '' : 's'}`,
     }))) return
-    const { count, error } = await applyReminderToOpenJobs(r.name, r.reminder_hours)
+    const { count, error } = await applyReminderToOpenJobs(name, hours)
     if (error) { toast.error(error); return }
-    toast.success(`Reminder set on ${count} ${r.name} job${count === 1 ? '' : 's'}`)
+    toast.success(`Reminder set on ${count} ${name} job${count === 1 ? '' : 's'}`)
   }
 
   async function remove(r: JobTypeRow) {
@@ -143,7 +153,7 @@ export default function JobTypesManager() {
                   {/* Only meaningful once a delay exists. New jobs inherit it
                       automatically; this is the opt-in for jobs already in flight. */}
                   {r.reminder_hours != null && (
-                    <button onClick={() => applyToExisting(r)} disabled={busy}
+                    <button onClick={() => applyToExisting(r.name, r.reminder_hours!)} disabled={busy}
                       title={`Also set this ${r.reminder_hours}h reminder on existing open ${r.name} jobs`}
                       className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-amber-600 disabled:opacity-40">
                       <History className="h-3.5 w-3.5" />
