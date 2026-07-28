@@ -66,8 +66,15 @@ export async function listInbox(filter: InboxFilter = 'all'): Promise<InboxItem[
     subject: r.message?.subject ?? '(no subject)',
     body: r.message?.body ?? '',
     sender_id: r.message?.sender_id ?? null,
-    sender_name: r.message?.sender?.full_name ?? 'Unknown',
+    sender_name: senderName(r.message?.sender_id, r.message?.sender?.full_name),
   }))
+}
+
+/** A null sender_id means the app itself sent it (e.g. a report-due reminder from
+ *  /api/cron/job-report-reminders), not that we failed to resolve a person. */
+function senderName(senderId: string | null | undefined, fullName: string | undefined): string {
+  if (!senderId) return 'Tayeng App'
+  return fullName ?? 'Unknown'
 }
 
 /** Messages the current user has sent, with a recipient count. */
@@ -97,7 +104,7 @@ export async function getMessage(id: string): Promise<MessageDetail | null> {
   const d = data as any
   return {
     id: d.id, subject: d.subject, body: d.body, sender_id: d.sender_id,
-    sender_name: d.sender?.full_name ?? 'Unknown', parent_id: d.parent_id, created_at: d.created_at,
+    sender_name: senderName(d.sender_id, d.sender?.full_name), parent_id: d.parent_id, created_at: d.created_at,
   }
 }
 

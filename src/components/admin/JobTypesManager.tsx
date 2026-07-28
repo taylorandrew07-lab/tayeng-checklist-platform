@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Trash2, Check, X, Pencil, Eye, EyeOff } from 'lucide-react'
-import { listAllJobTypes, addJobType, renameJobType, setJobTypeActive, deleteJobType, type JobTypeRow } from '@/lib/jobs/tracker'
+import { Loader2, Plus, Trash2, Check, X, Pencil, Eye, EyeOff, Bell } from 'lucide-react'
+import { listAllJobTypes, addJobType, renameJobType, setJobTypeActive, setJobTypeReminderHours, deleteJobType, type JobTypeRow } from '@/lib/jobs/tracker'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
+import { REMINDER_WINDOW_LABEL } from '@/lib/jobs/reminderWindow'
 
 export default function JobTypesManager() {
   const [rows, setRows] = useState<JobTypeRow[]>([])
@@ -13,8 +14,16 @@ export default function JobTypesManager() {
   const [newName, setNewName] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  /** Reminder-hours inputs, kept as strings so the field can be emptied ("no
+   *  reminder") without fighting a number-typed state. Keyed by job-type id. */
+  const [hours, setHours] = useState<Record<string, string>>({})
 
-  async function load() { setRows(await listAllJobTypes()); setLoading(false) }
+  async function load() {
+    const next = await listAllJobTypes()
+    setRows(next)
+    setHours(Object.fromEntries(next.map(r => [r.id, r.reminder_hours == null ? '' : String(r.reminder_hours)])))
+    setLoading(false)
+  }
   useEffect(() => { load() }, [])
 
   async function add() {
@@ -41,6 +50,24 @@ export default function JobTypesManager() {
     load()
   }
 
+  /** Save the reminder default on blur/Enter. Blank clears it (this type never
+   *  reminds). Only new jobs pick the value up — existing jobs keep whatever they
+   *  were created with, which is why the helper text says so out loud. */
+  async function saveHours(r: JobTypeRow, raw: string) {
+    const trimmed = raw.trim()
+    const hours = trimmed === '' ? null : Number(trimmed)
+    if (hours !== null && (!Number.isFinite(hours) || hours <= 0 || hours > 8760)) {
+      toast.error('Enter a number of hours between 1 and 8760, or leave blank for no reminder.')
+      setHours(h => ({ ...h, [r.id]: r.reminder_hours == null ? '' : String(r.reminder_hours) }))
+      return
+    }
+    if (hours === r.reminder_hours) return
+    const { error } = await setJobTypeReminderHours(r.id, hours)
+    if (error) { toast.error(error); return }
+    toast.success(hours === null ? `${r.name}: reminder off` : `${r.name}: remind after ${hours}h`)
+    load()
+  }
+
   async function remove(r: JobTypeRow) {
     if (!(await confirmDialog({ title: 'Delete job type', message: `Delete "${r.name}"? It disappears from the New Job dropdown. Existing jobs keep their recorded type.`, danger: true, confirmLabel: 'Delete' }))) return
     const { error } = await deleteJobType(r.id)
@@ -53,6 +80,11 @@ export default function JobTypesManager() {
       <div>
         <h2 className="section-title">Job Types</h2>
         <p className="text-xs text-gray-400 mt-0.5">The list of types shown when creating a job. Hidden (inactive) types stay on old jobs but drop off the dropdown.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          <Bell className="h-3 w-3 inline-block -mt-0.5 text-amber-500" /> <strong>Report reminder</strong> — hours after a job finishes before it shows up as a report you need to write. Blank = no reminder.
+          Delivered {REMINDER_WINDOW_LABEL}; if it comes due outside those hours it waits for the next working morning.
+          Applies to <em>new</em> jobs of that type — existing jobs keep their own setting, which you can change on the job itself.
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -77,6 +109,18 @@ export default function JobTypesManager() {
               ) : (
                 <>
                   <span className={`flex-1 text-sm ${r.is_active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{r.name}</span>
+                  <label className="flex items-center gap-1 text-xs text-gray-400" title={`Remind after this many hours. Blank = no reminder. Delivered ${REMINDER_WINDOW_LABEL}.`}>
+                    <Bell className={`h-3.5 w-3.5 ${r.reminder_hours == null ? 'text-gray-300' : 'text-amber-500'}`} />
+                    <input
+                      type="number" min={1} max={8760} inputMode="numeric" placeholder="off"
+                      value={hours[r.id] ?? ''}
+                      onChange={e => setHours(h => ({ ...h, [r.id]: e.target.value }))}
+                      onBlur={e => saveHours(r, e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      className="input-base py-1 w-16 text-center"
+                    />
+                    <span className="w-2">h</span>
+                  </label>
                   <button onClick={() => { setEditId(r.id); setEditName(r.name) }} title="Rename" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
                   <button onClick={() => toggle(r)} title={r.is_active ? 'Hide from dropdown' : 'Show in dropdown'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-gray-700">{r.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>
                   <button onClick={() => remove(r)} title="Delete" className="btn-ghost py-1 px-1.5 text-gray-300 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>

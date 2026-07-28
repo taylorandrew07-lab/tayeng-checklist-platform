@@ -404,6 +404,20 @@ export interface Job {
   // When true the job does not require a report — no report number, shown as "N/A" (migration 119).
   report_not_required: boolean
   workflow_status: WorkflowStatus
+  // ── Report-due reminder (migration 162) ───────────────────────────────────
+  /** Hours after reminder_base_at before the "report due" reminder fires.
+   *  null = no reminder on this job. Seeded from job_types.reminder_hours at
+   *  creation, then editable per job (admin only). */
+  reminder_hours: number | null
+  /** Trigger-derived clock start: the EARLIER of submitted_at ("marked complete")
+   *  and 17:00 Trinidad local on end_date/scheduled_date. Read-only. */
+  reminder_base_at: string | null
+  /** Trigger-derived reminder_base_at + reminder_hours. RAW — the Mon–Fri office-
+   *  hours window is applied by lib/jobs/reminderWindow.ts, not stored. Read-only. */
+  reminder_due_at: string | null
+  /** Stamped once the inbox digest actually landed. Idempotency latch; cleared
+   *  automatically by the trigger if reminder_hours changes. */
+  reminder_sent_at: string | null
   // Overtime job flag (migration 048). Kept in lockstep with billing_mode === 'overtime'.
   is_overtime: boolean
   // How the job is billed (migration 116): 'overtime' (surveyor hours logged as OT),
@@ -434,7 +448,12 @@ export interface Job {
   updated_at: string
 }
 
-export interface JobType { id: string; name: string; is_active: boolean; created_at: string }
+export interface JobType {
+  id: string; name: string; is_active: boolean; created_at: string
+  /** Default "report due" reminder delay in hours for jobs of this type; null =
+   *  never remind. Copied onto each new job at creation (migration 162). */
+  reminder_hours: number | null
+}
 
 export type Currency = 'USD' | 'TTD' | 'EUR' | 'GBP'
 

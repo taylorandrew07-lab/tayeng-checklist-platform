@@ -1,0 +1,59 @@
+name: Job report reminders
+
+# Pings /api/cron/job-report-reminders, which posts a "these reports are ready to
+# write" digest to the super-admin's inbox for any job whose report reminder has
+# come due. See supabase/migrations/162_job_report_reminders.sql.
+#
+# WHY A GITHUB ACTION AND NOT vercel.json:
+#   Sub-daily cron schedules need a paid Vercel plan, and a vercel.json listing a
+#   schedule the plan cannot honour fails the DEPLOY — not just the cron. This runs
+#   on any plan, costs nothing, and hits the exact same endpoint. If this project is
+#   on Vercel Pro, this file can be deleted and replaced with a crons[] entry in
+#   vercel.json using the same */15 12-19 * * 1-5 schedule.
+#
+# The endpoint applies the office-hours rule itself (Mon-Thu 08:00-16:00, Fri
+# 08:00-14:00 Trinidad), so an extra or delayed run is harmless — it is fully
+# idempotent and simply reports 0 due. GitHub's scheduler is best-effort and can
+# lag by 5-20 minutes; that is fine for a "sometime this working day" nudge.
+#
+# REQUIRED REPO SECRETS (Settings -> Secrets and variables -> Actions):
+#   CRON_SECRET  - must match the CRON_SECRET env var set in Vercel
+#   APP_URL      - e.g. https://tayeng-checklist-platform.vercel.app
+# Until both exist the job skips with a clear message rather than failing nightly.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 15 min, 12:00-19:45 UTC = 08:00-15:45 Trinidad (UTC-4), Mon-Fri.
+    # Deliberately wider than the delivery window; the endpoint does the filtering.
+    - cron: '*/15 12-19 * * 1-5'
+
+concurrency:
+  group: job-report-reminders
+  cancel-in-progress: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger report-due reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$APP_URL" ]; then
+            echo "::warning::CRON_SECRET and/or APP_URL repo secret is not set — skipping."
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 0
+          fi
+          echo "POST ${APP_URL}/api/cron/job-report-reminders"
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 60 --retry 2 --retry-delay 5 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/job-report-reminders")
+          echo "HTTP ${code}"
+          cat response.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Reminder endpoint returned HTTP ${code}"
+            exit 1
+          fi

@@ -11,6 +11,7 @@ import { Briefcase } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
+import ReportsDuePanel from '@/components/job/ReportsDuePanel'
 import { useJobsView, rowColor, type JobColorMode } from '@/lib/jobs/view'
 
 // Same three modes as the Jobs page. Colour choice is shared (persisted per-device),
@@ -50,6 +51,10 @@ export default function AdminDashboard() {
           </Link>
         }
       />
+
+      {/* Reports whose incubation/lag window has elapsed and can now be written up.
+          Renders nothing unless you're the super-admin and something is actually due. */}
+      <ReportsDuePanel />
 
       {/* Recent Jobs — the one thing you rely on here, with the Jobs-page colour toggle */}
       <div className="card">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2, MapPin } from 'lucide-react'
+import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2, MapPin, Bell } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -20,6 +20,7 @@ import { WorkflowPill } from '@/components/job/StatusPill'
 import { asLabourUnit, labourLabels, type LabourUnit } from '@/lib/jobs/labourUnit'
 import { checkSurveyorConflicts } from '@/lib/jobs/conflicts'
 import { notifyAssignment } from '@/lib/jobs/notify'
+import { isReminderDue, REMINDER_WINDOW_LABEL } from '@/lib/jobs/reminderWindow'
 import type { Job, JobAttachment, WorkflowStatus, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
 
 function activityText(a: ActivityLogRow): string {
@@ -470,6 +471,11 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   const [unit, setUnit] = useState<LabourUnit>(asLabourUnit(job.labour_unit))
   const L = labourLabels(unit)
   const [billableHours, setBillableHours] = useState<number | null>(null)
+  // Report-due reminder (migration 162). String state so the field can be emptied
+  // ("no reminder") without a number input fighting it. Seeded from the job type at
+  // creation; this is the per-job override.
+  const [reminderHours, setReminderHours] = useState(job.reminder_hours == null ? '' : String(job.reminder_hours))
+  const reminderDue = isReminderDue(job.reminder_due_at)
   const [otByRow, setOtByRow] = useState<Record<string, OvertimeEntry[]>>({})
   const [kmByRow, setKmByRow] = useState<Record<string, KmEntry[]>>({})
   const fileRef = useRef<HTMLInputElement>(null)
@@ -550,6 +556,27 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
     const res = await updateJobField(job.id, { labour_unit: next })
     if (res.error) { setUnit(prev); toast.error(res.error); return }
     onChanged(); reload()
+  }
+
+  /** Save the per-job report-reminder delay. Blank switches it off. The migration-162
+   *  trigger recomputes reminder_due_at and clears reminder_sent_at, so changing the
+   *  delay always re-arms — an edited timer that stayed silent would be a trap. */
+  async function saveReminderHours(raw: string) {
+    const trimmed = raw.trim()
+    const hours = trimmed === '' ? null : Number(trimmed)
+    if (hours !== null && (!Number.isFinite(hours) || hours <= 0 || hours > 8760)) {
+      toast.error('Enter a number of hours between 1 and 8760, or leave blank for no reminder.')
+      setReminderHours(job.reminder_hours == null ? '' : String(job.reminder_hours))
+      return
+    }
+    if (hours === (job.reminder_hours ?? null)) return
+    const res = await updateJobField(job.id, { reminder_hours: hours })
+    if (res.error) {
+      setReminderHours(job.reminder_hours == null ? '' : String(job.reminder_hours))
+      toast.error(res.error); return
+    }
+    toast.success(hours === null ? 'Report reminder off' : `Reminder set for ${hours}h after this job finishes`)
+    onChanged()
   }
 
   async function reload() {
@@ -709,6 +736,36 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
               <option value="">Set status…</option>
               {WORKFLOW_ORDER.map(s => <option key={s} value={s} disabled={s === current}>{WORKFLOW[s].label}</option>)}
             </select>
+          </div>
+        )}
+        {/* Report-due reminder (migration 162). Lives here because it is part of the
+            report lifecycle, not the billing one. The clock starts at whichever comes
+            first: this job being marked complete, or 17:00 on its end date. */}
+        {isAdmin && (
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+              <Bell className={`h-4 w-4 ${reminderHours ? 'text-amber-500' : 'text-gray-300'}`} />
+              <span>Remind me to write this report</span>
+              <input
+                type="number" min={1} max={8760} inputMode="numeric" placeholder="off"
+                value={reminderHours}
+                onChange={e => setReminderHours(e.target.value)}
+                onBlur={e => saveReminderHours(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                className="input-base py-1 w-20 text-center"
+              />
+              <span>hours after it finishes</span>
+            </label>
+            <p className="mt-1.5 text-[11px] text-gray-400">
+              {reminderDue
+                ? <><span className="font-medium text-amber-600">Due now</span> — {job.reminder_sent_at ? `you were told ${formatDateTime(job.reminder_sent_at)}.` : 'the reminder is queued for the next check.'}</>
+                : job.reminder_due_at
+                  ? <>Due {formatDateTime(job.reminder_due_at)}{job.reminder_sent_at ? ` — already sent ${formatDateTime(job.reminder_sent_at)}.` : '.'}</>
+                  : reminderHours
+                    ? 'Starts counting once this job is marked complete, or on its end date — whichever comes first.'
+                    : 'No reminder on this job. Blank = off; set a default per job type in Settings.'}
+              {' '}Delivered {REMINDER_WINDOW_LABEL}.
+            </p>
           </div>
         )}
       </div>

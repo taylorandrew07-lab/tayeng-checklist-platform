@@ -59,6 +59,18 @@ export async function createDraftJob(
       row.job_stage as string | null | undefined,
     )
   }
+  // Seed the "report due" reminder from the job's type. Done HERE, in the single
+  // creation seam, so every route inherits it — both New Job forms today and the
+  // future AI/WhatsApp intake. The delay is COPIED onto the job rather than joined
+  // at read time (jobs.job_type is plain text, not an FK), which also means editing
+  // a job type's default can never silently re-arm historical jobs. See migration 162.
+  // An explicit value from the caller always wins, including an explicit null ("off").
+  if (row.reminder_hours === undefined && row.job_type) {
+    const { data: jt } = await supabase
+      .from('job_types').select('reminder_hours').eq('name', row.job_type as string).maybeSingle()
+    if (jt?.reminder_hours != null) row.reminder_hours = jt.reminder_hours
+  }
+
   const { data: job, error } = await (input.upsert
     ? supabase.from('jobs').upsert(row, { onConflict: 'id' })
     : supabase.from('jobs').insert(row)

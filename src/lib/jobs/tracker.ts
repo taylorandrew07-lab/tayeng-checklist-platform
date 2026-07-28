@@ -184,10 +184,23 @@ export async function listJobTypes(): Promise<JobType[]> {
 }
 
 // ── Job type admin (RLS: admins manage job_types) ───────────────────────────
-export interface JobTypeRow { id: string; name: string; is_active: boolean }
+export interface JobTypeRow {
+  id: string
+  name: string
+  is_active: boolean
+  /** Default hours before a "report due" reminder fires for jobs of this type.
+   *  null = this type never reminds. Copied onto each new job at creation
+   *  (see createDraftJob), so changing it never re-arms existing jobs. */
+  reminder_hours: number | null
+}
 export async function listAllJobTypes(): Promise<JobTypeRow[]> {
-  const { data } = await createClient().from('job_types').select('id, name, is_active').order('name')
+  const { data } = await createClient().from('job_types').select('id, name, is_active, reminder_hours').order('name')
   return (data ?? []) as JobTypeRow[]
+}
+/** Set (or clear, with null) the default report-reminder delay for a job type. */
+export async function setJobTypeReminderHours(id: string, hours: number | null): Promise<{ error?: string }> {
+  const { error } = await createClient().from('job_types').update({ reminder_hours: hours }).eq('id', id)
+  return { error: error?.message }
 }
 export async function addJobType(name: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('job_types').insert({ name: name.trim() })

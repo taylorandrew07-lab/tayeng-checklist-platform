@@ -13,7 +13,11 @@ type UpsertCall = { table: string; values: any; options: any }
  * client_job_permissions / job_surveyors / activity_log paths await it directly)
  * AND chainable via .select().single() (the jobs path).
  */
-function fakeSupabase(opts: { errors?: Record<string, { message: string }> } = {}) {
+function fakeSupabase(opts: {
+  errors?: Record<string, { message: string }>
+  /** What the job_types lookup returns for the reminder default (migration 162). */
+  jobTypeReminderHours?: number | null
+} = {}) {
   const calls: UpsertCall[] = []
   const errors = opts.errors ?? {}
 
@@ -26,11 +30,23 @@ function fakeSupabase(opts: { errors?: Record<string, { message: string }> } = {
     return {
       upsert: (values: any, options?: any) => { calls.push({ table, values, options }); return thenable },
       insert: (values: any) => { calls.push({ table, values, options: undefined }); return thenable },
+      // Read path — only the job_types reminder-default lookup uses it.
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({
+            data: opts.jobTypeReminderHours === undefined ? null : { reminder_hours: opts.jobTypeReminderHours },
+            error: null,
+          }),
+        }),
+      }),
     }
   }
 
   return { client: { from } as unknown as SupabaseClient, calls }
 }
+
+/** The row the jobs insert/upsert was called with. */
+const jobRow = (calls: UpsertCall[]) => calls.find(c => c.table === 'jobs')!.values
 
 const baseInput = {
   job: { id: 'job-1', title: 'MV Test' },
@@ -72,5 +88,48 @@ describe('createDraftJob — client_job_permissions retry safety', () => {
 
     expect(calls.some(c => c.table === 'client_job_permissions')).toBe(false)
     expect(result.permissionError).toBeUndefined()
+  })
+})
+
+// Migration 162. This seam is what decides whether a job ever reminds at all, so
+// the inheritance rules are pinned down here rather than left to the UI.
+describe('createDraftJob — report reminder default (migration 162)', () => {
+  const typed = { ...baseInput, job: { ...baseInput.job, job_type: 'Fuel Loadout' } }
+
+  it('copies the job type default onto a new job', async () => {
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: 96 })
+    await createDraftJob(client, typed, 'manual')
+    expect(jobRow(calls).reminder_hours).toBe(96)
+  })
+
+  it('leaves the reminder off when the job type has no default', async () => {
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: null })
+    await createDraftJob(client, typed, 'manual')
+    expect(jobRow(calls).reminder_hours).toBeUndefined()
+  })
+
+  it('does not look up a default when the job has no type', async () => {
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: 96 })
+    await createDraftJob(client, baseInput, 'manual')
+    expect(jobRow(calls).reminder_hours).toBeUndefined()
+  })
+
+  it('lets an explicit value from the caller win over the type default', async () => {
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: 96 })
+    await createDraftJob(client, { ...typed, job: { ...typed.job, reminder_hours: 24 } }, 'manual')
+    expect(jobRow(calls).reminder_hours).toBe(24)
+  })
+
+  it('respects an explicit null ("off") instead of re-applying the type default', async () => {
+    // A job deliberately created with no reminder must not have one seeded back in.
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: 96 })
+    await createDraftJob(client, { ...typed, job: { ...typed.job, reminder_hours: null } }, 'manual')
+    expect(jobRow(calls).reminder_hours).toBeNull()
+  })
+
+  it('applies the default on the offline-sync upsert path too', async () => {
+    const { client, calls } = fakeSupabase({ jobTypeReminderHours: 48 })
+    await createDraftJob(client, { ...typed, upsert: true }, 'manual')
+    expect(jobRow(calls).reminder_hours).toBe(48)
   })
 })
