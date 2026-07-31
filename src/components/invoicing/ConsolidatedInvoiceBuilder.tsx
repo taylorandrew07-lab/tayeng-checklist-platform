@@ -9,10 +9,10 @@
 // billable here; submitted ones sit in a review group with a one-click promote.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip } from 'lucide-react'
+import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip, ArrowUpDown, Plus, X } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
-import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
+import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
@@ -30,6 +30,47 @@ import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 // several candidate rates) can be corrected without retyping the price.
 interface LineState { description: string; qty: number; unit_price: number; rate_id: string | null }
 
+// One job can carry SEVERAL charges, so its lines are an array, not a single line.
+// Ultrasonic Hatch Testing is the case that forced it: the client pays per hatch
+// cover AND per cargo hold, two different rates on the same attendance, and with one
+// line per job the second charge could only be typed in by hand as a loose extra
+// line — unlinked to the job, so it never showed in reconciliation.
+
+// How the job pool is ordered. This is not just a browsing convenience: the picker's
+// order IS the order the lines come out on the invoice (see orderedLines), so sorting
+// by vessel groups a client's vessels together on the printed invoice, and sorting by
+// date runs it chronologically. Defaults to date ascending, which is how the list has
+// always read (oldest work first).
+type SortKey = 'date' | 'vessel' | 'type'
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'date', label: 'Date' },
+  { key: 'vessel', label: 'Vessel' },
+  { key: 'type', label: 'Job type' },
+]
+
+// Date sorts on the job's LAST day, matching the date shown on the row (jobDate.ts).
+// The stage is part of the type key so Draught Survey (Initial) and (Final) don't
+// interleave.
+function sortValue(j: InvoiceableJob, key: SortKey): string {
+  if (key === 'vessel') return (j.vessel_name ?? '').trim().toLowerCase()
+  if (key === 'type') return [j.job_type, j.job_stage].filter(Boolean).join(' ').trim().toLowerCase()
+  return jobLastDateKey(j)
+}
+
+function sortJobs(list: InvoiceableJob[], sort: { key: SortKey; dir: 'asc' | 'desc' }): InvoiceableJob[] {
+  const dir = sort.dir === 'asc' ? 1 : -1
+  return [...list].sort((a, b) => {
+    const va = sortValue(a, sort.key), vb = sortValue(b, sort.key)
+    // A job with no vessel/type sinks to the bottom either way — reversing the sort
+    // shouldn't promote the blank rows to the top of the invoice.
+    if (!va !== !vb) return va ? -1 : 1
+    if (va !== vb) return va < vb ? -dir : dir
+    // Same vessel (or type) → still read chronologically within the group.
+    const ka = jobLastDateKey(a), kb = jobLastDateKey(b)
+    return ka < kb ? -1 : ka > kb ? 1 : 0
+  })
+}
+
 export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: () => void }) {
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [clientId, setClientId] = useState('')
@@ -39,7 +80,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [jobs, setJobs] = useState<InvoiceableJob[]>([])
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [rates, setRates] = useState<ClientRate[]>([])
-  const [lines, setLines] = useState<Record<string, LineState>>({}) // keyed by job id
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'asc' })
+  const [lines, setLines] = useState<Record<string, LineState[]>>({}) // job id → its charges
   const [extra, setExtra] = useState<DraftLine[]>([])               // manual lines + expenses
 
   const [currency, setCurrency] = useState<Currency>('USD')
@@ -171,8 +213,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // for a one-click review — never auto-selected, or the deliberate second look
     // the invoice-ready step exists for would be skipped silently.
     const billableJs = js.filter(j => j.workflow_status === 'invoice_ready')
-    const seeded: Record<string, LineState> = {}
-    billableJs.forEach(j => { seeded[j.id] = seedLine(j, rs) })
+    const seeded: Record<string, LineState[]> = {}
+    billableJs.forEach(j => { seeded[j.id] = [seedLine(j, rs)] })
     setLines(seeded)
     // Auto-add a mileage line per job when the client carries a per_km rate and the
     // job has km logged. Editable/removable; previous auto-mileage lines are dropped
@@ -196,8 +238,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // Billable = invoice-ready. Awaiting = submitted but not yet reviewed; shown below
   // the billable list with a one-click "Mark invoice ready" so a forgotten flip
   // never means hunting through the jobs list.
-  const billable = useMemo(() => jobs.filter(j => j.workflow_status === 'invoice_ready'), [jobs])
-  const awaiting = useMemo(() => jobs.filter(j => j.workflow_status === 'report_ready'), [jobs])
+  const billable = useMemo(() => sortJobs(jobs.filter(j => j.workflow_status === 'invoice_ready'), sort), [jobs, sort])
+  const awaiting = useMemo(() => sortJobs(jobs.filter(j => j.workflow_status === 'report_ready'), sort), [jobs, sort])
 
   const [markingId, setMarkingId] = useState<string | null>(null)
   async function markReady(job: InvoiceableJob) {
@@ -212,19 +254,47 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const toggle = (job: InvoiceableJob) => setLines(prev => {
     const next = { ...prev }
     if (next[job.id]) delete next[job.id]
-    else next[job.id] = seedLine(job, rates)
+    else next[job.id] = [seedLine(job, rates)]
     return next
   })
   const allSelected = billable.length > 0 && billable.every(j => lines[j.id])
   const toggleAll = () => setLines(prev => {
     if (billable.every(j => prev[j.id])) return {}
-    const all: Record<string, LineState> = {}
-    billable.forEach(j => { all[j.id] = prev[j.id] ?? seedLine(j, rates) })
+    const all: Record<string, LineState[]> = {}
+    billable.forEach(j => { all[j.id] = prev[j.id] ?? [seedLine(j, rates)] })
     return all
   })
-  const setLine = (id: string, patch: Partial<LineState>) => setLines(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+  const setLine = (id: string, i: number, patch: Partial<LineState>) =>
+    setLines(prev => ({ ...prev, [id]: (prev[id] ?? []).map((l, k) => k === i ? { ...l, ...patch } : l) }))
+  // Re-seed a whole line from a different rate (qty, price and description all follow
+  // the rate, so this replaces the line rather than patching its rate_id).
+  const setLineRate = (job: InvoiceableJob, i: number, rateId: string) =>
+    setLines(prev => ({ ...prev, [job.id]: (prev[job.id] ?? []).map((l, k) => k === i ? seedLine(job, rates, rateId) : l) }))
+  // Removing the last charge deselects the job outright — a selected job with no
+  // lines would still read as "selected" while billing nothing.
+  const removeLine = (id: string, i: number) => setLines(prev => {
+    const rest = (prev[id] ?? []).filter((_, k) => k !== i)
+    const next = { ...prev }
+    if (rest.length) next[id] = rest; else delete next[id]
+    return next
+  })
+  // A second charge on the same job defaults to the first rate this job isn't already
+  // billing — on a UHT job that turns "per Cargo Hold" into "per Hatch Cover" in one
+  // click. Falls back to a blank line to price by hand when every rate is used.
+  const addLine = (job: InvoiceableJob) => setLines(prev => {
+    const used = new Set((prev[job.id] ?? []).map(l => l.rate_id).filter(Boolean))
+    const next = rates.find(r => r.is_active && r.rate_type !== 'per_km' && !used.has(r.id))
+    return { ...prev, [job.id]: [...(prev[job.id] ?? []), seedLine(job, rates, next?.id ?? '')] }
+  })
+  // Same convention as the jobs tracker: clicking the active key flips the direction,
+  // a new key starts ascending (oldest first / A–Z).
+  const toggleSort = (key: SortKey) =>
+    setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
 
-  const orderedLines = billable.filter(j => lines[j.id]).map(j => ({ job: j, ...lines[j.id] }))
+  // Ticked jobs, in the order the picker shows them (so the sort above is also the
+  // invoice's line order), each contributing all of its charges.
+  const selectedJobs = billable.filter(j => lines[j.id]?.length)
+  const orderedLines = selectedJobs.flatMap(j => lines[j.id].map(l => ({ job: j, ...l })))
   const allDrafts = [
     ...orderedLines.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
     ...extra.map(l => ({ description: l.description, qty: l.qty, unit_price: l.unit_price })),
@@ -239,22 +309,23 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // line — which is how "Rate note: Discharge Draught" ended up under an Initial
   // survey. A line the user has picked a rate for wins over the automatic match.
   const billableRates = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
-  function rateForJob(job: InvoiceableJob): ClientRate | null {
-    const chosen = lines[job.id]?.rate_id
-    if (chosen !== undefined && lines[job.id]) return chosen ? billableRates.find(r => r.id === chosen) ?? null : null
+  // ls is the charge being displayed; omitted for an unticked job, which shows what
+  // the automatic match WOULD price it at.
+  function rateForLine(job: InvoiceableJob, ls?: LineState): ClientRate | null {
+    if (ls) return ls.rate_id ? billableRates.find(r => r.id === ls.rate_id) ?? null : null
     return pickRate(billableRates, job)
   }
 
   // The note saved against the rate pricing this line (e.g. initial/final fees).
-  function rateNoteFor(job: InvoiceableJob): string | null {
-    return rateForJob(job)?.notes ?? null
+  function rateNoteFor(job: InvoiceableJob, ls?: LineState): string | null {
+    return rateForLine(job, ls)?.notes ?? null
   }
 
   // When the matched rate is hourly, show that the line's qty came from the job's
   // billable hours (checklist total or labour ledger) — so it's clear the chain is
   // linked. Day-billed jobs (migration 148) say so instead, and never claim hours.
-  function hoursHintFor(job: InvoiceableJob): string | null {
-    const rate = rateForJob(job)
+  function hoursHintFor(job: InvoiceableJob, ls?: LineState): string | null {
+    const rate = rateForLine(job, ls)
     if (rate?.rate_type === 'per_unit') {
       const unit = rate.unit_label || 'unit'
       const perDayUnit = /^days?$/i.test(unit.trim())
@@ -279,11 +350,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // an invoice where a selected job's rate is in a DIFFERENT currency (no conversion).
     const active = rates.filter(r => r.is_active)
     const mismatch = orderedLines.find(l => {
-      const rate = rateForJob(l.job)
+      const rate = rateForLine(l.job, l)
       return rate && rate.currency !== currency
     })
     if (mismatch) {
-      const rate = rateForJob(mismatch.job)
+      const rate = rateForLine(mismatch.job, mismatch)
       toast.error(`${mismatch.job.job_type ?? 'A job'} is rated in ${rate?.currency}, but this invoice is ${currency}. Match the currency (or remove that job) before billing.`)
       return
     }
@@ -310,7 +381,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       ],
       taxes: taxes.filter(t => t.name.trim()),
       // No vessels ticked → create a job for this invoice on the job sheet.
-      new_job: orderedLines.length === 0 ? {
+      new_job: selectedJobs.length === 0 ? {
         title: newJobVessel.trim() ? `M.V. ${newJobVessel.trim()}` : `${clientName || 'Client'} — invoice`,
         vessel_name: newJobVessel.trim() || null,
         job_type: newJobType || null,
@@ -318,7 +389,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
-    const v = orderedLines.length
+    const v = selectedJobs.length
     toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created — a job was added to the job sheet')
     setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType('')
     getLatestInvoiceNumber().then(setLastInvNumber)
@@ -363,12 +434,34 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       {/* 2 — Pick the vessels/jobs */}
       {clientId && (
         <div className="card overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
             <button onClick={toggleAll} disabled={billable.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">
               {allSelected ? <CheckSquare className="h-4 w-4 text-brand-600" /> : <Square className="h-4 w-4 text-gray-400" />}
               Select all
             </button>
-            <span className="ml-auto text-xs text-gray-400 tnum">{orderedLines.length} of {billable.length} selected</span>
+            {/* Ordering the pool also orders the invoice lines — see SORTS above. */}
+            {jobs.length > 1 && (
+              <div className="flex items-center gap-1" role="group" aria-label="Sort jobs">
+                <span className="text-[11px] text-gray-400 mr-0.5">Sort</span>
+                {SORTS.map(s => {
+                  const active = sort.key === s.key
+                  return (
+                    <button key={s.key} onClick={() => toggleSort(s.key)} aria-pressed={active}
+                      title={active ? (sort.dir === 'asc' ? 'Ascending — click to reverse' : 'Descending — click to reverse') : `Sort by ${s.label.toLowerCase()}`}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${active ? 'bg-brand-50 text-brand-700 font-medium' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}>
+                      {s.label}
+                      {active
+                        ? <span className="text-[10px]">{sort.dir === 'asc' ? '▲' : '▼'}</span>
+                        : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <span className="ml-auto text-xs text-gray-400 tnum">
+              {selectedJobs.length} of {billable.length} selected
+              {orderedLines.length > selectedJobs.length && ` · ${orderedLines.length} lines`}
+            </span>
           </div>
 
           {loadingJobs ? (
@@ -385,10 +478,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                 </p>
               )}
               {billable.map(j => {
-                const sel = !!lines[j.id]
-                const ls = lines[j.id]
-                const note = rateNoteFor(j)
-                const hoursHint = hoursHintFor(j)
+                const jobLines = lines[j.id]
+                const sel = !!jobLines?.length
+                const note = sel ? null : rateNoteFor(j)
                 return (
                   <div key={j.id} className={sel ? 'px-4 py-3 bg-brand-50/30' : 'px-4 py-3'}>
                     <div className="flex items-start gap-3">
@@ -410,42 +502,63 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         </div>
                         {sel ? (
                           <>
-                          {/* Which rate is pricing this line, and the way to change it.
-                              Without this the match was invisible: a client with an
-                              Initial and a Discharge draught rate got whichever sorted
-                              first, with no clue in the UI. Re-seeds the whole line, so
-                              pick the rate before editing the description by hand. */}
-                          {billableRates.length > 0 && (
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <span className="text-[11px] text-gray-400 shrink-0">Rate</span>
-                              <select
-                                value={ls.rate_id ?? ''}
-                                onChange={e => setLines(prev => ({ ...prev, [j.id]: seedLine(j, rates, e.target.value) }))}
-                                className="input-base py-1 text-xs w-auto max-w-full"
-                              >
-                                <option value="">No rate — enter the price by hand</option>
-                                {billableRates.map(r => (
-                                  <option key={r.id} value={r.id}>
-                                    {[r.job_type || 'Any job type', r.job_stage].filter(Boolean).join(' · ')}
-                                    {' — '}{money(Number(r.rate), r.currency)}
-                                    {r.rate_type === 'hourly' ? '/hr' : r.rate_type === 'per_unit' ? `/${r.unit_label || 'unit'}` : ''}
-                                    {r.notes ? ` (${r.notes})` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                          <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
-                            <textarea rows={2} value={ls.description} onChange={e => setLine(j.id, { description: e.target.value })} className={`${cell} resize-y leading-snug`} />
-                            <input type="number" min={0} step="0.5" value={ls.qty} onChange={e => setLine(j.id, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
-                            <input type="number" min={0} step="0.01" value={ls.unit_price} onChange={e => setLine(j.id, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
-                            <span className="text-sm text-gray-700 text-right tnum pt-1.5">{((Number(ls.qty) || 0) * (Number(ls.unit_price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
+                          {/* One block per charge. A job usually has one, but it can carry
+                              several — UHT bills per hatch cover AND per cargo hold — so
+                              each gets its own rate, qty and price. */}
+                          {jobLines.map((ls, i) => {
+                            const lineNote = rateNoteFor(j, ls)
+                            const lineHint = hoursHintFor(j, ls)
+                            return (
+                              <div key={i} className={i > 0 ? 'mt-2 pt-2 border-t border-dashed border-gray-200' : ''}>
+                                {/* Which rate is pricing this line, and the way to change it.
+                                    Without this the match was invisible: a client with an
+                                    Initial and a Discharge draught rate got whichever sorted
+                                    first, with no clue in the UI. Re-seeds the whole line, so
+                                    pick the rate before editing the description by hand. */}
+                                {billableRates.length > 0 && (
+                                  <div className="mt-1.5 flex items-center gap-2">
+                                    <span className="text-[11px] text-gray-400 shrink-0">{i === 0 ? 'Rate' : `Charge ${i + 1}`}</span>
+                                    <select
+                                      value={ls.rate_id ?? ''}
+                                      onChange={e => setLineRate(j, i, e.target.value)}
+                                      className="input-base py-1 text-xs w-auto max-w-full"
+                                    >
+                                      <option value="">No rate — enter the price by hand</option>
+                                      {billableRates.map(r => (
+                                        <option key={r.id} value={r.id}>
+                                          {[r.job_type || 'Any job type', r.job_stage].filter(Boolean).join(' · ')}
+                                          {' — '}{money(Number(r.rate), r.currency)}
+                                          {r.rate_type === 'hourly' ? '/hr' : r.rate_type === 'per_unit' ? `/${r.unit_label || 'unit'}` : ''}
+                                          {r.notes ? ` (${r.notes})` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {jobLines.length > 1 && (
+                                      <button onClick={() => removeLine(j.id, i)} title="Remove this charge"
+                                        className="ml-auto shrink-0 text-gray-300 hover:text-red-600">
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
+                                  <textarea rows={2} value={ls.description} onChange={e => setLine(j.id, i, { description: e.target.value })} className={`${cell} resize-y leading-snug`} />
+                                  <input type="number" min={0} step="0.5" value={ls.qty} onChange={e => setLine(j.id, i, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
+                                  <input type="number" min={0} step="0.01" value={ls.unit_price} onChange={e => setLine(j.id, i, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
+                                  <span className="text-sm text-gray-700 text-right tnum pt-1.5">{((Number(ls.qty) || 0) * (Number(ls.unit_price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                                {lineHint && <p className="text-[11px] text-brand-700 mt-1">{lineHint}</p>}
+                                {lineNote && <p className="text-[11px] text-amber-700 mt-1">Rate note: {lineNote}</p>}
+                              </div>
+                            )
+                          })}
+                          <button onClick={() => addLine(j)} className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-brand-700 hover:text-brand-800">
+                            <Plus className="h-3 w-3" /> Add another charge for this job
+                          </button>
                           </>
                         ) : (
                           <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
                         )}
-                        {sel && hoursHint && <p className="text-[11px] text-brand-700 mt-1">{hoursHint}</p>}
                         {note && <p className="text-[11px] text-amber-700 mt-1">Rate note: {note}</p>}
                       </div>
                     </div>
@@ -508,7 +621,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         <div className="card p-5 space-y-3">
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
 
-          {orderedLines.length === 0 && (
+          {selectedJobs.length === 0 && (
             <div className="rounded-lg bg-amber-50/60 border border-amber-100 p-3 space-y-2">
               <p className="text-xs text-amber-800">No vessels ticked — a job will be created on the job sheet for this invoice.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -578,7 +691,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           <div className="flex items-center gap-2 pt-1">
             <button onClick={create} disabled={saving} className="btn-primary py-2 px-4 text-sm">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
-              Create invoice{orderedLines.length > 0 ? ` (${orderedLines.length} ${orderedLines.length === 1 ? 'vessel' : 'vessels'})` : ''}
+              Create invoice{selectedJobs.length > 0 ? ` (${selectedJobs.length} ${selectedJobs.length === 1 ? 'vessel' : 'vessels'})` : ''}
             </button>
             <span className="text-sm text-gray-400 tnum">{money(totals.total, currency)}</span>
           </div>
