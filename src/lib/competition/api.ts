@@ -100,8 +100,13 @@ export async function readCapturedAt(file: File): Promise<string | null> {
 export interface UploadResult { entry?: CompetitionEntry; error?: string }
 
 /** Upload one photo/video as a competition entry for the current month. Month is
- *  set server-side (Trinidad tz) — the client can't backdate it. Inserts the
- *  entry, then the secret owner link; rolls back storage + row on any failure. */
+ *  set server-side (Trinidad tz) — the client can't backdate it.
+ *
+ *  The entry row and its secret owner link are written by ONE server-side call
+ *  (competition_submit_entry, mig 164) so they land together. Doing it as two
+ *  inserts from here could not work: an entry is only readable via its owner
+ *  link, so `insert(...).select()` — INSERT … RETURNING — was rejected by the
+ *  table's own SELECT policy before the link could be written. */
 export async function uploadEntry(
   file: File,
   opts: { mediaType?: MediaType; caption?: string | null; capturedAt?: string | null } = {},
@@ -123,27 +128,20 @@ export async function uploadEntry(
     .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
   if (upErr) return { error: upErr.message }
 
-  const { data: entry, error: insErr } = await supabase.from('competition_entries').insert({
-    media_type: mediaType,
-    storage_path: path,
-    content_type: file.type || null,
-    size_bytes: file.size,
-    filename: file.name,
-    caption: opts.caption?.trim() || null,
-    captured_at: opts.capturedAt || null,
-  }).select('*').single()
+  const { data: entry, error: insErr } = await supabase.rpc('competition_submit_entry', {
+    p_storage_path: path,
+    p_media_type: mediaType,
+    p_content_type: file.type || null,
+    p_size_bytes: file.size,
+    p_filename: file.name,
+    p_caption: opts.caption?.trim() || null,
+    p_captured_at: opts.capturedAt || null,
+  }).single()
   if (insErr || !entry) {
-    await supabase.storage.from(bucket).remove([path]).catch(() => {})
+    // Best-effort: the orphan branch in mig 164's storage DELETE policy is what
+    // lets this actually remove the bytes we just uploaded.
+    await supabase.storage.from(bucket).remove([path])
     return { error: insErr?.message ?? 'Could not save entry.' }
-  }
-
-  const { error: ownErr } = await supabase.from('competition_entry_owners')
-    .insert({ entry_id: (entry as CompetitionEntry).id, entrant_id: uid })
-  if (ownErr) {
-    // The entry with no owner link would be invisible/orphaned — undo everything.
-    await supabase.from('competition_entries').delete().eq('id', (entry as CompetitionEntry).id)
-    await supabase.storage.from(bucket).remove([path]).catch(() => {})
-    return { error: ownErr.message }
   }
 
   return { entry: entry as CompetitionEntry }
@@ -236,8 +234,9 @@ export async function listEntrants(): Promise<Entrant[]> {
 }
 
 /** Admin uploads a photo/video ON BEHALF of a staff member (e.g. one they were
- *  sent over WhatsApp). Stored in the entrant's own folder so it shows up in
- *  their "My Photos", attributed via the owner link. An optional month lets the
+ *  sent over WhatsApp). Stored under an opaque key like any other entry (mig
+ *  160 — the path must not encode who submitted it) and attributed via the
+ *  owner link, so it shows up in their "My Photos". An optional month lets the
  *  admin file it into a specific past round; otherwise it lands in this month. */
 export async function adminUploadOnBehalf(
   file: File,
@@ -264,6 +263,10 @@ export async function adminUploadOnBehalf(
     captured_at: opts.capturedAt || null,
   }
   if (opts.month) row.month = opts.month // admin-only; the trigger honours it
+  // NB: the .select() here is INSERT … RETURNING, which is checked against the
+  // table's SELECT policy. It only passes because is_admin() is the first read
+  // arm. If this tool is ever opened to non-admins it must move to an RPC that
+  // writes the entry + owner link together, the way uploadEntry does (mig 164).
   const { data: entry, error: insErr } = await supabase.from('competition_entries').insert(row).select('*').single()
   if (insErr || !entry) {
     await supabase.storage.from(bucket).remove([path]).catch(() => {})

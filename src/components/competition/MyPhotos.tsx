@@ -229,6 +229,11 @@ function friendlyUploadError(msg: string): string {
   const m = msg.toLowerCase()
   if (m.includes('mime') || m.includes('not supported') || m.includes('invalid')) return 'that format isn’t supported — use JPG, PNG or WebP'
   if (m.includes('maximum') || m.includes('exceed') || m.includes('too large') || m.includes('payload')) return 'it’s over the 25 MB limit'
+  if (m.includes('closed for entries')) return 'this month is closed for entries — refresh the page'
+  if (m.includes('not eligible')) return 'your account isn’t set up to enter — ask an admin'
+  // A raw "new row violates row-level security policy for table …" is no use to
+  // anyone holding a phone.
+  if (m.includes('row-level security')) return 'the competition isn’t accepting this photo right now — refresh the page and try again'
   return msg
 }
 
