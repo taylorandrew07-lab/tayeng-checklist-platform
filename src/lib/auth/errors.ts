@@ -17,7 +17,11 @@ export function signInErrorMessage(err: AuthError): string {
     return 'Invalid email or password. Please try again.'
   }
   if (code === 'email_not_confirmed' || raw.includes('email not confirmed')) {
-    return 'Your email address has not been confirmed yet. Ask an administrator to activate your account for you.'
+    // Deliberately names the action that actually works. "Ask an administrator to
+    // activate your account" sent admins to the Activate toggle, which only writes
+    // profiles.is_active and cannot clear this error — so the user was told to ask for
+    // the one thing that provably wouldn't help.
+    return 'Your email address has not been confirmed. Ask your administrator to set a password for you directly (Team → Password) — that confirms your email at the same time.'
   }
   if (code === 'user_banned' || raw.includes('banned')) {
     return 'This account has been suspended. Please contact your administrator.'
@@ -43,7 +47,10 @@ export function signInErrorMessage(err: AuthError): string {
 export function emailLinkErrorMessage(errorCode: string): string | null {
   switch (errorCode) {
     case 'otp_expired':
-      return 'That link has expired or has already been used. Please request a new one.'
+      // "Request a new one" was a dead end: nothing in the app can resend a
+      // *confirmation* link, and these links are routinely spent before the user taps
+      // them (mail scanners follow the URL). Point at the path that needs no email.
+      return 'That link has expired or has already been used. Ask your administrator to set a password for you directly — they can do it without email.'
     case 'access_denied':
       return 'That link is no longer valid. Please request a new one.'
     case 'pending':

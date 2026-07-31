@@ -253,35 +253,26 @@ export default function UsersPage() {
 
     setApprovingSaving(true)
     setApprovalError(null)
-    const supabase = createClient()
 
-    // Allow admin to change the role at approval time
-    if (approvalRole !== approvalTarget.role) {
-      const { error: roleErr } = await supabase
-        .from('profiles')
-        .update({ role: approvalRole })
-        .eq('id', approvalTarget.id)
-      if (roleErr) { setApprovalError(roleErr.message); setApprovingSaving(false); return }
-    }
-
-    // Create client link for client-role users
-    if (approvalRole === 'client' && approvalClientId) {
-      const { error: linkErr } = await supabase.from('client_users').upsert({
-        profile_id: approvalTarget.id,
-        client_id: approvalClientId,
-      }, { onConflict: 'profile_id,client_id' })
-      if (linkErr) { setApprovalError(linkErr.message); setApprovingSaving(false); return }
-    }
-
-    const { error: actErr } = await supabase
-      .from('profiles')
-      .update({ is_active: true })
-      .eq('id', approvalTarget.id)
-
-    if (actErr) { setApprovalError(actErr.message); setApprovingSaving(false); return }
-
-    setApprovalTarget(null)
+    // Goes through the service role so the *auth* account is confirmed too, not just
+    // the profile row. Approving with plain browser writes left the person active
+    // everywhere in this UI but rejected at the login screen with "email not
+    // confirmed" — see /api/admin/approve-user for the full reasoning.
+    const res = await fetch('/api/admin/approve-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: approvalTarget.id,
+        role: approvalRole,
+        client_id: approvalRole === 'client' ? approvalClientId : null,
+      }),
+    })
+    const body = await res.json().catch(() => ({}))
     setApprovingSaving(false)
+    if (!res.ok) { setApprovalError(body.error ?? 'Could not approve that account'); return }
+
+    toast.success(`${approvalTarget.full_name} can now sign in`)
+    setApprovalTarget(null)
     load()
   }
 
@@ -429,6 +420,18 @@ export default function UsersPage() {
                 <span className="text-gray-500 text-xs">{formatDate(user.created_at)}</span>
                 <div className="flex items-center gap-2 ml-auto">
                   <button onClick={() => startApprove(user)} className="btn-primary py-1 px-3 text-xs">Review &amp; Approve</button>
+                  {/* Also offered here, not just on the active table. Setting a password
+                      is the only action that confirms a stuck auth email, and needing to
+                      approve first just to reach it made "Reject & delete, then re-register"
+                      the tempting alternative — which destroys the auth.users row. */}
+                  {(isSuperAdmin || (user.role !== 'admin' && !(user as any).is_super_admin)) && (
+                    <button
+                      onClick={() => { setPasswordTarget(user); setNewPassword(''); setConfirmPassword(''); setPasswordError(null) }}
+                      className="btn-ghost py-1 px-3 text-xs"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />Password
+                    </button>
+                  )}
                   <button onClick={() => rejectUser(user)} className="btn-ghost py-1 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">Reject</button>
                 </div>
               </div>
