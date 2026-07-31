@@ -180,6 +180,14 @@ export async function listBillingClients(): Promise<{ id: string; name: string }
 export interface InvoiceableJob {
   id: string; report_number: string | null; vessel_name: string | null
   job_type: string | null; client_id: string | null; client_name: string | null
+  /** The qualifier on a broad survey type (migration 108) — Initial/Final on a Draught
+   *  Survey, Loading/Discharging on a Cargo Survey. Without it an invoice line reads
+   *  "M.V. Chaconia — Draught Survey" and neither you nor the client can tell which of
+   *  the two surveys on that vessel is being billed. */
+  job_stage: string | null
+  /** The product on a cargo job (migration 154). Shown in the job picker for context;
+   *  not seeded into the line description, which stays about the service billed. */
+  cargo_type: string | null
   scheduled_date: string | null; end_date: string | null; created_at: string; workflow_status: Job['workflow_status']
   template_id: string | null
   /** How this job's labour is measured (migration 148). 'days' means an HOURLY rate
@@ -222,7 +230,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
   let q = supabase.from('jobs')
-    .select('id, report_number, vessel_name, job_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
+    .select('id, report_number, vessel_name, job_type, job_stage, cargo_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
     .in('workflow_status', ['report_ready', 'invoice_ready'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
@@ -230,6 +238,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const { data } = await q
   let rows = ((data ?? []) as any[]).map(j => ({
     id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, job_type: j.job_type,
+    job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null,
     client_id: j.client_id, client_name: j.client?.name ?? null, template_id: j.template_id ?? null,
     scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at, workflow_status: j.workflow_status,
     labour_unit: (j.labour_unit === 'days' ? 'days' : 'hours') as 'hours' | 'days',

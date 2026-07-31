@@ -138,7 +138,14 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // A day-billed job says DAYS on the client's invoice — never "hrs".
     const daysStr = !unitStr && job.billable_days && job.billable_days > 0 ? `${job.billable_days} day${job.billable_days === 1 ? '' : 's'}` : null
     const detail = [dateStr, span, hoursStr, daysStr, unitStr].filter(Boolean).join(' · ')
-    const head = job.job_type ? `${label} — ${job.job_type}` : label
+    // The stage qualifies the type and belongs on the client's invoice: a vessel can
+    // take an Initial AND a Final Draught Survey in the same month, and "M.V. Chaconia
+    // — Draught Survey" twice over is unbillable-looking to them and unverifiable to
+    // us. Cargo type is deliberately left off — it describes the product, not the
+    // service being charged for. The description is a textarea, so this is a seed.
+    const typeStr = job.job_type && job.job_stage ? `${job.job_type} (${job.job_stage})`
+      : (job.job_type ?? job.job_stage ?? null)
+    const head = typeStr ? `${label} — ${typeStr}` : label
     return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0 }
   }, [])
 
@@ -376,7 +383,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
                           <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
+                          {/* Stage and cargo type qualify the job type. Two Draught
+                              Surveys on one vessel are indistinguishable without the
+                              stage, which is exactly when you need to tell them apart. */}
                           {j.job_type && <span>· {j.job_type}</span>}
+                          {j.job_stage && <span className="text-gray-500 font-medium">({j.job_stage})</span>}
+                          {j.cargo_type && <span className="text-gray-400">· {j.cargo_type}</span>}
                           {jobLastDate(j) && <span>· {formatDate(jobLastDate(j))}{jobSpansDays(j) && <span className="text-gray-300"> (from {formatDate(j.scheduled_date)})</span>}</span>}
                           {/* Day-billed (migration 148) — flagged here so the line is never priced as hours. */}
                           {j.labour_unit === 'days' && <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Billed by the day</span>}
@@ -413,6 +425,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
                           <span className="tnum font-medium text-gray-600">{j.report_number ?? 'no report #'}</span>
                           {j.job_type && <span>· {j.job_type}</span>}
+                          {j.job_stage && <span className="text-gray-500 font-medium">({j.job_stage})</span>}
+                          {j.cargo_type && <span className="text-gray-400">· {j.cargo_type}</span>}
                           {jobLastDate(j) && <span>· {formatDate(jobLastDate(j))}{jobSpansDays(j) && <span className="text-gray-300"> (from {formatDate(j.scheduled_date)})</span>}</span>}
                         </div>
                         <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
