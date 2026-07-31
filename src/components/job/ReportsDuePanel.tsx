@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Bell } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
-import { isReminderDue, REMINDER_WINDOW_LABEL } from '@/lib/jobs/reminderWindow'
+import { isReminderDue } from '@/lib/jobs/reminderWindow'
 
 interface DueJob {
   id: string
@@ -62,13 +62,14 @@ export default function ReportsDuePanel() {
 
   return (
     <div className="card border-l-4 border-l-amber-400">
+      {/* No subtitle. It restated the delivery window on every page load — fixed text
+          that never changes and says nothing about the jobs actually listed below. */}
       <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200 flex-wrap">
         <h2 className="section-title flex items-center gap-2">
           <Bell className="h-4 w-4 text-amber-500" />
           Reports due
           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{jobs.length}</span>
         </h2>
-        <span className="text-xs text-gray-400">Ready to write · reminders {REMINDER_WINDOW_LABEL}</span>
       </div>
       <div className="divide-y divide-gray-100">
         {jobs.map(j => (

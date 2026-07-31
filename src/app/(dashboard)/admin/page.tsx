@@ -1,8 +1,12 @@
 'use client'
 
-// Admin dashboard — deliberately minimal: just the Recent Jobs list, with the same
-// colour-by (client / job type) option as the Jobs page. Everything else you do
-// lives in Jobs and Finance.
+// Admin dashboard — deliberately minimal: just the Recent Jobs list. Everything
+// else you do lives in Jobs and Finance.
+//
+// Row colour FOLLOWS the Jobs page and is not settable here. useJobsView() reads the
+// same persisted `jobsColorMode`, so whatever you pick in JobsViewToolbar applies here
+// too. This page used to carry its own duplicate None/Client/Job Type toggle, which on
+// a phone ate a whole row of width to set a preference you'd normally set once.
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -12,15 +16,7 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import ReportsDuePanel from '@/components/job/ReportsDuePanel'
-import { useJobsView, rowColor, type JobColorMode } from '@/lib/jobs/view'
-
-// Same three modes as the Jobs page. Colour choice is shared (persisted per-device),
-// so picking "Client" here also colours the Jobs grid by client, and vice-versa.
-const COLOR_OPTS: { mode: JobColorMode; label: string }[] = [
-  { mode: 'none', label: 'None' },
-  { mode: 'client', label: 'Client' },
-  { mode: 'type', label: 'Job Type' },
-]
+import { useJobsView, rowColor } from '@/lib/jobs/view'
 
 export default function AdminDashboard() {
   const [recentJobs, setRecentJobs] = useState<any[]>([])
@@ -60,22 +56,7 @@ export default function AdminDashboard() {
       <div className="card">
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200 flex-wrap">
           <h2 className="section-title">Recent Jobs</h2>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-xs">
-              <span className="text-gray-400 mr-1 hidden sm:inline">Colour by</span>
-              {COLOR_OPTS.map(o => (
-                <button
-                  key={o.mode}
-                  onClick={() => view.setColorMode(o.mode)}
-                  aria-pressed={view.colorMode === o.mode}
-                  className={`px-2 py-1 rounded-full border transition-colors ${view.colorMode === o.mode ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-            <Link href="/admin/jobs" className="text-sm text-brand-600 hover:text-brand-800 font-medium">View all →</Link>
-          </div>
+          <Link href="/admin/jobs" className="text-sm text-brand-600 hover:text-brand-800 font-medium">View all →</Link>
         </div>
 
         {loading ? (
@@ -108,11 +89,15 @@ export default function AdminDashboard() {
                   className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
                   style={{ backgroundColor: c ? c.bg : undefined, borderLeft: `3px solid ${c ? c.fg : 'transparent'}` }}
                 >
+                  {/* Vessel leads, and the checklist number is gone entirely. The number
+                      sat beside the title as flex-shrink-0, so on a phone it held its full
+                      width while the name it belonged to truncated to "M...." — the row
+                      showed a reference you don't read and hid the one thing you do. Falls
+                      back to the title for jobs with no vessel recorded. */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">{job.title}</p>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{job.job_number}</span>
-                    </div>
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {job.vessel_name || job.title}
+                    </p>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">
                       {job.client?.name ?? 'No client'} · {job.surveyor_name ?? 'No surveyor'} · {job.template?.name}
                     </p>
