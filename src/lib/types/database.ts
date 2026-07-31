@@ -502,6 +502,10 @@ export interface JobSurveyorKm {
 
 export interface ClientRate {
   id: string; client_id: string; job_type: string | null
+  /** Optional stage qualifier matching jobs.job_stage (migration 163) — Initial/
+   *  Interim/Final, Loading/Discharging, On-hire/Off-hire. NULL = any stage of this
+   *  job type. See pickRate() in lib/jobs/invoicing.ts for match precedence. */
+  job_stage: string | null
   rate_type: 'fixed' | 'hourly' | 'per_unit' | 'per_km'; rate: number
   unit_label: string | null; currency: Currency; is_active: boolean
   /** Free-text note, e.g. "initial $X, final $Y" for a draught survey (migration 082). */

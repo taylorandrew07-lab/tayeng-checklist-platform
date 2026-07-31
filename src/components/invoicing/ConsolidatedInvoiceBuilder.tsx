@@ -16,7 +16,7 @@ import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
-  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate,
   type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import { listClientBilling } from '@/lib/clients/billing'
@@ -25,7 +25,10 @@ import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
 import { BankAccountPicker } from '@/components/invoicing/BankAccountPicker'
 import type { Currency, ClientRate, BankAccount } from '@/lib/types/database'
 
-interface LineState { description: string; qty: number; unit_price: number }
+// rate_id is the rate this line is priced from. Seeded by pickRate() and then
+// overridable per line, so a job whose rate was auto-matched wrongly (or that has
+// several candidate rates) can be corrected without retyping the price.
+interface LineState { description: string; qty: number; unit_price: number; rate_id: string | null }
 
 export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: () => void }) {
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
@@ -102,12 +105,16 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     if (acct) { setBankAccountId(acct.id); setBankDetails(acct.details) }
   }, [payerId, bankAccounts, clientBankLinks]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[]): LineState => {
+  // forcedRateId: the user picked a rate for this line by hand — honour it instead of
+  // re-matching. '' means "no rate", which seeds a blank price to fill in manually.
+  const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[], forcedRateId?: string): LineState => {
     const active = clientRates.filter(r => r.is_active)
     // per_km rates drive the separate mileage line only — never the main survey
     // line (else a client with just a per_km rate gets a bogus qty-1 line).
     const billable = active.filter(r => r.rate_type !== 'per_km')
-    const rate = billable.find(r => r.job_type === job.job_type) ?? billable.find(r => !r.job_type) ?? null
+    const rate = forcedRateId !== undefined
+      ? (forcedRateId ? billable.find(r => r.id === forcedRateId) ?? null : null)
+      : pickRate(billable, job)
     const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
     const hourly = rate?.rate_type === 'hourly'
     const perUnit = rate?.rate_type === 'per_unit'
@@ -146,7 +153,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const typeStr = job.job_type && job.job_stage ? `${job.job_type} (${job.job_stage})`
       : (job.job_type ?? job.job_stage ?? null)
     const head = typeStr ? `${label} — ${typeStr}` : label
-    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0 }
+    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0, rate_id: rate?.id ?? null }
   }, [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
@@ -173,7 +180,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const perKm = rs.filter(r => r.is_active && r.rate_type === 'per_km')
     const mileageLines: DraftLine[] = perKm.length ? billableJs.flatMap(j => {
       if (!j.billable_km || j.billable_km <= 0) return []
-      const rate = perKm.find(r => r.job_type === j.job_type) ?? perKm.find(r => !r.job_type)
+      const rate = pickRate(perKm, j)
       if (!rate) return []
       const label = j.vessel_name ? `M.V. ${j.vessel_name}` : (j.report_number ?? 'Survey')
       return [{ ...blankLine(false), description: `${label} — Mileage\n${j.billable_km} km`, qty: j.billable_km, unit_price: Number(rate.rate), auto_mileage: true }]
@@ -227,18 +234,27 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const clientName = clients.find(c => c.id === clientId)?.name ?? ''
   const billToName = clients.find(c => c.id === billToId)?.name ?? ''
 
-  // The note saved against this client's rate for a job's type (e.g. initial/final fees).
+  // Every rate-dependent display goes through this, so the note, the hours hint and
+  // the currency check can never describe a different rate from the one pricing the
+  // line — which is how "Rate note: Discharge Draught" ended up under an Initial
+  // survey. A line the user has picked a rate for wins over the automatic match.
+  const billableRates = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
+  function rateForJob(job: InvoiceableJob): ClientRate | null {
+    const chosen = lines[job.id]?.rate_id
+    if (chosen !== undefined && lines[job.id]) return chosen ? billableRates.find(r => r.id === chosen) ?? null : null
+    return pickRate(billableRates, job)
+  }
+
+  // The note saved against the rate pricing this line (e.g. initial/final fees).
   function rateNoteFor(job: InvoiceableJob): string | null {
-    const active = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
-    return (active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type))?.notes ?? null
+    return rateForJob(job)?.notes ?? null
   }
 
   // When the matched rate is hourly, show that the line's qty came from the job's
   // billable hours (checklist total or labour ledger) — so it's clear the chain is
   // linked. Day-billed jobs (migration 148) say so instead, and never claim hours.
   function hoursHintFor(job: InvoiceableJob): string | null {
-    const active = rates.filter(r => r.is_active && r.rate_type !== 'per_km')
-    const rate = active.find(r => r.job_type === job.job_type) ?? active.find(r => !r.job_type)
+    const rate = rateForJob(job)
     if (rate?.rate_type === 'per_unit') {
       const unit = rate.unit_label || 'unit'
       const perDayUnit = /^days?$/i.test(unit.trim())
@@ -262,13 +278,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // Money-safety: every line is summed under one invoice currency, so block creating
     // an invoice where a selected job's rate is in a DIFFERENT currency (no conversion).
     const active = rates.filter(r => r.is_active)
-    const billable = active.filter(r => r.rate_type !== 'per_km')
     const mismatch = orderedLines.find(l => {
-      const rate = billable.find(r => r.job_type === l.job.job_type) ?? billable.find(r => !r.job_type)
+      const rate = rateForJob(l.job)
       return rate && rate.currency !== currency
     })
     if (mismatch) {
-      const rate = billable.find(r => r.job_type === mismatch.job.job_type) ?? billable.find(r => !r.job_type)
+      const rate = rateForJob(mismatch.job)
       toast.error(`${mismatch.job.job_type ?? 'A job'} is rated in ${rate?.currency}, but this invoice is ${currency}. Match the currency (or remove that job) before billing.`)
       return
     }
@@ -394,12 +409,39 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           {j.labour_unit === 'days' && <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Billed by the day</span>}
                         </div>
                         {sel ? (
+                          <>
+                          {/* Which rate is pricing this line, and the way to change it.
+                              Without this the match was invisible: a client with an
+                              Initial and a Discharge draught rate got whichever sorted
+                              first, with no clue in the UI. Re-seeds the whole line, so
+                              pick the rate before editing the description by hand. */}
+                          {billableRates.length > 0 && (
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <span className="text-[11px] text-gray-400 shrink-0">Rate</span>
+                              <select
+                                value={ls.rate_id ?? ''}
+                                onChange={e => setLines(prev => ({ ...prev, [j.id]: seedLine(j, rates, e.target.value) }))}
+                                className="input-base py-1 text-xs w-auto max-w-full"
+                              >
+                                <option value="">No rate — enter the price by hand</option>
+                                {billableRates.map(r => (
+                                  <option key={r.id} value={r.id}>
+                                    {[r.job_type || 'Any job type', r.job_stage].filter(Boolean).join(' · ')}
+                                    {' — '}{money(Number(r.rate), r.currency)}
+                                    {r.rate_type === 'hourly' ? '/hr' : r.rate_type === 'per_unit' ? `/${r.unit_label || 'unit'}` : ''}
+                                    {r.notes ? ` (${r.notes})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                           <div className="mt-1.5 grid grid-cols-[1fr_3.5rem_6rem_5rem] gap-2 items-start">
                             <textarea rows={2} value={ls.description} onChange={e => setLine(j.id, { description: e.target.value })} className={`${cell} resize-y leading-snug`} />
                             <input type="number" min={0} step="0.5" value={ls.qty} onChange={e => setLine(j.id, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
                             <input type="number" min={0} step="0.01" value={ls.unit_price} onChange={e => setLine(j.id, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
                             <span className="text-sm text-gray-700 text-right tnum pt-1.5">{((Number(ls.qty) || 0) * (Number(ls.unit_price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
+                          </>
                         ) : (
                           <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
                         )}

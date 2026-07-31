@@ -12,6 +12,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { cn } from '@/lib/utils'
 import { CURRENCIES, money, listJobTypes } from '@/lib/jobs/tracker'
 import { listClientRates, addClientRate, updateClientRate, deleteClientRate } from '@/lib/jobs/invoicing'
+import { STAGE_OPTIONS } from '@/lib/jobs/newJobConfig'
 import type { Client, ClientRate, Currency } from '@/lib/types/database'
 
 export default function ClientRates() {
@@ -95,7 +96,7 @@ export default function ClientRates() {
                 className={cn('w-full text-left flex items-start justify-between gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors', clientId === client.id && 'bg-brand-50/50')}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">{client.name}{!client.is_active && <span className="text-[10px] text-gray-400 ml-1.5">inactive</span>}</p>
-                  <p className="text-xs text-gray-500 truncate">{rs.map(r => `${r.job_type || 'Any'} · ${rateSummary(r)}`).join('   ·   ')}</p>
+                  <p className="text-xs text-gray-500 truncate">{rs.map(r => `${[r.job_type || 'Any', r.job_stage].filter(Boolean).join(' ')} · ${rateSummary(r)}`).join('   ·   ')}</p>
                   {rs.some(r => r.notes) && <p className="text-[11px] text-gray-400 truncate mt-0.5">{rs.filter(r => r.notes).map(r => r.notes).join('  ·  ')}</p>}
                 </div>
                 <span className="text-xs text-gray-400 tnum shrink-0">{rs.length} rate{rs.length === 1 ? '' : 's'}</span>
@@ -130,7 +131,11 @@ function RateRow({ rate, jobTypes, onChanged }: { rate: ClientRate; jobTypes: st
   return (
     <div className="flex items-center justify-between gap-3 p-4">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-900">{rate.job_type || 'Any job type'} <span className="text-xs text-gray-400 font-normal">· {RATE_TYPES.find(t => t[0] === rate.rate_type)?.[1]}</span></p>
+        <p className="text-sm font-medium text-gray-900">
+          {rate.job_type || 'Any job type'}
+          {rate.job_stage && <span className="text-xs text-brand-700 bg-brand-50 rounded px-1.5 py-0.5 ml-1.5 font-medium">{rate.job_stage}</span>}
+          <span className="text-xs text-gray-400 font-normal"> · {RATE_TYPES.find(t => t[0] === rate.rate_type)?.[1]}</span>
+        </p>
         <p className="text-sm text-gray-600 tnum">{rateSummary(rate)}</p>
         {rate.notes && <p className="text-xs text-gray-500 mt-0.5 whitespace-pre-wrap">{rate.notes}</p>}
       </div>
@@ -144,6 +149,7 @@ function RateRow({ rate, jobTypes, onChanged }: { rate: ClientRate; jobTypes: st
 
 function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string; jobTypes: string[]; existing?: ClientRate; onDone: () => void }) {
   const [jobType, setJobType] = useState(existing?.job_type ?? '')
+  const [jobStage, setJobStage] = useState(existing?.job_stage ?? '')
   const [rateType, setRateType] = useState<ClientRate['rate_type']>(existing?.rate_type ?? 'fixed')
   const [rate, setRate] = useState(existing ? String(existing.rate) : '')
   const [unitLabel, setUnitLabel] = useState(existing?.unit_label ?? '')
@@ -153,7 +159,11 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
 
   async function save() {
     setSaving(true)
-    const payload = { client_id: clientId, job_type: jobType || null, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : rateType === 'per_km' ? 'km' : null, currency, notes: notes.trim() || null }
+    // Stage only means anything alongside a job type that HAS stages — clearing it
+    // otherwise stops a stale value from making the rate un-matchable after the type
+    // is changed (a stage-tagged rate matches that stage only).
+    const stage = jobType && STAGE_OPTIONS[jobType] ? (jobStage || null) : null
+    const payload = { client_id: clientId, job_type: jobType || null, job_stage: stage, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : rateType === 'per_km' ? 'km' : null, currency, notes: notes.trim() || null }
     const res = existing ? await updateClientRate(existing.id, payload) : await addClientRate(payload as any)
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
@@ -171,6 +181,18 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
             {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        {/* Only for the broad types that carry a qualifier (migration 108). Leave it on
+            "Any stage" to price every stage the same — that's what every rate entered
+            before migration 163 does. */}
+        {jobType && STAGE_OPTIONS[jobType] && (
+          <div>
+            <label className="text-[11px] text-gray-400">{STAGE_OPTIONS[jobType].label}</label>
+            <select value={jobStage} onChange={e => setJobStage(e.target.value)} className={cell}>
+              <option value="">Any stage</option>
+              {STAGE_OPTIONS[jobType].options.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-[11px] text-gray-400">Rate type</label>
           <select value={rateType} onChange={e => setRateType(e.target.value as ClientRate['rate_type'])} className={cell}>
@@ -193,7 +215,11 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
         )}
         <div className="sm:col-span-2">
           <label className="text-[11px] text-gray-400">Notes</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="e.g. Draught survey — initial USD 700, final USD 500" className="input-base py-1.5 text-sm resize-y" />
+          {/* The old placeholder ("initial USD 700, final USD 500") taught you to keep
+              two prices in free text because only one rate per job type could exist.
+              Add a second rate with the other stage instead — the note is for context
+              the price can't carry, and it shows on the invoice builder's rate picker. */}
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="e.g. Agreed 2026 contract rate — review in December" className="input-base py-1.5 text-sm resize-y" />
         </div>
       </div>
       <div className="flex gap-2">

@@ -30,6 +30,32 @@ export async function listClientRates(clientId?: string): Promise<ClientRate[]> 
   return (data ?? []) as ClientRate[]
 }
 
+/** The rate that applies to a job, most specific first (migration 163):
+ *    1. same job type AND same stage   — "Draught Survey / Initial"
+ *    2. same job type, no stage set    — "Draught Survey", any stage
+ *    3. the catch-all rate             — no job type
+ *
+ *  A rate tagged with a stage matches ONLY that stage. That is the point of the
+ *  column: before it, the builder matched on job_type alone and took whichever row
+ *  sorted first, so an Initial survey could be silently priced with the Discharge
+ *  rate. Rates entered before 163 have a NULL stage and so still match at step 2,
+ *  exactly as they did before.
+ *
+ *  Pass rates already filtered to the kind you want (e.g. is_active, non-per_km) —
+ *  this only decides specificity. */
+export function pickRate<T extends { job_type: string | null; job_stage?: string | null }>(
+  rates: T[],
+  job: { job_type: string | null; job_stage?: string | null },
+): T | null {
+  const stage = job.job_stage ?? null
+  return (
+    (stage ? rates.find(r => r.job_type === job.job_type && (r.job_stage ?? null) === stage) : undefined)
+    ?? rates.find(r => r.job_type === job.job_type && (r.job_stage ?? null) === null)
+    ?? rates.find(r => !r.job_type && (r.job_stage ?? null) === null)
+    ?? null
+  )
+}
+
 export async function addClientRate(rate: Omit<ClientRate, 'id' | 'created_at' | 'is_active'>): Promise<{ error?: string }> {
   const { error } = await createClient().from('client_rates').insert({ ...rate, is_active: true })
   return { error: error?.message }
