@@ -10,7 +10,7 @@
 - **Office** — desktop, permission‑gated slices of the admin surfaces (read‑only or limited manage).
 - **Clients** — portal currently disabled (`src/lib/features.ts`).
 
-**Top‑level areas (IA):** Home · Jobs · Insights · Finance · Templates · Cargo · Vessels · Clients · Team/Credentials (People) · Calendar · Inbox. One canonical name per concept across every role (an active IA redesign — see `memory/project-ia-redesign-v3.md`).
+**Top‑level areas (IA):** Home · Jobs · Insights · Finance · Templates · Cargo · Vessels · Clients · Team/Credentials (People) · Calendar · Inbox. One canonical name per concept across every role — an IA redesign that is still only partly landed.
 
 **Design principles:**
 1. **The tool disappears into the task.** Familiar product patterns (side‑nav, tabs, tables, modals only when justified). No novelty for its own sake.

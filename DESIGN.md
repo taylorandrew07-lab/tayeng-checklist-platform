@@ -23,7 +23,8 @@ states. Source of truth: `src/app/globals.css`. **Reuse these — don't reinvent
 - **Status pills** (`components/job/StatusPill`): `WorkflowPill`, `ClientStatusPill`, `InvoiceStatusPill`. One badge per domain; don't inline new colour maps.
 - **Modal** (`components/ui/Modal`): `sm|md|lg|xl`. Modals only when inline/progressive won't do.
 - **Loading = skeletons** (`.skeleton`), not spinners mid‑content.
-- **Tabs:** `border-b-2 -mb-px rounded-t-md` active = `border-brand-600 text-brand-700 bg-brand-50/60` (see Finance/Templates/PeopleTabs). _Not yet a shared component — a `Tabs` primitive is the next consolidation._
+- **Tabs** (`components/ui/Tabs`): shared primitive — `border-b-2 -mb-px rounded-t-md`, active = `border-brand-600 text-brand-700 bg-brand-50/60`. Hand-rolled tab bars still exist on some pages; migrate them when you touch them.
+- **Also shared, use before rolling your own:** `Badge`, `SegmentedControl`, `Toggle`, `ResponsiveTable` (table → stacked cards), `RowDeleteButton`, `SaveStatus` / `FloatingSave` (autosave feedback), `UnsavedChangesDialog`, `confirm` + `toast` (the single feedback channels — `window.alert`/`confirm` appear nowhere; keep it that way).
 
 ## Layout
 - Page wrapper: `max-w-7xl mx-auto space-y-6` (content pages widened to 7xl for desktop). Forms/detail keep narrower (`max-w-3xl/4xl/lg`) for readability.

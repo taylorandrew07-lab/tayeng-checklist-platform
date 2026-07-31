@@ -1,40 +1,23 @@
-# Taylor Engineering Checklist Platform — Setup Guide
+# Taylor Engineering Checklist Platform — Setup
 
-> **Live app:** https://tayeng-checklist-platform.vercel.app  
-> **Stack:** Next.js 14 · Supabase (Postgres + Auth + Storage) · Vercel
+> **Live app:** https://tayeng-checklist-platform.vercel.app
+> **Stack:** Next.js 16 (App Router, React 19, TS) · Supabase (Postgres/Auth/Storage/RLS) · Tailwind v3 · Vercel · Vitest
 
----
-
-## ⚠️ Security — Rotate Exposed Keys First
-
-All credentials that appear in `scripts/*.mjs` (now removed from those files), git history,
-or any shared document **must be rotated** before this app is treated as secure:
-
-| What | Where to rotate |
-|------|----------------|
-| Supabase anon key | Supabase dashboard → Settings → API → Regenerate |
-| Supabase service role key | Supabase dashboard → Settings → API → Regenerate |
-| Supabase access token | supabase.com → Account → Access tokens → Revoke & create new |
-| Admin password | Supabase Auth → Users → Reset password |
-| Vercel env vars | Vercel → Project → Settings → Environment Variables (update after rotating) |
-
----
-
-## Prerequisites
-
-- Node.js 18 LTS
-- A Supabase project
-- A Vercel account (or any Node.js host)
+This is the from-scratch guide for standing the app up on a **new** Supabase project or a
+new machine. Day-to-day conventions live in [CLAUDE.md](CLAUDE.md); the product and visual
+systems are in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md).
 
 ---
 
 ## 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/tayeng-checklist-platform.git
+git clone https://github.com/taylorandrew07-lab/tayeng-checklist-platform.git
 cd tayeng-checklist-platform
 npm install
 ```
+
+Node 20 (CI pins it; Node 18 also builds).
 
 ---
 
@@ -44,191 +27,167 @@ npm install
 cp .env.local.example .env.local
 ```
 
-Fill in `.env.local` with your Supabase project credentials (Settings → API):
+`.env.local.example` is the authoritative list and explains every key. The runtime
+minimum is:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Optionally add Resend for admin email notifications:
+Optional features degrade gracefully when their keys are absent: `RESEND_API_KEY`
+(notification email), `MS_*` (Outlook invoice drafts), `CRON_SECRET` (protects the cron
+routes — without it they return 401).
 
-```env
-RESEND_API_KEY=re_your_key
-```
-
-> `.env.local` is gitignored. Never commit it.
+> `.env.local` is gitignored. Never commit it. If a key ever lands in git history or a
+> shared document, rotate it in the Supabase dashboard (Settings → API) **and** in Vercel.
 
 ---
 
-## 3. Run database migrations
+## 3. Database migrations
 
-In your Supabase project → **SQL Editor**, run the migration files **in order**:
+`supabase/migrations/*.sql` — numbered, idempotent, and **applied automatically**. The
+[`db-migrate`](.github/workflows/db-migrate.yml) GitHub Action runs on every push to
+`main` that touches `supabase/migrations/**`, applies anything new, and records applied
+versions in `supabase_migrations.schema_migrations` so later runs skip them.
 
-1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/migrations/002_rls_policies.sql`
-3. `supabase/migrations/003_enhancements.sql`
-4. `supabase/migrations/004_auth_hardening.sql`
-5. `supabase/migrations/005_production_hardening.sql`
-6. `supabase/migrations/006_rls_active_check.sql`
-7. `supabase/migrations/007_repair_bptt_conditional_logic.sql`
-8. `supabase/migrations/008_backfill_yesno_options.sql`
-9. `supabase/migrations/010_storage_policies.sql`
-10. `supabase/migrations/011_scoped_storage_policies.sql`
-11. `supabase/migrations/012_scoped_storage_upload.sql`
+- **New migration:** take the next free number (`ls supabase/migrations | tail`), make it
+  idempotent, and keep it paste-runnable in the Supabase SQL Editor.
+- **After pushing one, always check it landed:** `gh run list --workflow=db-migrate.yml`.
+  A green CI run does **not** mean the migration applied — the runner silently skips a
+  duplicate version number.
+- **Bootstrapping a brand-new project:** run the files in numeric order in the Supabase
+  SQL Editor, or point `DATABASE_URL` at it and run `node scripts/db-migrate.mjs`.
 
-Each file is idempotent — safe to re-run.
-
----
-
-## 4. Create storage buckets
-
-In Supabase SQL Editor:
-
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('job-photos', 'job-photos', false) ON CONFLICT DO NOTHING;
-INSERT INTO storage.buckets (id, name, public) VALUES ('job-pdfs',   'job-pdfs',   false) ON CONFLICT DO NOTHING;
-```
-
-> **Do NOT use broad `auth.role() = 'authenticated'` storage policies.** Those were superseded by migrations 010–012.
-> After running the migrations above, your effective storage policies will be:
->
-> | Operation | Who can |
-> |-----------|---------|
-> | **Upload** | Active admin or active surveyor only |
-> | **Read** | Active admin (all) · Assigned surveyor (own jobs) · Permitted client (own jobs with `can_view_checklist_details`) |
-> | **Delete** | Active admin (all) · Original uploader (own files) |
+Storage buckets (`job-photos`, `job-pdfs`, `job-files`, `client-logos`, `cargo-photos`,
+`vessel-documents`, `personal-documents`, `invoice-receipts`, `competition-photos`,
+`competition-video`) are created **by the migrations** along with their path-scoped RLS
+policies — there is nothing to create by hand in the dashboard.
 
 ---
 
-## 5. Create the Super Admin account
+## 4. Create the super admin
 
-The first admin account must be created directly in Supabase — there is no public signup for admins.
+There is no public signup for admins. On a fresh project:
 
-**Option A — Supabase dashboard (recommended):**
-
-1. Supabase → Authentication → Users → **Add user**
-2. Enter `andrew.taylor@tayeng.com` and a strong password, tick "Auto-confirm"
-3. In SQL Editor:
+1. Supabase → Authentication → Users → **Add user** — email + strong password, tick
+   **Auto-confirm**.
+2. SQL Editor:
    ```sql
-   -- Migration 005 already does this if run after the user exists:
    UPDATE profiles SET role = 'admin', is_active = true, is_super_admin = true
    WHERE email = 'andrew.taylor@tayeng.com';
    ```
 
-**Option B — Script:**
-
-```bash
-# Fill in ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FULL_NAME in .env.local first
-node --env-file=.env.local scripts/setup-admin.mjs
-```
+Or run `node --env-file=.env.local scripts/setup-admin.mjs` after filling the `ADMIN_*`
+vars.
 
 ---
 
-## 6. Configure Supabase Auth redirect URLs
+## 5. Auth redirect URLs
 
 Supabase → Authentication → URL Configuration:
 
 - **Site URL:** `https://your-app.vercel.app`
 - **Redirect URLs:** `https://your-app.vercel.app/**`
 
-This is required for password reset emails to work.
+Required for password-reset and invite emails to work.
 
 ---
 
-## 7. Run locally
+## 6. Run locally
 
 ```bash
-npm run dev
-# → http://localhost:3000
+npm run dev          # http://localhost:3000
 ```
 
+### Gates before shipping
+
+```bash
+npx tsc --noEmit     # 0 errors
+npm run lint         # 0 errors (some advisory React-Compiler warnings are expected)
+npm test             # vitest
+npm run build        # MUST stay `next build --webpack`
+```
+
+> **Don't "clean up" the `--webpack` flag.** Next 16's default Turbopack build fails
+> collecting route-group pages. It's pinned in `package.json` and `vercel.json`.
+
 ---
 
-## 8. Deploy to Vercel
+## 7. Deploy
 
-1. Push to GitHub
-2. Import repo in Vercel → New Project
-3. Add environment variables (copy from `.env.local`, excluding script-only vars)
-4. Deploy
+Push to `main` — Vercel builds and deploys, and `db-migrate` applies any new migrations.
+For risky auth/RLS changes, branch and test on a Vercel preview first.
+
+### GitHub Actions
+
+| Workflow | What it does | Secrets |
+|---|---|---|
+| `ci.yml` | typecheck + lint + test + build on every push/PR | none |
+| `db-migrate.yml` | applies new migrations on push to `main` | `DATABASE_URL` |
+| `smoke.yml` | end-to-end surveyor flow against the live DB, daily + on demand | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
+| `job-report-reminders.yml` | fires the per-job "report due" reminders | `CRON_SECRET`, `APP_URL` |
+
+The smoke test is documented in [e2e/README.md](e2e/README.md). Keep its repo secrets
+pointed at the **live** Supabase project — they went stale once after a project migration
+and the smoke test silently guarded nothing.
 
 ---
 
-## User Roles & Workflow
+## Roles
 
 | Role | Access |
-|------|--------|
-| **Super Admin** | Everything — can create/manage admin accounts, set super admin flag |
-| **Admin** | Templates, checklists, approve surveyor/client accounts (non-admin only) |
-| **Surveyor** | Create and complete their own checklists |
-| **Client** | View permitted checklists for their client company only |
+|---|---|
+| **Super admin** | Everything, including creating admins and the super-admin flag |
+| **Admin** | Jobs, templates, clients, vessels, finance/invoicing, people, approvals |
+| **Office** | Permission-gated slices of the admin surfaces (per-user grants, mostly read-only) |
+| **Surveyor** | Their own jobs — checklists, hours/overtime, km, photos; offline-capable |
+| **Client** | Read-only portal for their own company's jobs (currently disabled via `src/lib/features.ts`) |
 
-### Approval workflow
+Authorization is enforced in Postgres **RLS** (`get_my_role()`, `is_admin()`, `is_office()`,
+`has_office_permission()`), never in `user_metadata`. RLS can't hide columns, so sensitive
+fields live in their own admin/owner-only tables (`client_billing`, `staff_private`).
 
-1. User signs up at `/signup` → account is **inactive** by default
-2. Admin receives an email notification (if Resend is configured)
-3. Admin goes to **Users** page → Reviews pending accounts
-4. For client-role accounts: admin must select the linked client company before activating
-5. User is notified (optional) — they can now log in
+### Signup → approval
 
-### Surveyor checklist flow
-
-```
-Surveyor creates checklist → fills fields → Save Draft (any time)
-→ Submit → Admin reviews → can download PDF → set client-visible
-→ Client sees checklist (permissions controlled per-job)
-```
+A new account signs up at `/signup` and is **inactive**. An admin reviews it under
+Team/Users, picks the linked client company for client accounts, and approves — approval
+also confirms the auth email so the person can actually sign in.
 
 ---
 
-## Architecture
+## Layout
 
 ```
 src/
   app/
-    (auth)/               ← Login, signup, forgot/reset password
-    (dashboard)/
-      admin/              ← Templates, checklists, users, clients
-      surveyor/           ← Create and complete checklists
-      client/             ← Read-only job portal (per-client RLS)
-    api/
-      pdf/[jobId]/        ← Server-side PDF (auth + client permission check)
-      admin/create-user/  ← Service-role user creation
-      notify/admin/       ← Email notifications via Resend
-  components/
-    job/                  ← Checklist editor, field renderer, signature pad
-    template-builder/     ← Drag-and-drop template editor
-    layout/               ← Sidebar, header
-    ui/                   ← Shared UI components
-  lib/
-    supabase/             ← Client and server Supabase clients
-    pdf/                  ← React PDF template
-    types/                ← TypeScript interfaces
-    utils/                ← Utilities, formatting
-supabase/
-  migrations/             ← All database SQL (run in order 001–005)
-scripts/                  ← One-time ops (gitignored, use env vars via --env-file)
+    (auth)/                ← login, signup, forgot/reset password
+    (dashboard)/           ← admin · surveyor · office · client + shared (/inbox, /profile)
+    api/                   ← pdf, admin/create-user, messages/send, cron/*
+  components/              ← job · template-builder · cargo · invoicing · personal-docs · ui · layout
+  lib/                     ← supabase · jobs · checklist · pdf · messages · email · types
+supabase/migrations/       ← all schema + RLS + buckets (numbered, idempotent, auto-applied)
+e2e/                       ← smoke + audit scripts
+scripts/                   ← one-off ops (run with --env-file=.env.local)
 ```
+
+Cross-role pages (e.g. `/inbox`, `/profile`) must be added to `SHARED_ROUTES` in the
+dashboard layout or users get bounced to their role's home.
 
 ---
 
 ## Troubleshooting
 
-**Login redirects to wrong role dashboard**  
-The dashboard layout reads `profiles.role` and redirects to `/admin`, `/surveyor`, or `/client` accordingly. If the role in the DB is wrong, run:  
-`UPDATE profiles SET role = 'admin' WHERE email = 'your@email.com';`
+**Someone can't sign in after approval** — Team → Password to reset/unlock them.
 
-**PDF download fails**  
-Ensure `@react-pdf/renderer` is in `serverComponentsExternalPackages` in `next.config.js`. Verify the job status is `submitted`, `completed`, or `client_visible`.
+**Login lands on the wrong dashboard** — the dashboard layout redirects on `profiles.role`.
+Fix the role in the DB (`scripts/set-admin-role.mjs`, or SQL).
 
-**Client cannot see jobs**  
-Check: (a) `client_users` row exists linking profile_id → client_id, (b) `client_job_permissions` row exists for that client_id + job_id.
+**A migration "ran" but nothing changed** — check
+`gh run list --workflow=db-migrate.yml`. Also note a `LANGUAGE sql` function that reads a
+table created *later in the same migration* aborts the whole file; add
+`SET check_function_bodies = off`.
 
-**Profile stuck as inactive**  
-Admin must approve in Users → Pending Accounts. Or run:  
-`UPDATE profiles SET is_active = true WHERE email = 'user@example.com';`
-
-**Email notifications not sending**  
-Set `RESEND_API_KEY` in Vercel env vars and verify your sending domain at resend.com. Notifications silently skip if the key is missing.
+**Build fails collecting route-group pages** — the `--webpack` flag was dropped. Put it back.

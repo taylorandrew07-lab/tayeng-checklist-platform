@@ -22,6 +22,18 @@ from an audit of graphify *on this repo*:
 - The graph is intentionally **code-only and undirected**. A `--directed` rebuild collapses
   the edge set to near-empty on this repo — don't switch it.
 
+## The docs, and what each is for
+
+These five are current — there are no other live docs. Anything not listed here was
+deleted on 2026-07-31 as stale; **don't resurrect it from git history to "get context."**
+
+- `SETUP.md` — standing the app up from scratch (env, migrations, gates, deploy, roles).
+- `PRODUCT.md` — what the app is, who uses it, the design principles.
+- `DESIGN.md` — the visual system + the shared primitives. Source of truth is `globals.css`.
+- `docs/ux-consistency-audit-2026-07-23.md` — the current audit. **Nothing in it is done yet.**
+- `docs/usage-analytics-plan.md` and `docs/ai-integration-plan.md` — proposals, **not started**.
+  Any migration number written inside them is stale; take the next free one from disk.
+
 ## Conventions
 
 - Commit & push to `main` (Vercel deploys; migrations auto-apply via the db-migrate Action).

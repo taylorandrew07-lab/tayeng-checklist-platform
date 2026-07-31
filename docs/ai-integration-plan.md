@@ -7,8 +7,8 @@ This document is the synthesis of a four-lens read-only audit (opportunity map, 
 seams, model/provider abstraction, privacy/cost guardrails). The detailed surveys are in the
 appendices.
 
-> Migration note: the next free migration number is **131** (129 = re-open lock, 130 = staff_private
-> PII split shipped 2026-07-04). Some appendix text below says 126/128 — that was stale; use 131+.
+> Migration note: any migration number in this document is stale (it was written when the next
+> free number was 131). Always take the next free number from `ls supabase/migrations | tail`.
 
 ---
 
