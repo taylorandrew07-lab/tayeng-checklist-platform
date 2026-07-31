@@ -25,8 +25,10 @@ export default function JobsViewToolbar({ view, years, count, legend }: {
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      {/* Colour-by */}
-      <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 p-0.5 bg-white">
+      {/* Colour-by — segmented pills on desktop, a select on mobile. The label plus
+          three pills claimed a whole row on a phone to set a preference you change
+          maybe once; collapsed it fits beside the month/year pickers. */}
+      <div className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-gray-200 p-0.5 bg-white">
         <span className="text-xs text-gray-400 px-1.5">Colour by</span>
         {MODES.map(m => (
           <button
@@ -38,6 +40,16 @@ export default function JobsViewToolbar({ view, years, count, legend }: {
           </button>
         ))}
       </div>
+      <label className="sm:hidden inline-flex items-center gap-1.5">
+        <span className="text-xs text-gray-400">Colour by</span>
+        <select
+          value={colorMode}
+          onChange={e => setColorMode(e.target.value as JobColorMode)}
+          className="input-base py-1.5 text-sm w-auto"
+        >
+          {MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </label>
 
       {/* Month / Year */}
       <div className="inline-flex items-center gap-2">
@@ -64,9 +76,12 @@ export default function JobsViewToolbar({ view, years, count, legend }: {
 
       <span className="text-xs text-gray-500 tnum">{periodLabel} · {count} job{count === 1 ? '' : 's'}</span>
 
-      {/* Legend */}
+      {/* Legend — desktop only. Client names run long ("The London Steam-Ship Owners'
+          Mutual Insurance Association Limited"), so on a phone this wrapped to several
+          rows and pushed the actual job table below the fold. The rows are colour-coded
+          either way; the key is what gets dropped, not the colour. */}
       {legend.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="hidden sm:flex flex-wrap items-center gap-1.5">
           {legend.map(l => (
             <span key={l.label} className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded" style={{ backgroundColor: l.color.bg, color: l.color.fg }}>
               {l.label}
