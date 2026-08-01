@@ -132,6 +132,22 @@ export async function unarchive(messageId: string): Promise<void> {
     .eq('message_id', messageId).eq('recipient_id', uid)
 }
 
+/** Delete MY copy of one or more received messages (migration 166). Only the
+ *  message_recipients row goes — the sender keeps it in Sent and other
+ *  recipients keep theirs. Irreversible for me; there is no trash.
+ *  `.select('id')` so an RLS-filtered zero-row delete is reported as a denial
+ *  rather than a silent success (the house rule — see lib/jobs/tracker.ts). */
+export async function deleteReceived(messageIds: string[]): Promise<{ error?: string; deleted?: number }> {
+  const uid = await myId()
+  if (!uid) return { error: 'You are signed out — sign in again and retry.' }
+  if (messageIds.length === 0) return { deleted: 0 }
+  const { data, error } = await createClient().from('message_recipients')
+    .delete().in('message_id', messageIds).eq('recipient_id', uid).select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'Nothing was deleted — you may not have permission.' }
+  return { deleted: data.length }
+}
+
 /** Unread, non-archived count for the nav badge. Returns 0 on any error so the
  *  app keeps working before migration 037 is applied. */
 export async function unreadCount(): Promise<number> {

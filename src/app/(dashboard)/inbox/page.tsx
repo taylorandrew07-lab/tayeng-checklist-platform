@@ -5,12 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
 import EmptyState from '@/components/ui/EmptyState'
 import Tabs from '@/components/ui/Tabs'
-import { Loader2, Mail, Send, Plus, Archive, Reply, Inbox as InboxIcon, ArchiveRestore } from 'lucide-react'
+import { Loader2, Mail, Send, Plus, Archive, Reply, Inbox as InboxIcon, ArchiveRestore, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { useRealtimeRefresh } from '@/lib/realtime'
+import { RowDeleteButton } from '@/components/ui/RowDeleteButton'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 import ComposeModal, { type ComposeInitial } from '@/components/messages/ComposeModal'
 import {
-  listInbox, listSent, getMessage, markRead, archive, unarchive,
+  listInbox, listSent, getMessage, markRead, archive, unarchive, deleteReceived,
   type InboxItem, type SentItem, type InboxFilter, type MessageDetail,
 } from '@/lib/messages/api'
 
@@ -76,6 +79,34 @@ export default function InboxPage() {
   async function doArchive(messageId: string) { await archive(messageId); setDetail(null) }
   async function doUnarchive(messageId: string) { await unarchive(messageId); setDetail(null) }
 
+  // Delete removes MY copy only (migration 166) — the sender keeps it in Sent.
+  // Drop it from the list straight away so the row goes on tap; the realtime
+  // refresh reconciles a moment later either way.
+  async function doDelete(messageIds: string[]) {
+    const res = await deleteReceived(messageIds)
+    if (res.error) { toast.error(res.error); return }
+    setInbox(prev => prev.filter(m => !messageIds.includes(m.messageId)))
+    setDetail(d => (d && messageIds.includes(d.id) ? null : d))
+    toast.success(messageIds.length === 1 ? 'Message deleted' : `${res.deleted ?? messageIds.length} messages deleted`)
+  }
+
+  // Clear out everything the current filter is showing — the point of the
+  // feature is not having to tap 40 messages one at a time. Names the view in
+  // the confirm so "delete all" can never be read as "delete my whole inbox"
+  // when you are looking at Unread.
+  async function doDeleteAll() {
+    const ids = inbox.map(m => m.messageId)
+    if (ids.length === 0) return
+    const what = filter === 'archived' ? 'archived message' : filter === 'unread' ? 'unread message' : 'message in your inbox'
+    const ok = await confirmDialog({
+      title: `Delete ${ids.length} ${what}${ids.length === 1 ? '' : 's'}?`,
+      message: `This removes your copy of ${ids.length === 1 ? 'it' : 'them'} for good — there is no trash to restore from. The sender keeps their own copy.`,
+      confirmLabel: 'Delete them', danger: true,
+    })
+    if (!ok) return
+    await doDelete(ids)
+  }
+
   function openReply(d: MessageDetail) {
     const initial: ComposeInitial = {
       subject: /^re:/i.test(d.subject) ? d.subject : `Re: ${d.subject}`,
@@ -106,13 +137,19 @@ export default function InboxPage() {
       />
 
       {tab === 'inbox' && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {FILTERS.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={`text-sm px-3 py-1 rounded-full border transition-colors ${filter === f.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
               {f.label}
             </button>
           ))}
+          {!loading && inbox.length > 0 && (
+            <button onClick={doDeleteAll}
+              className="ml-auto inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full border border-gray-300 bg-white text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 hover:border-red-200">
+              <Trash2 className="h-3.5 w-3.5" />Delete all ({inbox.length})
+            </button>
+          )}
         </div>
       )}
 
@@ -124,21 +161,33 @@ export default function InboxPage() {
         ) : (
           <>
           <div className="card divide-y divide-gray-100">
+            {/* The row is a flex CONTAINER, not a button — a delete button can't be
+                nested inside the button that opens the message. */}
             {inbox.slice(0, shown).map(m => {
               const unread = !m.read_at
               return (
-                <button key={m.recipientRowId} onClick={() => openDetail(m.messageId, !!m.archived_at, unread)}
-                  className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
-                  <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${unread ? 'bg-brand-500' : 'bg-transparent'}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className={`truncate ${unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>{m.sender_name}</p>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(m.created_at)}</span>
+                <div key={m.recipientRowId} className="group flex items-start gap-1 pr-2 hover:bg-gray-50 transition-colors">
+                  <button onClick={() => openDetail(m.messageId, !!m.archived_at, unread)}
+                    className="min-w-0 flex-1 text-left flex items-start gap-3 px-4 py-3">
+                    <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${unread ? 'bg-brand-500' : 'bg-transparent'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`truncate ${unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>{m.sender_name}</p>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(m.created_at)}</span>
+                      </div>
+                      <p className={`text-sm truncate ${unread ? 'text-gray-900' : 'text-gray-600'}`}>{m.subject}</p>
+                      <p className="text-xs text-gray-400 truncate">{m.body.slice(0, 120)}</p>
                     </div>
-                    <p className={`text-sm truncate ${unread ? 'text-gray-900' : 'text-gray-600'}`}>{m.subject}</p>
-                    <p className="text-xs text-gray-400 truncate">{m.body.slice(0, 120)}</p>
-                  </div>
-                </button>
+                  </button>
+                  {/* Always visible on touch, where there is no hover to reveal it. */}
+                  <RowDeleteButton
+                    className="mt-3 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                    onDelete={() => doDelete([m.messageId])}
+                    ariaLabel={`Delete message: ${m.subject}`}
+                    confirmTitle="Delete this message?"
+                    confirmMessage={`"${m.subject}" will be removed from your inbox for good — there is no trash to restore from. The sender keeps their own copy.`}
+                  />
+                </div>
               )
             })}
           </div>
@@ -177,6 +226,12 @@ export default function InboxPage() {
       <Modal open={!!detail} onClose={() => setDetail(null)} title={detail?.subject ?? ''} size="lg"
         footer={detail && tab === 'inbox' ? (
           <>
+            <RowDeleteButton
+              label="Delete" className="mr-auto"
+              onDelete={() => doDelete([detail.id])}
+              confirmTitle="Delete this message?"
+              confirmMessage={`"${detail.subject}" will be removed from your inbox for good — there is no trash to restore from. The sender keeps their own copy.`}
+            />
             {detailArchived
               ? <button onClick={() => doUnarchive(detail.id)} className="btn-secondary"><ArchiveRestore className="h-4 w-4" />Unarchive</button>
               : <button onClick={() => doArchive(detail.id)} className="btn-secondary"><Archive className="h-4 w-4" />Archive</button>}
