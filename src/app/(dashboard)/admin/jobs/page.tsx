@@ -55,12 +55,14 @@ const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 
 // clickable (used for the start date under a range job's last date).
 const cellBtnFine = 'w-full text-left px-2 rounded-md leading-tight text-[11px] text-gray-400 transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 
-// Every overtime quantity in this table, in one place. Deliberately red-600
-// (#dc2626) and not a darker red: rows are tinted with the job palette when
+// Every overtime quantity in this table, in one place. A full-saturation pure
+// red (#e60000) rather than a step off Tailwind's ramp: red-600 is already hue 0,
+// so the only way to look *redder* is to saturate (G/B → 0), not to darken.
+// Darkening is ruled out anyway — rows are tinted with the job palette when
 // colour-by is on, and the palette's own reds are red-800s ('red' #991b1b,
 // 'rose' #9f1239 — lib/jobs/colors.ts). A darker OT figure would read as part of
 // a red client's tint instead of as overtime.
-const OT_TEXT = 'text-red-600'
+const OT_TEXT = 'text-[#e60000]'
 
 // CSV-escape one value: quote-wrap when it holds a comma/quote/newline; double quotes.
 function csv(v: string | number | null | undefined): string {
