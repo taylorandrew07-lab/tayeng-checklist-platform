@@ -55,6 +55,13 @@ const cellInput = 'w-full rounded-md border border-brand-400 bg-white px-2 py-1 
 // clickable (used for the start date under a range job's last date).
 const cellBtnFine = 'w-full text-left px-2 rounded-md leading-tight text-[11px] text-gray-400 transition-colors hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 truncate'
 
+// Every overtime quantity in this table, in one place. Deliberately red-600
+// (#dc2626) and not a darker red: rows are tinted with the job palette when
+// colour-by is on, and the palette's own reds are red-800s ('red' #991b1b,
+// 'rose' #9f1239 — lib/jobs/colors.ts). A darker OT figure would read as part of
+// a red client's tint instead of as overtime.
+const OT_TEXT = 'text-red-600'
+
 // CSV-escape one value: quote-wrap when it holds a comma/quote/newline; double quotes.
 function csv(v: string | number | null | undefined): string {
   const s = v == null ? '' : String(v)
@@ -240,17 +247,17 @@ const COLUMNS: ColumnDef[] = [
     cell: r => (
       <div className="px-3 text-right whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5 justify-end">
-          {r.is_overtime && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium" title="Overtime job">OT</span>}
+          {r.is_overtime && <span className={`text-[10px] px-1 py-0.5 rounded bg-red-50 ${OT_TEXT} font-medium`} title="Overtime job">OT</span>}
           {r.regular_hours + r.overtime_hours === 0
             ? <span className="text-gray-300 tnum">—</span>
-            : <span className="text-gray-700 tnum">{qtyWithUnit(r.regular_hours || 0, r.labour_unit)}{r.overtime_hours ? <span className="text-amber-600"> +{qtyWithUnit(r.overtime_hours, r.labour_unit)} OT</span> : ''}</span>}
+            : <span className="text-gray-700 tnum">{qtyWithUnit(r.regular_hours || 0, r.labour_unit)}{r.overtime_hours ? <span className={OT_TEXT}> +{qtyWithUnit(r.overtime_hours, r.labour_unit)} OT</span> : ''}</span>}
         </span>
       </div>
     ) },
   { key: 'regular', label: 'Regular', sortKey: 'regular', defaultVisible: false, width: 110, min: 80, align: 'right',
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.regular_hours ? qtyWithUnit(r.regular_hours, r.labour_unit) : <span className="text-gray-300">—</span>}</div> },
   { key: 'overtime', label: 'Overtime', sortKey: 'overtime', defaultVisible: false, width: 120, min: 80, align: 'right',
-    cell: r => <div className="px-3 text-right tnum">{r.overtime_hours ? <span className="text-amber-600">{qtyWithUnit(r.overtime_hours, r.labour_unit)}</span> : <span className="text-gray-300">—</span>}</div> },
+    cell: r => <div className="px-3 text-right tnum">{r.overtime_hours ? <span className={OT_TEXT}>{qtyWithUnit(r.overtime_hours, r.labour_unit)}</span> : <span className="text-gray-300">—</span>}</div> },
   { key: 'km', label: 'Distance (km)', sortKey: 'km', defaultVisible: false, width: 120, min: 90, align: 'right',
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.total_km ? r.total_km : <span className="text-gray-300">—</span>}</div> },
   { key: 'billing', label: 'Billing', defaultVisible: false, width: 110, min: 80,
