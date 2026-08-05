@@ -37,6 +37,9 @@ const s = StyleSheet.create({
   // and the bill-to rows — that shared width IS the alignment.
   billLabel: { width: 88, fontFamily: 'Helvetica-Bold', color: INK },
   billVal: { flex: 1 },
+  // The client the invoice is addressed to — a size up, bold and underlined, so the
+  // payer reads as the heading of the block rather than one row among the address.
+  billClient: { flex: 1, fontSize: 11, fontFamily: 'Helvetica-Bold', textDecoration: 'underline' },
 
   // The dates sit right of the block, labels right-aligned into a fixed column so
   // both values start on the same x however long the label is.
@@ -179,7 +182,7 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
 
         {/* Bill to */}
         <View style={s.billBlock}>
-          <View style={s.billRow}><Text style={s.billLabel}>To:</Text><Text style={s.billVal}>{client?.name ?? '—'}</Text></View>
+          <View style={s.billRow}><Text style={s.billLabel}>To:</Text><Text style={s.billClient}>{client?.name ?? '—'}</Text></View>
           {client?.address ? (
             <View style={s.billRow}><Text style={s.billLabel}>Address:</Text><View style={s.billVal}><MultiLine text={client.address} /></View></View>
           ) : null}
