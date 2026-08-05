@@ -72,13 +72,13 @@ const s = StyleSheet.create({
   // rather than stacking; a line each cost a whole page on a 25-vessel invoice.
   headRow: { flexDirection: 'row', alignItems: 'flex-start' },
   // Fixed widths (the cell is 378pt wide), sized so the longest real values clear on
-  // one line: "M.V. Delta Vanguard", "— Cargo Survey (Discharging)" and
-  // "— Report No. 26-07-200". Left-aligned rather than spread, so the em dashes and
-  // the values behind them line up as columns down the page.
-  headVessel: { width: 110, fontFamily: 'Helvetica-Bold' },
+  // one line: "M.V. Delta Vanguard", "Cargo Survey (Discharging)" and
+  // "Report No. 26-07-200". Column position alone separates them — no punctuation
+  // between, so nothing has to be kerned into looking evenly spaced.
+  headVessel: { width: 118, fontFamily: 'Helvetica-Bold' },
   headType: { flex: 1, fontFamily: 'Helvetica-Bold' },
   // Not bold, so it reads as a reference against the bold name it sits beside.
-  headReport: { width: 104, fontFamily: 'Helvetica', fontSize: 9, color: MUTE },
+  headReport: { width: 96, fontFamily: 'Helvetica', fontSize: 9, color: MUTE },
   reportInline: { fontFamily: 'Helvetica', fontSize: 9, color: MUTE },
   // No top border: the last row above already draws its own bottom edge, and two
   // adjacent borders render as a doubled rule rather than collapsing into one.
@@ -208,8 +208,8 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
                   {dash >= 0 ? (
                     <View style={s.headRow}>
                       <Text style={s.headVessel}>{head.slice(0, dash)}</Text>
-                      <Text style={s.headType}>—  {head.slice(dash + 3)}</Text>
-                      <Text style={s.headReport}>{reportRef ? `—  ${reportRef}` : ''}</Text>
+                      <Text style={s.headType}>{head.slice(dash + 3)}</Text>
+                      <Text style={s.headReport}>{reportRef}</Text>
                     </View>
                   ) : (
                     <Text style={s.lineLabel}>
