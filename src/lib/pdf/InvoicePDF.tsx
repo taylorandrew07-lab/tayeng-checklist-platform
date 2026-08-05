@@ -24,15 +24,26 @@ const s = StyleSheet.create({
   rule: { borderBottomWidth: 1.5, borderBottomColor: BRAND, marginTop: 8, marginBottom: 12 },
   title: { fontSize: 14, fontFamily: 'Helvetica-Bold', letterSpacing: 1, textAlign: 'center', marginBottom: 12, color: INK },
 
-  vat: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginBottom: 8 },
-  metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  metaStrong: { fontFamily: 'Helvetica-Bold' },
-
-  // Bill-to
+  // Header meta + bill-to. Every label on the left runs in ONE column and every
+  // value in another, so the VAT number, the invoice number and the whole address
+  // start on the same x. Written as label/value cells rather than "<bold>Label</bold>
+  // value" in a single string — in that form the value starts wherever the label
+  // happens to end, which is why these never lined up.
+  metaBlock: { flexDirection: 'row', alignItems: 'flex-start' },
+  metaLeft: { flex: 1 },
   billBlock: { marginTop: 10, marginBottom: 12 },
   billRow: { flexDirection: 'row', marginBottom: 1.5 },
-  billLabel: { width: 64, fontFamily: 'Helvetica-Bold', color: INK },
+  // Wide enough for the longest label, "VAT Reg'd No.:". Shared by the meta rows
+  // and the bill-to rows — that shared width IS the alignment.
+  billLabel: { width: 88, fontFamily: 'Helvetica-Bold', color: INK },
   billVal: { flex: 1 },
+
+  // The dates sit right of the block, labels right-aligned into a fixed column so
+  // both values start on the same x however long the label is.
+  metaRight: { width: 196 },
+  dateRow: { flexDirection: 'row', marginBottom: 1.5 },
+  dateLabel: { width: 88, textAlign: 'right', fontFamily: 'Helvetica-Bold', marginRight: 8 },
+  dateVal: { flex: 1 },
 
   // Table
   //
@@ -150,20 +161,21 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
 
         <Text style={s.title}>TAX INVOICE</Text>
 
-        <Text style={s.vat}>VAT Reg&apos;d No. {COMPANY.vatRegNo}</Text>
-        <View style={s.metaRow}>
-          <Text><Text style={s.metaStrong}>Invoice No.</Text> {invoice.invoice_number ?? '—'}</Text>
-          <Text><Text style={s.metaStrong}>Date:</Text> {longDate(invoice.issue_date)}</Text>
-        </View>
-        {/* Payment terms only appear when a due date was actually chosen — an invoice
-            with no agreed date must not imply one. */}
-        {invoice.due_date ? (
-          <View style={s.metaRow}>
-            <Text> </Text>
-            <Text><Text style={s.metaStrong}>Payment Due:</Text> {longDate(invoice.due_date)}</Text>
+        <View style={s.metaBlock}>
+          <View style={s.metaLeft}>
+            <View style={s.billRow}><Text style={s.billLabel}>VAT Reg&apos;d No.:</Text><Text style={s.billVal}>{COMPANY.vatRegNo}</Text></View>
+            <View style={s.billRow}><Text style={s.billLabel}>Invoice No.:</Text><Text style={s.billVal}>{invoice.invoice_number ?? '—'}</Text></View>
+            {reportNumber ? <View style={s.billRow}><Text style={s.billLabel}>Report Ref:</Text><Text style={s.billVal}>{reportNumber}</Text></View> : null}
           </View>
-        ) : null}
-        {reportNumber ? <Text><Text style={s.metaStrong}>Report Ref:</Text> {reportNumber}</Text> : null}
+          <View style={s.metaRight}>
+            <View style={s.dateRow}><Text style={s.dateLabel}>Date:</Text><Text style={s.dateVal}>{longDate(invoice.issue_date)}</Text></View>
+            {/* Payment terms only appear when a due date was actually chosen — an
+                invoice with no agreed date must not imply one. */}
+            {invoice.due_date ? (
+              <View style={s.dateRow}><Text style={s.dateLabel}>Payment Due:</Text><Text style={s.dateVal}>{longDate(invoice.due_date)}</Text></View>
+            ) : null}
+          </View>
+        </View>
 
         {/* Bill to */}
         <View style={s.billBlock}>
