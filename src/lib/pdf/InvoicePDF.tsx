@@ -58,22 +58,32 @@ const s = StyleSheet.create({
   tdDesc: { flex: 1, padding: '4 8' },
   tdAmt: { width: 130, padding: '4 8', textAlign: 'right', borderLeftWidth: 1, borderLeftColor: INK },
 
-  // The narrative is its own boxed band across the full table width.
-  narrative: {
-    padding: '8 8 6 8',
-    borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
-    borderBottomWidth: 1, borderBottomColor: INK,
-  },
+  // The narrative is the description cell of its own row, so the column divider
+  // runs unbroken from the header down — the row around it carries the box.
+  narrative: { flex: 1, padding: '8 8 6 8' },
   refLine: { fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   bodyText: { color: INK },
 
   lineLabel: { fontFamily: 'Helvetica-Bold' },
   qtyNote: { fontSize: 9, color: MUTE, marginTop: 1 },
-  // The job's report number, on the line that bills it — a client disputing an
-  // invoice line has to be able to tie it back to the report they were sent.
-  reportNote: { fontSize: 9, color: MUTE, marginTop: 1 },
+  // The name row is three columns — vessel, survey type, report number — at FIXED
+  // widths, so they line up as columns down the page instead of each row wrapping
+  // to wherever its own text happens to end. Everything rides on this one line
+  // rather than stacking; a line each cost a whole page on a 25-vessel invoice.
+  headRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  // Fixed widths (the cell is 378pt wide), sized so the longest real values clear on
+  // one line: "M.V. Delta Vanguard", "— Cargo Survey (Discharging)" and
+  // "— Report No. 26-07-200". Left-aligned rather than spread, so the em dashes and
+  // the values behind them line up as columns down the page.
+  headVessel: { width: 110, fontFamily: 'Helvetica-Bold' },
+  headType: { flex: 1, fontFamily: 'Helvetica-Bold' },
+  // Not bold, so it reads as a reference against the bold name it sits beside.
+  headReport: { width: 104, fontFamily: 'Helvetica', fontSize: 9, color: MUTE },
+  reportInline: { fontFamily: 'Helvetica', fontSize: 9, color: MUTE },
+  // No top border: the last row above already draws its own bottom edge, and two
+  // adjacent borders render as a doubled rule rather than collapsing into one.
   totalRow: {
-    flexDirection: 'row', borderTopWidth: 1, borderTopColor: INK,
+    flexDirection: 'row',
     borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
     borderBottomWidth: 1, borderBottomColor: INK,
   },
@@ -176,22 +186,47 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
           </View>
 
           {invoice.description ? (
-            <View style={s.narrative} wrap={false}><MultiLine text={invoice.description} style={s.bodyText} /></View>
+            <View style={s.bodyRow} wrap={false}>
+              <View style={s.narrative}><MultiLine text={invoice.description} style={s.bodyText} /></View>
+              <Text style={s.tdAmt} />
+            </View>
           ) : null}
 
-          {lines.map(li => (
-            <View key={li.id} style={s.bodyRow} wrap={false}>
-              <View style={s.tdDesc}>
-                <MultiLine text={li.description} firstBold style={s.bodyText} />
-                {/* Show the live qty × unit-price breakdown (e.g. an hourly job:
-                    "11 × US$ 650.00") whenever the quantity isn't a plain 1, so an
-                    hourly/multi-unit total is spelled out rather than just a lump sum. */}
-                {Number(li.qty) !== 1 ? <Text style={s.qtyNote}>{qtyStr(Number(li.qty))} × {fmt(Number(li.unit_price), cur)}</Text> : null}
-                {li.job?.report_number ? <Text style={s.reportNote}>Report No. {li.job.report_number}</Text> : null}
+          {lines.map(li => {
+            // The builder seeds the first line as "M.V. Vessel — Job Type (Stage)".
+            // Split it on that em dash so the vessel, the type and the report number
+            // become three aligned columns on one line. A line the user has retyped
+            // (or a manual/expense line) has no dash and stays full-width, or a long
+            // description would be squeezed into the vessel column and wrap.
+            const descLines = li.description.split('\n')
+            const head = descLines[0] ?? ''
+            const dash = head.indexOf(' — ')
+            const reportRef = li.job?.report_number ? `Report No. ${li.job.report_number}` : ''
+            return (
+              <View key={li.id} style={s.bodyRow} wrap={false}>
+                <View style={s.tdDesc}>
+                  {dash >= 0 ? (
+                    <View style={s.headRow}>
+                      <Text style={s.headVessel}>{head.slice(0, dash)}</Text>
+                      <Text style={s.headType}>—  {head.slice(dash + 3)}</Text>
+                      <Text style={s.headReport}>{reportRef ? `—  ${reportRef}` : ''}</Text>
+                    </View>
+                  ) : (
+                    <Text style={s.lineLabel}>
+                      {head || ' '}
+                      {reportRef ? <Text style={s.reportInline}>  ·  {reportRef}</Text> : null}
+                    </Text>
+                  )}
+                  {descLines.slice(1).map((ln, i) => <Text key={i} style={s.bodyText}>{ln || ' '}</Text>)}
+                  {/* Show the live qty × unit-price breakdown (e.g. an hourly job:
+                      "11 × US$ 650.00") whenever the quantity isn't a plain 1, so an
+                      hourly/multi-unit total is spelled out rather than just a lump sum. */}
+                  {Number(li.qty) !== 1 ? <Text style={s.qtyNote}>{qtyStr(Number(li.qty))} × {fmt(Number(li.unit_price), cur)}</Text> : null}
+                </View>
+                <Text style={s.tdAmt}>{fmt(Number(li.amount), cur)}</Text>
               </View>
-              <Text style={s.tdAmt}>{fmt(Number(li.amount), cur)}</Text>
-            </View>
-          ))}
+            )
+          })}
 
           {taxes.map(tx => (
             <View key={tx.id} style={s.bodyRow} wrap={false}>
@@ -199,10 +234,6 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
               <Text style={s.tdAmt}>{fmt(Number(tx.amount), cur)}</Text>
             </View>
           ))}
-
-          {/* A little breathing room before the total. No bottom edge of its own —
-              the TOTAL row's top border is the line here, and two would double up. */}
-          <View style={[s.bodyRow, { minHeight: 10, borderBottomWidth: 0 }]} wrap={false}><View style={s.tdDesc} /><Text style={s.tdAmt} /></View>
 
           <View style={s.totalRow}>
             <Text style={s.tdTotalLabel}>TOTAL</Text>
