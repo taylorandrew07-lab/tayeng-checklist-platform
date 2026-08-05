@@ -14,7 +14,11 @@ const fmt = (n: number, c: string) => `${CUR[c] ?? c} ${(n ?? 0).toLocaleString(
 const longDate = (iso: string | null) => { try { return iso ? format(parseISO(iso), 'do MMMM yyyy') : '' } catch { return iso ?? '' } }
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Helvetica', fontSize: 10, color: INK, paddingTop: 34, paddingBottom: 56, paddingHorizontal: 44, lineHeight: 1.4 },
+  // Deliberately NO lineHeight. A page-level lineHeight collapses the auto height of
+  // `fixed`/absolute boxes: their contents get dropped (the terms line never printed)
+  // and a `render` callback emits nothing at all (hence no page number). It was also
+  // inert for the flowing content — removing it leaves the layout identical.
+  page: { fontFamily: 'Helvetica', fontSize: 10, color: INK, paddingTop: 34, paddingBottom: 56, paddingHorizontal: 44 },
 
   // Letterhead
   logo: { width: 188, alignSelf: 'center', marginBottom: 4 },
@@ -112,9 +116,19 @@ const s = StyleSheet.create({
   bankHead: { fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   bankText: { fontSize: 9, color: INK },
 
-  footer: { position: 'absolute', bottom: 26, left: 44, right: 44 },
+  // An explicit height is load-bearing. Anchored by `bottom` with an auto height the
+  // box resolves to a single line and clips everything above it away — which is why
+  // the terms line (and any page number) silently never printed.
+  footer: { position: 'absolute', bottom: 22, left: 44, right: 44, height: 32 },
   footerTerms: { textAlign: 'center', fontSize: 9, fontFamily: 'Helvetica-Bold', color: INK },
   footerPage: { textAlign: 'center', fontSize: 7.5, color: MUTE, marginTop: 3 },
+  // Confidential line and the page number share one row, so the page number sits
+  // bottom-RIGHT without pushing another line under the footer.
+  footerBottom: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 3 },
+  footerConf: { flex: 1, textAlign: 'center', fontSize: 7.5, color: MUTE },
+  // Its own node on the page, not a child of the footer — nested inside that box the
+  // per-page render callback yielded nothing.
+  footerPageNo: { position: 'absolute', bottom: 22, right: 44, fontSize: 7.5, color: MUTE },
 })
 
 // Render a multi-line block, preserving the author's line breaks.
@@ -273,9 +287,14 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
         {/* Footer */}
         <View style={s.footer} fixed>
           <Text style={s.footerTerms}>{COMPANY.invoiceTerms}</Text>
-          <Text style={s.footerPage}>{COMPANY.confidential}</Text>
-          <Text style={s.footerPage} render={({ pageNumber, totalPages }) => totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : ''} />
+          <View style={s.footerBottom}>
+            <Text style={s.footerConf}>{COMPANY.confidential}</Text>
+          </View>
         </View>
+
+        {/* Page n of n, bottom-right. `fixed` is required on the node carrying
+            `render` — the callback is only re-evaluated per page for a fixed node. */}
+        <Text style={s.footerPageNo} fixed render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
       </Page>
     </Document>
   )
