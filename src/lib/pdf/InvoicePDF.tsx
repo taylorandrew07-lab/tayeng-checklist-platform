@@ -35,22 +35,48 @@ const s = StyleSheet.create({
   billVal: { flex: 1 },
 
   // Table
-  table: { borderWidth: 1, borderColor: INK },
-  thead: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: INK, backgroundColor: '#f1f5f9' },
+  //
+  // The box is drawn PER ROW, not on the table container. A single container border
+  // is only painted around the whole block, so on a two-page invoice the bottom of
+  // page 1 and the top of page 2 came out open-ended. Every row carrying its own
+  // left/right/bottom edge means whichever row the page break lands on still closes
+  // the box, and the header repeats (fixed) to put a lid on each new page.
+  table: {},
+  thead: {
+    flexDirection: 'row', backgroundColor: '#f1f5f9',
+    borderTopWidth: 1, borderTopColor: INK, borderBottomWidth: 1, borderBottomColor: INK,
+    borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
+  },
   thDesc: { flex: 1, padding: '5 8', fontFamily: 'Helvetica-Bold', textAlign: 'center' },
   thAmt: { width: 130, padding: '5 8', fontFamily: 'Helvetica-Bold', textAlign: 'center', borderLeftWidth: 1, borderLeftColor: INK },
 
-  bodyRow: { flexDirection: 'row', minHeight: 18 },
+  bodyRow: {
+    flexDirection: 'row', minHeight: 18,
+    borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
+    borderBottomWidth: 1, borderBottomColor: INK,
+  },
   tdDesc: { flex: 1, padding: '4 8' },
   tdAmt: { width: 130, padding: '4 8', textAlign: 'right', borderLeftWidth: 1, borderLeftColor: INK },
 
-  narrative: { padding: '8 8 4 8' },
+  // The narrative is its own boxed band across the full table width.
+  narrative: {
+    padding: '8 8 6 8',
+    borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
+    borderBottomWidth: 1, borderBottomColor: INK,
+  },
   refLine: { fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   bodyText: { color: INK },
 
   lineLabel: { fontFamily: 'Helvetica-Bold' },
   qtyNote: { fontSize: 9, color: MUTE, marginTop: 1 },
-  totalRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: INK },
+  // The job's report number, on the line that bills it — a client disputing an
+  // invoice line has to be able to tie it back to the report they were sent.
+  reportNote: { fontSize: 9, color: MUTE, marginTop: 1 },
+  totalRow: {
+    flexDirection: 'row', borderTopWidth: 1, borderTopColor: INK,
+    borderLeftWidth: 1, borderLeftColor: INK, borderRightWidth: 1, borderRightColor: INK,
+    borderBottomWidth: 1, borderBottomColor: INK,
+  },
   tdTotalLabel: { flex: 1, padding: '5 8', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
   tdTotalAmt: { width: 130, padding: '5 8', textAlign: 'right', fontFamily: 'Helvetica-Bold', borderLeftWidth: 1, borderLeftColor: INK },
 
@@ -79,9 +105,13 @@ function MultiLine({ text, style, firstBold }: { text: string; style?: any; firs
   )
 }
 
+/** A line plus the report number of the job it bills (embedded in renderInvoice).
+ *  Absent on manual/expense lines, which carry no job. */
+export type InvoiceLineWithJob = InvoiceLineItem & { job?: { report_number: string | null } | null }
+
 export interface InvoicePDFProps {
   invoice: Invoice
-  lines: InvoiceLineItem[]
+  lines: InvoiceLineWithJob[]
   taxes: InvoiceTax[]
   client: { name: string | null; contact_name?: string | null; address: string | null; contact_phone: string | null } | null
   reportNumber: string | null
@@ -115,6 +145,14 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
           <Text><Text style={s.metaStrong}>Invoice No.</Text> {invoice.invoice_number ?? '—'}</Text>
           <Text><Text style={s.metaStrong}>Date:</Text> {longDate(invoice.issue_date)}</Text>
         </View>
+        {/* Payment terms only appear when a due date was actually chosen — an invoice
+            with no agreed date must not imply one. */}
+        {invoice.due_date ? (
+          <View style={s.metaRow}>
+            <Text> </Text>
+            <Text><Text style={s.metaStrong}>Payment Due:</Text> {longDate(invoice.due_date)}</Text>
+          </View>
+        ) : null}
         {reportNumber ? <Text><Text style={s.metaStrong}>Report Ref:</Text> {reportNumber}</Text> : null}
 
         {/* Bill to */}
@@ -130,13 +168,15 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
 
         {/* Description / amount table */}
         <View style={s.table}>
-          <View style={s.thead}>
+          {/* fixed → the column headings repeat at the top of every page, which is
+              also what draws the table's top edge on a continuation page. */}
+          <View style={s.thead} fixed>
             <Text style={s.thDesc}>DESCRIPTION</Text>
             <Text style={s.thAmt}>AMOUNT</Text>
           </View>
 
           {invoice.description ? (
-            <View style={s.narrative}><MultiLine text={invoice.description} style={s.bodyText} /></View>
+            <View style={s.narrative} wrap={false}><MultiLine text={invoice.description} style={s.bodyText} /></View>
           ) : null}
 
           {lines.map(li => (
@@ -147,6 +187,7 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
                     "11 × US$ 650.00") whenever the quantity isn't a plain 1, so an
                     hourly/multi-unit total is spelled out rather than just a lump sum. */}
                 {Number(li.qty) !== 1 ? <Text style={s.qtyNote}>{qtyStr(Number(li.qty))} × {fmt(Number(li.unit_price), cur)}</Text> : null}
+                {li.job?.report_number ? <Text style={s.reportNote}>Report No. {li.job.report_number}</Text> : null}
               </View>
               <Text style={s.tdAmt}>{fmt(Number(li.amount), cur)}</Text>
             </View>
@@ -159,8 +200,9 @@ export function InvoicePDF({ invoice, lines, taxes, client, reportNumber, logoSr
             </View>
           ))}
 
-          {/* a little breathing room before the total */}
-          <View style={[s.bodyRow, { minHeight: 10 }]}><View style={s.tdDesc} /><Text style={s.tdAmt} /></View>
+          {/* A little breathing room before the total. No bottom edge of its own —
+              the TOTAL row's top border is the line here, and two would double up. */}
+          <View style={[s.bodyRow, { minHeight: 10, borderBottomWidth: 0 }]} wrap={false}><View style={s.tdDesc} /><Text style={s.tdAmt} /></View>
 
           <View style={s.totalRow}>
             <Text style={s.tdTotalLabel}>TOTAL</Text>

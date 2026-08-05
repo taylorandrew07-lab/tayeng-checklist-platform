@@ -87,6 +87,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [currency, setCurrency] = useState<Currency>('USD')
   const [invNumber, setInvNumber] = useState('')
   const [lastInvNumber, setLastInvNumber] = useState<string | null>(null)
+  // The date printed on the invoice. Left blank it falls through to the column
+  // default (today) — it is never allowed to overwrite a date you did choose.
+  const [issueDate, setIssueDate] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [attention, setAttention] = useState('')
   const [reference, setReference] = useState('')
@@ -374,6 +377,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       client_id: clientId,
       bill_to_client_id: billToId || null,
       invoice_number: invNumber.trim() || null,
+      issue_date: issueDate || null,
       currency, due_date: dueDate || null, notes: notes || null,
       description: description || null, reference: reference || null,
       attention: attention || null, bank_details: bankDetails || null,
@@ -399,7 +403,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     if (res.error) { toast.error(res.error); return }
     const v = selectedJobs.length
     toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created — a job was added to the job sheet')
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType('')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setIssueDate(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType('')
     getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
@@ -647,11 +651,19 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
               </div>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="text-[11px] text-gray-400">Invoice no.</label>
               <input value={invNumber} onChange={e => setInvNumber(e.target.value)} placeholder="auto (YY-MM-NNN)" className={`${cell} tnum`} />
               <p className="text-[11px] text-gray-400 mt-0.5">{lastInvNumber ? <>Last: <span className="tnum">{lastInvNumber}</span> · blank = auto</> : 'Leave blank to auto-number'}</p>
+            </div>
+            <div>
+              {/* The date printed on the invoice. Before this existed the invoice was
+                  always stamped with the day it was created, so back-dating a month's
+                  billing was impossible. */}
+              <label className="text-[11px] text-gray-400">Invoice date</label>
+              <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={cell} />
+              <p className="text-[11px] text-gray-400 mt-0.5">Blank = today</p>
             </div>
             <div>
               <label className="text-[11px] text-gray-400">Currency</label>

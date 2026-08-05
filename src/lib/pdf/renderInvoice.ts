@@ -30,7 +30,10 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
   // Contact/payment info lives in the private client_billing table now; name stays
   // on clients. The service client bypasses RLS, so both are readable here.
   const [{ data: lines }, { data: taxes }, { data: clientRow }, { data: billing }, { data: job }] = await Promise.all([
-    db.from('invoice_line_items').select('*').eq('invoice_id', invoiceId).order('sort'),
+    // Each line carries the report number of the job it bills, so the printed line
+    // ties back to the report the client was sent. invoice_line_items → jobs is a
+    // single FK (job_id), so the embed needs no hint; manual/expense lines have none.
+    db.from('invoice_line_items').select('*, job:jobs(report_number)').eq('invoice_id', invoiceId).order('sort'),
     db.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
     recipientClientId ? db.from('clients').select('name').eq('id', recipientClientId).single() : Promise.resolve({ data: null }),
     recipientClientId ? db.from('client_billing').select('contact_name, address, contact_phone, contact_email, ap_email').eq('client_id', recipientClientId).maybeSingle() : Promise.resolve({ data: null }),

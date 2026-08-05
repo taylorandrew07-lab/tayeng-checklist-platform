@@ -388,6 +388,9 @@ export async function createConsolidatedInvoice(input: {
   client_id: string | null
   bill_to_client_id: string | null
   invoice_number?: string | null
+  /** The date printed on the invoice. Blank falls through to the column default
+   *  (CURRENT_DATE) — so "today" is the fallback, never an override of a date you set. */
+  issue_date?: string | null
   currency: Currency; due_date: string | null; notes: string | null
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   lines: ConsolidatedLine[]; taxes: TaxDraft[]
@@ -410,6 +413,9 @@ export async function createConsolidatedInvoice(input: {
   }
   // Blank number lets the DB trigger assign YY-MM-NNN.
   if (input.invoice_number) insert.invoice_number = input.invoice_number
+  // Only send a date when one was chosen; omitting it lets issue_date default to
+  // CURRENT_DATE. Sending null would violate the NOT NULL column.
+  if (input.issue_date) insert.issue_date = input.issue_date
   const { data: ins, error } = await supabase.from('invoices').insert(insert).select('id').single()
   if (error) return { error: error.message }
   const invoiceId = ins.id as string
@@ -533,6 +539,10 @@ export async function getInvoiceForEdit(invoiceId: string): Promise<InvoiceForEd
  *  taxes, recomputing totals. Used by the Finance invoice editor. */
 export async function updateInvoice(invoiceId: string, data: {
   invoice_number?: string | null
+  /** The date printed on the invoice. Blank leaves the stored date alone rather
+   *  than nulling a NOT NULL column — clearing the box must not silently re-stamp
+   *  the invoice with today. */
+  issue_date?: string | null
   currency: Currency; due_date: string | null; notes: string | null
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   bill_to_client_id?: string | null
@@ -548,6 +558,7 @@ export async function updateInvoice(invoiceId: string, data: {
   }
   if (data.invoice_number !== undefined) header.invoice_number = data.invoice_number || null
   if (data.bill_to_client_id !== undefined) header.bill_to_client_id = data.bill_to_client_id || null
+  if (data.issue_date) header.issue_date = data.issue_date
 
   const { data: upd, error } = await supabase.from('invoices').update(header).eq('id', invoiceId).select('id')
   if (error) return { error: error.message }
