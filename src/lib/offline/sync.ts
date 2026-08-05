@@ -46,7 +46,9 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     const j: any = draft.job ?? {}
     // Link to the vessels directory (idempotent ilike match → create). We're online
     // here (this is the sync), so every synced job lands linked, not just admin ones.
-    const vesselId = j.vessel_id ?? (j.vessel_name ? await findOrCreateVessel(j.vessel_name) : null)
+    // j.vessel_type is the prefix the surveyor typed on the device (M.T./MT/M/T →
+    // 'M.T.'), passed explicitly because j.vessel_name is already bare by now.
+    const vesselId = j.vessel_id ?? (j.vessel_name ? await findOrCreateVessel(j.vessel_name, j.vessel_type ?? null) : null)
     // Route through the shared create seam so surveyor/offline jobs get the same
     // activity-log entry + provenance as every other create path. upsert:true keeps
     // it idempotent/retry-safe; notify:false because the surveyor assigns themselves.
@@ -62,7 +64,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
     const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
-      .select('id, title, vessel_name, scheduled_date, port_location, job_stage, cargo_type, notes').eq('id', jobId).maybeSingle()
+      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, job_stage, cargo_type, notes').eq('id', jobId).maybeSingle()
     // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
     // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
     // a fresh report number off the counter even though the row already exists (the
@@ -77,6 +79,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       const patch: Record<string, unknown> = {}
       if ((j.title ?? null) !== alreadyCreated.title) patch.title = j.title ?? null
       if ((j.vessel_name ?? null) !== alreadyCreated.vessel_name) { patch.vessel_name = j.vessel_name ?? null; patch.vessel_id = vesselId }
+      if (j.vessel_type && j.vessel_type !== alreadyCreated.vessel_type) patch.vessel_type = j.vessel_type
       if ((j.scheduled_date ?? null) !== alreadyCreated.scheduled_date) patch.scheduled_date = j.scheduled_date ?? null
       if ((j.port_location ?? null) !== alreadyCreated.port_location) patch.port_location = j.port_location ?? null
       if ((j.job_stage ?? null) !== alreadyCreated.job_stage) patch.job_stage = j.job_stage ?? null
@@ -103,6 +106,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
           port_location: j.port_location ?? null,
           vessel_name: j.vessel_name ?? null,
           vessel_id: vesselId,
+          vessel_type: j.vessel_type ?? 'M.V.',
           surveyor_name: j.surveyor_name ?? null,
           client_id: j.client_id ?? null,
           created_by: user.id,

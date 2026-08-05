@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyAssignment } from '@/lib/jobs/notify'
 import { typeSkipsReportNumber } from '@/lib/jobs/reportPolicy'
+import { parseVesselName } from '@/lib/utils'
 
 export type JobSource = 'manual' | 'whatsapp' | 'email' | 'ai'
 
@@ -58,6 +59,16 @@ export async function createDraftJob(
       row.job_type as string | null | undefined,
       row.job_stage as string | null | undefined,
     )
+  }
+  // Safety net for the vessel prefix, in the same shape as the flag above. A caller
+  // that hands the seam a still-prefixed vessel_name ("M/T Lila Montreal" — exactly
+  // what the future AI/WhatsApp intake will extract from a message) gets the tanker
+  // recorded and the name stored bare, instead of the prefix being silently dropped.
+  // An explicit vessel_type from the caller always wins.
+  if (row.vessel_type == null && typeof row.vessel_name === 'string') {
+    const parsed = parseVesselName(row.vessel_name)
+    if (parsed.prefix) row.vessel_type = parsed.prefix
+    row.vessel_name = parsed.name
   }
   // Seed the "report due" reminder from the job's type. Done HERE, in the single
   // creation seam, so every route inherits it — both New Job forms today and the

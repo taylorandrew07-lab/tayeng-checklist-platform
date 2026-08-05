@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
 import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
-import { titleCaseVesselName } from '@/lib/utils'
+import { parseVesselName, type VesselPrefix } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
@@ -21,7 +21,7 @@ export default function NewJobPage() {
   const [jobTypes, setJobTypes] = useState<JobType[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [surveyors, setSurveyors] = useState<SurveyorAccount[]>([])
-  const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
+  const [vessels, setVessels] = useState<{ id: string; name: string; vessel_type: VesselPrefix }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +51,15 @@ export default function NewJobPage() {
   const label = selectedTemplate?.name ?? jobType
   const stageConfig = STAGE_OPTIONS[jobType] ?? null
   const labelWithStage = label && jobStage ? `${label} (${jobStage})` : label
-  const autoTitle = vesselName.trim() && label ? `M.V. ${titleCaseVesselName(vesselName)} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}` : ''
+
+  // Vessel prefix: what the surveyor TYPED wins ("M.T. Lila" / "MT Lila" / "M/T Lila"),
+  // else the directory's record for a known vessel, else M.V. Resolved here because
+  // the title is STORED text — it must be built from the same prefix that gets saved.
+  const parsedVessel = parseVesselName(vesselName)
+  const bareVessel = parsedVessel.name
+  const knownPrefix = vessels.find(v => v.name.toLowerCase() === bareVessel.toLowerCase())?.vessel_type
+  const vesselPrefix: VesselPrefix = parsedVessel.prefix ?? knownPrefix ?? 'M.V.'
+  const autoTitle = vesselName.trim() && label ? `${vesselPrefix} ${bareVessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}` : ''
 
   useEffect(() => {
     async function loadData() {
@@ -59,13 +67,13 @@ export default function NewJobPage() {
       const [{ data: tmpl }, { data: cls }, { data: vsl }, jt, srv] = await Promise.all([
         supabase.from('checklist_templates').select('*').eq('status', 'active').order('name'),
         supabase.from('clients').select('*').eq('is_active', true).order('name'),
-        supabase.from('vessels').select('id, name').eq('is_active', true).order('name'),
+        supabase.from('vessels').select('id, name, vessel_type').eq('is_active', true).order('name'),
         listJobTypes(),
         listSurveyorAccounts(),
       ])
       setTemplates(tmpl ?? [])
       setClients(cls ?? [])
-      setVessels((vsl ?? []) as { id: string; name: string }[])
+      setVessels((vsl ?? []) as { id: string; name: string; vessel_type: VesselPrefix }[])
       setJobTypes(jt)
       setSurveyors(srv)
       setLoading(false)
@@ -155,11 +163,15 @@ export default function NewJobPage() {
 
     const ids = Array.from(picked)
     const primary = surveyors.find(s => s.id === ids[0])
-    const vessel = titleCaseVesselName(vesselName)
-    const title = autoTitle || `M.V. ${vessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
+    // Reuse the already-resolved bare name + prefix — recomputing here is exactly how
+    // the previewed title and the stored title would drift apart.
+    const vessel = bareVessel
+    const title = autoTitle || `${vesselPrefix} ${vessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
 
     // Link to the vessels directory (create on first use), keeping vessel_name as snapshot.
-    const vesselId = await findOrCreateVessel(vessel)
+    // The typed prefix is passed explicitly: `vessel` is already bare, so the M.T. token
+    // is gone by this point and findOrCreateVessel could not re-read it.
+    const vesselId = await findOrCreateVessel(vessel, parsedVessel.prefix)
 
     // All job creation flows through the createDraftJob seam so the AI intake
     // path can later reuse it verbatim. Manual entry → source 'manual'.
@@ -170,6 +182,7 @@ export default function NewJobPage() {
         job_type: jobType,
         vessel_name: vessel,
         vessel_id: vesselId,
+        vessel_type: vesselPrefix,
         surveyor_name: primary?.full_name ?? null,
         client_id: finalClientId,
         created_by: user.id,
@@ -280,11 +293,11 @@ export default function NewJobPage() {
         <div>
           <label className="label-base">Vessel name *</label>
           <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">{vesselPrefix}</span>
             <input type="text" list="vesselList" value={vesselName} onChange={e => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
             <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
-          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically.</p>
+          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s added to the Vessels directory and linked automatically. Type <strong>M.T.</strong> (or MT / M/T) in front of a tanker&apos;s name and it&apos;s recorded as a Motor Tanker.</p>
         </div>
 
         <div>

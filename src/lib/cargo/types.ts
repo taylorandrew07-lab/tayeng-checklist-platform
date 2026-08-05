@@ -3,6 +3,7 @@
 // cloud sync is a later phase. All voyage/photo records are scoped by `userId`.
 
 import type { DriReport } from './dri'
+import type { VesselPrefix } from '@/lib/utils'
 
 /** The three nominal monitoring periods. Actual reading times may differ and are
  *  captured separately (periodMeta.actualTime + per-photo actualTime). */
@@ -106,6 +107,9 @@ export interface Voyage {
 
   // --- Setup ---
   vesselName: string
+  /** 'M.V.' (Motor Vessel) or 'M.T.' (Motor Tanker). Optional because voyage docs
+   *  created before mig 167 have no value — absent renders as M.V., as before. */
+  vesselType?: VesselPrefix
   voyageNumber: string
   cargoType: string
   loadingPort: string

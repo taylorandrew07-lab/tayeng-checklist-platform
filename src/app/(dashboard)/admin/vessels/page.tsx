@@ -8,6 +8,7 @@ import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import PageHeader from '@/components/ui/PageHeader'
 import { ResponsiveTable } from '@/components/ui/ResponsiveTable'
+import { withVesselPrefix } from '@/lib/utils'
 
 export default function VesselsPage() {
   const [rows, setRows] = useState<VesselRow[]>([])
@@ -26,6 +27,7 @@ export default function VesselsPage() {
     const n = newName.trim()
     if (!n) return
     setAdding(true)
+    // Typing "M.T. Foo" when adding straight to the directory records the tanker too.
     const id = await findOrCreateVessel(n)
     setAdding(false)
     if (!id) { toast.error('Could not add vessel'); return }
@@ -37,7 +39,7 @@ export default function VesselsPage() {
   async function removeVessel(v: VesselRow) {
     const linked = v.jobs > 0 ? ` and unlink it from ${v.jobs} job${v.jobs !== 1 ? 's' : ''} (their records and vessel names are kept)` : ''
     const ok = await confirmDialog({
-      title: `Delete M.V. ${v.name}?`,
+      title: `Delete ${withVesselPrefix(v.name, v.vessel_type)}?`,
       message: `This permanently deletes the vessel record${linked}. Any linked cargo voyages are also unlinked, and this vessel's document library is removed. This cannot be undone.`,
       danger: true,
       confirmLabel: 'Delete vessel',
@@ -90,7 +92,7 @@ export default function VesselsPage() {
               cell: v => (
                 <Link href={`/admin/vessels/${v.id}`} className="group inline-flex items-center gap-2.5 min-w-0">
                   <span className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0"><Anchor className="h-4 w-4 text-brand-600" /></span>
-                  <span className="font-medium text-gray-900 group-hover:text-brand-700 truncate">M.V. {v.name}</span>
+                  <span className="font-medium text-gray-900 group-hover:text-brand-700 truncate">{withVesselPrefix(v.name, v.vessel_type)}</span>
                   {!v.is_active && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400">Inactive</span>}
                 </Link>
               ),

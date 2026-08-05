@@ -6,7 +6,7 @@ import { BorescopingReportPDF, BORESCOPING_TEMPLATE_ID } from '@/lib/pdf/Boresco
 import React from 'react'
 import sharp from 'sharp'
 import exifr from 'exifr'
-import { checkConditionalLogic } from '@/lib/utils'
+import { checkConditionalLogic, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 
 // Reports with many full-resolution photos take a while to render — give the function
@@ -241,7 +241,7 @@ export async function GET(
     if (f) { checklistDate = vals[instanceKey(f.id, 0)]; break }
   }
   const displayName = [
-    job.vessel_name ? `M.V. ${job.vessel_name}` : null,
+    job.vessel_name ? withVesselPrefix(job.vessel_name, job.vessel_type) : null,
     job.template?.name ?? job.title ?? null,
     ddmmyyyy(checklistDate || job.scheduled_date || job.created_at) || null,
     job.job_number ?? job.report_number ?? null,

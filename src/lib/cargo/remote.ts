@@ -3,10 +3,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Voyage, CargoPhoto, Period, Camera } from './types'
+import type { VesselPrefix } from '@/lib/utils'
 
 export interface RemoteVoyageRow {
   id: string
   vessel_name: string | null
+  vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
   updated_at: string
@@ -27,6 +29,7 @@ export interface RemotePhoto {
 export interface OpsVoyageRow {
   id: string
   vessel_name: string | null
+  vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
   updated_at: string
@@ -44,13 +47,14 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
   // (long applied), so the earlier separate best-effort query is no longer needed.
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, voyage_number, status, updated_at, synced_at, job_id, owner:profiles!owner_id(full_name, display_title), job:jobs!cargo_voyages_job_id_fkey(job_number)')
+    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at, synced_at, job_id, owner:profiles!owner_id(full_name, display_title), job:jobs!cargo_voyages_job_id_fkey(job_number)')
     .order('synced_at', { ascending: false })
   if (error) throw error
 
   return ((data ?? []) as any[]).map(r => ({
     id: r.id,
     vessel_name: r.vessel_name,
+    vessel_type: r.vessel_type ?? null,
     voyage_number: r.voyage_number,
     status: r.status,
     updated_at: r.updated_at,
@@ -65,6 +69,7 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
 export interface LinkedVoyageRow {
   id: string
   vessel_name: string | null
+  vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
   owner_name: string | null
@@ -74,6 +79,7 @@ function toLinkedRow(r: any): LinkedVoyageRow {
   return {
     id: r.id,
     vessel_name: r.vessel_name,
+    vessel_type: r.vessel_type ?? null,
     voyage_number: r.voyage_number,
     status: r.status,
     owner_name: r.owner?.full_name ?? null,
@@ -84,7 +90,7 @@ function toLinkedRow(r: any): LinkedVoyageRow {
 export async function listVoyagesForJob(supabase: SupabaseClient, jobId: string): Promise<LinkedVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .select('id, vessel_name, vessel_type, voyage_number, status, owner:profiles!owner_id(full_name)')
     .eq('job_id', jobId)
     .order('synced_at', { ascending: false })
   if (error) throw error
@@ -95,7 +101,7 @@ export async function listVoyagesForJob(supabase: SupabaseClient, jobId: string)
 export async function listUnlinkedVoyages(supabase: SupabaseClient): Promise<LinkedVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .select('id, vessel_name, vessel_type, voyage_number, status, owner:profiles!owner_id(full_name)')
     .is('job_id', null)
     .order('synced_at', { ascending: false })
   if (error) throw error
@@ -111,7 +117,7 @@ export async function setVoyageJob(supabase: SupabaseClient, voyageId: string, j
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, voyage_number, status, updated_at')
+    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at')
     .order('updated_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as RemoteVoyageRow[]

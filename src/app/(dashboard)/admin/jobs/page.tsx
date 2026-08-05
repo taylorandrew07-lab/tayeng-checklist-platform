@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getUiPrefs, setUiPref } from '@/lib/preferences'
-import { formatDate, titleCaseVesselName } from '@/lib/utils'
+import { formatDate, parseVesselName } from '@/lib/utils'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { qtyWithUnit } from '@/lib/jobs/labourUnit'
@@ -229,7 +229,13 @@ const COLUMNS: ColumnDef[] = [
       </>
     ) },
   { key: 'vessel', label: 'Vessel', sortKey: 'vessel', defaultVisible: true, width: 150, min: 100,
-    cell: (r, { patchRow }) => <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => { const nv = titleCaseVesselName(v ?? ''); return patchRow(r.id, { vessel_name: nv }, { vessel_name: nv }) }} /> },
+    cell: (r, { patchRow }) => <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => {
+      // A typed "M.T."/"MT"/"M/T" is captured here too — without it the stripper would
+      // eat the token and this inline edit would silently record nothing.
+      const p = parseVesselName(v ?? '')
+      const patch = p.prefix ? { vessel_name: p.name, vessel_type: p.prefix } : { vessel_name: p.name }
+      return patchRow(r.id, patch, patch)
+    }} /> },
   { key: 'client', label: 'Client', sortKey: 'client', defaultVisible: true, width: 150, min: 90,
     cell: r => r.client_name
       ? <Link href={`/admin/clients/${r.client_id}`} className="block px-3 truncate text-brand-700 hover:underline">{r.client_name}</Link>

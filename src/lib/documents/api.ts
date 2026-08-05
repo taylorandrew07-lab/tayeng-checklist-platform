@@ -2,7 +2,7 @@
 // (enforced by RLS). Documents live in the private 'vessel-documents' bucket.
 
 import { createClient } from '@/lib/supabase/client'
-import { formatBytes, sanitizeStorageName } from '@/lib/utils'
+import { formatBytes, sanitizeStorageName, parseVesselName } from '@/lib/utils'
 
 // Re-exported so existing consumers (e.g. the document views) can keep importing
 // formatBytes from this module's public surface.
@@ -54,7 +54,15 @@ export async function getVessel(id: string): Promise<VesselFolder | null> {
 export async function createVessel(name: string): Promise<{ error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { error } = await supabase.from('vessels').insert({ name: name.trim(), created_by: user?.id })
+  // Store the name BARE and record a typed M.T./MT/M/T, the same as every other
+  // vessel-creating path — otherwise this route manufactures directory rows literally
+  // named "M/T Foo" that the deduplicating lookup can never match again.
+  const parsed = parseVesselName(name)
+  const { error } = await supabase.from('vessels').insert({
+    name: parsed.name || name.trim(),
+    vessel_type: parsed.prefix ?? 'M.V.',
+    created_by: user?.id,
+  })
   return { error: error?.message }
 }
 

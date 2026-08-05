@@ -15,6 +15,7 @@ import ClientPhotoGallery from '@/components/cargo/ClientPhotoGallery'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
 import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 import Tabs from '@/components/ui/Tabs'
+import { withVesselPrefix } from '@/lib/utils'
 
 type Tab = 'readings' | 'charts' | 'photos' | 'dri'
 const BASE_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -80,7 +81,7 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
       <div className="flex items-center gap-4">
         <Link href={backHref} className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0 flex-1">
-          <h1 className="page-title truncate">M.V. {voyage.vesselName} — {voyage.voyageNumber}</h1>
+          <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {voyage.voyageNumber}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{voyage.cargoType || 'Cargo'} · {voyage.holdCount} holds</p>
         </div>
         <button onClick={handleDownload} disabled={generating} className="btn-primary">

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, Anchor, Pencil, Save, Ship, FolderOpen, Briefcase } from 'lucide-react'
 import { getVesselDetail, updateVessel, type VesselDetail } from '@/lib/vessels/api'
 import { WorkflowPill, CargoStatusPill } from '@/components/job/StatusPill'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import type { WorkflowStatus } from '@/lib/types/database'
 import type { VoyageStatus } from '@/lib/cargo/types'
@@ -19,12 +19,12 @@ export default function VesselDetailPage() {
   const [loading, setLoading] = useState(true)
   const [edit, setEdit] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ name: '', imo: '', official_number: '', is_active: true })
+  const [form, setForm] = useState<{ name: string; imo: string; official_number: string; is_active: boolean; vessel_type: VesselPrefix }>({ name: '', imo: '', official_number: '', is_active: true, vessel_type: 'M.V.' })
 
   async function load() {
     const d = await getVesselDetail(params.id)
     setData(d)
-    if (d) setForm({ name: d.vessel.name, imo: d.vessel.imo ?? '', official_number: d.vessel.official_number ?? '', is_active: d.vessel.is_active })
+    if (d) setForm({ name: d.vessel.name, imo: d.vessel.imo ?? '', official_number: d.vessel.official_number ?? '', is_active: d.vessel.is_active, vessel_type: d.vessel.vessel_type ?? 'M.V.' })
     setLoading(false)
   }
   useEffect(() => { load() }, [params.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -34,6 +34,8 @@ export default function VesselDetailPage() {
     setSaving(true)
     const { error } = await updateVessel(params.id, {
       name: form.name.trim(), imo: form.imo.trim() || null, official_number: form.official_number.trim() || null, is_active: form.is_active,
+      // Propagates to this vessel's jobs, voyages and stored job titles (mig 167 trigger).
+      vessel_type: form.vessel_type,
     })
     setSaving(false)
     if (error) { toast.error(error); return }
@@ -59,7 +61,7 @@ export default function VesselDetailPage() {
         <div className="h-14 w-14 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><Anchor className="h-7 w-7 text-brand-600" /></div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="page-title truncate">M.V. {vessel.name}</h1>
+            <h1 className="page-title truncate">{withVesselPrefix(vessel.name, vessel.vessel_type)}</h1>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${vessel.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{vessel.is_active ? 'Active' : 'Inactive'}</span>
           </div>
           <p className="text-gray-500 mt-1 text-sm">
@@ -77,6 +79,15 @@ export default function VesselDetailPage() {
         <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="label-base">Name</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="input-base" /></div>
           <div className="flex items-end"><label className="inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} />Active</label></div>
+          <div>
+            <label className="label-base">Vessel type</label>
+            <select value={form.vessel_type} onChange={e => setForm(p => ({ ...p, vessel_type: e.target.value as VesselPrefix }))} className="input-base">
+              <option value="M.V.">M.V. — Motor Vessel</option>
+              <option value="M.T.">M.T. — Motor Tanker</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Changing this updates every job and voyage for this vessel, including their titles.</p>
+          </div>
+          <div className="hidden sm:block" />
           <div><label className="label-base">IMO</label><input value={form.imo} onChange={e => setForm(p => ({ ...p, imo: e.target.value }))} className="input-base" /></div>
           <div><label className="label-base">Official #</label><input value={form.official_number} onChange={e => setForm(p => ({ ...p, official_number: e.target.value }))} className="input-base" /></div>
         </div>

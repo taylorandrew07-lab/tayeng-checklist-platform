@@ -11,6 +11,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import type { WorkflowStatus, Invoice, Currency } from '@/lib/types/database'
+import type { VesselPrefix } from '@/lib/utils'
 
 export type ReconCategory =
   | 'not_completed'           // work looks done but the job was never marked complete
@@ -42,6 +43,7 @@ export interface ReconItem {
   job_id: string
   report_number: string | null
   vessel_name: string | null
+  vessel_type: VesselPrefix | null
   client_name: string | null
   workflow_status: WorkflowStatus
   category: ReconCategory
@@ -94,7 +96,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
   const since = new Date(); since.setMonth(since.getMonth() - RECON_WINDOW_MONTHS)
   const [{ data: jobs }, { data: invoices }, { data: labour }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, client_id, workflow_status, invoice_id, submitted_at, scheduled_date, end_date, created_at, client:clients(name)')
+      .select('id, report_number, vessel_name, vessel_type, client_id, workflow_status, invoice_id, submitted_at, scheduled_date, end_date, created_at, client:clients(name)')
       // Closed jobs are INCLUDED on purpose — post-145 they are the billed ones, and
       // the unsent/overdue/hours-changed checks only ever apply to them. Bounded by
       // date instead so the list stays a working queue, not the whole history.
@@ -139,7 +141,7 @@ export async function listReconciliation(): Promise<{ items: ReconItem[]; counts
     if (!category) continue
     counts[category]++
     items.push({
-      job_id: j.id, report_number: j.report_number, vessel_name: j.vessel_name,
+      job_id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, vessel_type: j.vessel_type ?? null,
       client_name: j.client?.name ?? null, workflow_status: j.workflow_status, category,
       invoice_id: inv?.id ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, currency: inv?.currency ?? null,

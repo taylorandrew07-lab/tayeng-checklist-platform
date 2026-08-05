@@ -4,7 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
-import { sanitizeStorageName } from '@/lib/utils'
+import { sanitizeStorageName, type VesselPrefix } from '@/lib/utils'
 import { byLastDateDesc } from '@/lib/jobs/jobDate'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
@@ -98,7 +98,7 @@ export interface InvoiceListRow {
   id: string; invoice_number: string | null; status: Invoice['status']
   currency: Currency; total: number; issue_date: string; due_date: string | null
   client_name: string | null; bill_to_name: string | null
-  report_number: string | null; vessel_name: string | null; job_id: string | null
+  report_number: string | null; vessel_name: string | null; vessel_type: VesselPrefix | null; job_id: string | null
   // Consolidated invoices (no single job_id) carry many vessels — one line each.
   line_count: number
 }
@@ -107,7 +107,7 @@ export async function listInvoices(): Promise<InvoiceListRow[]> {
   // jobs (invoices.job_id, jobs.invoice_id), so every embed is hinted by its FK.
   const { data } = await createClient()
     .from('invoices')
-    .select('id, invoice_number, status, currency, total, issue_date, due_date, job_id, client:clients!invoices_client_id_fkey(name), bill_to:clients!invoices_bill_to_client_id_fkey(name), job:jobs!invoices_job_id_fkey(report_number, vessel_name), line_items:invoice_line_items(count)')
+    .select('id, invoice_number, status, currency, total, issue_date, due_date, job_id, client:clients!invoices_client_id_fkey(name), bill_to:clients!invoices_bill_to_client_id_fkey(name), job:jobs!invoices_job_id_fkey(report_number, vessel_name, vessel_type), line_items:invoice_line_items(count)')
     .order('created_at', { ascending: false })
   return ((data ?? []) as any[]).map(r => ({
     id: r.id, invoice_number: r.invoice_number, status: r.status, currency: r.currency,
@@ -116,6 +116,7 @@ export async function listInvoices(): Promise<InvoiceListRow[]> {
     client_name: r.client?.name ?? null,
     bill_to_name: r.bill_to?.name ?? null,
     report_number: r.job?.report_number ?? null, vessel_name: r.job?.vessel_name ?? null,
+    vessel_type: r.job?.vessel_type ?? null,
     line_count: Number(r.line_items?.[0]?.count ?? 0),
   }))
 }
@@ -204,7 +205,7 @@ export async function listBillingClients(): Promise<{ id: string; name: string }
 }
 
 export interface InvoiceableJob {
-  id: string; report_number: string | null; vessel_name: string | null
+  id: string; report_number: string | null; vessel_name: string | null; vessel_type: VesselPrefix | null
   job_type: string | null; client_id: string | null; client_name: string | null
   /** The qualifier on a broad survey type (migration 108) — Initial/Final on a Draught
    *  Survey, Loading/Discharging on a Cargo Survey. Without it an invoice line reads
@@ -256,14 +257,14 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   const supabase = createClient()
   // jobs → clients has a single FK (client_id), so this embed needs no hint.
   let q = supabase.from('jobs')
-    .select('id, report_number, vessel_name, job_type, job_stage, cargo_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
+    .select('id, report_number, vessel_name, vessel_type, job_type, job_stage, cargo_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
     .in('workflow_status', ['report_ready', 'invoice_ready'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
   if (opts.clientId) q = q.eq('client_id', opts.clientId)
   const { data } = await q
   let rows = ((data ?? []) as any[]).map(j => ({
-    id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, job_type: j.job_type,
+    id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, vessel_type: j.vessel_type ?? null, job_type: j.job_type,
     job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null,
     client_id: j.client_id, client_name: j.client?.name ?? null, template_id: j.template_id ?? null,
     scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at, workflow_status: j.workflow_status,
@@ -392,7 +393,7 @@ export async function createConsolidatedInvoice(input: {
   lines: ConsolidatedLine[]; taxes: TaxDraft[]
   // For a standalone invoice (no job-linked lines): create a report-only job so it
   // still appears on the job sheet, linked to this invoice.
-  new_job?: { title: string; vessel_name: string | null; job_type: string | null } | null
+  new_job?: { title: string; vessel_name: string | null; vessel_type?: VesselPrefix | null; job_type: string | null } | null
 }): Promise<{ error?: string; invoiceId?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -455,6 +456,7 @@ export async function createConsolidatedInvoice(input: {
       title: input.new_job.title || 'Invoice',
       client_id: input.client_id,
       vessel_name: input.new_job.vessel_name ?? null,
+      vessel_type: input.new_job.vessel_type ?? 'M.V.',
       job_type: input.new_job.job_type ?? null,
       template_id: null,
       workflow_status: 'closed',
@@ -503,7 +505,7 @@ export async function deleteInvoice(invoiceId: string): Promise<{ error?: string
 export interface EditableLine {
   description: string; qty: number; unit_price: number
   is_expense: boolean; receipt_path: string | null; job_id: string | null
-  vessel_name?: string | null; report_number?: string | null
+  vessel_name?: string | null; vessel_type?: VesselPrefix | null; report_number?: string | null
 }
 export interface InvoiceForEdit { invoice: Invoice; lines: EditableLine[]; taxes: TaxDraft[] }
 
@@ -513,7 +515,7 @@ export async function getInvoiceForEdit(invoiceId: string): Promise<InvoiceForEd
   if (!invoice) return null
   const [{ data: lines }, { data: taxes }] = await Promise.all([
     // invoice_line_items → jobs is a single FK (job_id), so the embed needs no hint.
-    supabase.from('invoice_line_items').select('*, job:jobs(vessel_name, report_number)').eq('invoice_id', invoiceId).order('sort'),
+    supabase.from('invoice_line_items').select('*, job:jobs(vessel_name, vessel_type, report_number)').eq('invoice_id', invoiceId).order('sort'),
     supabase.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
   ])
   return {
@@ -521,7 +523,7 @@ export async function getInvoiceForEdit(invoiceId: string): Promise<InvoiceForEd
     lines: ((lines ?? []) as any[]).map(l => ({
       description: l.description, qty: Number(l.qty), unit_price: Number(l.unit_price),
       is_expense: !!l.is_expense, receipt_path: l.receipt_path ?? null, job_id: l.job_id ?? null,
-      vessel_name: l.job?.vessel_name ?? null, report_number: l.job?.report_number ?? null,
+      vessel_name: l.job?.vessel_name ?? null, vessel_type: l.job?.vessel_type ?? null, report_number: l.job?.report_number ?? null,
     })),
     taxes: ((taxes ?? []) as any[]).map(t => ({ name: t.name, rate: Number(t.rate) })),
   }

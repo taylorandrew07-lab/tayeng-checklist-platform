@@ -7,11 +7,13 @@ import { aggregateBilling, type BillingTotals } from '@/lib/jobs/metrics'
 import { getClientBilling } from '@/lib/clients/billing'
 import { byLastDateDesc } from '@/lib/jobs/jobDate'
 import type { Client, ClientBilling, WorkflowStatus } from '@/lib/types/database'
+import type { VesselPrefix } from '@/lib/utils'
 
 export interface ClientJobRow {
   id: string
   report_number: string | null
   vessel_name: string | null
+  vessel_type: VesselPrefix | null
   title: string
   workflow_status: WorkflowStatus
   /** Start of the job; end_date is set only when it spans a range (migration 111).
@@ -50,7 +52,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const [{ data: client }, { data: jobs }, { data: invs }, clientBilling] = await Promise.all([
     supabase.from('clients').select('*').eq('id', clientId).single(),
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, title, workflow_status, scheduled_date, end_date, created_at, invoice_id')
+      .select('id, report_number, vessel_name, vessel_type, title, workflow_status, scheduled_date, end_date, created_at, invoice_id')
       .eq('client_id', clientId).order('created_at', { ascending: false }),
     supabase.from('invoices')
       .select('id, invoice_number, status, total, currency, due_date, job_id, created_at')
@@ -72,7 +74,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const jobRows: ClientJobRow[] = ((jobs ?? []) as any[]).map(j => {
     const inv = invByJob.get(j.id) ?? (j.invoice_id ? invById.get(j.invoice_id) : null)
     return {
-      id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, title: j.title,
+      id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, vessel_type: j.vessel_type ?? null, title: j.title,
       workflow_status: j.workflow_status, scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
       invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,

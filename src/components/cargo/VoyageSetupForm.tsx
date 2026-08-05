@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, Save, Check } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
-import { titleCaseVesselName } from '@/lib/utils'
+import { parseVesselName } from '@/lib/utils'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import {
   type Voyage, type CargoTemplate,
@@ -69,7 +69,8 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       : clientName.trim()
     const next: Voyage = {
       ...base,
-      vesselName: titleCaseVesselName(vesselName),
+      vesselName: parseVesselName(vesselName).name,
+      vesselType: parseVesselName(vesselName).prefix ?? voyage?.vesselType ?? 'M.V.',
       voyageNumber: voyageNumber.trim(),
       cargoType: cargoType.trim(),
       loadingPort: loadingPort.trim(),
@@ -131,7 +132,11 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
         ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
         : clientName.trim()
 
-      next.vesselName = titleCaseVesselName(vesselName)
+      // Capture a typed M.T./MT/M/T here too — without this the widened stripper
+      // would eat the token on the only cargo typing site and record nothing.
+      const parsedVessel = parseVesselName(vesselName)
+      next.vesselName = parsedVessel.name
+      next.vesselType = parsedVessel.prefix ?? next.vesselType ?? 'M.V.'
       next.voyageNumber = voyageNumber.trim()
       next.cargoType = cargoType.trim()
       next.loadingPort = loadingPort.trim()

@@ -9,7 +9,7 @@ import { listVoyages, deleteVoyage, requestPersistentStorage, cargoAvailable } f
 import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageDate } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
-import { withTimeout } from '@/lib/utils'
+import { withTimeout, withVesselPrefix } from '@/lib/utils'
 import EmptyState from '@/components/ui/EmptyState'
 import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -126,7 +126,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
                   <Ship className="h-5 w-5 text-brand-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">M.V. {v.vesselName} — {v.voyageNumber}</p>
+                  <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vesselName, v.vesselType)} — {v.voyageNumber}</p>
                   <p className="text-sm text-gray-500 truncate">
                     {v.cargoType || 'Cargo'} · {v.holdCount} holds · {formatVoyageDate(v.startDate)} – {formatVoyageDate(v.endDate)}
                   </p>

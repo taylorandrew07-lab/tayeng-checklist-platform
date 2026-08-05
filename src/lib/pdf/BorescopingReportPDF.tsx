@@ -351,7 +351,7 @@ export function BorescopingReportPDF({
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
                   </View>
-                  {job.vessel_name ? <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name)} /> : null}
+                  {job.vessel_name ? <DetailRow label="Vessel" value={withVesselPrefix(job.vessel_name, job.vessel_type)} /> : null}
                 </View>
                 {specFields.map(f => <DetailRow key={f.id} label={f.label} value={detailFieldValue(f, fieldValues, arrayValues)} />)}
                 {job.client?.name && !hideClient ? <DetailRow label="Client" value={job.client.name} /> : null}

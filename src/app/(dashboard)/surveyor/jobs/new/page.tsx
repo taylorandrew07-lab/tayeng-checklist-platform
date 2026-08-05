@@ -12,7 +12,7 @@ import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { toast } from '@/components/ui/toast'
-import { titleCaseVesselName } from '@/lib/utils'
+import { parseVesselName, type VesselPrefix } from '@/lib/utils'
 import { isoDateLocal, dmyFromISO, STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 
 export default function SurveyorNewChecklistPage() {
@@ -41,7 +41,7 @@ export default function SurveyorNewChecklistPage() {
   // primary via assigned_to; these attach as co-surveyors on sync (mig 150).
   const [coSurveyors, setCoSurveyors] = useState<Set<string>>(new Set())
   const [vesselName, setVesselName] = useState('')
-  const [vessels, setVessels] = useState<{ id: string; name: string }[]>([])
+  const [vessels, setVessels] = useState<{ id: string; name: string; vessel_type: VesselPrefix }[]>([])
   const [clientId, setClientId] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [showNewClient, setShowNewClient] = useState(false)
@@ -62,8 +62,15 @@ export default function SurveyorNewChecklistPage() {
   // report-only jobs (Draught Survey, Hatch, Cargo…) have no template.
   const label = selectedTemplate?.name ?? jobType
   const labelWithStage = label && jobStage ? `${label} (${jobStage})` : label
+  // Vessel prefix: what the surveyor TYPED wins ("M.T. Lila" / "MT Lila" / "M/T Lila"),
+  // else the directory's record, else M.V. Offline the vessels list is empty, so a
+  // typed prefix (or M.V.) decides — which is exactly the intended behaviour dockside.
+  const parsedVessel = parseVesselName(vesselName)
+  const bareVessel = parsedVessel.name
+  const knownPrefix = vessels.find(v => v.name.toLowerCase() === bareVessel.toLowerCase())?.vessel_type
+  const vesselPrefix: VesselPrefix = parsedVessel.prefix ?? knownPrefix ?? 'M.V.'
   const autoTitle = vesselName.trim() && label
-    ? `M.V. ${titleCaseVesselName(vesselName)} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
+    ? `${vesselPrefix} ${bareVessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}`
     : ''
 
   useEffect(() => {
@@ -97,8 +104,8 @@ export default function SurveyorNewChecklistPage() {
       if (typeof navigator === 'undefined' || navigator.onLine) {
         try {
           const supabase = createClient()
-          const { data: vsl } = await supabase.from('vessels').select('id, name').eq('is_active', true).order('name')
-          if (vsl) setVessels(vsl as { id: string; name: string }[])
+          const { data: vsl } = await supabase.from('vessels').select('id, name, vessel_type').eq('is_active', true).order('name')
+          if (vsl) setVessels(vsl as { id: string; name: string; vessel_type: VesselPrefix }[])
         } catch { /* offline / not permitted — datalist stays empty */ }
       }
     }
@@ -217,7 +224,7 @@ export default function SurveyorNewChecklistPage() {
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
         port_location: portLocation.trim() || null,
-        vessel_name: titleCaseVesselName(vesselName), surveyor_name: finalSurveyor,
+        vessel_name: bareVessel, vessel_type: vesselPrefix, surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
         started_at: startedAt, scheduled_date: scheduledDate, end_date: endDate || null,
@@ -366,11 +373,11 @@ export default function SurveyorNewChecklistPage() {
         <div>
           <label className="label-base">Vessel Name *</label>
           <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">M.V.</span>
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500 text-sm font-medium pointer-events-none">{vesselPrefix}</span>
             <input type="text" list="vesselList" value={vesselName} onChange={(e) => setVesselName(e.target.value)} className="input-base pl-12" placeholder="Atlantic Spirit" />
             <datalist id="vesselList">{vessels.map(v => <option key={v.id} value={v.name} />)}</datalist>
           </div>
-          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s linked to the Vessels directory automatically.</p>
+          <p className="text-xs text-gray-400 mt-1">Pick an existing vessel or type a new one — it&apos;s linked to the Vessels directory automatically. Type <strong>M.T.</strong> (or MT / M/T) in front of a tanker&apos;s name and it&apos;s recorded as a Motor Tanker.</p>
         </div>
 
         <div>

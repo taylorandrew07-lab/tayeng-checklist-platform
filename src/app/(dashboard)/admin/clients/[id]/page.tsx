@@ -10,7 +10,7 @@ import { getClientDetail, type ClientDetail } from '@/lib/jobs/client-detail'
 import { listBankAccounts } from '@/lib/jobs/invoicing'
 import { money } from '@/lib/jobs/tracker'
 import { WorkflowPill } from '@/components/job/StatusPill'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withVesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
@@ -167,7 +167,7 @@ export default function ClientDetailPage() {
                       <Link href={`/admin/jobs/${j.id}`} className="text-brand-700 hover:underline font-medium tnum">{j.report_number || '—'}</Link>
                       <span className="block text-xs text-gray-400 truncate max-w-[14rem]">{j.title}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700">{j.vessel_name ? `M.V. ${j.vessel_name}` : '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : '—'}</td>
                     <td className="px-4 py-2.5"><WorkflowPill status={j.workflow_status} /></td>
                     <td className="px-4 py-2.5 text-gray-500 tnum">
                       {formatDate(jobLastDate(j) ?? j.created_at)}

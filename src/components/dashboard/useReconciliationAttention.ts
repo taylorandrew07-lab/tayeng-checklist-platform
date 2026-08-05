@@ -6,6 +6,7 @@ import { useRealtimeRefresh } from '@/lib/realtime'
 import { listReconciliation, RECON_META, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { money } from '@/lib/jobs/tracker'
 import type { AttentionItem, AttentionTone } from './AttentionCard'
+import { withVesselPrefix } from '@/lib/utils'
 
 const TONE: Record<ReconCategory, AttentionTone> = {
   missing_invoice_record: 'danger',
@@ -41,7 +42,7 @@ export function useReconciliationAttention(enabled = true): AttentionItem[] {
       if (cancelled) return
       setItems(recon.map(r => {
         const meta = RECON_META[r.category]
-        const who = r.report_number || (r.vessel_name ? `M.V. ${r.vessel_name}` : 'Job')
+        const who = r.report_number || (r.vessel_name ? withVesselPrefix(r.vessel_name, r.vessel_type) : 'Job')
         const amount = r.invoice_total != null && r.currency ? ` · ${money(r.invoice_total, r.currency)}` : ''
         return {
           icon: ICON[r.category],

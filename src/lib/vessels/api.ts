@@ -2,7 +2,7 @@
 // cargo voyages link to via vessel_id. vessel_name stays as a historical snapshot.
 
 import { createClient } from '@/lib/supabase/client'
-import { titleCaseVesselName } from '@/lib/utils'
+import { parseVesselName, type VesselPrefix } from '@/lib/utils'
 import { byLastDateDesc } from '@/lib/jobs/jobDate'
 
 export interface Vessel {
@@ -11,12 +11,16 @@ export interface Vessel {
   imo: string | null
   official_number: string | null
   is_active: boolean
+  /** 'M.V.' (Motor Vessel) or 'M.T.' (Motor Tanker) — see migration 167. */
+  vessel_type: VesselPrefix
   created_at: string
 }
 
 export interface VesselRow extends Vessel { jobs: number }
 
-const COLS = 'id, name, imo, official_number, is_active, created_at'
+// Drives BOTH listVessels and getVesselDetail — omitting a column here makes the
+// field silently undefined at runtime with no type error (both cast through `any`).
+const COLS = 'id, name, imo, official_number, is_active, vessel_type, created_at'
 
 /** All vessels with a job count (one extra query, tallied in JS). */
 export async function listVessels(): Promise<VesselRow[]> {
@@ -32,7 +36,7 @@ export async function listVessels(): Promise<VesselRow[]> {
 
 export async function updateVessel(
   id: string,
-  patch: Partial<Pick<Vessel, 'name' | 'imo' | 'official_number' | 'is_active'>>,
+  patch: Partial<Pick<Vessel, 'name' | 'imo' | 'official_number' | 'is_active' | 'vessel_type'>>,
 ): Promise<{ error?: string }> {
   const { error } = await createClient().from('vessels').update(patch).eq('id', id)
   return { error: error?.message }
@@ -54,14 +58,39 @@ export async function deleteVessel(id: string): Promise<{ error?: string }> {
 /** Find a vessel by exact (case-insensitive) name, or create it. Returns the id.
  *  Used by the job/cargo pickers to link + snapshot in one step. The name is
  *  standardised to canonical Title Case first so the directory never accumulates
- *  "DELTA TITAN" / "delta titan" / "Delta Titan" as separate vessels. */
-export async function findOrCreateVessel(name: string): Promise<string | null> {
-  const n = titleCaseVesselName(name)
+ *  "DELTA TITAN" / "delta titan" / "Delta Titan" as separate vessels.
+ *
+ *  `typedPrefix` is the prefix the user actually typed (from parseVesselName), and
+ *  is the durable half of "typing M.T. tells the app it's a tanker". Callers that
+ *  still hold the RAW string can omit it — the prefix is re-read off `name` — but
+ *  the three call sites that pass an already-title-cased name must pass it
+ *  explicitly, because by then the token is gone.
+ *
+ *  Upgrade rule: an EXISTING vessel is only re-typed when the user explicitly typed
+ *  a different prefix. Absent input never overwrites the directory's record, so
+ *  creating a second job on a known tanker without typing "M.T." does not demote it. */
+export async function findOrCreateVessel(
+  name: string,
+  typedPrefix?: VesselPrefix | null,
+): Promise<string | null> {
+  const parsed = parseVesselName(name)
+  const n = parsed.name
   if (!n) return null
+  const prefix = typedPrefix ?? parsed.prefix
   const supabase = createClient()
-  const { data: existing } = await supabase.from('vessels').select('id').ilike('name', n).limit(1)
-  if (existing && existing.length) return existing[0].id
-  const { data: ins, error } = await supabase.from('vessels').insert({ name: n }).select('id').single()
+  const { data: existing } = await supabase
+    .from('vessels').select('id, vessel_type').ilike('name', n).limit(1)
+  if (existing && existing.length) {
+    const row = existing[0] as { id: string; vessel_type: VesselPrefix }
+    if (prefix && prefix !== row.vessel_type) {
+      // Explicit correction — the trigger from mig 167 propagates it to this
+      // vessel's existing jobs, voyages and stored job titles.
+      await supabase.from('vessels').update({ vessel_type: prefix }).eq('id', row.id)
+    }
+    return row.id
+  }
+  const { data: ins, error } = await supabase
+    .from('vessels').insert({ name: n, vessel_type: prefix ?? 'M.V.' }).select('id').single()
   if (error) return null
   return ins?.id ?? null
 }

@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { FileText, Mail, Ban, RotateCcw, Trash2, Loader2, Pencil } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, withVesselPrefix } from '@/lib/utils'
 import { money } from '@/lib/jobs/tracker'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -18,7 +18,7 @@ import { InvoiceStatusPill } from '@/components/job/StatusPill'
 /** Secondary line under the client name: the vessel(s) this invoice covers, plus
  *  the bill-to party when it differs from the work client. */
 function SubLine({ row }: { row: InvoiceListRow }) {
-  const vessels = row.vessel_name ? `M.V. ${row.vessel_name}` : row.job_id ? null : (row.line_count ? `${row.line_count} vessel${row.line_count === 1 ? '' : 's'}` : 'Consolidated')
+  const vessels = row.vessel_name ? withVesselPrefix(row.vessel_name, row.vessel_type) : row.job_id ? null : (row.line_count ? `${row.line_count} vessel${row.line_count === 1 ? '' : 's'}` : 'Consolidated')
   return (
     <>
       {vessels && <div className="text-xs text-gray-400">{vessels}</div>}

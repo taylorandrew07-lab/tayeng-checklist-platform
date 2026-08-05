@@ -24,7 +24,7 @@ import { WORKFLOW } from '@/lib/jobs/tracker'
 import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
-import { titleCaseVesselName } from '@/lib/utils'
+import { parseVesselName, withVesselPrefix } from '@/lib/utils'
 
 // shortLabel is what a phone shows — see the tab strip below.
 const TABS = [
@@ -173,9 +173,12 @@ export default function AdminChecklistDetailPage() {
         if (a) { surveyorNameVal = a.full_name; assignedToVal = a.id }
       }
 
-      // Standardise the (possibly edited) vessel name + link to the directory.
-      const vessel = titleCaseVesselName(editForm.vessel_name)
-      const vesselId = vessel ? await withTimeout(findOrCreateVessel(vessel), 12_000, 'Linking vessel') : null
+      // Standardise the (possibly edited) vessel name + link to the directory. A typed
+      // "M.T."/"MT"/"M/T" here records the tanker, exactly as on the New Job form.
+      const parsedVessel = parseVesselName(editForm.vessel_name)
+      const vessel = parsedVessel.name
+      const nextVesselType = parsedVessel.prefix ?? job.vessel_type ?? 'M.V.'
+      const vesselId = vessel ? await withTimeout(findOrCreateVessel(vessel, parsedVessel.prefix), 12_000, 'Linking vessel') : null
 
       // .select('id') so a 0-row RLS denial is surfaced instead of a false "saved".
       const { data, error: err } = await withTimeout(
@@ -183,6 +186,7 @@ export default function AdminChecklistDetailPage() {
           title: editForm.title,
           vessel_name: vessel || null,
           vessel_id: vesselId,
+          vessel_type: nextVesselType,
           surveyor_name: surveyorNameVal,
           assigned_to: assignedToVal,
           client_id: editForm.client_id || null,
@@ -415,8 +419,8 @@ export default function AdminChecklistDetailPage() {
                   <dt className="text-xs font-medium text-gray-500">Vessel</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.vessel_name
                     ? (job.vessel_id
-                      ? <Link href={`/admin/vessels/${job.vessel_id}`} className="text-brand-700 hover:underline">M.V. {job.vessel_name}</Link>
-                      : `M.V. ${job.vessel_name}`)
+                      ? <Link href={`/admin/vessels/${job.vessel_id}`} className="text-brand-700 hover:underline">{withVesselPrefix(job.vessel_name, job.vessel_type)}</Link>
+                      : withVesselPrefix(job.vessel_name, job.vessel_type))
                     : '—'}</dd>
                 </div>
                 <div>

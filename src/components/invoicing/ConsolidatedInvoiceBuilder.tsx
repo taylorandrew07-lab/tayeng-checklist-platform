@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip, ArrowUpDown, Plus, X } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
-import { formatDate } from '@/lib/utils'
+import { formatDate, parseVesselName, withVesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
@@ -102,6 +102,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // Standalone (no jobs ticked): a job is created for the invoice on the job sheet.
   const [jobTypes, setJobTypes] = useState<string[]>([])
   const [newJobVessel, setNewJobVessel] = useState('')
+  const newJobParsed = parseVesselName(newJobVessel)
+  const newJobPrefix = newJobParsed.prefix ?? 'M.V.'
   const [newJobType, setNewJobType] = useState('')
 
   // Clients + billing defaults + the last invoice number + bank accounts, once.
@@ -157,7 +159,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const rate = forcedRateId !== undefined
       ? (forcedRateId ? billable.find(r => r.id === forcedRateId) ?? null : null)
       : pickRate(billable, job)
-    const label = job.vessel_name ? `M.V. ${job.vessel_name}` : (job.report_number ?? 'Survey')
+    const label = job.vessel_name ? withVesselPrefix(job.vessel_name, job.vessel_type) : (job.report_number ?? 'Survey')
     const hourly = rate?.rate_type === 'hourly'
     const perUnit = rate?.rate_type === 'per_unit'
     // A day-billed job (migration 148) carries no billable_hours at all, so an hourly
@@ -224,7 +226,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       if (!j.billable_km || j.billable_km <= 0) return []
       const rate = pickRate(perKm, j)
       if (!rate) return []
-      const label = j.vessel_name ? `M.V. ${j.vessel_name}` : (j.report_number ?? 'Survey')
+      const label = j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : (j.report_number ?? 'Survey')
       return [{ ...blankLine(false), description: `${label} — Mileage\n${j.billable_km} km`, qty: j.billable_km, unit_price: Number(rate.rate), auto_mileage: true }]
     }) : []
     setExtra(prev => [...prev.filter(l => !l.auto_mileage), ...mileageLines])
@@ -381,9 +383,15 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       ],
       taxes: taxes.filter(t => t.name.trim()),
       // No vessels ticked → create a job for this invoice on the job sheet.
+      // A typed "M.T."/"MT"/"M/T" here is captured too, and the name is stored bare —
+      // matching every other creation path. (This route still writes the job row
+      // directly rather than via createDraftJob; that seam bypass is out of scope.)
       new_job: selectedJobs.length === 0 ? {
-        title: newJobVessel.trim() ? `M.V. ${newJobVessel.trim()}` : `${clientName || 'Client'} — invoice`,
-        vessel_name: newJobVessel.trim() || null,
+        title: newJobParsed.name
+          ? `${newJobPrefix} ${newJobParsed.name}`
+          : `${clientName || 'Client'} — invoice`,
+        vessel_name: newJobParsed.name || null,
+        vessel_type: newJobPrefix,
         job_type: newJobType || null,
       } : null,
     })
@@ -557,7 +565,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           </button>
                           </>
                         ) : (
-                          <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
+                          <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : 'No vessel'}</p>
                         )}
                         {note && <p className="text-[11px] text-amber-700 mt-1">Rate note: {note}</p>}
                       </div>
@@ -584,7 +592,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           {j.cargo_type && <span className="text-gray-400">· {j.cargo_type}</span>}
                           {jobLastDate(j) && <span>· {formatDate(jobLastDate(j))}{jobSpansDays(j) && <span className="text-gray-300"> (from {formatDate(j.scheduled_date)})</span>}</span>}
                         </div>
-                        <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? `M.V. ${j.vessel_name}` : 'No vessel'}</p>
+                        <p className="text-sm text-gray-800 mt-0.5">{j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : 'No vessel'}</p>
                       </div>
                       <button onClick={() => markReady(j)} disabled={markingId === j.id}
                         className="btn-secondary shrink-0 py-1 px-2.5 text-xs disabled:opacity-50">

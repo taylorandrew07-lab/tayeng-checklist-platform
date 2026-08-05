@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
+import { withVesselPrefix } from '@/lib/utils'
 
 export default function ClientCargoListPage() {
   const [voyages, setVoyages] = useState<RemoteVoyageRow[]>([])
@@ -40,7 +41,7 @@ export default function ClientCargoListPage() {
                   <Ship className="h-5 w-5 text-brand-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">M.V. {v.vessel_name} — {v.voyage_number}</p>
+                  <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vessel_name, v.vessel_type)} — {v.voyage_number}</p>
                   <p className="text-sm text-gray-500">Updated {v.updated_at?.slice(0, 10)}</p>
                 </div>
                 <CargoStatusPill status={v.status as VoyageStatus} />

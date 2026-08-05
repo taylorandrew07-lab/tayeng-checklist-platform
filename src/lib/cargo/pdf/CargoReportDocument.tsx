@@ -132,7 +132,7 @@ function Footer({ voyage }: { voyage: Voyage }) {
 function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; dateISO: string; period: Period; holdRange?: string }) {
   return (
     <View style={styles.smallHeader}>
-      <Text style={styles.smallHeaderTitle}>{withVesselPrefix(voyage.vesselName)}</Text>
+      <Text style={styles.smallHeaderTitle}>{withVesselPrefix(voyage.vesselName, voyage.vesselType)}</Text>
       <Text style={styles.smallHeaderText}>
         {formatVoyageDate(dateISO)} · {PERIOD_LABELS[period]}{holdRange ? ` · ${holdRange}` : ''}
       </Text>
@@ -142,7 +142,7 @@ function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; d
 
 function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: string | null }) {
   const rows: Array<[string, string]> = [
-    ['Vessel', withVesselPrefix(voyage.vesselName)],
+    ['Vessel', withVesselPrefix(voyage.vesselName, voyage.vesselType)],
     ['Voyage Number', voyage.voyageNumber],
     ['Cargo', voyage.cargoType],
     ['Loading Port', voyage.loadingPort],
@@ -163,7 +163,7 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
         <Text style={styles.coverTagline}>{COMPANY.tagline}</Text>
 
         <Text style={styles.coverTitle}>Cargo Hold Monitoring Report</Text>
-        <Text style={styles.coverSubtitle}>{withVesselPrefix(voyage.vesselName)}{voyage.voyageNumber ? ` — Voyage ${voyage.voyageNumber}` : ''}</Text>
+        <Text style={styles.coverSubtitle}>{withVesselPrefix(voyage.vesselName, voyage.vesselType)}{voyage.voyageNumber ? ` — Voyage ${voyage.voyageNumber}` : ''}</Text>
 
         <View style={styles.coverBox}>
           {rows.filter(([, v]) => !!v).map(([label, value]) => (

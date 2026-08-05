@@ -8,6 +8,7 @@
 
 import type { Voyage, ReadingType } from './types'
 import { ensureDri, readingStatusOf, DEFAULT_SURVEYOR_TITLE, type SectionKey, type SofEvent } from './dri'
+import { prefixForVesselType } from '@/lib/utils'
 
 export type Block =
   | { kind: 'h1'; text: string }
@@ -112,7 +113,8 @@ export function buildReportBlocks(voyage: Voyage, included: SectionKey[], opts?:
   const H = (k: string): string => labelOverrides[k] || DEFAULT_HEADINGS[k] || k
 
   if (has('header')) {
-    out.push({ kind: 'h1', text: `M.V. ${(voyage.vesselName || '').toUpperCase()} VOY ${voyage.voyageNumber || ''}`.trim() })
+    // 'M.V.'/'M.T.' are already uppercase — only the NAME is uppercased here.
+    out.push({ kind: 'h1', text: `${prefixForVesselType(voyage.vesselType)} ${(voyage.vesselName || '').toUpperCase()} VOY ${voyage.voyageNumber || ''}`.trim() })
     out.push({ kind: 'p', text: `${voyage.cargoType || 'DRI'} Production Report`, bold: true })
     if (opts?.reportNumber) out.push({ kind: 'p', text: `Report No. ${opts.reportNumber}`, bold: true })
     const commenced = dri.commencedOn || voyage.startDate

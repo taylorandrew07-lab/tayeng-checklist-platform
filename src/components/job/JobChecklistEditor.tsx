@@ -55,7 +55,26 @@ function jumpToField(key: string) {
   window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-400', 'rounded-lg'), 2200)
 }
 import { pickImageFiles } from '@/lib/files/pickImageFiles'
-import { checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation } from '@/lib/utils'
+import { checkConditionalLogic, withTimeout, vesselPrefixForLabel, normalizeVesselName, isSurveyedVesselNameField, evaluateCalculation, withVesselPrefix } from '@/lib/utils'
+import { prefixForVesselType, type VesselPrefix, type VesselPrefixInput } from '@/lib/utils'
+
+/**
+ * The ONE resolver all three vessel-name normalisers (load, save, blur) share — if
+ * they disagree, a surveyor watches their typed value revert on save.
+ *
+ * Returns null for a field that is not a vessel NAME field; every caller must keep
+ * testing that null, because null here means "leave this answer alone", not "M.V.".
+ *
+ * A "Bunker Vessel Name" field is a tanker BY DEFINITION, so the label stays
+ * authoritative there. The surveyed-vessel field instead mirrors the job's own type,
+ * which also self-heals a legacy "M.V. …" answer once the job is marked a tanker.
+ */
+function resolveVesselFieldPrefix(label: string, jobType: VesselPrefixInput): VesselPrefix | null {
+  const labelPrefix = vesselPrefixForLabel(label)
+  if (!labelPrefix) return null
+  if (labelPrefix === 'M.T.') return 'M.T.'
+  return prefixForVesselType(jobType)
+}
 import { dirtyState } from '@/lib/dirty-state'
 import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -547,7 +566,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           }
           // Normalise vessel-name fields to canonical "M.V./M.T. Title Case"
           if (field.field_type === 'text' && vals[field.id]) {
-            const prefix = vesselPrefixForLabel(field.label)
+            const prefix = resolveVesselFieldPrefix(field.label, jobData?.vessel_type)
             if (prefix) vals[field.id] = normalizeVesselName(vals[field.id], prefix)
           }
         }
@@ -795,7 +814,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         for (const section of sections) {
           for (const field of section.fields) {
             if (field.field_type !== 'text') continue
-            const prefix = vesselPrefixForLabel(field.label)
+            const prefix = resolveVesselFieldPrefix(field.label, job?.vessel_type)
             const current = values[field.id]
             if (!prefix || !current) continue
             const next = normalizeVesselName(current, prefix)
@@ -1428,7 +1447,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             {job.vessel_name && (
               <div>
                 <p className="text-xs font-medium text-brand-600">Vessel</p>
-                <p className="text-gray-900">M.V. {job.vessel_name}</p>
+                <p className="text-gray-900">{withVesselPrefix(job.vessel_name, job.vessel_type)}</p>
               </div>
             )}
           </div>
@@ -1633,7 +1652,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 onArrayChange={v => updateArrayValue(key, v)}
                 onSignatureChange={data => updateSignature(key, data)}
                 onBlur={v => {
-                  const prefix = vesselPrefixForLabel(field.label)
+                  const prefix = resolveVesselFieldPrefix(field.label, job?.vessel_type)
                   if (!prefix) return
                   const next = normalizeVesselName(v, prefix)
                   if (next !== v) updateValue(key, next)

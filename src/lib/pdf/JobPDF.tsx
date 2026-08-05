@@ -588,7 +588,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
   // The header rows that actually have a value, in print order.
   const headerRows: Array<{ label: string; value: string }> = [
-    job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name) } : null,
+    job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name, job.vessel_type) } : null,
     job.client?.name && !hideClient ? { label: 'Client', value: job.client.name } : null,
     dateField && fieldValues[dateField.id] ? { label: 'Date', value: fieldValues[dateField.id] } : null,
     surveyors.length > 0 && !hideSurveyor
@@ -674,7 +674,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
                   </View>
-                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name)) : null}
+                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name, job.vessel_type)) : null}
                 </View>
                 {specFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
                 {job.client?.name && !hideClient ? renderInfoRow('client', 'Client', job.client.name) : null}

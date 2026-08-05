@@ -14,18 +14,29 @@ import EmptyState from '@/components/ui/EmptyState'
 import { toast } from '@/components/ui/toast'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { getDraft, putDraft, offlineAvailable } from '@/lib/offline/db'
-import { titleCaseVesselName, withTimeout } from '@/lib/utils'
+import { parseVesselName, withTimeout, type VesselPrefix } from '@/lib/utils'
 import { STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 import type { WorkflowStatus } from '@/lib/types/database'
 
-// Both New Job forms build the title as "M.V. <vessel> - <template> - <date>", so
+// Both New Job forms build the title as "<prefix> <vessel> - <template> - <date>", so
 // correcting a mistyped vessel name here must swap that segment too — the admin job
 // page, the jobs CSV and global search all read jobs.title, not vessel_name. Any
 // title that doesn't have the expected prefix is left exactly as it is.
-function retitleForVessel(title: string | null, oldVessel: string | null, newVessel: string): string | null {
-  if (!title || !oldVessel || !newVessel || oldVessel === newVessel) return title
-  const prefix = `M.V. ${oldVessel} - `
-  return title.startsWith(prefix) ? `M.V. ${newVessel} - ${title.slice(prefix.length)}` : title
+// Takes BOTH prefixes: a vessel corrected from M.V. to M.T. (or renamed on a job that
+// was already a tanker) must not fall through the match and keep a stale title.
+function retitleForVessel(
+  title: string | null,
+  oldVessel: string | null,
+  newVessel: string,
+  oldPrefix: VesselPrefix = 'M.V.',
+  newPrefix: VesselPrefix = 'M.V.',
+): string | null {
+  if (!title) return title
+  if (!newVessel) return title
+  if (oldVessel === newVessel && oldPrefix === newPrefix) return title
+  if (!oldVessel) return title
+  const prefix = `${oldPrefix} ${oldVessel} - `
+  return title.startsWith(prefix) ? `${newPrefix} ${newVessel} - ${title.slice(prefix.length)}` : title
 }
 
 export default function SurveyorJobPage() {
@@ -64,7 +75,7 @@ export default function SurveyorJobPage() {
         // submitted_at drives MarkJobCompleteButton's repair path: with the checklist
         // already submitted it completes directly instead of reopening the (locked)
         // checklist dialog.
-        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
+        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, vessel_type, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -102,7 +113,13 @@ export default function SurveyorJobPage() {
     setSaving(true)
     try {
       const supabase = createClient()
-      const vessel = titleCaseVesselName(editForm.vessel_name)
+      // Resolve name + prefix ONCE, above the localOnly branch, so the offline draft
+      // and the server path agree. A typed "M.T."/"MT"/"M/T" records the tanker; typing
+      // no prefix leaves the job's existing type alone.
+      const parsedVessel = parseVesselName(editForm.vessel_name)
+      const vessel = parsedVessel.name
+      const oldPrefix: VesselPrefix = (job?.vessel_type as VesselPrefix) ?? 'M.V.'
+      const nextPrefix: VesselPrefix = parsedVessel.prefix ?? oldPrefix
 
       // Not on the server yet: correct the draft instead. sync.ts's create
       // whitelist carries title/vessel_name/scheduled_date/notes onto the insert,
@@ -114,8 +131,10 @@ export default function SurveyorJobPage() {
         if (!draft) { toast.error('This job is no longer saved on this device.'); return }
         const nextJob = {
           ...draft.job,
-          title: retitleForVessel(draft.job?.title ?? null, draft.job?.vessel_name ?? null, vessel),
+          title: retitleForVessel(draft.job?.title ?? null, draft.job?.vessel_name ?? null, vessel,
+            (draft.job?.vessel_type as VesselPrefix) ?? 'M.V.', nextPrefix),
           vessel_name: vessel || null,
+          vessel_type: nextPrefix,
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,
@@ -129,14 +148,15 @@ export default function SurveyorJobPage() {
         return
       }
 
-      const vesselId = vessel ? await withTimeout(findOrCreateVessel(vessel), 12_000, 'Linking vessel') : null
+      const vesselId = vessel ? await withTimeout(findOrCreateVessel(vessel, parsedVessel.prefix), 12_000, 'Linking vessel') : null
       // .select('id') so a 0-row RLS denial is surfaced instead of a false "saved".
       const { data, error } = await withTimeout(
         supabase.from('jobs').update({
           vessel_name: vessel || null,
           vessel_id: vesselId,
+          vessel_type: nextPrefix,
           // Keep the stored title in step with the vessel name (see retitleForVessel).
-          title: retitleForVessel(job.title ?? null, job.vessel_name ?? null, vessel),
+          title: retitleForVessel(job.title ?? null, job.vessel_name ?? null, vessel, oldPrefix, nextPrefix),
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
           notes: editForm.notes || null,

@@ -50,6 +50,34 @@ export function formatDateTime(dateStr: string | null | undefined): string {
  * Mirrors the vessel/bunker matching used for metadata auto-fill so the same
  * fields are affected.
  */
+/**
+ * A vessel's class, stored as the literal prefix it renders as:
+ *  - 'M.V.' — Motor Vessel (the default for everything)
+ *  - 'M.T.' — Motor Tanker
+ * Stored on vessels.vessel_type / jobs.vessel_type / cargo_voyages.vessel_type.
+ * Kept as the rendered literal rather than a separate 'vessel'|'tanker' vocabulary
+ * so a display call site is `withVesselPrefix(name, row.vessel_type)` with no mapper.
+ */
+export type VesselPrefix = 'M.V.' | 'M.T.'
+
+/** Anything that can name a prefix: a stored VesselPrefix, or nothing.
+ *  null/undefined ⇒ 'M.V.', so any surface that does not yet know the type keeps
+ *  today's behaviour exactly. */
+export type VesselPrefixInput = VesselPrefix | null | undefined
+
+/**
+ * THE seam that turns a stored vessel type into the prefix the UI/PDF prints.
+ * Everything that currently hardcodes an 'M.V.' literal should call this instead.
+ * Unknown/absent ⇒ 'M.V.'.
+ *
+ * NOTE: deliberately NOT used to resolve a checklist field's prefix — see
+ * vesselPrefixForLabel, whose `null` means "not a vessel-name field at all" and
+ * must be tested BEFORE anything defaults it to 'M.V.'.
+ */
+export function prefixForVesselType(input: VesselPrefixInput): VesselPrefix {
+  return input === 'M.T.' ? 'M.T.' : 'M.V.'
+}
+
 // Descriptor fields that contain "vessel" but are NOT the vessel name, so must
 // not receive an M.V./M.T. prefix (e.g. "Vessel Type", "Vessel IMO Number").
 const NON_NAME_VESSEL_QUALIFIERS = [
@@ -58,7 +86,7 @@ const NON_NAME_VESSEL_QUALIFIERS = [
   'registry', 'number', 'no.', 'gross', 'net', 'tonnage', 'loa',
 ]
 
-export function vesselPrefixForLabel(label: string): 'M.T.' | 'M.V.' | null {
+export function vesselPrefixForLabel(label: string): VesselPrefix | null {
   const l = label.toLowerCase()
   if (!l.includes('vessel')) return null
   // Only the vessel *name* fields are prefixed — skip descriptor fields.
@@ -86,7 +114,11 @@ export function isSurveyedVesselNameField(label: string): boolean {
  *  - re-applies the canonical prefix
  * Returns '' for empty input (and never returns a bare prefix on its own).
  */
-export function normalizeVesselName(raw: string, prefix: 'M.T.' | 'M.V.'): string {
+// NOTE: `prefix` is deliberately NON-nullable. vesselPrefixForLabel returns null to
+// mean "not a vessel-name field", and every caller tests that null first; accepting
+// null here would make those guards optional and silently stamp "M.V." onto ordinary
+// text answers (a "Port / Location" of "point lisas" → "M.V. Point Lisas").
+export function normalizeVesselName(raw: string, prefix: VesselPrefix): string {
   const titled = titleCaseVesselName(raw)
   return titled ? `${prefix} ${titled}` : ''
 }
@@ -102,13 +134,44 @@ export function normalizeVesselName(raw: string, prefix: 'M.T.' | 'M.V.'): strin
  *    "o'brien" → "O'Brien", "delta-titan" → "Delta-Titan"
  * Returns '' for empty / prefix-only input.
  */
+// The separator between the M and the V/T may be a dot, whitespace or a SLASH, so
+// "M.T." / "MT" / "M T" / "M/T" are all recognised. The trailing [\s.]+ is the
+// safety property that keeps real words intact: it requires a separator AFTER the
+// V/T, which is why "Mtoto" and "Mvuli" are never eaten (and why "M/TAlpha" is not
+// stripped either — the same rule "MTAlpha" already obeyed).
+const VESSEL_PREFIX_RUN = /^(?:m[.\s/]*[vt]\.?[\s.]+)+/i
+// Single leading token, capturing V or T, for detecting which prefix was typed.
+const VESSEL_PREFIX_TOKEN = /^m[.\s/]*([vt])\.?[\s.]+/i
+
+/**
+ * Splits however a user typed a vessel name into the prefix they intended and the
+ * canonical bare name. This is what makes typing "M.T. Lila Montreal" / "MT Lila
+ * Montreal" / "M/T Lila Montreal" mark the vessel as a Motor Tanker.
+ *  - `prefix` is null when no prefix was typed, so the caller can fall back to the
+ *    vessel's stored type rather than defaulting to M.V. over the top of it.
+ *  - `name` is the bare Title-Cased name (what actually gets stored).
+ * Only the FIRST token decides the type; a doubled "M.V. M.T. Foo" is still fully
+ * stripped by titleCaseVesselName, and reports M.V. (what the user typed first).
+ */
+export function parseVesselName(raw: string | null | undefined): {
+  prefix: VesselPrefix | null
+  name: string
+} {
+  if (!raw) return { prefix: null, name: '' }
+  const m = VESSEL_PREFIX_TOKEN.exec(raw.trim())
+  const prefix: VesselPrefix | null = m
+    ? (m[1].toLowerCase() === 't' ? 'M.T.' : 'M.V.')
+    : null
+  return { prefix, name: titleCaseVesselName(raw) }
+}
+
 export function titleCaseVesselName(raw: string): string {
   if (!raw) return ''
   let v = raw.trim()
   if (!v) return ''
-  // Strip leading M.V./M.T. prefix tokens (dots/spaces optional), each followed by
-  // a separator so real words like "Mtoto"/"Mvuli" are left intact.
-  v = v.replace(/^(?:m\.?\s*[vt]\.?[\s.]+)+/i, '').trim()
+  // Strip leading M.V./M.T. prefix tokens (dots/spaces/slashes optional, repeatable),
+  // each followed by a separator so real words like "Mtoto"/"Mvuli" are left intact.
+  v = v.replace(VESSEL_PREFIX_RUN, '').trim()
   if (!v) return ''
   return v.toLowerCase().replace(/[a-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
 }
@@ -136,11 +199,11 @@ export function sanitizeStorageName(name: string): string {
  */
 export function withVesselPrefix(
   name: string | null | undefined,
-  prefix: 'M.V.' | 'M.T.' = 'M.V.',
+  prefix: VesselPrefixInput = 'M.V.',
 ): string {
   if (!name) return ''
   const titled = titleCaseVesselName(name)
-  return titled ? `${prefix} ${titled}` : ''
+  return titled ? `${prefixForVesselType(prefix)} ${titled}` : ''
 }
 
 export function getFieldTypeLabel(type: FieldType): string {

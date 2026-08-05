@@ -12,6 +12,7 @@ import { toast } from '@/components/ui/toast'
 import { money } from '@/lib/jobs/tracker'
 import { uploadInvoiceReceipt, invoiceReceiptUrl } from '@/lib/jobs/invoicing'
 import type { Currency } from '@/lib/types/database'
+import { withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 
 export interface DraftLine {
   key: string
@@ -23,6 +24,7 @@ export interface DraftLine {
   receipt_name: string | null
   job_id: string | null
   vessel_name?: string | null
+  vessel_type?: VesselPrefix | null
   report_number?: string | null
   /** Auto-seeded mileage line (per_km rate × job km); replaced on each reload. */
   auto_mileage?: boolean
@@ -65,7 +67,7 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
         return (
           <div key={l.key} className="rounded-lg border border-gray-100 p-2.5 space-y-2">
             {l.job_id && (
-              <p className="text-[11px] text-gray-400">{[l.report_number, l.vessel_name ? `M.V. ${l.vessel_name}` : null].filter(Boolean).join(' · ') || 'Linked job'}</p>
+              <p className="text-[11px] text-gray-400">{[l.report_number, l.vessel_name ? withVesselPrefix(l.vessel_name, l.vessel_type) : null].filter(Boolean).join(' · ') || 'Linked job'}</p>
             )}
             <div className="grid grid-cols-[1fr_3rem_5.5rem_5rem_auto] gap-2 items-center">
               <input value={l.description} onChange={e => patch(l.key, { description: e.target.value })} placeholder={l.is_expense ? 'e.g. Launch' : 'Description'} className={cell} />

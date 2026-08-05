@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { Receipt, Plus, X, Trash2, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search, Pencil } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { CURRENCIES, money, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices,
@@ -30,6 +30,7 @@ import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
 import PageHeader from '@/components/ui/PageHeader'
 import Tabs from '@/components/ui/Tabs'
 import type { Currency, AppSettings, Invoice, BankAccount } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
 
 type Tab = 'overview' | 'create' | 'invoices' | 'reconcile' | 'settings'
 type StatusFilter = Invoice['status'] | 'all'
@@ -83,6 +84,11 @@ function OverviewTab() {
   const [labour, setLabour] = useState<SurveyorLabourSplit[] | null>(null)
   // Per-job breakdown behind each surveyor row (same window, day-worked rule).
   const [labourJobs, setLabourJobs] = useState<Map<string, SurveyorJobLabourSplit[]>>(new Map())
+  // Vessel prefixes for the labour panel. metrics_labour_by_job is an RPC (mig 148),
+  // and rebuilding it just to add a display column risks reverting its labour_unit
+  // output — the column that keeps this page from summing hours and days. A tiny
+  // side query is the safer seam.
+  const [vesselTypes, setVesselTypes] = useState<Map<string, VesselPrefix>>(new Map())
   const [openSurveyor, setOpenSurveyor] = useState<string | null>(null)
   useEffect(() => {
     let from: string | null = null, to: string | null = null
@@ -96,7 +102,16 @@ function OverviewTab() {
     let active = true
     setLabour(null); setOpenSurveyor(null)
     metricsLabourSplit(from, to).then(l => { if (active) setLabour(l) })
-    metricsLabourByJobSplit(from, to).then(m => { if (active) setLabourJobs(m) })
+    metricsLabourByJobSplit(from, to).then(m => {
+      if (!active) return
+      setLabourJobs(m)
+      const ids = Array.from(new Set(Array.from(m.values()).flat().map(j => j.job_id).filter(Boolean)))
+      if (!ids.length) { setVesselTypes(new Map()); return }
+      createClient().from('jobs').select('id, vessel_type').in('id', ids).then(({ data }) => {
+        if (!active) return
+        setVesselTypes(new Map(((data ?? []) as any[]).map(r => [r.id, r.vessel_type as VesselPrefix])))
+      })
+    })
     return () => { active = false }
   }, [labourMode, labourMonth, labourYear])
   const yearOptions = Array.from({ length: new Date().getFullYear() - 2024 + 1 }, (_, i) => String(2024 + i)).reverse()
@@ -241,7 +256,7 @@ function OverviewTab() {
                                       <td className="px-3 py-1.5 text-gray-500 tnum whitespace-nowrap">{j.job_date ? formatDate(j.job_date) : '—'}</td>
                                       <td className="px-3 py-1.5">
                                         <Link href={`/admin/jobs/${j.job_id}`} onClick={e => e.stopPropagation()} className="text-brand-700 hover:underline">
-                                          {j.vessel_name ? `M.V. ${j.vessel_name}` : (j.job_title || 'Job')}
+                                          {j.vessel_name ? withVesselPrefix(j.vessel_name, vesselTypes.get(j.job_id)) : (j.job_title || 'Job')}
                                         </Link>
                                         {j.report_number && <span className="text-gray-400 tnum"> · {j.report_number}</span>}
                                       </td>
@@ -411,7 +426,7 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
                     <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
-                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">M.V. {i.vessel_name}</p>}
+                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">{withVesselPrefix(i.vessel_name, i.vessel_type)}</p>}
                     </div>
                     {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
                     <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
