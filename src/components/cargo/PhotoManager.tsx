@@ -9,7 +9,7 @@ import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import {
   type Voyage, type CargoPhoto, type Period, type Camera, PERIODS, PERIOD_LABELS, CAMERA_LABELS,
 } from '@/lib/cargo/types'
-import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { autoAssign } from '@/lib/cargo/assign'
 import { getPhotosForVoyage, putPhotos, deletePhoto, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
@@ -65,7 +65,8 @@ export default function PhotoManager({ voyage, onChange }: Props) {
 
   const [userId, setUserId] = useState<string | null>(null)
   const [photos, setPhotos] = useState<CargoPhoto[]>([])
-  const [date, setDate] = useState(dates[0] ?? '')
+  // Opens on the newest day — that's the round whose photos are being filed.
+  const [date, setDate] = useState(() => defaultPickerDate(dates))
   const [period, setPeriod] = useState<Period>('0600')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

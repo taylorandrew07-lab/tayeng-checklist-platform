@@ -39,6 +39,23 @@ export function effectiveEndDate(v: DatedVoyage): string {
   return days[days.length - 1] ?? ''
 }
 
+/**
+ * The day a voyage date picker should open on.
+ *
+ * Always the NEWEST day, never day 1: a voyage runs open-ended and grows daily,
+ * so the newest day is the one being worked — opening on the start date meant
+ * scrolling the whole list on every visit by the second week.
+ *
+ * Read-only views pass `hasData` so a viewer lands on the newest day that has
+ * something to show rather than on a day the surveyor hasn't walked yet.
+ */
+export function defaultPickerDate(dates: string[], hasData?: (dateISO: string) => boolean): string {
+  if (hasData) {
+    for (let i = dates.length - 1; i >= 0; i--) if (hasData(dates[i])) return dates[i]
+  }
+  return dates[dates.length - 1] ?? ''
+}
+
 /** Human label for a date, e.g. "07 June 2026". */
 export function formatVoyageDate(iso: string): string {
   const d = parseISO(iso)

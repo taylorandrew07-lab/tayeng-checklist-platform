@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { X, ImageOff } from 'lucide-react'
 import { type Voyage, type Period, PERIODS, PERIOD_LABELS, CAMERA_LABELS } from '@/lib/cargo/types'
-import { monitoringDates, effectiveEndDate, formatVoyageDate } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate } from '@/lib/cargo/periods'
 import EmptyState from '@/components/ui/EmptyState'
 import type { RemotePhoto } from '@/lib/cargo/remote'
 
@@ -11,7 +11,8 @@ import type { RemotePhoto } from '@/lib/cargo/remote'
 export default function ClientPhotoGallery({ voyage, photos }: { voyage: Voyage; photos: RemotePhoto[] }) {
   const endISO = effectiveEndDate(voyage)
   const dates = useMemo(() => monitoringDates(voyage.startDate, endISO), [voyage.startDate, endISO])
-  const [date, setDate] = useState(dates[0] ?? '')
+  // Opens on the latest day that has photos — not on an as-yet-unwalked today.
+  const [date, setDate] = useState(() => defaultPickerDate(dates, d => photos.some(p => p.dateISO === d)))
   const [period, setPeriod] = useState<Period>('0600')
   const [preview, setPreview] = useState<RemotePhoto | null>(null)
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { monitoringDates, holdsToPages, holdNumbers, effectiveEndDate, formatVoyageRange } from './periods'
+import { monitoringDates, holdsToPages, holdNumbers, effectiveEndDate, defaultPickerDate, formatVoyageRange } from './periods'
 
 describe('holdsToPages', () => {
   it('keeps 1–6 holds on a single page', () => {
@@ -73,6 +73,28 @@ describe('effectiveEndDate (open-ended voyages)', () => {
     vi.useFakeTimers()
     atNoonLocal('2026-06-01')
     expect(effectiveEndDate({ startDate: '2026-06-07' })).toBe('2026-06-07')
+  })
+})
+
+describe('defaultPickerDate', () => {
+  const week = monitoringDates('2026-06-07', '2026-06-13')
+
+  it('opens on the newest day, never on day 1', () => {
+    expect(defaultPickerDate(week)).toBe('2026-06-13')
+  })
+
+  it('falls back to the newest day when nothing has data yet', () => {
+    expect(defaultPickerDate(week, () => false)).toBe('2026-06-13')
+  })
+
+  it('skips back to the newest day that has data for read-only views', () => {
+    const filled = new Set(['2026-06-07', '2026-06-10'])
+    expect(defaultPickerDate(week, d => filled.has(d))).toBe('2026-06-10')
+  })
+
+  it('returns empty for an empty range', () => {
+    expect(defaultPickerDate([])).toBe('')
+    expect(defaultPickerDate([], () => true)).toBe('')
   })
 })
 

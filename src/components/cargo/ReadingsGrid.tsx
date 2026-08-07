@@ -6,7 +6,7 @@ import {
   readingTypeAppliesToHold, isSinglePoint, getReadingValue, setReadingValue,
 } from '@/lib/cargo/types'
 import { readingCellColor, type CellColor } from '@/lib/cargo/colors'
-import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { Palette } from 'lucide-react'
 
 interface Props {
@@ -31,7 +31,8 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
   const holds = holdNumbers(voyage.holdCount)
 
   const [hold, setHold] = useState(holds[0] ?? 1)
-  const [date, setDate] = useState(dates[0] ?? '')
+  // Opens on the newest day — that's the round being entered.
+  const [date, setDate] = useState(() => defaultPickerDate(dates))
   const inputsRef = useRef<Map<string, HTMLInputElement>>(new Map())
 
   const colorsOn = voyage.showColors !== false

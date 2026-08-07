@@ -3,14 +3,15 @@
 import { Fragment, useState } from 'react'
 import { type Voyage, type ReadingType, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue } from '@/lib/cargo/types'
 import { readingCellColor } from '@/lib/cargo/colors'
-import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 
 /** Read-only readings table for clients (Hold + Date; points × periods; colours). */
 export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
   const dates = monitoringDates(voyage.startDate, effectiveEndDate(voyage))
   const holds = holdNumbers(voyage.holdCount)
   const [hold, setHold] = useState(holds[0] ?? 1)
-  const [date, setDate] = useState(dates[0] ?? '')
+  // Opens on the latest day that has readings — not on an as-yet-unwalked today.
+  const [date, setDate] = useState(() => defaultPickerDate(dates, d => Object.keys(voyage.readings?.[d] ?? {}).length > 0))
 
   const types = voyage.readingTypes.filter(rt => rt.includeInTables && readingTypeAppliesToHold(rt, hold))
 
