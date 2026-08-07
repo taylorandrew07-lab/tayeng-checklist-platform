@@ -102,8 +102,10 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   async function handleSave() {
     if (!vesselName.trim()) return setError('Vessel name is required')
     if (!voyageNumber.trim()) return setError('Voyage number is required')
-    if (!startDate || !endDate) return setError('Monitoring start and end dates are required')
-    if (endDate < startDate) return setError('End date cannot be before start date')
+    if (!startDate) return setError('Monitoring start date is required')
+    // The end date is deliberately optional — a voyage is opened before anyone
+    // knows when it will finish. See effectiveEndDate() in lib/cargo/periods.ts.
+    if (endDate && endDate < startDate) return setError('End date cannot be before start date')
     if (!surveyorName.trim()) return setError('Surveyor name is required')
 
     setSaving(true)
@@ -187,8 +189,11 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
             <input type="date" className="input-base" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
           <div>
-            <label className="label-base">Monitoring End Date *</label>
-            <input type="date" className="input-base" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <label className="label-base">Monitoring End Date</label>
+            <input type="date" className="input-base" value={endDate} min={startDate || undefined} onChange={e => setEndDate(e.target.value)} />
+            <p className="mt-1 text-xs text-gray-500">
+              Optional — leave blank if you don&apos;t know yet. The voyage stays open and days are added as you go; set it here when monitoring finishes.
+            </p>
           </div>
           <div>
             <label className="label-base">Number of Cargo Holds</label>

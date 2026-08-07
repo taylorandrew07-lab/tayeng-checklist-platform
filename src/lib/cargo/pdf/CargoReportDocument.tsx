@@ -4,7 +4,7 @@ import { COMPANY } from '@/lib/company'
 import { withVesselPrefix } from '@/lib/utils'
 import type { Voyage, ReadingType } from '../types'
 import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
-import { monitoringDates, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { PERIODS } from '../types'
 import { buildHoldSeries, buildPointSeries, type ChartModel } from '../charts'
 import { readingCellColor } from '../colors'
@@ -14,7 +14,7 @@ import { parseISO, format, isValid } from 'date-fns'
 /** All (date, period) timepoints across the voyage, in order. */
 function voyageTimepoints(voyage: Voyage): { dateISO: string; period: Period }[] {
   const out: { dateISO: string; period: Period }[] = []
-  for (const d of monitoringDates(voyage.startDate, voyage.endDate)) for (const p of PERIODS) out.push({ dateISO: d, period: p })
+  for (const d of monitoringDates(voyage.startDate, effectiveEndDate(voyage))) for (const p of PERIODS) out.push({ dateISO: d, period: p })
   return out
 }
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -148,7 +148,9 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
     ['Loading Port', voyage.loadingPort],
     ['Discharge Port', voyage.dischargePort],
     ['Monitoring Commenced', formatVoyageDate(voyage.startDate)],
-    ['Monitoring Completed', formatVoyageDate(voyage.endDate)],
+    // Open-ended voyage: monitoring hasn't finished, so say so rather than
+    // printing today's date as if it were a completion date.
+    ['Monitoring Completed', voyage.endDate ? formatVoyageDate(voyage.endDate) : 'In progress'],
     ['Number of Holds', String(voyage.holdCount)],
     ['Surveyor', voyage.surveyorName],
   ]
@@ -303,7 +305,7 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: Ca
   // (date, period, hold-group) that has no photos — never render blank spots.
   const photoPages: { dateISO: string; period: Period; holdRange?: string; photos: PreparedPhoto[] }[] = []
   if (inc.photos) {
-    for (const dateISO of monitoringDates(voyage.startDate, voyage.endDate)) {
+    for (const dateISO of monitoringDates(voyage.startDate, effectiveEndDate(voyage))) {
       for (const period of PERIODS) {
         const here = photos.filter(p => p.dateISO === dateISO && p.period === period)
         if (!here.length) continue

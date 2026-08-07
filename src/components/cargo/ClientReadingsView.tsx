@@ -3,11 +3,11 @@
 import { Fragment, useState } from 'react'
 import { type Voyage, type ReadingType, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue } from '@/lib/cargo/types'
 import { readingCellColor } from '@/lib/cargo/colors'
-import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 
 /** Read-only readings table for clients (Hold + Date; points × periods; colours). */
 export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
-  const dates = monitoringDates(voyage.startDate, voyage.endDate)
+  const dates = monitoringDates(voyage.startDate, effectiveEndDate(voyage))
   const holds = holdNumbers(voyage.holdCount)
   const [hold, setHold] = useState(holds[0] ?? 1)
   const [date, setDate] = useState(dates[0] ?? '')

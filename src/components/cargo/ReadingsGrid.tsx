@@ -6,7 +6,7 @@ import {
   readingTypeAppliesToHold, isSinglePoint, getReadingValue, setReadingValue,
 } from '@/lib/cargo/types'
 import { readingCellColor, type CellColor } from '@/lib/cargo/colors'
-import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { Palette } from 'lucide-react'
 
 interface Props {
@@ -25,7 +25,9 @@ function setPeriodMeta(v: Voyage, date: string, period: Period, patch: { actualT
 interface InputRow { rtId: string; ptId: string; label: string; group?: string; unit: string }
 
 export default function ReadingsGrid({ voyage, onChange }: Props) {
-  const dates = useMemo(() => monitoringDates(voyage.startDate, voyage.endDate), [voyage.startDate, voyage.endDate])
+  // Open-ended voyages (no end date yet) run to today — see effectiveEndDate.
+  const endISO = effectiveEndDate(voyage)
+  const dates = useMemo(() => monitoringDates(voyage.startDate, endISO), [voyage.startDate, endISO])
   const holds = holdNumbers(voyage.holdCount)
 
   const [hold, setHold] = useState(holds[0] ?? 1)

@@ -9,7 +9,7 @@
 //    thermocouples of Hold 1 on one chart). Natural for multi-point types.
 
 import { type Voyage, type ReadingType, type ReadingPoint, type Period, PERIODS, readingTypeAppliesToHold, getReadingValue } from './types'
-import { monitoringDates, holdNumbers } from './periods'
+import { monitoringDates, effectiveEndDate, holdNumbers } from './periods'
 import { parseISO, format, isValid } from 'date-fns'
 
 // Distinct, print-safe line colours; cycled if there are more series than colours.
@@ -44,7 +44,7 @@ export interface ChartModel {
 }
 
 function timeline(voyage: Voyage, filter: ChartFilter): ChartTimepoint[] {
-  const [s, e] = filter.dateRange ?? [voyage.startDate, voyage.endDate]
+  const [s, e] = filter.dateRange ?? [voyage.startDate, effectiveEndDate(voyage)]
   const dates = monitoringDates(s, e)
   const periods = filter.periods?.length ? filter.periods : PERIODS
   const out: ChartTimepoint[] = []

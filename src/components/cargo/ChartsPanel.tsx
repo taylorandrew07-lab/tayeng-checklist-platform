@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { LineChart } from 'lucide-react'
 import { type Voyage, type Period, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint } from '@/lib/cargo/types'
-import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { buildHoldSeries, buildPointSeries, layoutChart, formatTick, type ChartModel, type ChartFilter } from '@/lib/cargo/charts'
 
 interface Props {
@@ -66,7 +66,8 @@ function ChartCard({ title, model }: { title: string; model: ChartModel }) {
 }
 
 export default function ChartsPanel({ voyage }: Props) {
-  const dates = useMemo(() => monitoringDates(voyage.startDate, voyage.endDate), [voyage.startDate, voyage.endDate])
+  const endISO = effectiveEndDate(voyage)
+  const dates = useMemo(() => monitoringDates(voyage.startDate, endISO), [voyage.startDate, endISO])
   const chartTypes = voyage.readingTypes.filter(rt => rt.includeInCharts)
   const allHolds = holdNumbers(voyage.holdCount)
 

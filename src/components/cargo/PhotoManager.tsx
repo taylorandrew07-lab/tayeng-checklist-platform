@@ -9,7 +9,7 @@ import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import {
   type Voyage, type CargoPhoto, type Period, type Camera, PERIODS, PERIOD_LABELS, CAMERA_LABELS,
 } from '@/lib/cargo/types'
-import { monitoringDates, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
 import { autoAssign } from '@/lib/cargo/assign'
 import { getPhotosForVoyage, putPhotos, deletePhoto, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
@@ -59,7 +59,8 @@ function DropZone({ id, children, className }: { id: string; children: React.Rea
 }
 
 export default function PhotoManager({ voyage, onChange }: Props) {
-  const dates = useMemo(() => monitoringDates(voyage.startDate, voyage.endDate), [voyage.startDate, voyage.endDate])
+  const endISO = effectiveEndDate(voyage)
+  const dates = useMemo(() => monitoringDates(voyage.startDate, endISO), [voyage.startDate, endISO])
   const holds = holdNumbers(voyage.holdCount)
 
   const [userId, setUserId] = useState<string | null>(null)

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { monitoringDates, holdsToPages, holdNumbers } from './periods'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { monitoringDates, holdsToPages, holdNumbers, effectiveEndDate, formatVoyageRange } from './periods'
 
 describe('holdsToPages', () => {
   it('keeps 1–6 holds on a single page', () => {
@@ -41,5 +41,47 @@ describe('monitoringDates', () => {
 
   it('spans month boundaries', () => {
     expect(monitoringDates('2026-06-29', '2026-07-01')).toEqual(['2026-06-29', '2026-06-30', '2026-07-01'])
+  })
+})
+
+describe('effectiveEndDate (open-ended voyages)', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const atNoonLocal = (iso: string) => vi.setSystemTime(new Date(`${iso}T12:00:00`))
+
+  it('uses the stored end date when the voyage has one', () => {
+    expect(effectiveEndDate({ startDate: '2026-06-07', endDate: '2026-06-09' })).toBe('2026-06-09')
+  })
+
+  it('runs to today when no end date is known yet', () => {
+    vi.useFakeTimers()
+    atNoonLocal('2026-06-10')
+    expect(effectiveEndDate({ startDate: '2026-06-07', endDate: '' })).toBe('2026-06-10')
+    expect(monitoringDates('2026-06-07', effectiveEndDate({ startDate: '2026-06-07' }))).toHaveLength(4)
+  })
+
+  it('never hides a day that already has data, even if the clock is behind', () => {
+    vi.useFakeTimers()
+    atNoonLocal('2026-06-08')
+    expect(effectiveEndDate({
+      startDate: '2026-06-07',
+      readings: { '2026-06-07': {}, '2026-06-11': {} },
+      periodMeta: { '2026-06-09': {} },
+    })).toBe('2026-06-11')
+  })
+
+  it('stays a single day for a voyage that starts in the future', () => {
+    vi.useFakeTimers()
+    atNoonLocal('2026-06-01')
+    expect(effectiveEndDate({ startDate: '2026-06-07' })).toBe('2026-06-07')
+  })
+})
+
+describe('formatVoyageRange', () => {
+  it('reads "ongoing" while the end date is unknown', () => {
+    expect(formatVoyageRange({ startDate: '2026-06-07', endDate: '' })).toBe('07 June 2026 – ongoing')
+  })
+
+  it('shows both dates once the voyage is closed off', () => {
+    expect(formatVoyageRange({ startDate: '2026-06-07', endDate: '2026-06-09' })).toBe('07 June 2026 – 09 June 2026')
   })
 })

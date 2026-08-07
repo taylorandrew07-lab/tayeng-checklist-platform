@@ -115,7 +115,10 @@ export interface Voyage {
   loadingPort: string
   dischargePort: string
   startDate: string // ISO yyyy-mm-dd
-  endDate: string // ISO yyyy-mm-dd
+  /** ISO yyyy-mm-dd, or '' when the finish date isn't known yet (open-ended
+   *  voyage). Never lay a voyage out with this directly — call
+   *  effectiveEndDate(voyage) from lib/cargo/periods.ts. */
+  endDate: string
   holdCount: number // 1–10
   surveyorName: string
   /** Linked client id from the Clients list (null = none / free text). */

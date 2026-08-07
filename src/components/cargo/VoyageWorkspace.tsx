@@ -11,6 +11,8 @@ import { getVoyage, putVoyage, getPhotosForVoyage, countPhotosForVoyage } from '
 import { currentUserId } from '@/lib/cargo/user'
 import { createClient } from '@/lib/supabase/client'
 import { syncVoyage, voyageDirty } from '@/lib/cargo/sync'
+import { effectiveEndDate, formatVoyageDate } from '@/lib/cargo/periods'
+import { confirmDialog } from '@/components/ui/confirm'
 import VoyageSetupForm from '@/components/cargo/VoyageSetupForm'
 import ReadingTypeManager from '@/components/cargo/ReadingTypeManager'
 import ReadingsGrid from '@/components/cargo/ReadingsGrid'
@@ -125,7 +127,23 @@ export default function VoyageWorkspace() {
 
   async function toggleFinalise() {
     if (!voyage) return
-    const next = { ...voyage, status: (voyage.status === 'finalized' ? 'in_progress' : 'finalized') as Voyage['status'] }
+    let next = { ...voyage, status: (voyage.status === 'finalized' ? 'in_progress' : 'finalized') as Voyage['status'] }
+
+    // A voyage may run open-ended (no end date) while monitoring is under way, but
+    // a finalised report has to state when it completed — offer to close it off on
+    // the last day that actually has data.
+    if (next.status === 'finalized' && !voyage.endDate) {
+      const dataDays = [...Object.keys(voyage.readings ?? {}), ...Object.keys(voyage.periodMeta ?? {})].sort()
+      const lastDay = dataDays[dataDays.length - 1] || effectiveEndDate(voyage)
+      const ok = await confirmDialog({
+        title: 'No monitoring end date',
+        message: `This voyage has no end date yet. Finalise it as completed on ${formatVoyageDate(lastDay)}? (You can change the date on the Setup tab.)`,
+        confirmLabel: 'Finalise',
+      })
+      if (!ok) return
+      next = { ...next, endDate: lastDay }
+    }
+
     update(next)
     // Push immediately so the client sees the new state without waiting for bg sync.
     setSyncing(true)
@@ -295,7 +313,8 @@ export default function VoyageWorkspace() {
         const readOnly = voyage.status === 'finalized'
         if (tab === 'prep') return <PrepTab dri={dri} holdCount={voyage.holdCount} onChange={setDri} readOnly={readOnly} />
         if (tab === 'loading') return <LoadingTab dri={dri} defaultDate={voyage.startDate} onChange={setDri} readOnly={readOnly} />
-        if (tab === 'voyage') return <VoyageLogTab dri={dri} startDate={voyage.startDate} endDate={voyage.endDate} onChange={setDri} readOnly={readOnly} />
+        // Open-ended voyage: the log runs to today, so "generate days" keeps working.
+        if (tab === 'voyage') return <VoyageLogTab dri={dri} startDate={voyage.startDate} endDate={effectiveEndDate(voyage)} onChange={setDri} readOnly={readOnly} />
         return <DischargeTab dri={dri} defaultDate={voyage.endDate} onChange={setDri} readOnly={readOnly} />
       })()}
       {tab === 'readings' && <ReadingsGrid voyage={voyage} onChange={update} />}

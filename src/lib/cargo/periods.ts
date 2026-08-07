@@ -11,10 +11,43 @@ export function monitoringDates(startISO: string, endISO: string): string[] {
   return eachDayOfInterval({ start, end }).map(d => format(d, 'yyyy-MM-dd'))
 }
 
+/** The fields effectiveEndDate reads — structural so periods.ts stays free of the Voyage type. */
+interface DatedVoyage {
+  startDate: string
+  endDate?: string
+  readings?: Record<string, unknown>
+  periodMeta?: Record<string, unknown>
+}
+
+/**
+ * The date a voyage's calendar runs to.
+ *
+ * `endDate` is OPTIONAL: when a voyage is opened dockside nobody knows yet when
+ * the job will finish. An open-ended voyage (endDate '') lays out to today — or
+ * to its last day of data if that is later, so a wrong device clock can never
+ * hide days already recorded. The grid, photo slots, charts and PDF therefore
+ * grow one day at a time instead of forcing a guessed finish date up front.
+ */
+export function effectiveEndDate(v: DatedVoyage): string {
+  if (v.endDate) return v.endDate
+  const days = [
+    v.startDate,
+    format(new Date(), 'yyyy-MM-dd'),
+    ...Object.keys(v.readings ?? {}),
+    ...Object.keys(v.periodMeta ?? {}),
+  ].filter(Boolean).sort() // ISO yyyy-mm-dd sorts lexicographically
+  return days[days.length - 1] ?? ''
+}
+
 /** Human label for a date, e.g. "07 June 2026". */
 export function formatVoyageDate(iso: string): string {
   const d = parseISO(iso)
   return isValid(d) ? format(d, 'dd MMMM yyyy') : iso
+}
+
+/** "07 June 2026 – 12 June 2026", or "… – ongoing" while the end date is unknown. */
+export function formatVoyageRange(v: { startDate: string; endDate?: string }): string {
+  return `${v.startDate ? formatVoyageDate(v.startDate) : '—'} – ${v.endDate ? formatVoyageDate(v.endDate) : 'ongoing'}`
 }
 
 /** 1..n list of hold numbers. */

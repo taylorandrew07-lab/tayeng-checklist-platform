@@ -7,7 +7,7 @@ import { Plus, Ship, Trash2, Loader2, ChevronRight, RefreshCw, Cloud, CloudOff }
 import { type Voyage } from '@/lib/cargo/types'
 import { listVoyages, deleteVoyage, requestPersistentStorage, cargoAvailable } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
-import { formatVoyageDate } from '@/lib/cargo/periods'
+import { formatVoyageRange } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout, withVesselPrefix } from '@/lib/utils'
 import EmptyState from '@/components/ui/EmptyState'
@@ -128,7 +128,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
                 <div className="min-w-0">
                   <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vesselName, v.vesselType)} — {v.voyageNumber}</p>
                   <p className="text-sm text-gray-500 truncate">
-                    {v.cargoType || 'Cargo'} · {v.holdCount} holds · {formatVoyageDate(v.startDate)} – {formatVoyageDate(v.endDate)}
+                    {v.cargoType || 'Cargo'} · {v.holdCount} holds · {formatVoyageRange(v)}
                   </p>
                 </div>
                 <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${voyageDirty(v) ? 'bg-amber-100 text-amber-700' : v.lastSyncedAt ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
