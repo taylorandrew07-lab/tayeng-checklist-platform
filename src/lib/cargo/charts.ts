@@ -8,8 +8,8 @@
 //  - buildPointSeries: one line per POINT for a single hold (e.g. all 21
 //    thermocouples of Hold 1 on one chart). Natural for multi-point types.
 
-import { type Voyage, type ReadingType, type ReadingPoint, type Period, PERIODS, readingTypeAppliesToHold, getReadingValue } from './types'
-import { monitoringDates, effectiveEndDate, holdNumbers } from './periods'
+import { type Voyage, type ReadingType, type ReadingPoint, type Period, readingTypeAppliesToHold, getReadingValue } from './types'
+import { monitoringDates, effectiveEndDate, periodsForDate, holdNumbers } from './periods'
 import { parseISO, format, isValid } from 'date-fns'
 
 // Distinct, print-safe line colours; cycled if there are more series than colours.
@@ -24,7 +24,7 @@ export function seriesColor(i: number): string {
 export interface ChartFilter {
   /** Specific holds, or 'all' (default = every hold the reading type applies to). */
   holds?: number[] | 'all'
-  /** Specific monitoring periods (default = all three). */
+  /** Restrict to these rounds; absent = every round applicable on each day. */
   periods?: Period[]
   /** [startISO, endISO] inclusive (default = whole voyage). */
   dateRange?: [string, string]
@@ -46,9 +46,14 @@ export interface ChartModel {
 function timeline(voyage: Voyage, filter: ChartFilter): ChartTimepoint[] {
   const [s, e] = filter.dateRange ?? [voyage.startDate, effectiveEndDate(voyage)]
   const dates = monitoringDates(s, e)
-  const periods = filter.periods?.length ? filter.periods : PERIODS
   const out: ChartTimepoint[] = []
-  for (const d of dates) for (const p of periods) out.push({ dateISO: d, period: p })
+  // Per day, because the round count can change part-way through a voyage. The
+  // filter INTERSECTS what a day actually had — it never invents a slot.
+  for (const d of dates) {
+    for (const p of periodsForDate(voyage, d)) {
+      if (!filter.periods?.length || filter.periods.includes(p)) out.push({ dateISO: d, period: p })
+    }
+  }
   return out
 }
 
@@ -109,7 +114,10 @@ export interface ChartLayout {
 function shortLabel(tp: ChartTimepoint): string {
   const d = parseISO(tp.dateISO)
   const day = isValid(d) ? format(d, 'dd MMM') : tp.dateISO
-  return `${day} ${tp.period.slice(0, 2)}h`
+  // '0600' -> '06h'; an off-the-hour extra round keeps its minutes so it can
+  // never collide with the round on the hour above it.
+  const hh = tp.period.slice(0, 2), mm = tp.period.slice(2)
+  return `${day} ${mm === '00' ? `${hh}h` : `${hh}${mm}`}`
 }
 
 /** Compact y-axis number: integers for large magnitudes, one decimal otherwise. */

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { X, ImageOff } from 'lucide-react'
-import { type Voyage, type Period, PERIODS, PERIOD_LABELS, CAMERA_LABELS } from '@/lib/cargo/types'
-import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate } from '@/lib/cargo/periods'
+import { type Voyage, type Period, CAMERA_LABELS } from '@/lib/cargo/types'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, periodsForDate, periodLabel } from '@/lib/cargo/periods'
 import EmptyState from '@/components/ui/EmptyState'
 import type { RemotePhoto } from '@/lib/cargo/remote'
 
@@ -13,7 +13,10 @@ export default function ClientPhotoGallery({ voyage, photos }: { voyage: Voyage;
   const dates = useMemo(() => monitoringDates(voyage.startDate, endISO), [voyage.startDate, endISO])
   // Opens on the latest day that has photos — not on an as-yet-unwalked today.
   const [date, setDate] = useState(() => defaultPickerDate(dates, d => photos.some(p => p.dateISO === d)))
-  const [period, setPeriod] = useState<Period>('0600')
+  const [pickedPeriod, setPeriod] = useState<Period>('0600')
+  // Clamped at render — the rounds a day has depend on the day.
+  const periods = periodsForDate(voyage, date)
+  const period = periods.includes(pickedPeriod) ? pickedPeriod : periods[0]
   const [preview, setPreview] = useState<RemotePhoto | null>(null)
 
   const here = photos
@@ -32,13 +35,13 @@ export default function ClientPhotoGallery({ voyage, photos }: { voyage: Voyage;
         <div>
           <label className="label-base">Monitoring Period</label>
           <select className="input-base" value={period} onChange={e => setPeriod(e.target.value as Period)}>
-            {PERIODS.map(p => <option key={p} value={p}>{PERIOD_LABELS[p]}</option>)}
+            {periods.map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}
           </select>
         </div>
       </div>
 
       {here.length === 0 ? (
-        <EmptyState icon={ImageOff} title="No photos" description={`No photos for ${PERIOD_LABELS[period]} on ${formatVoyageDate(date)}.`} />
+        <EmptyState icon={ImageOff} title="No photos" description={`No photos for ${periodLabel(period)} on ${formatVoyageDate(date)}.`} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {here.map(p => (

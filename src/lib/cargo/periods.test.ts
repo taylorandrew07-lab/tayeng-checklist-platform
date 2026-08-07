@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { monitoringDates, holdsToPages, holdNumbers, effectiveEndDate, defaultPickerDate, formatVoyageRange } from './periods'
+import {
+  monitoringDates, holdsToPages, holdNumbers, effectiveEndDate, defaultPickerDate, formatVoyageRange,
+  periodsForDate, periodsInRange, periodLabel, addExtraRound, removeExtraRound, hhmmToInput, inputToHhmm,
+} from './periods'
 
 describe('holdsToPages', () => {
   it('keeps 1–6 holds on a single page', () => {
@@ -95,6 +98,114 @@ describe('defaultPickerDate', () => {
   it('returns empty for an empty range', () => {
     expect(defaultPickerDate([])).toBe('')
     expect(defaultPickerDate([], () => true)).toBe('')
+  })
+})
+
+describe('periodsForDate (extra monitoring rounds)', () => {
+  const base = ['0600', '1200', '1800']
+  const v = { startDate: '2026-06-07' }
+
+  it('gives the base three when a voyage has no schedule at all', () => {
+    expect(periodsForDate(v, '2026-06-09')).toEqual(base)
+    expect(periodsForDate({ ...v, readingSchedule: [] }, '2026-06-09')).toEqual(base)
+  })
+
+  it('applies an extra round from its first day, and not the day before', () => {
+    const w = { ...v, readingSchedule: [{ time: '2200', from: '2026-06-09' }] }
+    expect(periodsForDate(w, '2026-06-08')).toEqual(base)
+    expect(periodsForDate(w, '2026-06-09')).toEqual([...base, '2200'])
+    expect(periodsForDate(w, '2026-07-01')).toEqual([...base, '2200'])
+  })
+
+  it('sorts by time, not by when it was added', () => {
+    const w = { ...v, readingSchedule: [
+      { time: '2200', from: '2026-06-08' },
+      { time: '1500', from: '2026-06-09' },
+    ] }
+    expect(periodsForDate(w, '2026-06-09')).toEqual(['0600', '1200', '1500', '1800', '2200'])
+  })
+
+  it('stops on the day after `until`, leaving earlier days intact', () => {
+    const w = { ...v, readingSchedule: [{ time: '2200', from: '2026-06-08', until: '2026-06-10' }] }
+    expect(periodsForDate(w, '2026-06-10')).toContain('2200')
+    expect(periodsForDate(w, '2026-06-11')).toEqual(base)
+  })
+
+  it('de-duplicates an extra round that repeats a base time', () => {
+    const w = { ...v, readingSchedule: [{ time: '1200', from: '2026-06-08' }] }
+    expect(periodsForDate(w, '2026-06-09')).toEqual(base)
+  })
+
+  it('unions across a range for the charts filter', () => {
+    const w = { ...v, readingSchedule: [{ time: '2200', from: '2026-06-09', until: '2026-06-10' }] }
+    expect(periodsInRange(w, '2026-06-07', '2026-06-08')).toEqual(base)
+    expect(periodsInRange(w, '2026-06-07', '2026-06-12')).toEqual([...base, '2200'])
+    expect(periodsInRange(w, '2026-06-11', '2026-06-12')).toEqual(base)
+  })
+
+  it('labels a round', () => {
+    expect(periodLabel('2200')).toBe('2200 hrs')
+  })
+})
+
+describe('addExtraRound / removeExtraRound', () => {
+  const v = { startDate: '2026-06-07' as string, readingSchedule: undefined as { time: string; from: string; until?: string }[] | undefined }
+
+  it('adding then removing on the SAME day leaves no trace', () => {
+    const added = addExtraRound(v, '2200', '2026-06-09')
+    const gone = removeExtraRound(added, '2200', '2026-06-09')
+    expect(gone.readingSchedule).toEqual([])
+    expect(periodsForDate(gone, '2026-06-09')).toEqual(['0600', '1200', '1800'])
+  })
+
+  it('removing later closes the window on the day before', () => {
+    const w = removeExtraRound(addExtraRound(v, '2200', '2026-06-09'), '2200', '2026-06-12')
+    expect(w.readingSchedule).toEqual([{ time: '2200', from: '2026-06-09', until: '2026-06-11' }])
+    expect(periodsForDate(w, '2026-06-11')).toContain('2200')
+    expect(periodsForDate(w, '2026-06-12')).not.toContain('2200')
+  })
+
+  it('re-adding after a stop keeps both windows and the gap between them', () => {
+    let w = addExtraRound(v, '2200', '2026-06-09')
+    w = removeExtraRound(w, '2200', '2026-06-12')
+    w = addExtraRound(w, '2200', '2026-06-15')
+    expect(w.readingSchedule).toHaveLength(2)
+    expect(periodsForDate(w, '2026-06-11')).toContain('2200') // first window
+    expect(periodsForDate(w, '2026-06-13')).not.toContain('2200') // the gap
+    expect(periodsForDate(w, '2026-06-16')).toContain('2200') // second window
+  })
+
+  it('closing one window does not disturb an already-closed earlier one', () => {
+    const w = removeExtraRound({
+      ...v,
+      readingSchedule: [
+        { time: '2200', from: '2026-06-01', until: '2026-06-03' },
+        { time: '2200', from: '2026-06-09' },
+      ],
+    }, '2200', '2026-06-12')
+    expect(w.readingSchedule).toEqual([
+      { time: '2200', from: '2026-06-01', until: '2026-06-03' },
+      { time: '2200', from: '2026-06-09', until: '2026-06-11' },
+    ])
+  })
+
+  it('leaves other rounds alone', () => {
+    const w = removeExtraRound(addExtraRound(addExtraRound(v, '2200', '2026-06-09'), '1500', '2026-06-09'), '2200', '2026-06-10')
+    expect(periodsForDate(w, '2026-06-11')).toEqual(['0600', '1200', '1500', '1800'])
+  })
+})
+
+describe('hhmm converters', () => {
+  it('round-trips a time input', () => {
+    expect(hhmmToInput('2200')).toBe('22:00')
+    expect(inputToHhmm('22:00')).toBe('2200')
+    expect(inputToHhmm('07:30')).toBe('0730')
+  })
+
+  it('returns empty for junk rather than a half-formed round', () => {
+    expect(hhmmToInput('')).toBe('')
+    expect(inputToHhmm('')).toBe('')
+    expect(inputToHhmm('nope')).toBe('')
   })
 })
 

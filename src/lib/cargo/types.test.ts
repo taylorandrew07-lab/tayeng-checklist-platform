@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cloneReadingTypes, readingTypeAppliesToHold, defaultReadingTypes, isSinglePoint,
-  getReadingValue, setReadingValue, normalizeVoyage, type ReadingType, type Voyage,
+  getReadingValue, setReadingValue, clearPeriodFrom, normalizeVoyage, type ReadingType, type Voyage,
 } from './types'
 
 const rt = (over: Partial<ReadingType> = {}): ReadingType => ({
@@ -82,5 +82,47 @@ describe('normalizeVoyage', () => {
   it('returns the same object when nothing needs migrating', () => {
     const v = makeVoyage()
     expect(normalizeVoyage(v)).toBe(v)
+  })
+})
+
+describe('clearPeriodFrom', () => {
+  const withData = () => makeVoyage({
+    readings: {
+      '2026-06-08': { '1800': { '1': { rt_1: { main: 'a' } } }, '2200': { '1': { rt_1: { main: 'b' } } } },
+      '2026-06-09': { '2200': { '1': { rt_1: { main: 'c' } } } },
+      '2026-06-10': { '0600': { '1': { rt_1: { main: 'd' } } }, '2200': { '1': { rt_1: { main: 'e' } } } },
+    },
+    periodMeta: {
+      '2026-06-08': { '2200': { remarks: 'keep' } },
+      '2026-06-10': { '2200': { remarks: 'go' } },
+    },
+  })
+
+  it('leaves earlier days completely alone', () => {
+    const v = clearPeriodFrom(withData(), '2200', '2026-06-09')
+    expect(getReadingValue(v, '2026-06-08', '2200', 1, 'rt_1', 'main')).toBe('b')
+    expect(v.periodMeta['2026-06-08']['2200'].remarks).toBe('keep')
+  })
+
+  it('purges that day and every later one, in readings and periodMeta', () => {
+    const v = clearPeriodFrom(withData(), '2200', '2026-06-09')
+    expect(getReadingValue(v, '2026-06-10', '2200', 1, 'rt_1', 'main')).toBe('')
+    expect(v.periodMeta['2026-06-10']?.['2200']).toBeUndefined()
+  })
+
+  it('keeps other rounds on the purged days', () => {
+    const v = clearPeriodFrom(withData(), '2200', '2026-06-09')
+    expect(getReadingValue(v, '2026-06-10', '0600', 1, 'rt_1', 'main')).toBe('d')
+  })
+
+  it('prunes a date left empty rather than leaving a phantom day', () => {
+    const v = clearPeriodFrom(withData(), '2200', '2026-06-09')
+    expect(Object.keys(v.readings)).not.toContain('2026-06-09')
+  })
+
+  it('never mutates the voyage it was given', () => {
+    const before = withData()
+    clearPeriodFrom(before, '2200', '2026-06-08')
+    expect(getReadingValue(before, '2026-06-08', '2200', 1, 'rt_1', 'main')).toBe('b')
   })
 })

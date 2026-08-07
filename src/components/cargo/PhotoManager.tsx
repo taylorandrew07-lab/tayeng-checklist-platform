@@ -7,9 +7,9 @@ import {
 import { Upload, Trash2, Maximize2, RefreshCw, Check, Loader2, X, ImageOff, Usb } from 'lucide-react'
 import { pickImageFiles } from '@/lib/files/pickImageFiles'
 import {
-  type Voyage, type CargoPhoto, type Period, type Camera, PERIODS, PERIOD_LABELS, CAMERA_LABELS,
+  type Voyage, type CargoPhoto, type Period, type Camera, CAMERA_LABELS,
 } from '@/lib/cargo/types'
-import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers, periodsForDate, periodLabel } from '@/lib/cargo/periods'
 import { autoAssign } from '@/lib/cargo/assign'
 import { getPhotosForVoyage, putPhotos, deletePhoto, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
@@ -67,7 +67,12 @@ export default function PhotoManager({ voyage, onChange }: Props) {
   const [photos, setPhotos] = useState<CargoPhoto[]>([])
   // Opens on the newest day — that's the round whose photos are being filed.
   const [date, setDate] = useState(() => defaultPickerDate(dates))
-  const [period, setPeriod] = useState<Period>('0600')
+  const [pickedPeriod, setPeriod] = useState<Period>('0600')
+  // Rounds are per DAY, so both lists are clamped at render rather than stored:
+  // picking 2200 on day 8 and then stepping back to day 2 must not leave photos
+  // being filed against a round that day never had.
+  const periods = periodsForDate(voyage, date)
+  const period = periods.includes(pickedPeriod) ? pickedPeriod : periods[0]
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<CargoPhoto | null>(null)
@@ -250,7 +255,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
         <div>
           <label className="label-base">Monitoring Period</label>
           <select className="input-base" value={period} onChange={e => setPeriod(e.target.value as Period)}>
-            {PERIODS.map(p => <option key={p} value={p}>{PERIOD_LABELS[p]}</option>)}
+            {periods.map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}
           </select>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -269,7 +274,7 @@ export default function PhotoManager({ voyage, onChange }: Props) {
       </div>
 
       <p className="text-xs text-gray-500">
-        Upload all photos for {PERIOD_LABELS[period]} on {formatVoyageDate(date)} at once — the app assigns them by filename
+        Upload all photos for {periodLabel(period)} on {formatVoyageDate(date)} at once — the app assigns them by filename
         (e.g. <code className="text-gray-700">H1_FWD.jpg</code>) and EXIF time. Drag any photo to correct its slot. Auto-assignment never replaces your review.
       </p>
 

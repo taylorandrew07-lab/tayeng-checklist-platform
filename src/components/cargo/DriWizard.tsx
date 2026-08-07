@@ -201,6 +201,8 @@ export function LoadingTab({ dri, defaultDate, onChange, readOnly }: { dri: DriR
 }
 
 // ── VOYAGE (daily log) ───────────────────────────────────────────────────────
+// Fixed on purpose — the narrative log does not follow the readings schedule's
+// extra rounds. See the comment on VoyageLogEntry.
 const SLOTS: Period[] = ['0600', '1200', '1800']
 const seedDay = (date: string): VoyageLogEntry[] => SLOTS.map(slot => ({
   id: uid(), logDate: date, slot, readingsTaken: true, readingStatus: 'taken',

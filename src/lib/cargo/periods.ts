@@ -1,7 +1,11 @@
-// Voyage structure helpers: the calendar of monitoring dates and the page-splitting
-// rules that control how holds are laid out across photo pages.
+// Voyage structure helpers: the calendar of monitoring dates, which rounds each of
+// those days has, and the page-splitting rules that lay holds out across photo pages.
+//
+// periodsForDate() is THE answer to "what rounds does this day have" — the grid,
+// photo slots, charts and PDF all ask it rather than iterating BASE_PERIODS.
 
-import { eachDayOfInterval, parseISO, format, isValid } from 'date-fns'
+import { addDays, eachDayOfInterval, parseISO, format, isValid } from 'date-fns'
+import { BASE_PERIODS, type ExtraRound, type Period } from './types'
 
 /** Inclusive list of monitoring dates (ISO yyyy-mm-dd) between start and end. */
 export function monitoringDates(startISO: string, endISO: string): string[] {
@@ -11,12 +15,13 @@ export function monitoringDates(startISO: string, endISO: string): string[] {
   return eachDayOfInterval({ start, end }).map(d => format(d, 'yyyy-MM-dd'))
 }
 
-/** The fields effectiveEndDate reads — structural so periods.ts stays free of the Voyage type. */
+/** The fields these helpers read — structural so periods.ts stays free of the Voyage type. */
 interface DatedVoyage {
   startDate: string
   endDate?: string
   readings?: Record<string, unknown>
   periodMeta?: Record<string, unknown>
+  readingSchedule?: ExtraRound[]
 }
 
 /**
@@ -37,6 +42,79 @@ export function effectiveEndDate(v: DatedVoyage): string {
     ...Object.keys(v.periodMeta ?? {}),
   ].filter(Boolean).sort() // ISO yyyy-mm-dd sorts lexicographically
   return days[days.length - 1] ?? ''
+}
+
+// ── Monitoring rounds ────────────────────────────────────────────────────────
+
+/**
+ * The rounds a single monitoring day has, sorted ('HHmm' sorts as text).
+ *
+ * The base three plus every extra round whose window covers this day. A voyage
+ * with no schedule returns exactly BASE_PERIODS — that is what keeps every
+ * voyage doc written before this feature rendering byte-identically, including
+ * on the client read path, which builds a Voyage straight from JSONB with no
+ * migration hook.
+ */
+export function periodsForDate(v: DatedVoyage, dateISO: string): Period[] {
+  const extra = (v.readingSchedule ?? [])
+    .filter(r => r.time && r.from <= dateISO && (!r.until || dateISO <= r.until))
+    .map(r => r.time)
+  if (!extra.length) return [...BASE_PERIODS]
+  return [...new Set([...BASE_PERIODS, ...extra])].sort()
+}
+
+/**
+ * Every round used anywhere in [fromISO, toISO], sorted — for surfaces that span
+ * a range rather than one day (the charts filter). A round the range only partly
+ * covers still appears; it simply has no points on the days it didn't apply.
+ */
+export function periodsInRange(v: DatedVoyage, fromISO: string, toISO: string): Period[] {
+  const extra = (v.readingSchedule ?? [])
+    .filter(r => r.time && r.from <= toISO && (!r.until || fromISO <= r.until))
+    .map(r => r.time)
+  if (!extra.length) return [...BASE_PERIODS]
+  return [...new Set([...BASE_PERIODS, ...extra])].sort()
+}
+
+/** Display label for a round: '2200' → '2200 hrs'. */
+export function periodLabel(time: Period): string {
+  return `${time} hrs`
+}
+
+/** 'HHmm' → 'HH:MM' for an <input type="time">. */
+export function hhmmToInput(time: string): string {
+  return /^\d{4}$/.test(time) ? `${time.slice(0, 2)}:${time.slice(2)}` : ''
+}
+
+/** 'HH:MM' from an <input type="time"> → 'HHmm'. Returns '' if unparseable. */
+export function inputToHhmm(value: string): string {
+  const m = /^(\d{2}):(\d{2})/.exec(value)
+  return m ? `${m[1]}${m[2]}` : ''
+}
+
+/**
+ * Add an extra round applying from `dateISO` onwards. Re-adding a round that was
+ * stopped earlier appends a second window rather than reopening the old one, so
+ * the gap in between stays a true record of when it wasn't being taken.
+ */
+export function addExtraRound<T extends { readingSchedule?: ExtraRound[] }>(v: T, time: Period, dateISO: string): T {
+  return { ...v, readingSchedule: [...(v.readingSchedule ?? []), { time, from: dateISO }] }
+}
+
+/**
+ * Stop a round from `dateISO` onwards. Windows that started on or after that day
+ * are dropped outright — added and stopped the same day means it never ran —
+ * and an earlier window is closed on the day before, keeping its own days intact.
+ */
+export function removeExtraRound<T extends { readingSchedule?: ExtraRound[] }>(v: T, time: Period, dateISO: string): T {
+  const dayBefore = format(addDays(parseISO(dateISO), -1), 'yyyy-MM-dd')
+  const kept: ExtraRound[] = []
+  for (const r of v.readingSchedule ?? []) {
+    if (r.time !== time || (r.until && r.until < dateISO)) { kept.push(r); continue }
+    if (r.from >= dateISO) continue // never ran
+    kept.push({ ...r, until: dayBefore })
+  }
+  return { ...v, readingSchedule: kept }
 }
 
 /**

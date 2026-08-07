@@ -102,3 +102,35 @@ describe('seriesColor', () => {
     expect(seriesColor(0)).toBe(seriesColor(16))
   })
 })
+
+describe('a voyage whose round count changes part-way through', () => {
+  // 3-day voyage; a 2200 round runs on day 2 only.
+  const ragged = (): Voyage => ({
+    ...baseVoyage(), endDate: '2026-06-09',
+    readingSchedule: [{ time: '2200', from: '2026-06-08', until: '2026-06-08' }],
+  })
+
+  it('adds the extra slot only on the days it applied', () => {
+    const m = buildHoldSeries(ragged(), o2, o2.points[0])
+    expect(m.timepoints).toHaveLength(10) // 3 + 4 + 3, not 3 x 4
+    expect(m.timepoints.filter(t => t.period === '2200').map(t => t.dateISO)).toEqual(['2026-06-08'])
+  })
+
+  it('keeps the slots in time order within each day', () => {
+    const m = buildHoldSeries(ragged(), o2, o2.points[0])
+    expect(m.timepoints.slice(3, 7).map(t => t.period)).toEqual(['0600', '1200', '1800', '2200'])
+  })
+
+  it('intersects the period filter with what each day actually had', () => {
+    const m = buildHoldSeries(ragged(), o2, o2.points[0], { periods: ['2200'] })
+    expect(m.timepoints).toHaveLength(1)
+    expect(m.timepoints[0].dateISO).toBe('2026-06-08')
+  })
+
+  it('reads a value entered against the extra round', () => {
+    let v = ragged()
+    v = withValue(v, '2026-06-08', '2200', 1, o2.id, 'main', '4.2')
+    const m = buildHoldSeries(v, o2, o2.points[0], { periods: ['2200'] })
+    expect(m.series[0].values[0]).toBe(4.2)
+  })
+})

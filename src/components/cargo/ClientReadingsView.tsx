@@ -1,9 +1,9 @@
 'use client'
 
 import { Fragment, useState } from 'react'
-import { type Voyage, type ReadingType, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue } from '@/lib/cargo/types'
+import { type Voyage, type ReadingType, readingTypeAppliesToHold, isSinglePoint, getReadingValue } from '@/lib/cargo/types'
 import { readingCellColor } from '@/lib/cargo/colors'
-import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers, periodsForDate, periodLabel } from '@/lib/cargo/periods'
 
 /** Read-only readings table for clients (Hold + Date; points × periods; colours). */
 export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
@@ -14,13 +14,16 @@ export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
   const [date, setDate] = useState(() => defaultPickerDate(dates, d => Object.keys(voyage.readings?.[d] ?? {}).length > 0))
 
   const types = voyage.readingTypes.filter(rt => rt.includeInTables && readingTypeAppliesToHold(rt, hold))
+  // Per DAY, not per voyage: a client on day 2 sees three rounds and on day 8 sees
+  // five, from the same document — which is what actually happened on board.
+  const periods = periodsForDate(voyage, date)
 
   if (dates.length === 0 || types.length === 0) {
     return <p className="text-sm text-gray-400 py-6 text-center">No readings to display.</p>
   }
 
   const cell = (rtId: string, ptId: string, rt: ReadingType) => (
-    PERIODS.map(p => {
+    periods.map(p => {
       const v = getReadingValue(voyage, date, p, hold, rtId, ptId)
       const c = readingCellColor(voyage, rt, hold, date, p, ptId)
       return (
@@ -53,11 +56,11 @@ export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[150px]">Reading</th>
-              {PERIODS.map(p => <th key={p} className="px-2 py-2 font-semibold text-gray-600 text-center min-w-[80px]">{PERIOD_LABELS[p]}</th>)}
+              {periods.map(p => <th key={p} className="px-2 py-2 font-semibold text-gray-600 text-center min-w-[80px] tnum">{periodLabel(p)}</th>)}
             </tr>
             <tr className="border-b border-gray-200">
               <th className="text-right px-3 py-1 text-xs font-medium text-gray-400">Actual time</th>
-              {PERIODS.map(p => <th key={p} className="px-2 py-1 text-xs font-normal text-gray-400 text-center">{voyage.periodMeta?.[date]?.[p]?.actualTime || '—'}</th>)}
+              {periods.map(p => <th key={p} className="px-2 py-1 text-xs font-normal text-gray-400 text-center tnum">{voyage.periodMeta?.[date]?.[p]?.actualTime || '—'}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -73,7 +76,7 @@ export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
               return (
                 <Fragment key={rt.id}>
                   <tr className="bg-gray-50/70 border-b border-gray-200">
-                    <td colSpan={1 + PERIODS.length} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</td>
+                    <td colSpan={1 + periods.length} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</td>
                   </tr>
                   {rt.points.map(pt => (
                     <tr key={pt.id} className="border-b border-gray-100">

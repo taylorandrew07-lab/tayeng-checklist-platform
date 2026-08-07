@@ -5,14 +5,34 @@
 import type { DriReport } from './dri'
 import type { VesselPrefix } from '@/lib/utils'
 
-/** The three nominal monitoring periods. Actual reading times may differ and are
- *  captured separately (periodMeta.actualTime + per-photo actualTime). */
-export type Period = '0600' | '1200' | '1800'
-export const PERIODS: Period[] = ['0600', '1200', '1800']
-export const PERIOD_LABELS: Record<Period, string> = {
-  '0600': '0600 hrs',
-  '1200': '1200 hrs',
-  '1800': '1800 hrs',
+/**
+ * A nominal monitoring round, stored zero-padded as 'HHmm'. Actual reading times
+ * may differ and are captured separately (periodMeta.actualTime + per-photo
+ * actualTime).
+ *
+ * Not a union: a voyage can add EXTRA rounds part-way through when cargo needs
+ * closer watching, so which rounds a day has depends on the day. Never iterate
+ * BASE_PERIODS to lay a day out — call periodsForDate(voyage, dateISO) from
+ * ./periods, and label with periodLabel().
+ */
+export type Period = string
+
+/** The three rounds every monitoring day has. These are never removable. */
+export const BASE_PERIODS: Period[] = ['0600', '1200', '1800']
+
+/**
+ * An extra round added mid-voyage (self-heating cargo etc.). It applies on every
+ * day from `from` onwards; `until` — the inclusive last day it applied — is set
+ * when the surveyor stops it. Days outside that window are untouched, so a report
+ * truthfully shows three rounds early on and five through the hot spell.
+ */
+export interface ExtraRound {
+  /** 'HHmm', e.g. '2200'. */
+  time: string
+  /** First monitoring day it applies to (ISO yyyy-mm-dd). */
+  from: string
+  /** Last day it applied (ISO, inclusive). Absent = still running. */
+  until?: string
 }
 
 // fwd/aft are the infrared (IR) camera angles; visual is a normal-camera photo.
@@ -134,6 +154,10 @@ export interface Voyage {
 
   // --- Config ---
   readingTypes: ReadingType[]
+  /** Extra rounds beyond BASE_PERIODS, each with the days it applies to.
+   *  OPTIONAL — a voyage doc without it has the base three, which is every
+   *  voyage created before this existed. Read it via periodsForDate(). */
+  readingSchedule?: ExtraRound[]
 
   // --- Data ---
   /** readings[dateISO][period][holdNumber][readingTypeId][pointId] = entered value */
@@ -261,6 +285,30 @@ export function setReadingValue(v: Voyage, date: string, period: Period, hold: n
   d[period] = p
   readings[date] = d
   return { ...v, readings }
+}
+
+/**
+ * Immutably drop one round's readings AND periodMeta on `fromDateISO` and every
+ * later day — what "stop taking the 2200 round from today" means to the data.
+ * Earlier days keep everything.
+ *
+ * A date key left empty is pruned: an orphan `{}` would stretch
+ * effectiveEndDate() with phantom days. Copy-on-write throughout, because the
+ * maps are shared with the live workspace snapshot and any in-flight sync push.
+ */
+export function clearPeriodFrom(v: Voyage, time: Period, fromDateISO: string): Voyage {
+  // ISO yyyy-mm-dd compares lexicographically, as everywhere else in this module.
+  const prune = <T,>(src: Record<string, Record<string, T>> | undefined): Record<string, Record<string, T>> => {
+    const out: Record<string, Record<string, T>> = {}
+    for (const [date, byPeriod] of Object.entries(src ?? {})) {
+      if (date < fromDateISO || !(time in (byPeriod ?? {}))) { out[date] = byPeriod; continue }
+      const kept = { ...byPeriod }
+      delete kept[time]
+      if (Object.keys(kept).length) out[date] = kept
+    }
+    return out
+  }
+  return { ...v, readings: prune(v.readings), periodMeta: prune(v.periodMeta) }
 }
 
 /**

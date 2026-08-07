@@ -3,9 +3,8 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 import { COMPANY } from '@/lib/company'
 import { withVesselPrefix } from '@/lib/utils'
 import type { Voyage, ReadingType } from '../types'
-import { PERIOD_LABELS, CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
-import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
-import { PERIODS } from '../types'
+import { CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue, type Period, type Camera } from '../types'
+import { monitoringDates, effectiveEndDate, periodsForDate, periodLabel, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { buildHoldSeries, buildPointSeries, type ChartModel } from '../charts'
 import { readingCellColor } from '../colors'
 import { CargoChart } from './CargoChart'
@@ -14,7 +13,7 @@ import { parseISO, format, isValid } from 'date-fns'
 /** All (date, period) timepoints across the voyage, in order. */
 function voyageTimepoints(voyage: Voyage): { dateISO: string; period: Period }[] {
   const out: { dateISO: string; period: Period }[] = []
-  for (const d of monitoringDates(voyage.startDate, effectiveEndDate(voyage))) for (const p of PERIODS) out.push({ dateISO: d, period: p })
+  for (const d of monitoringDates(voyage.startDate, effectiveEndDate(voyage))) for (const p of periodsForDate(voyage, d)) out.push({ dateISO: d, period: p })
   return out
 }
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -134,7 +133,7 @@ function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; d
     <View style={styles.smallHeader}>
       <Text style={styles.smallHeaderTitle}>{withVesselPrefix(voyage.vesselName, voyage.vesselType)}</Text>
       <Text style={styles.smallHeaderText}>
-        {formatVoyageDate(dateISO)} · {PERIOD_LABELS[period]}{holdRange ? ` · ${holdRange}` : ''}
+        {formatVoyageDate(dateISO)} · {periodLabel(period)}{holdRange ? ` · ${holdRange}` : ''}
       </Text>
     </View>
   )
@@ -306,7 +305,7 @@ export function CargoReportDocument({ voyage, logoDataUrl, photos, include }: Ca
   const photoPages: { dateISO: string; period: Period; holdRange?: string; photos: PreparedPhoto[] }[] = []
   if (inc.photos) {
     for (const dateISO of monitoringDates(voyage.startDate, effectiveEndDate(voyage))) {
-      for (const period of PERIODS) {
+      for (const period of periodsForDate(voyage, dateISO)) {
         const here = photos.filter(p => p.dateISO === dateISO && p.period === period)
         if (!here.length) continue
         for (const group of pages) {

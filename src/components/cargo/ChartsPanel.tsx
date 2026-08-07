@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { LineChart } from 'lucide-react'
-import { type Voyage, type Period, PERIODS, PERIOD_LABELS, readingTypeAppliesToHold, isSinglePoint } from '@/lib/cargo/types'
-import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers } from '@/lib/cargo/periods'
+import { type Voyage, type Period, readingTypeAppliesToHold, isSinglePoint } from '@/lib/cargo/types'
+import { monitoringDates, effectiveEndDate, formatVoyageDate, holdNumbers, periodsInRange, periodLabel } from '@/lib/cargo/periods'
 import { buildHoldSeries, buildPointSeries, layoutChart, formatTick, type ChartModel, type ChartFilter } from '@/lib/cargo/charts'
 
 interface Props {
@@ -74,7 +74,9 @@ export default function ChartsPanel({ voyage }: Props) {
   const [rtId, setRtId] = useState(chartTypes[0]?.id ?? '')
   const [start, setStart] = useState(dates[0] ?? '')
   const [end, setEnd] = useState(dates[dates.length - 1] ?? '')
-  const [periods, setPeriods] = useState<Period[]>([...PERIODS])
+  // null = every round in range, kept as a sentinel so rounds added after mount
+  // (or brought in by widening the range) are included without a re-tick.
+  const [picked, setPeriods] = useState<Period[] | null>(null)
   const [hold, setHold] = useState(1)               // selected hold for points charts
   const [pointSel, setPointSel] = useState<'all' | string[]>('all')
   const [holdSel, setHoldSel] = useState<'all' | number[]>('all') // single-value types
@@ -99,6 +101,10 @@ export default function ChartsPanel({ voyage }: Props) {
     }
   }
 
+  // Every round used anywhere in the chosen range — a voyage can pick up extra
+  // rounds part-way through, so this is not a constant.
+  const allPeriods = useMemo(() => periodsInRange(voyage, start, end), [voyage, start, end])
+  const periods = (picked ?? allPeriods).filter(p => allPeriods.includes(p))
   const filter: ChartFilter = { dateRange: [start, end], periods }
 
   function modelFor(rt: NonNullable<typeof readingType>): ChartModel {
@@ -109,9 +115,10 @@ export default function ChartsPanel({ voyage }: Props) {
 
   function togglePeriod(p: Period) {
     setPeriods(prev => {
-      const next = prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-      if (next.length === 0) return prev // keep at least one period selected
-      return PERIODS.filter(x => next.includes(x))
+      const cur = prev ?? allPeriods
+      const next = cur.includes(p) ? cur.filter(x => x !== p) : [...cur, p]
+      if (next.length === 0) return prev // keep at least one round selected
+      return allPeriods.filter(x => next.includes(x))
     })
   }
   function togglePoint(id: string) {
@@ -164,10 +171,10 @@ export default function ChartsPanel({ voyage }: Props) {
           <div>
             <label className="label-base">Periods</label>
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {PERIODS.map(p => (
+              {allPeriods.map(p => (
                 <button key={p} onClick={() => togglePeriod(p)}
-                  className={`px-2 py-1 rounded text-xs font-medium border ${periods.includes(p) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                >{PERIOD_LABELS[p]}</button>
+                  className={`px-2 py-1 rounded text-xs font-medium border tnum ${periods.includes(p) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                >{periodLabel(p)}</button>
               ))}
             </div>
           </div>

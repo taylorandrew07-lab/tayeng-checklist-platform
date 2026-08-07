@@ -149,6 +149,25 @@ export async function deletePhoto(localId: string): Promise<void> {
   await (await getDB()).delete('cargoPhotos', localId)
 }
 
+/** Photos filed under one round on `fromDateISO` or later — counted for the
+ *  confirmation before a round is stopped, then deleted by the call below. */
+export async function countPhotosForPeriodFrom(voyageId: string, time: string, fromDateISO: string): Promise<number> {
+  const all = await (await getDB()).getAllFromIndex('cargoPhotos', 'by-voyage', voyageId)
+  return all.filter(p => p.period === time && p.dateISO >= fromDateISO).length
+}
+
+/** Delete those photos in one transaction. Returns how many went. */
+export async function deletePhotosForPeriodFrom(voyageId: string, time: string, fromDateISO: string): Promise<number> {
+  const db = await getDB()
+  const doomed = (await db.getAllFromIndex('cargoPhotos', 'by-voyage', voyageId))
+    .filter(p => p.period === time && p.dateISO >= fromDateISO)
+  if (!doomed.length) return 0
+  const tx = db.transaction('cargoPhotos', 'readwrite')
+  for (const p of doomed) tx.store.delete(p.localId)
+  await tx.done
+  return doomed.length
+}
+
 // --- Cached cargo templates (refreshed from Supabase when online) ---
 export async function cacheTemplates(templates: CargoTemplate[]): Promise<void> {
   const db = await getDB()

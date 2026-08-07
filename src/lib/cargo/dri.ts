@@ -25,6 +25,10 @@ export interface HoldInspection { holdNo: number; conditionText: string; clean: 
 export interface TcWireInstall { id: string; installDate: string; holdNo: number; wiringSeq: WiringSeq; startTime: string; completedTime: string }
 export interface TcWireLength { id: string; wiringLevel: string; appliesToHolds: string; tcNumber: number; lengthValue: number; lengthUnit: LengthUnit }
 export interface Inerting { id: string; holdNo: number; commencedAt: string; completedAt: string; totalHours: number; totalMinutes: number; oxygenPct: number }
+/** The DRI narrative log deliberately stays on the base three slots — it is a
+ *  fixed-structure client deliverable, not the sensor grid. Do not switch its
+ *  SLOTS to periodsForDate: a day logged while an extra round existed would lose
+ *  its paragraph once that round was stopped. */
 export interface VoyageLogEntry {
   id: string; logDate: string; slot: Period; readingsTaken: boolean; holdsList: string
   weather: Weather; seaState: SeaState; sealingFoamOk: boolean
