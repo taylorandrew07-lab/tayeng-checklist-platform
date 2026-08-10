@@ -16,7 +16,7 @@ import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
-  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays,
   type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import { listClientBilling } from '@/lib/clients/billing'
@@ -170,32 +170,43 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // rate can never multiply its day count — the client's DAY rate (migration 169)
     // prices it. A per-unit rate whose unit IS the day still works the same way.
     const perDayUnit = perUnit && /^days?$/i.test((rate?.unit_label ?? '').trim())
-    // Hourly rate → bill hours × rate (qty = billable hours). Day rate → bill days ×
-    // rate (qty = days worked). Per-unit rate → bill qty × rate where qty is the job's
-    // billable quantity (e.g. UHT holds/bilges). Fixed rates stay qty 1.
+    // The day count a DAY rate multiplies is the job's own attendance window, both
+    // ends counted (10→13 Aug = 4 days), not the labour ledger: the ledger is per
+    // surveyor, so two surveyors on that discharge would bill the client 8 days.
+    // The ledger is the fallback for a job with no dates at all.
+    const daysBilled = billedDays(job)
+    // Hourly rate → bill hours × rate (qty = billable hours). Day rate → bill the span
+    // × rate. Per-unit rate → bill qty × rate where qty is the job's billable quantity
+    // (e.g. UHT holds/bilges). Fixed rates stay qty 1.
     // An hourly rate on a day-billed job is a mismatch we must not paper over: seed
     // the DAY count as the qty but leave the price at 0, so the line reads as
     // visibly incomplete (3 × 0) instead of a plausible-looking 1 × the hourly rate,
     // which would undercharge three days of work by two-thirds.
     const hourlyOnDays = hourly && job.labour_unit === 'days'
-    // The mirror image: a day rate on an hours-billed job. Never multiply it by the
-    // hours (a 9-hour day would bill nine day rates) — leave it visibly unpriced.
-    const dailyOnHours = daily && job.labour_unit !== 'days'
+    // A day rate is deliberately NOT gated on jobs.labour_unit: that column decides how
+    // surveyors log their own time (pay), while the client rate decides how the client
+    // is charged. An hours-logged discharge still bills 4 days at the day rate.
     const qty = hourlyOnDays ? (job.billable_days && job.billable_days > 0 ? job.billable_days : 1)
       : hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
-      : daily && !dailyOnHours && job.billable_days && job.billable_days > 0 ? job.billable_days
+      : daily ? daysBilled
       : perUnit && job.billable_quantity && job.billable_quantity > 0 ? job.billable_quantity
-      : perDayUnit && job.billable_days && job.billable_days > 0 ? job.billable_days
+      : perDayUnit ? billedDays(job)
       : 1
     // Second description line spells out the job: its date, the overall work window
     // (time from–to, not each leg) and — when hourly — the hours being billed. The
     // PDF shows the live "qty × unit price" beneath, so the maths stays correct.
-    const dateStr = job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null)
+    // A day-rate line shows the DATE RANGE it is billing instead of a single date, so
+    // the client can check 4 days against 10–13 Aug without opening the report.
+    const rangeStr = daily && job.scheduled_date && job.end_date && job.end_date !== job.scheduled_date
+      ? `${formatDate(job.scheduled_date)} – ${formatDate(job.end_date)}` : null
+    const dateStr = rangeStr ?? (job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null))
     const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
     const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
     const unitStr = perUnit && job.billable_quantity && job.billable_quantity > 0 ? `${job.billable_quantity} ${rate?.unit_label || 'units'}` : null
-    // A day-billed job says DAYS on the client's invoice — never "hrs".
-    const daysStr = !unitStr && job.billable_days && job.billable_days > 0 ? `${job.billable_days} day${job.billable_days === 1 ? '' : 's'}` : null
+    // A day-billed job says DAYS on the client's invoice — never "hrs". On a day-rate
+    // line the figure shown is the one being charged, not the ledger's surveyor-days.
+    const dayCount = daily ? daysBilled : (job.billable_days ?? 0)
+    const daysStr = !unitStr && dayCount > 0 ? `${dayCount} day${dayCount === 1 ? '' : 's'}` : null
     const detail = [dateStr, span, hoursStr, daysStr, unitStr].filter(Boolean).join(' · ')
     // The stage qualifies the type and belongs on the client's invoice: a vessel can
     // take an Initial AND a Final Draught Survey in the same month, and "M.V. Chaconia
@@ -205,7 +216,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const typeStr = job.job_type && job.job_stage ? `${job.job_type} (${job.job_stage})`
       : (job.job_type ?? job.job_stage ?? null)
     const head = typeStr ? `${label} — ${typeStr}` : label
-    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays && !dailyOnHours ? Number(rate.rate) : 0, rate_id: rate?.id ?? null }
+    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0, rate_id: rate?.id ?? null }
   }, [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
@@ -339,16 +350,21 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     if (rate?.rate_type === 'per_unit') {
       const unit = rate.unit_label || 'unit'
       const perDayUnit = /^days?$/i.test(unit.trim())
-      const count = job.billable_quantity ?? (perDayUnit ? job.billable_days : null)
+      // A per-unit rate whose unit IS the day predates the real day rate (migration
+      // 169); count its days the same way so the two never disagree.
+      const count = job.billable_quantity ?? (perDayUnit ? billedDays(job) : null)
       if (!count || count <= 0) return `Per-${unit} rate — no count on this job yet; enter the qty manually.`
       return `${count} ${unit} × ${money(Number(rate.rate), rate.currency)}/${unit}`
     }
-    // A day rate (migration 169) prices a day-billed job; on an hours-billed one it is
-    // the same mismatch as an hourly rate on days, and says so rather than guessing.
+    // A day rate (migration 169) counts the job's own dates, both ends — so say which
+    // dates produced the number, and warn when the job has none to count.
     if (rate?.rate_type === 'daily') {
-      if (job.labour_unit !== 'days') return 'Billed by the hour — this client’s rate is a day rate, so the unit price is left at 0. Enter the price by hand (or bill this job by the day).'
-      if (!job.billable_days || job.billable_days <= 0) return 'Day rate — no days logged on this job yet; enter the qty (days) manually.'
-      return `${job.billable_days} day${job.billable_days === 1 ? '' : 's'} × ${money(Number(rate.rate), rate.currency)}/day`
+      const days = billedDays(job)
+      const per = `${days} day${days === 1 ? '' : 's'} × ${money(Number(rate.rate), rate.currency)}/day`
+      if (!job.day_span) return `${per} — this job has no dates set, so the count is a fallback; check the qty.`
+      const from = job.scheduled_date ? formatDate(job.scheduled_date) : null
+      const to = job.end_date && job.end_date !== job.scheduled_date ? formatDate(job.end_date) : null
+      return to ? `${from} – ${to} = ${per}` : `${per} (${from})`
     }
     if (rate?.rate_type !== 'hourly') return null
     // An hourly rate cannot price a day count, so the qty is left at 1 deliberately.

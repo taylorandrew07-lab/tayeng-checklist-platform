@@ -5,7 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
 import { sanitizeStorageName, type VesselPrefix } from '@/lib/utils'
-import { byLastDateDesc } from '@/lib/jobs/jobDate'
+import { byLastDateDesc, jobDaySpan } from '@/lib/jobs/jobDate'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
 } from '@/lib/types/database'
@@ -54,6 +54,18 @@ export function pickRate<T extends { job_type: string | null; job_stage?: string
     ?? rates.find(r => !r.job_type && (r.job_stage ?? null) === null)
     ?? null
   )
+}
+
+/** The day count a client DAY rate (migration 169) charges for a job: the job's own
+ *  attendance window, both ends counted — 10→13 Aug is 4 days, and any part of a day
+ *  is a whole day. Falls back to the labour ledger only for a job with no dates at
+ *  all, and never below 1 so a line can't seed as "0 days". Deliberately NOT the
+ *  ledger by preference: those days are logged per surveyor, so a two-surveyor
+ *  discharge would bill the client twice over. */
+export function billedDays(job: { day_span?: number | null; billable_days?: number | null }): number {
+  if (job.day_span && job.day_span > 0) return job.day_span
+  if (job.billable_days && job.billable_days > 0) return job.billable_days
+  return 1
 }
 
 export async function addClientRate(rate: Omit<ClientRate, 'id' | 'created_at' | 'is_active'>): Promise<{ error?: string }> {
@@ -226,8 +238,14 @@ export interface InvoiceableJob {
    *  seeds an hourly line's qty from it. */
   billable_hours: number | null
   /** Days worked on a day-billed job (the labour ledger's regular quantity, which is
-   *  in days there). null on hours-billed jobs. Never priced with an hourly rate. */
+   *  in days there). null on hours-billed jobs. Never priced with an hourly rate.
+   *  NB this is the sum across surveyors — two surveyors on a 4-day job log 8 — so it
+   *  is a labour figure, not the day count a client is billed. See day_span. */
   billable_days: number | null
+  /** The job's own attendance window in whole days, both ends counted: 10→13 Aug = 4
+   *  (migration 169). This is what a client DAY rate multiplies — one job, one span,
+   *  however many surveyors attended. Null only when the job has no start date. */
+  day_span: number | null
   /** Billable quantity for a per-unit rate: the value of the checklist field flagged
    *  is_billable_quantity (e.g. UHT "Number of holds" = holds/bilges). The invoice
    *  builder seeds a per-unit line's qty from it; null when not set. */
@@ -271,6 +289,7 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     labour_unit: (j.labour_unit === 'days' ? 'days' : 'hours') as 'hours' | 'days',
     billable_hours: null as number | null,
     billable_days: null as number | null,
+    day_span: jobDaySpan(j),
     billable_quantity: null as number | null,
     billable_km: null as number | null,
     job_date: null as string | null, time_from: null as string | null, time_to: null as string | null,

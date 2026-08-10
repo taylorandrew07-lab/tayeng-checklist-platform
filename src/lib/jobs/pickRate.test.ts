@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickRate } from './invoicing'
+import { pickRate, billedDays } from './invoicing'
 
 // Rate matching decides what a client is charged, so the precedence rules are
 // pinned here. The bug that prompted migration 163: a client with an Initial and a
@@ -55,5 +55,28 @@ describe('pickRate', () => {
     const legacy: R = { id: 'legacy', job_type: 'Draught Survey' }
     expect(pickRate([legacy], job('Draught Survey', 'Initial'))?.id).toBe('legacy')
     expect(pickRate([legacy], job('Draught Survey', null))?.id).toBe('legacy')
+  })
+})
+
+// What a DAY rate multiplies (migration 169). The job that prompted it: a discharge
+// with a start and an end date whose surveyor logged OVERTIME — so the regular-hours
+// ledger was empty and the line seeded as 1 day.
+describe('billedDays', () => {
+  it('bills the job’s date span, not the labour ledger', () => {
+    expect(billedDays({ day_span: 4, billable_days: null })).toBe(4)
+  })
+
+  it('ignores ledger days even when they disagree — those are PER SURVEYOR', () => {
+    // Two surveyors × 4 days = 8 in the ledger; the client is still charged 4.
+    expect(billedDays({ day_span: 4, billable_days: 8 })).toBe(4)
+  })
+
+  it('falls back to the ledger only for a job with no dates at all', () => {
+    expect(billedDays({ day_span: null, billable_days: 3 })).toBe(3)
+  })
+
+  it('never seeds a zero-day line', () => {
+    expect(billedDays({ day_span: null, billable_days: null })).toBe(1)
+    expect(billedDays({})).toBe(1)
   })
 })

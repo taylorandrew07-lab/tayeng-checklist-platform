@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jobLastDate, jobLastDateKey, jobSpansDays, byLastDateDesc } from './jobDate'
+import { jobLastDate, jobLastDateKey, jobSpansDays, jobDaySpan, byLastDateDesc } from './jobDate'
 
 describe('jobLastDate', () => {
   it('uses the end date when the job spans a range', () => {
@@ -37,6 +37,26 @@ describe('jobSpansDays', () => {
     expect(jobSpansDays({ scheduled_date: '2026-07-12', end_date: '2026-07-19' })).toBe(true)
     expect(jobSpansDays({ scheduled_date: '2026-07-12', end_date: '2026-07-12' })).toBe(false)
     expect(jobSpansDays({ scheduled_date: '2026-07-12', end_date: null })).toBe(false)
+  })
+})
+
+describe('jobDaySpan — what a client day rate charges for', () => {
+  it('counts both ends: a 10→13 Aug discharge is 4 days', () => {
+    expect(jobDaySpan({ scheduled_date: '2026-08-10', end_date: '2026-08-13' })).toBe(4)
+  })
+
+  it('is 1 day when the job has no end date, or ends the day it starts', () => {
+    expect(jobDaySpan({ scheduled_date: '2026-08-10', end_date: null })).toBe(1)
+    expect(jobDaySpan({ scheduled_date: '2026-08-10', end_date: '2026-08-10' })).toBe(1)
+  })
+
+  it('counts across a month boundary', () => {
+    expect(jobDaySpan({ scheduled_date: '2026-07-30', end_date: '2026-08-02' })).toBe(4)
+  })
+
+  it('is null without a start date, and never negative on reversed dates', () => {
+    expect(jobDaySpan({ scheduled_date: null, end_date: '2026-08-13' })).toBeNull()
+    expect(jobDaySpan({ scheduled_date: '2026-08-13', end_date: '2026-08-10' })).toBe(1)
   })
 })
 
