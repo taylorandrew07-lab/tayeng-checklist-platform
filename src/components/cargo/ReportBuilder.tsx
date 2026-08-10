@@ -8,6 +8,8 @@ import { currentUserId } from '@/lib/cargo/user'
 import { downloadCargoReport } from '@/lib/cargo/pdf/render'
 import { type ReportInclude } from '@/lib/cargo/pdf/CargoReportDocument'
 import type { Quality } from '@/lib/cargo/photo'
+import { voyageDirty } from '@/lib/cargo/sync'
+import ShareLinkPanel from '@/components/cargo/ShareLinkPanel'
 
 interface Props {
   voyage: Voyage
@@ -76,6 +78,16 @@ export default function ReportBuilder({ voyage, onChange }: Props) {
 
   return (
     <div className="space-y-5">
+      {/* The data deliverable. Sits above the PDF builder because for most
+          voyages this is what actually goes to the client — the PDF carries the
+          photos and the signed record. Requires a synced voyage: the annex is
+          rendered from the row in Supabase, not from this device. */}
+      <ShareLinkPanel
+        voyageId={voyage.id}
+        canShare={!voyageDirty(voyage)}
+        unsyncedHint="This voyage has changes that haven't synced yet. Sync it first, or the link will show older figures than you see here."
+      />
+
       <div className="card p-6 space-y-4">
         <div>
           <label className="label-base">Voyage Observations</label>

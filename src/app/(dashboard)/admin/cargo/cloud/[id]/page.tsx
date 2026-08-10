@@ -10,5 +10,5 @@ import ClientCargoWorkspace from '@/components/cargo/ClientCargoWorkspace'
 // cloud rather than depending on the surveyor's device.
 export default function AdminCloudCargoVoyagePage() {
   const params = useParams<{ id: string }>()
-  return <ClientCargoWorkspace id={params.id} backHref="/admin/cargo" allowDri />
+  return <ClientCargoWorkspace id={params.id} backHref="/admin/cargo" allowDri allowShare />
 }

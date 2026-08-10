@@ -14,6 +14,7 @@ import ClientReadingsView from '@/components/cargo/ClientReadingsView'
 import ClientPhotoGallery from '@/components/cargo/ClientPhotoGallery'
 import ChartsPanel from '@/components/cargo/ChartsPanel'
 import DriReportBuilder from '@/components/cargo/DriReportBuilder'
+import ShareLinkPanel from '@/components/cargo/ShareLinkPanel'
 import Tabs from '@/components/ui/Tabs'
 import { withVesselPrefix } from '@/lib/utils'
 
@@ -29,8 +30,11 @@ const DRI_TAB = { id: 'dri' as Tab, label: 'DRI Report', icon: FileText }
  *  via `backHref`, by admins drilling into a synced voyage from Cargo Operations.
  *  `allowDri` exposes the full DRI Production Report builder (PDF/.docx) for staff
  *  who issue reports from the cloud — generation only; it never writes back to the
- *  surveyor's synced document. */
-export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', allowDri = false }: { id: string; backHref?: string; allowDri?: boolean }) {
+ *  surveyor's synced document.
+ *  `allowShare` exposes the public data-link panel. Admin only: minting one
+ *  publishes the readings to anyone holding the URL, and mig 168 restricts that
+ *  to admins and the owning surveyor, so office would only meet a 403. */
+export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', allowDri = false, allowShare = false }: { id: string; backHref?: string; allowDri?: boolean; allowShare?: boolean }) {
   const [voyage, setVoyage] = useState<Voyage | null>(null)
   const [photos, setPhotos] = useState<RemotePhoto[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,7 +88,9 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
           <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {voyage.voyageNumber}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{voyage.cargoType || 'Cargo'} · {voyage.holdCount} holds</p>
         </div>
-        <button onClick={handleDownload} disabled={generating} className="btn-primary">
+        {/* Secondary, not primary: the PDF is the photo/record report, while the
+            data itself now travels as the shareable link in the panel below. */}
+        <button onClick={handleDownload} disabled={generating} className="btn-secondary">
           {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
           {generating ? 'Preparing…' : 'Download PDF'}
         </button>
@@ -99,6 +105,8 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
           <AlertTriangle className="h-4 w-4" />Preliminary — monitoring is ongoing. Figures are current as of the last sync and may change. Downloads are marked NOT FINALISED.
         </div>
       )}
+
+      {allowShare && <ShareLinkPanel voyageId={id} />}
 
       <Tabs
         active={tab}
