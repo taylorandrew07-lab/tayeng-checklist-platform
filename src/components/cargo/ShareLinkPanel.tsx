@@ -9,7 +9,7 @@
 // whoever presses this button is about to email it to somebody outside the firm.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link2, Copy, Check, Loader2, Eye, ExternalLink, ShieldOff } from 'lucide-react'
+import { Link2, Copy, Check, Loader2, Eye, ExternalLink, ShieldOff, AlertTriangle } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 
@@ -126,6 +126,18 @@ export default function ShareLinkPanel({ voyageId, canShare = true, unsyncedHint
         </>
       ) : (
         <>
+          {/* The link serves what reached the server. Readings taken at sea live
+              only on the device until the next sync, so say so HERE — at the
+              moment somebody is about to send it to a client. */}
+          {!canShare && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span>
+                This voyage has readings that haven&apos;t synced yet. <strong>The link shows the last synced version</strong>,
+                not what&apos;s on this device. Sync before sending it.
+              </span>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               readOnly
@@ -160,6 +172,8 @@ export default function ShareLinkPanel({ voyageId, canShare = true, unsyncedHint
       <p className="text-[11px] text-gray-400 leading-relaxed border-t border-gray-100 pt-2.5">
         Anyone with the link can open the page — no sign-in needed. It shows this voyage&apos;s
         readings only, and gives no access to the app or to any other job, client or voyage.
+        The page always serves the latest <em>synced</em> readings and states their date and
+        time, so the client can see for themselves how current they are.
       </p>
     </div>
   )

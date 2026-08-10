@@ -73,7 +73,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   // document; no join, no other table, nothing about the job, client or invoice.
   const { data: row } = await supabase
     .from('cargo_voyages')
-    .select('id, status, doc')
+    .select('id, status, doc, synced_at')
     .eq('id', share.voyage_id)
     .maybeSingle()
 
@@ -90,6 +90,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   const html = renderVoyageAnnex(voyage, {
     logoDataUrl: await getLetterheadDataUrl(new URL(request.url).origin).catch(() => null),
     generatedAt: new Date(),
+    // The page is rendered fresh on every request, but the READINGS are only as
+    // recent as the surveyor's last sync — they work offline at sea for days.
+    // Both are stated so a fresh-looking page can't imply fresh figures.
+    dataAsAt: voyage.updatedAt ?? null,
+    receivedAt: row.synced_at ?? null,
   })
 
   return new NextResponse(html, {

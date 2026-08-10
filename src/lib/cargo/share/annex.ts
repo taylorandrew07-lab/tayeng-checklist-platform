@@ -38,8 +38,21 @@ export interface AnnexOptions {
   logoDataUrl?: string | null
   /** Report number from the cargo register, when one has been issued. */
   reportNumber?: string | null
-  /** Stamped into the footer as the moment the annex was produced. */
+  /** When this page was rendered. NOT the age of the figures on it — see below. */
   generatedAt?: Date
+  /**
+   * When the surveyor last CHANGED these readings (voyage doc updatedAt), and
+   * when that reached us (the row's synced_at).
+   *
+   * These matter more than anything else on the page. Readings are recorded
+   * offline at sea and only reach the server when the surveyor next has a
+   * signal, so a page rendered this minute can be showing figures from
+   * yesterday morning. Stamping the render time alone — which is what this did
+   * — tells a reader the opposite of the truth about a document describing
+   * cargo that may be heating.
+   */
+  dataAsAt?: number | null
+  receivedAt?: string | null
 }
 
 // ── escaping ────────────────────────────────────────────────────────────────
@@ -63,6 +76,14 @@ function voyageTimepoints(voyage: Voyage): Timepoint[] {
 }
 
 const dayLabel = (iso: string) => formatVoyageDate(iso).replace(/^(\d{2}) (\w{3})\w* (\d{4})$/, '$1 $2')
+
+/** A timestamp in the vessel operator's own timezone, so nobody has to convert. */
+function stamp(v: Date | number | string | null | undefined): string | null {
+  if (v == null) return null
+  const d = v instanceof Date ? v : new Date(v)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.toLocaleString('en-GB', { timeZone: 'America/Port_of_Spain', dateStyle: 'medium', timeStyle: 'short' })} AST`
+}
 
 // ── readings grid ───────────────────────────────────────────────────────────
 
@@ -609,6 +630,10 @@ function show(chart,e){
 /** Render the whole annex. Pure: same voyage in, same document out. */
 export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): string {
   const generatedAt = opts.generatedAt ?? new Date()
+  // Fall back to the document's own updatedAt when the caller doesn't supply one,
+  // so the age is stated even from a plain render.
+  const asAt = stamp(opts.dataAsAt ?? voyage.updatedAt ?? null)
+  const received = stamp(opts.receivedAt ?? null)
   const colorsOn = voyage.showColors !== false
   const tableTypes = (voyage.readingTypes ?? []).filter(rt => rt.includeInTables)
   const chartTypes = (voyage.readingTypes ?? []).filter(rt => rt.includeInCharts)
@@ -662,8 +687,10 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
 <div class="note ${finalized ? 'final' : 'prelim'}">
   <span>${finalized ? '&#10003;' : '&#9888;'}</span>
   <div>${finalized
-    ? 'This report has been finalised.'
-    : '<b>Preliminary &mdash; monitoring is ongoing.</b> Figures are current as at the surveyor&rsquo;s last sync and may change.'}</div>
+    ? `This report has been finalised.${asAt ? ` Readings are complete to <strong>${esc(asAt)}</strong>.` : ''}`
+    : `<b>Preliminary &mdash; monitoring is ongoing.</b> ${asAt
+        ? `These readings are as at <strong>${esc(asAt)}</strong>. Monitoring continues at sea, where there is often no signal, so anything recorded since has not yet reached us and is not shown here.`
+        : 'Figures are current as at the surveyor&rsquo;s last sync and may change.'}`}</div>
 </div>
 
 ${/* Just the heading. The vessel, voyage and ports used to be repeated here as a
@@ -715,7 +742,10 @@ ${voyage.observations ? `<div class="obs"><h2>Surveyor&rsquo;s observations</h2>
 
 <footer>
   <span>${esc(COMPANY.name)} &mdash; ${esc(COMPANY.confidential)}</span>
-  <span>Generated ${esc(generatedAt.toLocaleString('en-GB', { timeZone: 'America/Port_of_Spain', dateStyle: 'medium', timeStyle: 'short' }))} AST</span>
+  ${/* The DATA's age leads. The render time follows, plainly labelled, so it can
+       never be mistaken for the age of the figures. */''}
+  <span>${asAt ? `Readings as at ${esc(asAt)}` : 'Readings as at the surveyor&rsquo;s last sync'}${
+    received ? ` &middot; received ${esc(received)}` : ''} &middot; page opened ${esc(stamp(generatedAt) ?? '')}</span>
 </footer>
 </div>
 <div class="tip" id="tip"></div>`

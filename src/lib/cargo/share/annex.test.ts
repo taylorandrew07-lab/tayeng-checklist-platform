@@ -156,6 +156,28 @@ describe('renderVoyageAnnex', () => {
     expect(renderVoyageAnnex(voyage({ status: 'finalized' }))).toContain('finalised')
   })
 
+  it('dates the READINGS, not just the page render', () => {
+    const html = renderVoyageAnnex(voyage({ updatedAt: Date.parse('2026-08-10T14:07:24Z') }), {
+      generatedAt: new Date('2026-08-11T19:30:00Z'),
+      receivedAt: '2026-08-10T14:08:15Z',
+    })
+    // The figures are from the 10th; the page was opened on the 11th. A reader
+    // must be able to tell those apart — offline readings can be a day behind.
+    expect(html).toMatch(/These readings are as at <strong>10 Aug 2026, 10:07 AST<\/strong>/)
+    expect(html).toContain('has not yet reached us')
+    expect(html).toContain('Readings as at 10 Aug 2026, 10:07 AST')
+    expect(html).toContain('received 10 Aug 2026, 10:08 AST')
+    expect(html).toContain('page opened 11 Aug 2026, 15:30 AST')
+    // The old footer said only "Generated <now>", which read as the age of the data.
+    expect(html).not.toMatch(/Generated 11 Aug/)
+  })
+
+  it('falls back to the document own updatedAt when no timestamps are passed', () => {
+    const html = renderVoyageAnnex(voyage({ updatedAt: Date.parse('2026-08-09T12:00:00Z') }))
+    // en-GB "medium" doesn't zero-pad the day — 9 Aug, not 09 Aug.
+    expect(html).toContain('9 Aug 2026, 08:00 AST')
+  })
+
   it('survives a voyage with no readings at all', () => {
     const html = renderVoyageAnnex(voyage({ readings: {}, readingTypes: [] }))
     expect(html).toContain('No readings have been recorded')
