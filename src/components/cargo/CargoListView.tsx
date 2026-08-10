@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Plus, Ship, Trash2, Loader2, ChevronRight, RefreshCw, Cloud, CloudOff } from 'lucide-react'
+import { Plus, Ship, Trash2, Loader2, ChevronRight, RefreshCw, Cloud, CloudOff, DownloadCloud, AlertTriangle, WifiOff, ShieldAlert } from 'lucide-react'
 import { type Voyage } from '@/lib/cargo/types'
 import { listVoyages, deleteVoyage, requestPersistentStorage, cargoAvailable } from '@/lib/cargo/db'
+import { listRestorable, restoreVoyage, type RestorableVoyage } from '@/lib/cargo/restore'
 import { currentUserId } from '@/lib/cargo/user'
 import { formatVoyageRange } from '@/lib/cargo/periods'
 import { createClient } from '@/lib/supabase/client'
@@ -24,27 +25,103 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
 
   const [voyages, setVoyages] = useState<Voyage[]>([])
   const [userId, setUserId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
 
+  // Why the list is what it is. "No voyages yet" used to be shown for all of
+  // these, so a browser that could not be read looked exactly like a surveyor
+  // who had not started — which is how a voyage that was safe in the cloud the
+  // whole time got reported as lost.
+  type Load = 'loading' | 'ok' | 'no-storage' | 'no-user' | 'error'
+  const [load, setLoad] = useState<Load>('loading')
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Voyages of this user that are in the cloud but not on this device.
+  const [restorable, setRestorable] = useState<RestorableVoyage[]>([])
+  const [cloud, setCloud] = useState<'idle' | 'checking' | 'offline' | 'error' | 'done'>('idle')
+  const [restoring, setRestoring] = useState<string | null>(null)
+  const [restoreProgress, setRestoreProgress] = useState<string | null>(null)
+  /** Whether the browser has promised not to evict this site's storage. */
+  const [durable, setDurable] = useState<boolean | null>(null)
+
   const pendingCount = voyages.filter(voyageDirty).length
 
-  useEffect(() => {
-    let active = true
-    async function load() {
-      if (!cargoAvailable()) { setLoading(false); return }
-      void requestPersistentStorage()
-      const uid = await currentUserId()
-      if (!active) return
-      setUserId(uid)
-      if (uid) setVoyages(await listVoyages(uid))
-      setLoading(false)
+  const checkCloud = useCallback(async (uid: string, localIds: string[]) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) { setCloud('offline'); return }
+    setCloud('checking')
+    try {
+      setRestorable(await withTimeout(listRestorable(createClient(), uid, localIds), 10000, 'Checking the cloud'))
+      setCloud('done')
+    } catch {
+      // Never fatal: the device's own voyages are already on screen.
+      setCloud('error')
     }
-    load()
-    return () => { active = false }
   }, [])
+
+  const refresh = useCallback(async () => {
+    setLoad('loading')
+    setLoadError(null)
+    if (!cargoAvailable()) { setLoad('no-storage'); return }
+
+    // Ask the browser to make this site's storage durable. Without it IndexedDB
+    // is best-effort and can be evicted under disk pressure — the likeliest way
+    // for a voyage to vanish from a device that never cleared anything.
+    requestPersistentStorage().then(setDurable).catch(() => setDurable(null))
+
+    let uid: string | null = null
+    try { uid = await currentUserId() } catch { uid = null }
+    if (!uid) { setLoad('no-user'); return }
+    setUserId(uid)
+
+    let local: Voyage[] = []
+    try {
+      local = await listVoyages(uid)
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Unknown error')
+      setLoad('error')
+      return
+    }
+    setVoyages(local)
+    setLoad('ok')
+    void checkCloud(uid, local.map(v => v.id))
+  }, [checkCloud])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  // Coming back online is the moment the cloud check becomes possible, so take
+  // it rather than making the surveyor reload the page.
+  useEffect(() => {
+    function onOnline() { if (userId) void checkCloud(userId, voyages.map(v => v.id)) }
+    function onOffline() { setCloud('offline') }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    // Both are named so both come off again — this effect re-runs whenever the
+    // voyage list changes, and an inline handler would pile up a new listener
+    // every time.
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [userId, voyages, checkCloud])
+
+  async function handleRestore(r: RestorableVoyage) {
+    if (!userId) return
+    setRestoring(r.id)
+    setRestoreProgress(r.photoCount ? `0 of ${r.photoCount} photos` : null)
+    try {
+      const res = await restoreVoyage(createClient(), userId, r.id, {
+        onProgress: (done, total) => setRestoreProgress(total ? `${done} of ${total} photos` : null),
+      })
+      toast.success(`Restored ${withVesselPrefix(res.voyage.vesselName, res.voyage.vesselType)}${res.photos ? ` with ${res.photos} photo${res.photos === 1 ? '' : 's'}` : ''}.`)
+      await refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not restore that voyage.')
+    } finally {
+      setRestoring(null)
+      setRestoreProgress(null)
+    }
+  }
 
   async function handleSyncAll() {
     if (!userId) return
@@ -108,13 +185,47 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
       </div>
       {syncMsg && <p className="text-xs text-gray-500 -mt-3">{syncMsg}</p>}
 
-      {loading ? (
+      {/* Storage that the browser has not promised to keep can be evicted when
+          the disk runs low, taking unsynced work with it. Worth saying out loud. */}
+      {durable === false && load === 'ok' && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-start gap-2">
+          <ShieldAlert className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>This browser has not guaranteed to keep offline data, so it could be cleared if the device runs low on space. <strong>Sync often</strong> — a synced voyage can always be restored here.</span>
+        </div>
+      )}
+
+      {load === 'loading' ? (
         <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-16 w-full" />)}</div>
-      ) : voyages.length === 0 ? (
+      ) : load === 'no-storage' ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="This browser can't store offline data"
+          description="Cargo Monitoring keeps voyages on the device, which needs browser storage. A private/incognito window or a locked-down browser policy will block it. Nothing has been lost — voyages already synced are safe and can be restored from another browser."
+          action={<button onClick={() => void refresh()} className="btn-secondary inline-flex"><RefreshCw className="h-4 w-4" />Try again</button>}
+        />
+      ) : load === 'no-user' ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't confirm who's signed in"
+          description="Your voyages are stored against your user account, so they can't be listed until that's known. This is NOT a sign that anything was deleted. Sign in again — then anything on this device reappears, and anything synced can be restored."
+          action={<Link href="/login" className="btn-primary inline-flex">Sign in again</Link>}
+        />
+      ) : load === 'error' ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't read this device's storage"
+          description={`The voyages on this device could not be read${loadError ? ` (${loadError})` : ''}. This is a read failure, not a deletion — nothing has been removed.`}
+          action={<button onClick={() => void refresh()} className="btn-secondary inline-flex"><RefreshCw className="h-4 w-4" />Try again</button>}
+        />
+      ) : voyages.length === 0 && restorable.length === 0 ? (
         <EmptyState
           icon={Ship}
-          title="No voyages yet"
-          description="Create a voyage to start logging cargo monitoring readings."
+          title="No voyages on this device"
+          description={cloud === 'offline'
+            ? "Nothing is stored on this device. You're offline, so voyages in the cloud can't be checked yet — reconnect and they'll appear here to restore."
+            : cloud === 'error'
+              ? "Nothing is stored on this device, and the cloud couldn't be checked just now. Try again before assuming a voyage is gone."
+              : 'Nothing on this device, and nothing of yours in the cloud waiting to be restored.'}
           action={<Link href={`${base}/new`} className="btn-primary inline-flex"><Plus className="h-4 w-4" />Create your first voyage</Link>}
         />
       ) : (
@@ -143,6 +254,61 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
             </div>
           ))}
         </div>
+      )}
+
+      {/* Synced voyages that aren't on this device. Sync only ever pushed
+          upward, so a device that lost its copy had no way back — this is it. */}
+      {load === 'ok' && restorable.length > 0 && (
+        <div className="card p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-brand-50 text-brand-700 p-2"><DownloadCloud className="h-4 w-4" /></div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-sm">In the cloud, not on this device</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Synced from another device or browser. Restore one to carry on working on it here — readings, settings and photos all come back.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {restorable.map(r => (
+              <div key={r.id} className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                <Ship className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm text-gray-900 truncate">{r.vesselName || 'Voyage'}{r.voyageNumber ? ` — ${r.voyageNumber}` : ''}</p>
+                  <p className="text-xs text-gray-500">
+                    Last synced {new Date(r.syncedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                    {r.photoCount > 0 ? ` · ${r.photoCount} photo${r.photoCount === 1 ? '' : 's'}` : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleRestore(r)}
+                  disabled={restoring !== null || cloud === 'offline'}
+                  className="btn-secondary whitespace-nowrap"
+                >
+                  {restoring === r.id
+                    ? <><Loader2 className="h-4 w-4 animate-spin" />{restoreProgress ?? 'Restoring…'}</>
+                    : <><DownloadCloud className="h-4 w-4" />Restore</>}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Say which half of the picture is on screen while offline, rather than
+          letting a short list imply that something is missing. */}
+      {load === 'ok' && cloud === 'offline' && (
+        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+          <WifiOff className="h-3.5 w-3.5" />
+          Offline — showing what&apos;s on this device. Voyages in the cloud can&apos;t be checked until you reconnect.
+        </p>
+      )}
+      {load === 'ok' && cloud === 'error' && (
+        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Couldn&apos;t check the cloud for other voyages.{' '}
+          <button onClick={() => userId && void checkCloud(userId, voyages.map(v => v.id))} className="underline hover:text-gray-700">Try again</button>
+        </p>
       )}
     </div>
   )
