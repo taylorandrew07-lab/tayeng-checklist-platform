@@ -50,7 +50,7 @@ h1{font-size:19px;font-weight:640;margin:0 0 8px}p{color:#475569;font-size:14px;
   )
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
 
   // Cheap shape check before touching the database — the tokens we mint are
@@ -88,7 +88,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     .then(() => {}, () => {})
 
   const html = renderVoyageAnnex(voyage, {
-    logoDataUrl: await getLetterheadDataUrl().catch(() => null),
+    logoDataUrl: await getLetterheadDataUrl(new URL(request.url).origin).catch(() => null),
     generatedAt: new Date(),
   })
 
