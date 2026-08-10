@@ -506,7 +506,10 @@ export interface ClientRate {
    *  Interim/Final, Loading/Discharging, On-hire/Off-hire. NULL = any stage of this
    *  job type. See pickRate() in lib/jobs/invoicing.ts for match precedence. */
   job_stage: string | null
-  rate_type: 'fixed' | 'hourly' | 'per_unit' | 'per_km'; rate: number
+  /** 'daily' (migration 169) prices a day-billed job (jobs.labour_unit = 'days',
+   *  migration 148). Never mix it with 'hourly' on one line — hours and days are
+   *  separate units, see lib/jobs/labourUnit.ts. */
+  rate_type: 'fixed' | 'hourly' | 'daily' | 'per_unit' | 'per_km'; rate: number
   unit_label: string | null; currency: Currency; is_active: boolean
   /** Free-text note, e.g. "initial $X, final $Y" for a draught survey (migration 082). */
   notes: string | null

@@ -109,11 +109,13 @@ export default function ClientRates() {
   )
 }
 
-const RATE_TYPES: [ClientRate['rate_type'], string][] = [['fixed', 'Fixed'], ['hourly', 'Hourly'], ['per_unit', 'Per unit'], ['per_km', 'Per km (mileage)']]
+// 'daily' (migration 169) is the twin of 'hourly' for day-billed jobs (migration 148).
+const RATE_TYPES: [ClientRate['rate_type'], string][] = [['fixed', 'Fixed'], ['hourly', 'Hourly'], ['daily', 'Day rate'], ['per_unit', 'Per unit'], ['per_km', 'Per km (mileage)']]
 
 function rateSummary(r: ClientRate): string {
   const base = money(Number(r.rate), r.currency)
   if (r.rate_type === 'hourly') return `${base} / hr`
+  if (r.rate_type === 'daily') return `${base} / day`
   if (r.rate_type === 'per_km') return `${base} / km`
   if (r.rate_type === 'per_unit') return `${base} / ${r.unit_label || 'unit'}`
   return base
@@ -163,7 +165,7 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
     // otherwise stops a stale value from making the rate un-matchable after the type
     // is changed (a stage-tagged rate matches that stage only).
     const stage = jobType && STAGE_OPTIONS[jobType] ? (jobStage || null) : null
-    const payload = { client_id: clientId, job_type: jobType || null, job_stage: stage, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : rateType === 'per_km' ? 'km' : null, currency, notes: notes.trim() || null }
+    const payload = { client_id: clientId, job_type: jobType || null, job_stage: stage, rate_type: rateType, rate: Number(rate) || 0, unit_label: rateType === 'per_unit' ? (unitLabel || null) : rateType === 'per_km' ? 'km' : rateType === 'daily' ? 'day' : null, currency, notes: notes.trim() || null }
     const res = existing ? await updateClientRate(existing.id, payload) : await addClientRate(payload as any)
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
@@ -207,6 +209,9 @@ function RateEditor({ clientId, jobTypes, existing, onDone }: { clientId: string
           <label className="text-[11px] text-gray-400">Currency</label>
           <select value={currency} onChange={e => setCurrency(e.target.value as Currency)} className={cell}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
         </div>
+        {rateType === 'daily' && (
+          <p className="sm:col-span-2 text-[11px] text-gray-400">Prices a job billed by the day (its labour unit set to Days) — the invoice line bills days worked × this rate.</p>
+        )}
         {rateType === 'per_unit' && (
           <div className="sm:col-span-2">
             <label className="text-[11px] text-gray-400">Unit label</label>
