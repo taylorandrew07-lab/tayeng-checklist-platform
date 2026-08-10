@@ -46,8 +46,12 @@ describe('renderVoyageAnnex', () => {
   it('renders a complete standalone document with the readings in it', () => {
     const html = renderVoyageAnnex(voyage())
     expect(html.startsWith('<!doctype html>')).toBe(true)
-    expect(html).toContain('Cargo Hold Monitoring &mdash; Data Annex')
-    expect(html).toContain('M.V. Cape Trinity')
+    expect(html).toContain('<h1>Cargo Monitoring &mdash; Data Annex</h1>')
+    // The vessel appears in the browser title and once as a labelled field —
+    // never as a subtitle repeating what the field block already says.
+    expect(html).toContain('<title>M.V. Cape Trinity — Cargo Monitoring Data Annex</title>')
+    expect(html).not.toContain('class="sub"')
+    expect((html.match(/M\.V\. Cape Trinity/g) ?? []).length).toBe(2)
     expect(html).toContain('41.2')
     expect(html).toContain('68.9')
     // Two holds, each getting a band.
@@ -78,7 +82,7 @@ describe('renderVoyageAnnex', () => {
     const hidden = renderVoyageAnnex(voyage({
       readingTypes: [tempType(), { id: 'rh', name: 'Headspace humidity', unit: '%RH', appliesTo: 'all', includeInTables: false, includeInCharts: false, includeInPdf: false, points: [{ id: 'main', name: 'Headspace humidity' }] }],
     }))
-    expect(hidden).not.toContain('class="s">Headspace humidity')
+    expect(hidden).not.toContain('<b>Headspace humidity</b>')
     // Excluded types are named rather than silently dropped.
     expect(hidden).toContain('Also recorded on this voyage but not included here')
 
@@ -86,7 +90,7 @@ describe('renderVoyageAnnex', () => {
     // Exactly one GRID row for TC 1 — Hold 2's. Hold 1 still gets its band but
     // none of this type's rows. (Matched on the row header specifically: the
     // point also appears as a chart series label.)
-    expect((scoped.match(/class="s">TC 1/g) ?? []).length).toBe(1)
+    expect((scoped.match(/<b>TC 1<\/b>/g) ?? []).length).toBe(1)
     expect((scoped.match(/class="stick">Hold /g) ?? []).length).toBe(2)
   })
 
@@ -120,6 +124,31 @@ describe('renderVoyageAnnex', () => {
     const html = renderVoyageAnnex(voyage({ clientName: undefined }))
     expect([...html.matchAll(/<dt>/g)]).toHaveLength(9)
     expect(html).toContain('class="f2"')
+  })
+
+  it('keeps a label and its unit on one line', () => {
+    const html = renderVoyageAnnex(voyage())
+    // Both live inside one flex row, so a long name can never push the unit onto
+    // a second line and double the row height.
+    expect(html).toContain('<span class="sw"><b>DRI temperature</b><em>°C</em></span>')
+    expect(html).not.toMatch(/th\.s em\{float/)
+  })
+
+  it('bands alternate days, and never tints a cell that carries a threshold colour', () => {
+    // Two monitoring days x three rounds: day 1 plain, day 2 banded.
+    const html = renderVoyageAnnex(voyage())
+    expect(html).toContain('class="plain alt"')      // day 2, no threshold colour
+    expect(html).toContain(' ds"')                   // day 2 opens with the rule
+
+    // The banding must never land on a threshold-coloured cell — an amber or red
+    // reading has to look identical whichever day it fell on.
+    for (const t of ['ok', 'warn', 'crit', 'grad']) {
+      expect(html).not.toContain(`class="${t} alt"`)
+      expect(html).not.toContain(`class="${t} alt ds"`)
+    }
+    // The rule itself DOES cross coloured cells — that's what carries the day
+    // boundary through a fully-shaded temperature block.
+    expect(html).toMatch(/class="(ok|warn|crit|grad) ds"/)
   })
 
   it('marks an unfinalised voyage preliminary and a finalised one final', () => {

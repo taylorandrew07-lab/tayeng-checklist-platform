@@ -70,21 +70,47 @@ const dayLabel = (iso: string) => formatVoyageDate(iso).replace(/^(\d{2}) (\w{3}
  *  authority on WHICH one applies; this only names them for the stylesheet. */
 const GREEN_BG = '#dcfce7', AMBER_BG = '#fef9c3', RED_BG = '#fee2e2'
 
-function cellAttrs(voyage: Voyage, rt: ReadingType, hold: number, tp: Timepoint, pt: ReadingPoint): string {
+function cellTint(voyage: Voyage, rt: ReadingType, hold: number, tp: Timepoint, pt: ReadingPoint): { cls: string; style: string } {
   const c = readingCellColor(voyage, rt, hold, tp.dateISO, tp.period, pt.id)
-  if (!c) return ' class="plain"'
-  if (c.bg === RED_BG) return ' class="crit"'
-  if (c.bg === AMBER_BG) return ' class="warn"'
-  if (c.bg === GREEN_BG) return ' class="ok"'
+  if (!c) return { cls: 'plain', style: '' }
+  if (c.bg === RED_BG) return { cls: 'crit', style: '' }
+  if (c.bg === AMBER_BG) return { cls: 'warn', style: '' }
+  if (c.bg === GREEN_BG) return { cls: 'ok', style: '' }
   // Anything else is the green→amber rate-of-rise blend. Take the colour it
   // actually produced rather than recomputing the interpolation here.
-  return ` class="grad" style="background:${esc(c.bg)};color:${esc(c.fg)}"`
+  return { cls: 'grad', style: `background:${esc(c.bg)};color:${esc(c.fg)}` }
+}
+
+/** Per-column day banding: which columns belong to an odd-numbered day, and
+ *  which one opens a day. Forty-eight columns of numbers read as a single block
+ *  otherwise — this is what lets the eye find "the 6th" without tracking back up
+ *  to the header. */
+function dayBanding(voyage: Voyage, dates: string[]): { alt: boolean; opensDay: boolean }[] {
+  const out: { alt: boolean; opensDay: boolean }[] = []
+  dates.forEach((d, dayIndex) => {
+    const n = periodsForDate(voyage, d).length
+    for (let k = 0; k < n; k++) {
+      // Not on the very first column — the sticky label column already draws
+      // that edge, and a second rule beside it just looks like a mistake.
+      out.push({ alt: dayIndex % 2 === 1, opensDay: k === 0 && out.length > 0 })
+    }
+  })
+  return out
 }
 
 function readingsGrid(voyage: Voyage, tps: Timepoint[], types: ReadingType[]): string {
   const holds = holdNumbers(voyage.holdCount)
   const dates = monitoringDates(voyage.startDate, effectiveEndDate(voyage))
   const span = tps.length + 1
+  const band = dayBanding(voyage, dates)
+  /** Full banding for a header cell, which never carries a threshold colour. */
+  const bandCls = (k: number) =>
+    `${band[k]?.alt ? ' alt' : ''}${band[k]?.opensDay ? ' ds' : ''}`
+  /** Banding for a body cell. `alt` is withheld from any cell that already has a
+   *  threshold colour, so the class means "this cell is tinted" rather than
+   *  being stamped everywhere and doing nothing on three quarters of them. */
+  const bodyCls = (k: number, tinted: boolean) =>
+    `${!tinted && band[k]?.alt ? ' alt' : ''}${band[k]?.opensDay ? ' ds' : ''}`
 
   let h = '<table class="grid"><thead>'
   h += '<tr class="r-date"><th class="corner" rowspan="3"><span class="corner-t">Reading</span>'
@@ -96,14 +122,14 @@ function readingsGrid(voyage: Voyage, tps: Timepoint[], types: ReadingType[]): s
   h += '</tr><tr class="r-round">'
   // A round outside the base three was added mid-voyage — flagged so a reader can
   // see the monitoring intensified rather than wondering at the extra column.
-  for (const tp of tps) {
+  tps.forEach((tp, k) => {
     const extra = !['0600', '1200', '1800'].includes(tp.period)
-    h += `<th class="${extra ? 'extra' : ''}">${esc(tp.period)}</th>`
-  }
+    h += `<th class="${extra ? 'extra' : ''}${bandCls(k)}">${esc(tp.period)}</th>`
+  })
   h += '</tr><tr class="r-actual">'
-  for (const tp of tps) {
-    h += `<th>${esc(voyage.periodMeta?.[tp.dateISO]?.[tp.period]?.actualTime || '—')}</th>`
-  }
+  tps.forEach((tp, k) => {
+    h += `<th class="${bandCls(k).trim()}">${esc(voyage.periodMeta?.[tp.dateISO]?.[tp.period]?.actualTime || '—')}</th>`
+  })
   h += '</tr></thead><tbody>'
 
   for (const hold of holds) {
@@ -116,18 +142,25 @@ function readingsGrid(voyage: Voyage, tps: Timepoint[], types: ReadingType[]): s
     // channel beneath one.
     for (const r of readingRows(types.filter(rt => readingTypeAppliesToHold(rt, hold)), hold)) {
       const cls = [r.isTitle ? 'tt' : 'pt', r.startsGroup ? 'gap' : ''].filter(Boolean).join(' ')
-      h += `<tr class="${cls}"><th class="s">${esc(r.label)}`
-        + `${r.tag ? `<em>${esc(r.tag)}</em>` : ''}</th>`
+      // Label and unit share one flex line. Floating the unit right dropped it
+      // onto a second line as soon as the label filled the column ("Thermocouple
+      // temperature" + "°C"), which doubled the row height.
+      h += `<tr class="${cls}"><th class="s"><span class="sw"><b>${esc(r.label)}</b>`
+        + `${r.tag ? `<em>${esc(r.tag)}</em>` : ''}</span></th>`
 
       if (!r.point) {
-        // A title with its channels below it holds no readings of its own.
-        h += `<td class="fill" colspan="${tps.length}"></td></tr>`
+        // A title with its channels below it holds no readings of its own. The
+        // banding still runs through it, so the day columns stay continuous down
+        // the whole table rather than restarting at each type.
+        tps.forEach((_tp, k) => { h += `<td class="fill${bodyCls(k, false)}"></td>` })
+        h += '</tr>'
         continue
       }
-      for (const tp of tps) {
-        const v = getReadingValue(voyage, tp.dateISO, tp.period, hold, r.rt.id, r.point.id)
-        h += `<td${cellAttrs(voyage, r.rt, hold, tp, r.point)}>${v === '' ? '—' : esc(v)}</td>`
-      }
+      tps.forEach((tp, k) => {
+        const v = getReadingValue(voyage, tp.dateISO, tp.period, hold, r.rt.id, r.point!.id)
+        const t = cellTint(voyage, r.rt, hold, tp, r.point!)
+        h += `<td class="${t.cls}${bodyCls(k, t.cls !== 'plain')}"${t.style ? ` style="${t.style}"` : ''}>${v === '' ? '—' : esc(v)}</td>`
+      })
       h += '</tr>'
     }
   }
@@ -406,7 +439,8 @@ tr.r-date th{top:0;height:30px;font-size:11px;padding:0 6px;
   box-shadow:inset -1px 0 0 rgb(255 255 255/.16),inset 0 -1px 0 rgb(255 255 255/.16)}
 tr.r-date th b{display:block;font-weight:640}
 tr.r-date th.d-extra{background:#24468f}
-tr.r-date th.corner{left:0;top:0;z-index:5;width:132px;min-width:132px;text-align:left;padding:0 10px;
+/* Must match tbody th.s exactly — they are the same sticky column. */
+tr.r-date th.corner{left:0;top:0;z-index:5;width:196px;min-width:196px;text-align:left;padding:0 10px;
   vertical-align:middle;height:auto;box-shadow:inset -1px 0 0 rgb(255 255 255/.22),inset 0 -1px 0 rgb(255 255 255/.18)}
 .corner-t{display:block;font-weight:640;font-size:12px}
 .corner-s{display:block;font-size:9px;opacity:.6;letter-spacing:.05em;text-transform:uppercase}
@@ -418,9 +452,14 @@ tr.band th{position:sticky;top:70px;z-index:4;text-align:left;padding:6px 12px;f
   background:#eef2ff;color:#1d4ed8;box-shadow:inset 0 1px 0 #cbd5e1,inset 0 -1px 0 #cbd5e1}
 .stick{position:sticky;left:12px;display:inline-block}
 tbody th.s{position:sticky;left:0;z-index:2;background:#fff;text-align:left;font-weight:500;padding:0 10px;
-  height:22px;width:170px;min-width:170px;font-size:11.5px;
+  height:22px;width:196px;min-width:196px;font-size:11.5px;
   box-shadow:inset -1px 0 0 #cbd5e1,inset 0 -1px 0 #e2e8f0}
-tbody th.s em{float:right;font-style:normal;font-size:9px;letter-spacing:.05em;color:#8a95a6;padding-top:2px}
+/* One line, always: the label takes the room and the unit sits against the
+   right edge. The label ellipsises rather than pushing the unit onto a second
+   line and making the row two deep. */
+.sw{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;line-height:22px}
+.sw b{font-weight:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sw em{flex:none;font-style:normal;font-size:9px;letter-spacing:.05em;color:#8a95a6}
 /* Every reading TYPE is a title at the same level, in the label column —
    whether or not it has channels beneath it. Oxygen names what is measured
    exactly as much as Infrared gun does. */
@@ -438,6 +477,24 @@ td.plain{background:#fff;color:#475569}
 td.ok{background:${GREEN_BG};color:#166534}
 td.warn{background:${AMBER_BG};color:#854d0e;font-weight:600}
 td.crit{background:${RED_BG};color:#991b1b;font-weight:660}
+
+/* ── day banding ──────────────────────────────────────────────────────────
+   Alternate days carry a barely-there tint so a run of forty-odd columns reads
+   as days. It is applied ONLY to cells with no threshold colour: tinting an
+   amber or red cell would change what the threshold looks like depending on
+   which day it fell on, which is not a thing to do in a document about cargo
+   that is heating. The day-opening rule below is what carries the banding
+   across the coloured rows, where a tint deliberately cannot go. */
+td.plain.alt{background:#f6f8fc}
+td.fill.alt{background:#f5f7fb}
+th.alt{background:#1a336f}
+tr.r-actual th.alt{background:#16295c}
+/* First column of a day — a heavier rule, legible whatever the cell colour. */
+tbody td.ds{box-shadow:inset 1px 0 0 #94a3b8,inset -1px 0 0 #e2e8f0,inset 0 -1px 0 #e2e8f0}
+/* Scoped per header row so each keeps the bottom rule it had — a blanket
+   thead th.ds would drop r-actual's underline and invent one on r-round. */
+tr.r-round th.ds{box-shadow:inset 1px 0 0 rgb(255 255 255/.5),inset -1px 0 0 rgb(255 255 255/.12)}
+tr.r-actual th.ds{box-shadow:inset 1px 0 0 rgb(255 255 255/.5),inset -1px 0 0 rgb(255 255 255/.1),inset 0 -1px 0 rgb(255 255 255/.18)}
 .charts{display:flex;flex-direction:column;gap:18px}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px 12px;
   box-shadow:0 1px 2px rgb(15 23 42/.06),0 8px 24px -12px rgb(15 23 42/.18)}
@@ -609,11 +666,11 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
     : '<b>Preliminary &mdash; monitoring is ongoing.</b> Figures are current as at the surveyor&rsquo;s last sync and may change.'}</div>
 </div>
 
-<div>
-  <h1>Cargo Hold Monitoring &mdash; Data Annex</h1>
-  <p class="sub">${esc(vessel)}${voyage.voyageNumber ? ` &middot; Voyage ${esc(voyage.voyageNumber)}` : ''}${
-    voyage.loadingPort && voyage.dischargePort ? ` &middot; ${esc(voyage.loadingPort)} &rarr; ${esc(voyage.dischargePort)}` : ''}</p>
-</div>
+${/* Just the heading. The vessel, voyage and ports used to be repeated here as a
+     subtitle, but every one of them is already a labelled field in the block
+     below — saying it twice adds nothing and makes the reader check whether the
+     two copies agree. */''}
+<h1>Cargo Monitoring &mdash; Data Annex</h1>
 
 <dl class="meta">${meta.map(([k, v], i) => {
     // Close the last row: if the count doesn't divide by five, the final cell
@@ -670,7 +727,10 @@ ${voyage.observations ? `<div class="obs"><h2>Surveyor&rsquo;s observations</h2>
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<title>${esc(vessel)} — Cargo Hold Monitoring Data Annex</title>
+${/* The vessel stays in the browser title (not on the page): it names the tab,
+     the bookmark and the file if the recipient saves the page, and several of
+     these open side by side. */''}
+<title>${esc(vessel)} — Cargo Monitoring Data Annex</title>
 <style>${styles()}</style></head><body>${body}
 <script>${SCRIPT.replace('__P__', json)}</script></body></html>`
 }
