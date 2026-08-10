@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download, Columns3 } from 'lucide-react'
+import { Plus, Search, Hash, ExternalLink, Loader2, ArrowUpDown, Clock, Download, Columns3, Ship } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
@@ -18,7 +18,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getUiPrefs, setUiPref } from '@/lib/preferences'
-import { formatDate, parseVesselName } from '@/lib/utils'
+import { formatDate, parseVesselName, withVesselPrefix } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { qtyWithUnit } from '@/lib/jobs/labourUnit'
@@ -33,6 +34,14 @@ import {
 import type { WorkflowStatus, Invoice } from '@/lib/types/database'
 import { InvoiceStatusPill } from '@/components/job/StatusPill'
 import { useStickyState } from '@/lib/hooks/useStickyState'
+import { CargoStatusPill } from '@/components/job/StatusPill'
+import { listVoyageListRows, type VoyageListRow } from '@/lib/cargo/remote'
+import { voyageIsOngoing, voyageLastDate, voyageSpansDays } from '@/lib/cargo/voyageDate'
+import { voyageHref } from '@/lib/cargo/links'
+import { byListRowDesc, splitVoyagesByJob, type JobsListRow } from '@/lib/jobs/listRow'
+
+/** What a cargo voyage shows in the Job Type column. */
+const CARGO_TYPE_LABEL = 'Cargo Monitoring'
 
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
 type Filter = 'open' | 'invoice_ready' | 'closed' | 'all'
@@ -213,6 +222,12 @@ interface ColumnDef {
   min: number
   align?: 'right'
   cell: (r: TrackerRow, ctx: CellCtx) => React.ReactNode
+  /** How this column renders a CARGO VOYAGE row. Columns that don't define one
+   *  show a muted dash — which is how "voyages aren't wired to invoicing" gets
+   *  rendered: report #, quantity, km, billing, invoice and totals all stay
+   *  blank. It also means no inline editor can ever open on a voyage row, so
+   *  updateJobField() can never be handed a voyage's id. */
+  voyageCell?: (v: VoyageListRow) => React.ReactNode
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -232,6 +247,11 @@ const COLUMNS: ColumnDef[] = [
         {r.job_stage && <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate">{r.job_stage}</span>}
         {r.cargo_type && <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate">{r.cargo_type}</span>}
       </>
+    ),
+    voyageCell: () => (
+      <div className="px-3">
+        <span className="inline-flex items-center gap-1.5 text-gray-700"><Ship className="h-3.5 w-3.5 text-brand-600" />Cargo Monitoring</span>
+      </div>
     ) },
   { key: 'vessel', label: 'Vessel', sortKey: 'vessel', defaultVisible: true, width: 150, min: 100,
     cell: (r, { patchRow }) => <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => {
@@ -240,10 +260,19 @@ const COLUMNS: ColumnDef[] = [
       const p = parseVesselName(v ?? '')
       const patch = p.prefix ? { vessel_name: p.name, vessel_type: p.prefix } : { vessel_name: p.name }
       return patchRow(r.id, patch, patch)
-    }} /> },
+    }} />,
+    voyageCell: v => (
+      <div className="px-3 truncate">
+        {withVesselPrefix(v.vessel_name, v.vessel_type)}
+        {v.voyage_number && <span className="block text-[11px] text-gray-400 leading-tight truncate">Voyage {v.voyage_number}</span>}
+      </div>
+    ) },
   { key: 'client', label: 'Client', sortKey: 'client', defaultVisible: true, width: 150, min: 90,
     cell: r => r.client_name
       ? <Link href={`/admin/clients/${r.client_id}`} className="block px-3 truncate text-brand-700 hover:underline">{r.client_name}</Link>
+      : <span className="block px-3 text-gray-300">—</span>,
+    voyageCell: v => v.client_name
+      ? <span className="block px-3 truncate text-gray-700">{v.client_name}</span>
       : <span className="block px-3 text-gray-300">—</span> },
   { key: 'surveyors', label: 'Surveyors', defaultVisible: true, width: 160, min: 90,
     cell: r => (
@@ -252,6 +281,9 @@ const COLUMNS: ColumnDef[] = [
           : r.surveyors.length === 1 ? r.surveyors[0]
           : <span title={r.surveyors.join(', ')}>{r.surveyors[0]} <span className="text-gray-400">+{r.surveyors.length - 1}</span></span>}
       </div>
+    ),
+    voyageCell: v => (
+      <div className="px-3 text-gray-600 truncate">{v.surveyor_name ?? <span className="text-gray-300">—</span>}</div>
     ) },
   // The list mixes hours-billed and day-billed jobs, so every quantity carries its
   // own job's unit (mig 148) — a 3-day job must never read as "3h". The column
@@ -291,7 +323,12 @@ const COLUMNS: ColumnDef[] = [
   { key: 'invoice_total', label: 'Invoice total', defaultVisible: false, width: 120, min: 90, align: 'right',
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.invoice_total != null ? money(r.invoice_total, r.invoice_currency ?? 'USD') : <span className="text-gray-300">—</span>}</div> },
   { key: 'status', label: 'Status', sortKey: 'status', defaultVisible: true, width: 120, min: 90,
-    cell: (r, { changeStatus }) => <div className="px-3"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></div> },
+    cell: (r, { changeStatus }) => <div className="px-3"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></div>,
+    // CargoStatusPill, never WorkflowPill: the latter runs its input through
+    // normalizeWorkflowStatus, which returns 'in_progress' for anything it does
+    // not recognise — so a FINALISED voyage would render as "In progress". A
+    // wrong answer with no error.
+    voyageCell: v => <div className="px-3"><CargoStatusPill status={v.status === 'finalized' ? 'finalized' : 'in_progress'} /></div> },
   // A job is shown (and sorted) by its LAST day — jobLastDate() — with the start
   // date underneath in fine print, but only when the job really spans days: an
   // end_date equal to the start would otherwise print "12 Jul / from 12 Jul".
@@ -318,6 +355,16 @@ const COLUMNS: ColumnDef[] = [
             onSave={v => patchRow(r.id, { scheduled_date: v }, { scheduled_date: v })} />
         )}
       </>
+    ),
+    // Read-only, and the last day of a still-running voyage is TODAY rather than
+    // a date it has not reached — voyageLastDate() owns that rule.
+    voyageCell: v => (
+      <div className="px-3">
+        <span className="text-gray-700">{v.end_date ? formatDate(v.end_date) : 'Ongoing'}</span>
+        {voyageSpansDays(v) && v.start_date && (
+          <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(v.start_date)}</span>
+        )}
+      </div>
     ) },
   { key: 'notes', label: 'Notes', defaultVisible: false, width: 220, min: 120,
     cell: r => <div className="px-3 text-gray-600 truncate" title={r.notes ?? ''}>{r.notes || <span className="text-gray-300">—</span>}</div> },
@@ -328,6 +375,13 @@ const COLUMNS: ColumnDef[] = [
 // the inline editors transitively touch a ref — here ctx is just an opaque prop.)
 function JobCell({ col, row, ctx }: { col: ColumnDef; row: TrackerRow; ctx: CellCtx }) {
   return <>{col.cell(row, ctx)}</>
+}
+
+/** A cargo voyage's cell. Columns with no voyageCell render a muted dash, which
+ *  is how the money columns stay deliberately empty on a voyage row. */
+function VoyageCell({ col, voyage }: { col: ColumnDef; voyage: VoyageListRow }) {
+  if (!col.voyageCell) return <span className="block px-3 text-gray-300">—</span>
+  return <>{col.voyageCell(voyage)}</>
 }
 
 // A header cell that (a) can be dragged left/right to reorder columns (dnd-kit),
@@ -492,7 +546,9 @@ export default function JobsTrackerPage() {
   const [shown, setShown] = useState(PAGE_SIZE)
   const [numberOpen, setNumberOpen] = useState(false)
   const narrow = useIsNarrow()
+  const [voyages, setVoyages] = useState<VoyageListRow[]>([])
   const tick = useRealtimeRefresh('jobs')
+  const cargoTick = useRealtimeRefresh('cargo_voyages')
   // Suppress the realtime reload briefly after our own writes so inline edits
   // don't trigger a full-grid refresh (flicker / scroll jump) on every save.
   const suppressUntil = useRef(0)
@@ -752,8 +808,17 @@ export default function JobsTrackerPage() {
   }
 
   const load = useCallback(async () => {
-    const [r, jt] = await Promise.all([listJobTrackerRows(), listJobTypes()])
-    setRows(r); setJobTypes(jt.map(t => t.name)); setLoading(false)
+    // Voyages are fetched beside the jobs but kept in their OWN state: everything
+    // that reasons about jobs (missing report #, type/surveyor options, OT count,
+    // the year list, the numbering modal) keeps reading `rows` and stays correct
+    // by construction. The two only meet in the `mergedRows` memo below.
+    // The catch is deliberate — a cargo read failure must never blank the grid.
+    const [r, jt, v] = await Promise.all([
+      listJobTrackerRows(),
+      listJobTypes(),
+      listVoyageListRows(createClient()).catch(() => [] as VoyageListRow[]),
+    ])
+    setRows(r); setJobTypes(jt.map(t => t.name)); setVoyages(v); setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load]) // initial
@@ -761,7 +826,7 @@ export default function JobsTrackerPage() {
     if (firstTick.current) { firstTick.current = false; return }
     if (Date.now() < suppressUntil.current) return
     load()
-  }, [tick, load])
+  }, [tick, cargoTick, load])
 
   // Restore filters from the URL once, so a shared/bookmarked view reopens as-is.
   useEffect(() => {
@@ -871,7 +936,46 @@ export default function JobsTrackerPage() {
 
   // Reset the page window whenever the filtered/sorted set changes.
   useEffect(() => { setShown(PAGE_SIZE) }, [filter, typeFilter, surveyorFilter, otOnly, q, sort, view.year, view.month])
-  const paged = useMemo(() => visible.slice(0, shown), [visible, shown])
+  // Cargo voyages merged in beside the jobs. `visible` above is untouched and
+  // still jobs-only, so every job-shaped calculation on this page keeps working.
+  const mergedRows = useMemo<JobsListRow<TrackerRow>[]>(() => {
+    const jobRows: JobsListRow<TrackerRow>[] = visible.map(j => ({ kind: 'job', id: j.id, job: j }))
+
+    // A voyage attached to a job is shown ON that job's row, not as its own —
+    // one physical operation, one line. splitVoyagesByJob falls back to a
+    // standalone row if the linked job isn't in the list, so a voyage can never
+    // vanish behind a link to something this reader cannot see.
+    const { standalone } = splitVoyagesByJob(voyages, new Set(rows.map(r => r.id)))
+
+    const term = q.trim().toLowerCase()
+    const keep = standalone.filter(v => {
+      const ongoing = voyageIsOngoing(v)
+      // A voyage has no workflow_status: ongoing reads as Open, finalised as
+      // Closed, and neither is ever Invoice ready — voyages aren't invoiced.
+      if (filter === 'invoice_ready') return false
+      if (filter === 'closed' && ongoing) return false
+      if (filter === 'open' && !ongoing) return false
+      if (!inYearMonth(voyageLastDate(v) ?? v.created_at, view.year, view.month)) return false
+      // Cargo Monitoring is the voyage row's Type, so the type filter must agree.
+      if (typeFilter && typeFilter.toLowerCase() !== CARGO_TYPE_LABEL.toLowerCase()) return false
+      if (otOnly) return false                                  // voyages carry no overtime
+      if (surveyorFilter && v.surveyor_name !== surveyorFilter) return false
+      if (!term) return true
+      return [v.vessel_name, v.voyage_number, v.client_name, v.surveyor_name, CARGO_TYPE_LABEL]
+        .some(x => (x ?? '').toString().toLowerCase().includes(term))
+    })
+    if (keep.length === 0) return jobRows
+
+    const voyageRows: JobsListRow<TrackerRow>[] = keep.map(v => ({ kind: 'voyage', id: v.id, voyage: v }))
+    // Only the DATE sort can order the two kinds honestly — a voyage has no
+    // report number, quantity or invoice to rank on. Under any other sort the
+    // voyages are grouped at the top rather than scattered at arbitrary points.
+    return sort.key === 'date'
+      ? [...jobRows, ...voyageRows].sort(byListRowDesc)
+      : [...voyageRows, ...jobRows]
+  }, [visible, voyages, rows, filter, typeFilter, surveyorFilter, otOnly, q, sort.key, view.year, view.month])
+
+  const paged = useMemo(() => mergedRows.slice(0, shown), [mergedRows, shown])
 
   // Colour-by years come from all rows (so the year list is stable regardless of
   // the active filter); the legend reflects the currently-visible rows.
@@ -980,7 +1084,7 @@ export default function JobsTrackerPage() {
       </div>
 
       {/* Colour-by + month/year filter */}
-      <JobsViewToolbar view={view} years={jobYears} count={visible.length} legend={legend} />
+      <JobsViewToolbar view={view} years={jobYears} count={mergedRows.length} legend={legend} />
 
       {/* Grid — fills exactly one page (fixed layout, weighted column widths that
           sum to 100%). Headers drag to reorder; their right edge drags to resize /
@@ -1012,9 +1116,24 @@ export default function JobsTrackerPage() {
                     {visibleColumns.map(c => <td key={c.key} className="px-3 py-2.5"><div className="skeleton h-3.5 w-16" /></td>)}
                   </tr>
                 ))
-              ) : visible.length === 0 ? (
+              ) : mergedRows.length === 0 ? (
                 <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-12 text-center text-gray-400">{q || filter !== 'all' ? 'No jobs match.' : <>No jobs yet. <Link href="/admin/jobs/new" className="text-brand-600 hover:underline">Create one →</Link></>}</td></tr>
-              ) : paged.map(r => {
+              ) : paged.map(row => {
+                if (row.kind === 'voyage') {
+                  const v = row.voyage
+                  const vc = rowColor(view.colorMode, v.client_color, null)
+                  return (
+                    <tr key={v.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle" style={vc ? { backgroundColor: vc.bg } : undefined}>
+                      <td className="px-2 py-1.5 border-r border-gray-100" style={{ borderLeft: `4px solid ${vc ? vc.fg : 'transparent'}` }}>
+                        <Link href={voyageHref('admin', v.id)} title="Open cargo voyage" aria-label="Open cargo voyage" className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><ExternalLink className="h-4 w-4" /></Link>
+                      </td>
+                      {visibleColumns.map((col, i) => (
+                        <td key={col.key} data-col={col.key} className={`py-1.5 overflow-hidden align-middle ${i === visibleColumns.length - 1 ? '' : 'border-r border-gray-100'}`}><VoyageCell col={col} voyage={v} /></td>
+                      ))}
+                    </tr>
+                  )
+                }
+                const r = row.job
                 const c = rowColor(view.colorMode, r.client_color, r.template_color)
                 return (
                 <tr key={r.id} className="hover:bg-gray-50/70 transition-colors duration-100 align-middle" style={c ? { backgroundColor: c.bg } : undefined}>
@@ -1032,10 +1151,10 @@ export default function JobsTrackerPage() {
         </div>
       </div>
 
-      {!loading && visible.length > shown && (
+      {!loading && mergedRows.length > shown && (
         <div className="flex justify-center">
           <button onClick={() => setShown(s => s + PAGE_SIZE)} className="btn-secondary">
-            Show more <span className="text-gray-400">({visible.length - shown} more)</span>
+            Show more <span className="text-gray-400">({mergedRows.length - shown} more)</span>
           </button>
         </div>
       )}
