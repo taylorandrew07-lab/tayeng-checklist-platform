@@ -1,16 +1,25 @@
 'use client'
 
-// Finance-side invoice creation. Pulls the jobs that are done but not yet billed,
-// filtered by client (and optionally month), so you can put many vessels on ONE
-// invoice — and address it to a third-party payer (the "bill to" dropdown) when
-// someone other than the work client pays (e.g. ASCO pays for BP's vessels).
-// Creating the invoice stamps each job with it and CLOSES it (migration 145), which
-// is also what locks surveyor edits — so only jobs you've marked "invoice ready" are
-// billable here; submitted ones sit in a review group with a one-click promote.
+// Finance-side invoice creation, in two modes.
+//
+// "Bill jobs" pulls the jobs that are done but not yet billed, filtered by client
+// (and optionally month), so you can put many vessels on ONE invoice — and address
+// it to a third-party payer (the "bill to" dropdown) when someone other than the
+// work client pays (e.g. ASCO pays for BP's vessels). Creating the invoice stamps
+// each job with it and CLOSES it (migration 145), which is also what locks surveyor
+// edits — so only jobs you've marked "invoice ready" are billable here; submitted
+// ones sit in a review group with a one-click promote.
+//
+// "Blank invoice" is a client plus hand-typed lines and nothing else: no job pool,
+// no job created. An invoice needs a client, lines and a total — a job is not one of
+// its requirements (the ledger, the PDF, the client page and the billing totals all
+// read the invoice directly), so a reimbursed launch fee no longer has to invent a
+// vessel-shaped job to be billed. Putting it on the job sheet is now a tick-box.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip, ArrowUpDown, Plus, X } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { formatDate, parseVesselName, withVesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
@@ -71,7 +80,11 @@ function sortJobs(list: InvoiceableJob[], sort: { key: SortKey; dir: 'asc' | 'de
   })
 }
 
+// 'jobs' = bill work off the job sheet · 'blank' = a client and typed lines only.
+type BuildMode = 'jobs' | 'blank'
+
 export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: () => void }) {
+  const [mode, setMode] = useState<BuildMode>('jobs')
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [clientId, setClientId] = useState('')
   const [billToId, setBillToId] = useState('') // '' = same as the work client
@@ -102,7 +115,11 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [notes, setNotes] = useState('')
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
-  // Standalone (no jobs ticked): a job is created for the invoice on the job sheet.
+  // Standalone (no jobs ticked): OPTIONALLY create a job for the invoice on the job
+  // sheet. Off by default — this used to be unconditional, so billing a launch fee
+  // silently minted a report-only job with no type and no report number, and the job
+  // sheet filled up with rows nobody had worked.
+  const [addJobToSheet, setAddJobToSheet] = useState(false)
   const [jobTypes, setJobTypes] = useState<string[]>([])
   const [newJobVessel, setNewJobVessel] = useState('')
   const newJobParsed = parseVesselName(newJobVessel)
@@ -222,7 +239,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
   // job — the common case is "bill all of this client's vessels for the month".
   const loadJobs = useCallback(async () => {
-    if (!clientId) { setJobs([]); setLines({}); return }
+    // A blank invoice bills no jobs, so it loads none — nothing can be auto-selected
+    // and accidentally closed behind a typed-up expense.
+    if (!clientId || mode === 'blank') { setJobs([]); setLines({}); return }
     setLoadingJobs(true)
     const [js, rs] = await Promise.all([
       listInvoiceableJobs({ clientId, month: month || undefined }),
@@ -252,9 +271,20 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     const firstRate = rs.find(r => r.is_active)
     if (firstRate) setCurrency(firstRate.currency)
     setLoadingJobs(false)
-  }, [clientId, month, seedLine])
+  }, [clientId, month, mode, seedLine])
 
   useEffect(() => { loadJobs() }, [loadJobs])
+
+  // Switching to a blank invoice drops the job pool's auto-mileage lines (they price
+  // jobs that are no longer being billed) and opens with one empty line to type into.
+  function switchMode(m: BuildMode) {
+    setMode(m)
+    if (m !== 'blank') return
+    setExtra(prev => {
+      const kept = prev.filter(l => !l.auto_mileage)
+      return kept.length ? kept : [blankLine(false)]
+    })
+  }
 
   // Billable = invoice-ready. Awaiting = submitted but not yet reviewed; shown below
   // the billable list with a one-click "Mark invoice ready" so a forgotten flip
@@ -378,7 +408,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
 
   async function create() {
     if (!clientId) { toast.error('Choose a client'); return }
-    if (lineCount === 0) { toast.error('Add at least one job, line or expense'); return }
+    if (lineCount === 0) { toast.error(mode === 'blank' ? 'Add at least one line' : 'Add at least one job, line or expense'); return }
     // Money-safety: every line is summed under one invoice currency, so block creating
     // an invoice where a selected job's rate is in a DIFFERENT currency (no conversion).
     const active = rates.filter(r => r.is_active)
@@ -414,11 +444,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         ...extra.map(l => ({ job_id: null, description: l.description, qty: l.qty, unit_price: l.unit_price, is_expense: l.is_expense, receipt_path: l.receipt_path })),
       ],
       taxes: taxes.filter(t => t.name.trim()),
-      // No vessels ticked → create a job for this invoice on the job sheet.
+      // No vessels ticked AND you asked for one → create a job for this invoice on
+      // the job sheet. Opt-in: an invoice stands on its own everywhere it's read.
       // A typed "M.T."/"MT"/"M/T" here is captured too, and the name is stored bare —
       // matching every other creation path. (This route still writes the job row
       // directly rather than via createDraftJob; that seam bypass is out of scope.)
-      new_job: selectedJobs.length === 0 ? {
+      new_job: selectedJobs.length === 0 && addJobToSheet ? {
         title: newJobParsed.name
           ? `${newJobPrefix} ${newJobParsed.name}`
           : `${clientName || 'Client'} — invoice`,
@@ -430,8 +461,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     const v = selectedJobs.length
-    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created — a job was added to the job sheet')
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setIssueDate(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType('')
+    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}`
+      : addJobToSheet ? 'Invoice created — a job was added to the job sheet' : 'Invoice created')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setIssueDate(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType(''); setAddJobToSheet(false)
     getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
@@ -443,19 +475,37 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     <div className="space-y-4">
       {/* 1 — Who & when */}
       <div className="card p-5 space-y-3">
-        <h3 className="font-medium text-gray-900 flex items-center gap-2"><Users className="h-4 w-4 text-brand-500" /> Whose jobs to bill</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-medium text-gray-900 flex items-center gap-2">
+            <Users className="h-4 w-4 text-brand-500" /> {mode === 'blank' ? 'Who to bill' : 'Whose jobs to bill'}
+          </h3>
+          <SegmentedControl<BuildMode>
+            value={mode}
+            onChange={switchMode}
+            size="sm"
+            ariaLabel="What kind of invoice"
+            options={[{ value: 'jobs', label: 'Bill jobs' }, { value: 'blank', label: 'Blank invoice' }]}
+          />
+        </div>
+        {mode === 'blank' && (
+          <p className="text-xs text-gray-400">
+            Pick a client and type the lines. No jobs are billed and none is created.
+          </p>
+        )}
+        <div className={`grid grid-cols-1 gap-3 ${mode === 'blank' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
           <div>
-            <label className="text-[11px] text-gray-400">Client (vessels)</label>
+            <label className="text-[11px] text-gray-400">{mode === 'blank' ? 'Client' : 'Client (vessels)'}</label>
             <select value={clientId} onChange={e => setClientId(e.target.value)} className={cell}>
               <option value="">— Select a client —</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-[11px] text-gray-400">Month (optional)</label>
-            <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={cell} />
-          </div>
+          {mode === 'jobs' && (
+            <div>
+              <label className="text-[11px] text-gray-400">Month (optional)</label>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={cell} />
+            </div>
+          )}
           <div>
             <label className="text-[11px] text-gray-400">Bill to (who pays)</label>
             <select value={billToId} onChange={e => setBillToId(e.target.value)} className={cell} disabled={!clientId}>
@@ -471,8 +521,8 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         )}
       </div>
 
-      {/* 2 — Pick the vessels/jobs */}
-      {clientId && (
+      {/* 2 — Pick the vessels/jobs (not shown for a blank invoice) */}
+      {clientId && mode === 'jobs' && (
         <div className="card overflow-hidden">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
             <button onClick={toggleAll} disabled={billable.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">
@@ -649,8 +699,14 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       {clientId && (
         <div className="card p-5 space-y-3">
           <div>
-            <h3 className="font-medium text-gray-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-brand-500" /> Expenses &amp; extra lines</h3>
-            <p className="text-xs text-gray-400">Reimbursable expenses (e.g. a launch) with the vendor receipt + value, or any extra line. Leave the vessels above unticked to bill a standalone invoice.</p>
+            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+              <Paperclip className="h-4 w-4 text-brand-500" /> {mode === 'blank' ? 'Invoice lines' : 'Expenses & extra lines'}
+            </h3>
+            <p className="text-xs text-gray-400">
+              {mode === 'blank'
+                ? 'Type each charge, or tick "Reimbursable expense" to attach the vendor receipt and its value.'
+                : 'Reimbursable expenses (e.g. a launch) with the vendor receipt + value, or any extra line. Leave the vessels above unticked to bill without a job.'}
+            </p>
           </div>
           <LineItemsEditor lines={extra} setLines={setExtra} currency={currency} />
         </div>
@@ -661,22 +717,34 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         <div className="card p-5 space-y-3">
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
 
+          {/* Opt-in, and only worth offering when no real job is being billed. Ticking
+              it adds a closed report-only job to the job sheet for this invoice —
+              useful when the work did happen on a vessel and you want it on the
+              sheet; pointless for a launch fee or a reimbursed expense. */}
           {selectedJobs.length === 0 && (
-            <div className="rounded-lg bg-amber-50/60 border border-amber-100 p-3 space-y-2">
-              <p className="text-xs text-amber-800">No vessels ticked — a job will be created on the job sheet for this invoice.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] text-gray-400">Vessel name (optional)</label>
-                  <input value={newJobVessel} onChange={e => setNewJobVessel(e.target.value)} placeholder="e.g. Channel Pearl" className={cell} />
+            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
+              <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={addJobToSheet} onChange={e => setAddJobToSheet(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Also add this invoice to the job sheet
+                  <span className="block text-[11px] text-gray-400">Creates one closed job for it. Leave off for an expense or a one-off charge.</span>
+                </span>
+              </label>
+              {addJobToSheet && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-gray-400">Vessel name (optional)</label>
+                    <input value={newJobVessel} onChange={e => setNewJobVessel(e.target.value)} placeholder="e.g. Channel Pearl" className={cell} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-gray-400">Job type (optional)</label>
+                    <select value={newJobType} onChange={e => setNewJobType(e.target.value)} className={cell}>
+                      <option value="">—</option>
+                      {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[11px] text-gray-400">Job type (optional)</label>
-                  <select value={newJobType} onChange={e => setNewJobType(e.target.value)} className={cell}>
-                    <option value="">—</option>
-                    {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
+              )}
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
