@@ -6,6 +6,7 @@ import {
   readingTypeAppliesToHold, isSinglePoint, getReadingValue, setReadingValue, clearPeriodFrom,
 } from '@/lib/cargo/types'
 import { readingCellColor, type CellColor } from '@/lib/cargo/colors'
+import { readingRows } from '@/lib/cargo/readingRows'
 import {
   monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers,
   periodsForDate, periodLabel, inputToHhmm, addExtraRound, removeExtraRound,
@@ -258,44 +259,29 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
             </tr>
           </thead>
           <tbody>
-            {types.map(rt => {
-              const single = isSinglePoint(rt)
-              if (single) {
-                const r = rowIndexOf.get(`${rt.id}:${rt.points[0].id}`)!
-                return (
-                  <tr key={rt.id} className="border-b border-gray-100">
-                    <td className="px-3 py-1.5 font-medium text-gray-700 sticky left-0 bg-white z-10">
-                      {rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}
-                    </td>
-                    {periods.map((p, c) => (
-                      <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id),
-                        color: readingCellColor(voyage, rt, hold, date, p, rt.points[0].id),
-                        onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, rt.points[0].id, val)),
-                        onKeyDown: handleKeyDown, onPaste: handlePaste }} />
-                    ))}
-                  </tr>
-                )
-              }
+            {/* Row shape comes from lib/cargo/readingRows, shared with the
+                read-only view, the PDF and the shared data link. Every reading
+                type is a title at the same level in the label column — a single
+                channel type like Oxygen names what is measured just as much as
+                Infrared gun does, so it must not read as a child of the type
+                above it. */}
+            {readingRows(types, hold).map(row => {
+              const r = row.point ? rowIndexOf.get(`${row.rt.id}:${row.point.id}`)! : -1
               return (
-                <RowsForType key={rt.id} rt={rt} periodCount={periods.length}>
-                  {rt.points.map(pt => {
-                    const r = rowIndexOf.get(`${rt.id}:${pt.id}`)!
-                    return (
-                      <tr key={pt.id} className="border-b border-gray-100">
-                        <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
-                          <span className="text-gray-700">{pt.name || '—'}</span>
-                          {pt.group ? <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">{pt.group}</span> : null}
-                        </td>
-                        {periods.map((p, c) => (
-                          <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, rt.id, pt.id),
-                            color: readingCellColor(voyage, rt, hold, date, p, pt.id),
-                            onValue: val => onChange(setReadingValue(voyage, date, p, hold, rt.id, pt.id, val)),
-                            onKeyDown: handleKeyDown, onPaste: handlePaste }} />
-                        ))}
-                      </tr>
-                    )
-                  })}
-                </RowsForType>
+                <tr key={row.key} className={`border-b border-gray-100 ${row.startsGroup ? '[&>*]:border-t-8 [&>*]:border-t-gray-50' : ''}`}>
+                  <td className={`sticky left-0 bg-white z-10 py-1.5 ${row.isTitle ? 'px-3 font-semibold text-gray-900' : 'pl-7 pr-3 text-gray-700'}`}>
+                    {row.label}
+                    {row.tag ? <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400 font-normal">{row.tag}</span> : null}
+                  </td>
+                  {row.point
+                    ? periods.map((p, c) => (
+                        <CellInput key={p} {...{ inputsRef, r, c, value: getReadingValue(voyage, date, p, hold, row.rt.id, row.point!.id),
+                          color: readingCellColor(voyage, row.rt, hold, date, p, row.point!.id),
+                          onValue: val => onChange(setReadingValue(voyage, date, p, hold, row.rt.id, row.point!.id, val)),
+                          onKeyDown: handleKeyDown, onPaste: handlePaste }} />
+                      ))
+                    : <td colSpan={periods.length} className="bg-gray-50/40" />}
+                </tr>
               )
             })}
           </tbody>
@@ -330,19 +316,6 @@ export default function ReadingsGrid({ voyage, onChange }: Props) {
 }
 
 /** Renders a reading-type sub-header row followed by its point rows. */
-function RowsForType({ rt, periodCount, children }: { rt: { name: string; unit: string }; periodCount: number; children: React.ReactNode }) {
-  return (
-    <>
-      <tr className="bg-gray-50/70 border-b border-gray-200">
-        <td colSpan={1 + periodCount} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 sticky left-0 bg-gray-50/70">
-          {rt.name}{rt.unit ? ` (${rt.unit})` : ''}
-        </td>
-      </tr>
-      {children}
-    </>
-  )
-}
-
 function CellInput({
   inputsRef, r, c, value, color, onValue, onKeyDown, onPaste,
 }: {

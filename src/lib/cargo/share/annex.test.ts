@@ -69,7 +69,9 @@ describe('renderVoyageAnnex', () => {
     // ...and the chart threshold lines go with them, or the chart would
     // contradict the unshaded grid beside it.
     expect(off).not.toContain('class="thr thr-')
-    expect(off).toContain('Colour coding is switched off')
+    // ...and it says nothing about WHY. The recipient has no need to know a
+    // setting was turned off, and naming it only invites the question.
+    expect(off).not.toMatch(/colour coding/i)
   })
 
   it('honours includeInTables and appliesTo', () => {

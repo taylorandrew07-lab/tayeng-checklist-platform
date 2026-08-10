@@ -24,6 +24,7 @@ import {
   type Voyage, type ReadingType, type ReadingPoint, type Period,
   readingTypeAppliesToHold, isSinglePoint, getReadingValue,
 } from '../types'
+import { readingRows } from '../readingRows'
 import { readingCellColor } from '../colors'
 import {
   monitoringDates, effectiveEndDate, periodsForDate, holdNumbers, formatVoyageDate,
@@ -105,25 +106,29 @@ function readingsGrid(voyage: Voyage, tps: Timepoint[], types: ReadingType[]): s
   }
   h += '</tr></thead><tbody>'
 
-  const row = (rt: ReadingType, pt: ReadingPoint, hold: number, label: string, tag?: string) => {
-    let r = `<tr><th class="s">${esc(label)}${tag ? `<em>${esc(tag)}</em>` : ''}</th>`
-    for (const tp of tps) {
-      const v = getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id)
-      r += `<td${cellAttrs(voyage, rt, hold, tp, pt)}>${v === '' ? '—' : esc(v)}</td>`
-    }
-    return r + '</tr>'
-  }
-
   for (const hold of holds) {
     // The band spans the full width, so the CELL cannot usefully be sticky-left —
     // the inner span is what stays on screen when scrolled out to day 14.
     h += `<tr class="band"><th colspan="${span}"><span class="stick">Hold ${hold}</span></th></tr>`
-    for (const rt of types) {
-      if (!readingTypeAppliesToHold(rt, hold)) continue
-      if (isSinglePoint(rt)) { h += row(rt, rt.points[0], hold, rt.name, rt.unit); continue }
-      h += `<tr class="type"><td colspan="${span}"><span class="stick">${esc(rt.name)}`
-        + `${rt.unit ? ` (${esc(rt.unit)})` : ''}</span></td></tr>`
-      for (const pt of rt.points) h += row(rt, pt, hold, pt.name || '—', pt.group)
+
+    // Row structure comes from the shared seam, so this table, the entry grid,
+    // the read-only view and the PDF all agree on what is a title and what is a
+    // channel beneath one.
+    for (const r of readingRows(types.filter(rt => readingTypeAppliesToHold(rt, hold)), hold)) {
+      const cls = [r.isTitle ? 'tt' : 'pt', r.startsGroup ? 'gap' : ''].filter(Boolean).join(' ')
+      h += `<tr class="${cls}"><th class="s">${esc(r.label)}`
+        + `${r.tag ? `<em>${esc(r.tag)}</em>` : ''}</th>`
+
+      if (!r.point) {
+        // A title with its channels below it holds no readings of its own.
+        h += `<td class="fill" colspan="${tps.length}"></td></tr>`
+        continue
+      }
+      for (const tp of tps) {
+        const v = getReadingValue(voyage, tp.dateISO, tp.period, hold, r.rt.id, r.point.id)
+        h += `<td${cellAttrs(voyage, r.rt, hold, tp, r.point)}>${v === '' ? '—' : esc(v)}</td>`
+      }
+      h += '</tr>'
     }
   }
   return h + '</tbody></table>'
@@ -150,6 +155,16 @@ function groupColors(rt: ReadingType): Map<string, string> {
 
 interface Threshold { v: number; kind: 'w' | 'c' }
 
+/** The y domain, padded so a threshold line just outside the data still shows.
+ *  Shared with the tooltip payload so the script can map a pointer position back
+ *  onto the series and say which line it is nearest. */
+function chartDomain(model: ChartModel, thresholds?: Threshold[]): [number, number] {
+  let lo = model.yMin, hi = model.yMax
+  for (const t of thresholds ?? []) { lo = Math.min(lo, t.v); hi = Math.max(hi, t.v) }
+  const pad = (hi - lo) * 0.08 || 1
+  return [lo - pad, hi + pad]
+}
+
 function svgChart(id: string, model: ChartModel, colorFor: (key: string, i: number) => string, opts: {
   direct?: boolean
   thresholds?: Threshold[]
@@ -157,11 +172,7 @@ function svgChart(id: string, model: ChartModel, colorFor: (key: string, i: numb
   const n = model.timepoints.length
   if (!model.hasData || n === 0) return '<p class="none">No readings recorded for this chart.</p>'
 
-  // Pad the range so a threshold line just outside the data still shows.
-  let lo = model.yMin, hi = model.yMax
-  for (const t of opts.thresholds ?? []) { lo = Math.min(lo, t.v); hi = Math.max(hi, t.v) }
-  const pad = (hi - lo) * 0.08 || 1
-  lo -= pad; hi += pad
+  const [lo, hi] = chartDomain(model, opts.thresholds)
 
   const x = (i: number) => PL + (n <= 1 ? PLOTW / 2 : (i / (n - 1)) * PLOTW)
   const y = (v: number) => PT + PLOTH - ((v - lo) / (hi - lo)) * PLOTH
@@ -246,7 +257,12 @@ function legendOf(items: { label: string; color: string }[]): string {
     `<span><i style="background:${esc(i.color)}"></i>${esc(i.label)}</span>`).join('')}</div>`
 }
 
-interface BuiltChart { id: string; title: string; caption: string; svg: string; legend: string; model: ChartModel; colorFor: (k: string, i: number) => string }
+interface BuiltChart {
+  id: string; title: string; caption: string; svg: string; legend: string
+  model: ChartModel; colorFor: (k: string, i: number) => string
+  /** y domain, handed to the tooltip so it can resolve the nearest line. */
+  domain: [number, number]
+}
 
 function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): BuiltChart[] {
   const out: BuiltChart[] = []
@@ -266,7 +282,7 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
         caption: `${rt.unit ? `${rt.unit}. ` : ''}One line per hold across every monitoring round.`,
         svg: svgChart(`t-${rt.id}`, model, colorFor, { direct: true, thresholds }),
         legend: legendOf(model.series.map((s, i) => ({ label: s.label, color: seriesColor(i) }))),
-        model, colorFor,
+        model, colorFor, domain: chartDomain(model, thresholds),
       })
       continue
     }
@@ -281,7 +297,7 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
         caption: `The highest of the ${rt.points.length} points in each hold, at every round.`,
         svg: svgChart(`peak-${rt.id}`, peak, colorFor, { direct: true, thresholds }),
         legend: legendOf(peak.series.map((s, i) => ({ label: s.label, color: seriesColor(i) }))),
-        model: peak, colorFor,
+        model: peak, colorFor, domain: chartDomain(peak, thresholds),
       })
     }
 
@@ -298,11 +314,15 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
       out.push({
         id: `${rt.id}-h${hold}`, title: `Hold ${hold} — ${rt.name.toLowerCase()}`,
         caption: gmap.size
-          ? `All ${rt.points.length} points, coloured by location rather than by probe.`
-          : `All ${rt.points.length} points.`,
+          ? `All ${rt.points.length} points, coloured by location rather than by probe. Hover the chart for every reading at that round.`
+          : `All ${rt.points.length} points. Hover the chart for every reading at that round — beyond a handful of lines, colour alone cannot tell them apart.`,
         svg: svgChart(`${rt.id}-h${hold}`, model, colorFor, { thresholds }),
-        legend: gmap.size ? legendOf([...gmap].map(([label, color]) => ({ label, color }))) : '',
-        model, colorFor,
+        // ALWAYS a key. Grouped points key by location; ungrouped ones list every
+        // probe, because a chart of 21 unlabelled lines with no legend is unreadable.
+        legend: gmap.size
+          ? legendOf([...gmap].map(([label, color]) => ({ label, color })))
+          : legendOf(model.series.map((s, i) => ({ label: s.label, color: colorFor(s.key, i) }))),
+        model, colorFor, domain: chartDomain(model, thresholds),
       })
     }
   }
@@ -387,13 +407,22 @@ tr.r-actual th{top:51px;height:19px;font-size:9.5px;font-weight:400;color:#b9c9e
   box-shadow:inset -1px 0 0 rgb(255 255 255/.1),inset 0 -1px 0 rgb(255 255 255/.18)}
 tr.band th{position:sticky;top:70px;z-index:4;text-align:left;padding:6px 12px;font-size:12.5px;font-weight:640;
   background:#eef2ff;color:#1d4ed8;box-shadow:inset 0 1px 0 #cbd5e1,inset 0 -1px 0 #cbd5e1}
-tr.type td{padding:3px 12px;font-size:9.5px;font-weight:640;text-transform:uppercase;letter-spacing:.08em;
-  color:#8a95a6;background:#f8fafc;box-shadow:inset 0 -1px 0 #e2e8f0}
 .stick{position:sticky;left:12px;display:inline-block}
 tbody th.s{position:sticky;left:0;z-index:2;background:#fff;text-align:left;font-weight:500;padding:0 10px;
-  height:22px;width:132px;min-width:132px;font-size:11.5px;
+  height:22px;width:170px;min-width:170px;font-size:11.5px;
   box-shadow:inset -1px 0 0 #cbd5e1,inset 0 -1px 0 #e2e8f0}
-tbody th.s em{float:right;font-style:normal;font-size:9px;letter-spacing:.05em;color:#8a95a6;padding-top:1px}
+tbody th.s em{float:right;font-style:normal;font-size:9px;letter-spacing:.05em;color:#8a95a6;padding-top:2px}
+/* Every reading TYPE is a title at the same level, in the label column —
+   whether or not it has channels beneath it. Oxygen names what is measured
+   exactly as much as Infrared gun does. */
+tr.tt th.s{font-weight:660;color:#0f172a}
+/* Channels of a multi-point type, indented under their title. */
+tr.pt th.s{padding-left:22px;color:#334155}
+/* A title with channels below holds no readings of its own. */
+td.fill{background:#fbfcfe;box-shadow:inset 0 -1px 0 #e2e8f0}
+/* Real separation between types. A border rather than padding, so a coloured
+   value cell never bleeds its tint up into the gap. */
+tr.gap>th,tr.gap>td{border-top:9px solid #eef1f5}
 tbody td{height:22px;min-width:52px;padding:0 6px;text-align:center;box-shadow:inset -1px 0 0 #e2e8f0,inset 0 -1px 0 #e2e8f0}
 tbody tr:hover td{filter:brightness(.97)}
 td.plain{background:#fff;color:#475569}
@@ -429,9 +458,16 @@ text.thr-w{fill:#a97c1e}text.thr-c{fill:#dc2626}
 .tip.on{opacity:1;transform:translateY(0)}
 .tip b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#8a95a6;
   font-weight:600;margin-bottom:5px}
+.tip .rows{display:grid;grid-template-columns:1fr;gap:0 18px}
+/* Past a dozen probes a single column runs off the screen, so it splits. */
+.tip.wide{min-width:290px}
+.tip.wide .rows{grid-template-columns:1fr 1fr}
 .tip u{display:flex;justify-content:space-between;gap:14px;text-decoration:none;padding:1.5px 0}
 .tip u i{width:9px;height:9px;border-radius:2px;flex:none;margin-right:6px;align-self:center}
 .tip u span{display:flex;align-items:center;min-width:0}
+/* The line the pointer is on. With 21 overlapping probes no palette can
+   separate them, so the tooltip is what identifies the one under the cursor. */
+.tip u.hi{background:#eef2ff;border-radius:4px;margin:0 -5px;padding:1.5px 5px;font-weight:660;color:#1d4ed8}
 footer{color:#8a95a6;font-size:11.5px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
   border-top:1px solid #e2e8f0;padding-top:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -449,18 +485,39 @@ function show(chart,e){
   var d=V.c[chart.dataset.chart];if(!d)return;
   var box=chart.getBoundingClientRect(),vb=chart.viewBox.baseVal,n=V.t.length;
   var xu=(e.clientX-box.left)/box.width*vb.width;
+  var yu=(e.clientY-box.top)/box.height*vb.height;
   var i=Math.round((xu-${PL})/${PLOTW}*(n-1));i=Math.max(0,Math.min(n-1,i));
   var x=${PL}+(i/(n-1))*${PLOTW},c=chart.querySelector('.cross');
   c.setAttribute('x1',x);c.setAttribute('x2',x);chart.classList.add('on');
-  var rows=d.map(function(s){return{l:s.l,c:s.c,v:s.v[i]}}).filter(function(r){return r.v!=null})
-    .sort(function(a,b){return b.v-a.v}).slice(0,6);
-  tip.innerHTML='<b>'+V.t[i]+'</b>'+(rows.length?rows.map(function(r){
-    return'<u><span><i style="background:'+r.c+'"></i>'+r.l+'</span><span>'+r.v+'</span></u>'}).join(''):'<u>No reading</u>');
+
+  // EVERY series at this round, hottest first — with 21 probes overlapping, the
+  // tooltip is what identifies them, not the palette.
+  var rows=[],nearest=null,best=1e9;
+  for(var k=0;k<d.s.length;k++){
+    var v=d.s[k].v[i];if(v==null)continue;
+    var y=${PT}+${PLOTH}-((v-d.lo)/(d.hi-d.lo))*${PLOTH};
+    var row={l:d.s[k].l,c:d.s[k].c,v:v,hit:false},dist=Math.abs(y-yu);
+    if(dist<best){best=dist;nearest=row}
+    rows.push(row);
+  }
+  // Mark the line the pointer is actually on — that is what answers "which one
+  // is this". Only when genuinely close, or the mark would be a guess.
+  if(nearest&&best<14)nearest.hit=true;
+  rows.sort(function(a,b){return b.v-a.v});
+  var html='<b>'+V.t[i]+'</b>';
+  if(!rows.length){html+='<div class="rows"><u><span>No reading</span></u></div>'}
+  else{
+    html+='<div class="rows">'+rows.map(function(r){
+      return'<u'+(r.hit?' class="hi"':'')+'><span><i style="background:'+r.c+'"></i>'+r.l+'</span><span>'+r.v+'</span></u>'
+    }).join('')+'</div>'
+  }
+  tip.innerHTML=html;
+  tip.classList.toggle('wide',rows.length>12);
   tip.classList.add('on');
   var tw=tip.offsetWidth,th=tip.offsetHeight,tx=e.clientX+16;
   if(tx+tw>innerWidth-8)tx=e.clientX-tw-16;
   tip.style.left=Math.max(8,tx)+'px';
-  tip.style.top=Math.max(8,Math.min(innerHeight-th-8,e.clientY-th/2))+'px';
+  tip.style.top=Math.max(8,Math.min(innerHeight-th-8,Math.max(8,e.clientY-th/2)))+'px';
 }
 [].forEach.call(document.querySelectorAll('.chart'),function(ch){
   var hit=ch.querySelector('.hit');if(!hit)return;
@@ -490,20 +547,25 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
     ['Monitoring commenced', voyage.startDate ? formatVoyageDate(voyage.startDate) : '—'],
     ['Monitoring completed', voyage.endDate ? formatVoyageDate(voyage.endDate) : 'In progress'],
     ['Holds monitored', String(voyage.holdCount ?? '—')],
-    ['Monitoring rounds', String(tps.length)],
     ['Surveyor', voyage.surveyorName || '—'],
   ]
   if (voyage.clientName) meta.push(['Client', voyage.clientName])
-  meta.push(['Colour coding', colorsOn ? 'On — thresholds per reading type' : 'Off for this voyage'])
   if (opts.reportNumber) meta.push(['Report reference', opts.reportNumber])
 
-  // Tooltip payload: only the charts actually rendered, values rounded.
+  // Tooltip payload: only the charts actually rendered, values rounded. The y
+  // domain travels with each chart so the tooltip can work out which line the
+  // pointer is nearest — the answer to "which one is which" when 21 probes
+  // overlap and no palette could separate them.
   const payload = {
     t: tps.map(tp => `${dayLabel(tp.dateISO)} · ${tp.period}`),
-    c: Object.fromEntries(charts.map(c => [c.id, c.model.series.map((s, i) => ({
-      l: s.label, c: c.colorFor(s.key, i),
-      v: s.values.map(v => (v == null ? null : Math.round(v * 10) / 10)),
-    }))])),
+    c: Object.fromEntries(charts.map(c => [c.id, {
+      lo: Math.round(c.domain[0] * 100) / 100,
+      hi: Math.round(c.domain[1] * 100) / 100,
+      s: c.model.series.map((s, i) => ({
+        l: s.label, c: c.colorFor(s.key, i),
+        v: s.values.map(v => (v == null ? null : Math.round(v * 10) / 10)),
+      })),
+    }])),
   }
 
   const letterhead = opts.logoDataUrl
@@ -544,7 +606,9 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
          <span><i style="background:#eef7cd"></i>Rising &mdash; shaded by 24&nbsp;h rate of rise</span>
          <span><i style="background:${AMBER_BG}"></i>At the warning threshold</span>
          <span><i style="background:${RED_BG}"></i>At the critical threshold</span>`
-      : `<span class="hint">Colour coding is switched off for this voyage, so values are shown unshaded.</span>`}
+      /* Colours off: say nothing. The reader has no need to know a setting was
+         turned off, and naming it only invites the question. */
+      : ''}
       <span class="hint">Scroll right for the full voyage &middot; scroll down for every hold. Labels stay pinned.</span>
     </div>
     ${tableTypes.length && tps.length ? `<div class="pane">${readingsGrid(voyage, tps, tableTypes)}</div>`

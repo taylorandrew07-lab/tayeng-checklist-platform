@@ -1,7 +1,8 @@
 'use client'
 
-import { Fragment, useState } from 'react'
-import { type Voyage, type ReadingType, readingTypeAppliesToHold, isSinglePoint, getReadingValue } from '@/lib/cargo/types'
+import { useState } from 'react'
+import { type Voyage, type ReadingType, readingTypeAppliesToHold, getReadingValue } from '@/lib/cargo/types'
+import { readingRows } from '@/lib/cargo/readingRows'
 import { readingCellColor } from '@/lib/cargo/colors'
 import { monitoringDates, effectiveEndDate, defaultPickerDate, formatVoyageDate, holdNumbers, periodsForDate, periodLabel } from '@/lib/cargo/periods'
 
@@ -34,6 +35,8 @@ export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
     })
   )
 
+  const rows = readingRows(types, hold)
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -64,29 +67,20 @@ export default function ClientReadingsView({ voyage }: { voyage: Voyage }) {
             </tr>
           </thead>
           <tbody>
-            {types.map(rt => {
-              if (isSinglePoint(rt)) {
-                return (
-                  <tr key={rt.id} className="border-b border-gray-100">
-                    <td className="px-3 py-1.5 font-medium text-gray-700">{rt.name}{rt.unit ? <span className="text-gray-400 font-normal"> ({rt.unit})</span> : null}</td>
-                    {cell(rt.id, rt.points[0].id, rt)}
-                  </tr>
-                )
-              }
-              return (
-                <Fragment key={rt.id}>
-                  <tr className="bg-gray-50/70 border-b border-gray-200">
-                    <td colSpan={1 + periods.length} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</td>
-                  </tr>
-                  {rt.points.map(pt => (
-                    <tr key={pt.id} className="border-b border-gray-100">
-                      <td className="px-3 py-1.5 text-gray-700">{pt.name || '—'}{pt.group ? <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">{pt.group}</span> : null}</td>
-                      {cell(rt.id, pt.id, rt)}
-                    </tr>
-                  ))}
-                </Fragment>
-              )
-            })}
+            {/* Row shape comes from lib/cargo/readingRows: every reading type is a
+                title at the same level in the label column, whether or not it has
+                channels beneath it. */}
+            {rows.map(r => (
+              <tr key={r.key} className={`border-b border-gray-100 ${r.startsGroup ? '[&>*]:border-t-8 [&>*]:border-t-gray-50' : ''}`}>
+                <td className={r.isTitle ? 'px-3 py-1.5 font-semibold text-gray-900' : 'pl-7 pr-3 py-1.5 text-gray-700'}>
+                  {r.label}
+                  {r.tag ? <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400 font-normal">{r.tag}</span> : null}
+                </td>
+                {r.point
+                  ? cell(r.rt.id, r.point.id, r.rt)
+                  : <td colSpan={periods.length} className="bg-gray-50/40" />}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

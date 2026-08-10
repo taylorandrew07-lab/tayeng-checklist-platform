@@ -7,6 +7,7 @@ import { CAMERA_LABELS, readingTypeAppliesToHold, isSinglePoint, getReadingValue
 import { monitoringDates, effectiveEndDate, periodsForDate, periodLabel, formatVoyageDate, holdNumbers, holdsToPages } from '../periods'
 import { buildHoldSeries, buildPointSeries, type ChartModel } from '../charts'
 import { readingCellColor } from '../colors'
+import { readingRows } from '../readingRows'
 import { CargoChart } from './CargoChart'
 import { parseISO, format, isValid } from 'date-fns'
 
@@ -85,6 +86,12 @@ const styles = StyleSheet.create({
   rdSubHeadRow: { flexDirection: 'row', backgroundColor: '#eef2ff', borderBottomWidth: 0.5, borderBottomColor: '#cbd5e1' },
   rdRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0' },
   rdTypeRow: { flexDirection: 'row', backgroundColor: '#f8fafc' },
+  // A reading type's title: same weight and level whether or not channels follow.
+  rdTitleText: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#0f172a' },
+  // Separation between reading types, so they read as blocks rather than a run.
+  rdGap: { marginTop: 5, borderTopWidth: 0.5, borderTopColor: '#cbd5e1' },
+  // The value span of a title that has its channels below it.
+  rdFillCell: { backgroundColor: '#fbfcfe' },
   rdLabelCell: { width: 120, paddingVertical: 2, paddingHorizontal: 4 },
   rdLabelText: { fontSize: 7, color: '#334155' },
   rdGroupText: { fontSize: 6, color: '#94a3b8' },
@@ -239,45 +246,32 @@ function HoldReadings({ voyage, hold, pdfTypes }: { voyage: Voyage; hold: number
             </View>
           </View>
 
-          {types.map(rt => {
-            const single = isSinglePoint(rt)
-            if (single) {
-              const pt = rt.points[0]
-              return (
-                <View key={rt.id} style={styles.rdRow}>
-                  <View style={styles.rdLabelCell}><Text style={styles.rdLabelText}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text></View>
-                  {slice.map((tp, i) => {
-                    const col = readingCellColor(voyage, rt, hold, tp.dateISO, tp.period, pt.id)
+          {/* Row shape from lib/cargo/readingRows, shared with the entry grid, the
+              read-only view and the shared data link. Every reading type is a
+              title at the same level in the label column: a single-channel type
+              (Oxygen, H2 LEL) is the name of what is measured just as much as a
+              multi-channel one (Infrared gun), so it must not print as though it
+              belonged under the type above it. */}
+          {readingRows(types, hold).map(row => (
+            <View key={row.key} style={[styles.rdRow, row.startsGroup ? styles.rdGap : {}]}>
+              <View style={styles.rdLabelCell}>
+                <Text style={row.isTitle ? styles.rdTitleText : styles.rdLabelText}>
+                  {row.isTitle ? row.label : `   ${row.label}`}
+                  {row.tag ? <Text style={styles.rdGroupText}>  {row.tag}</Text> : null}
+                </Text>
+              </View>
+              {row.point
+                ? slice.map((tp, i) => {
+                    const col = readingCellColor(voyage, row.rt, hold, tp.dateISO, tp.period, row.point!.id)
                     return (
                       <Text key={i} style={[styles.rdValueCell, col ? { backgroundColor: col.bg, color: col.fg } : {}]}>
-                        {getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}
+                        {getReadingValue(voyage, tp.dateISO, tp.period, hold, row.rt.id, row.point!.id) || '—'}
                       </Text>
                     )
-                  })}
-                </View>
-              )
-            }
-            return (
-              <View key={rt.id}>
-                <View style={styles.rdTypeRow}><Text style={styles.rdTypeText}>{rt.name}{rt.unit ? ` (${rt.unit})` : ''}</Text></View>
-                {rt.points.map(pt => (
-                  <View key={pt.id} style={styles.rdRow}>
-                    <View style={styles.rdLabelCell}>
-                      <Text style={styles.rdLabelText}>{pt.name || '—'}{pt.group ? <Text style={styles.rdGroupText}>  {pt.group}</Text> : null}</Text>
-                    </View>
-                    {slice.map((tp, i) => {
-                      const col = readingCellColor(voyage, rt, hold, tp.dateISO, tp.period, pt.id)
-                      return (
-                        <Text key={i} style={[styles.rdValueCell, col ? { backgroundColor: col.bg, color: col.fg } : {}]}>
-                          {getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id) || '—'}
-                        </Text>
-                      )
-                    })}
-                  </View>
-                ))}
-              </View>
-            )
-          })}
+                  })
+                : slice.map((_tp, i) => <Text key={i} style={[styles.rdValueCell, styles.rdFillCell]}> </Text>)}
+            </View>
+          ))}
         </View>
       ))}
     </View>
