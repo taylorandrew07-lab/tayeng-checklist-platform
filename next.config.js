@@ -13,12 +13,17 @@ const securityHeaders = [
 // (generated PDFs, photo blobs). 'unsafe-inline' is still required by Next/Tailwind
 // without a nonce setup (removing it needs a nonce+middleware rollout). 'unsafe-eval'
 // has been DROPPED: the Next 16 webpack PRODUCTION bundle doesn't eval(), so this
-// closes the eval()-based injection vector. frame-ancestors/object-src/base-uri/
+// closes the eval()-based injection vector. 'wasm-unsafe-eval' is NOT that vector —
+// it permits WebAssembly compilation only, and is required because the client-side
+// PDF path (@react-pdf/renderer -> yoga-layout 3.x, a wasm-only flexbox engine) calls
+// WebAssembly.instantiate(). Without it the cargo report export dies with
+// "Aborted(CompileError: WebAssembly.instantiate()...)". Never widen this to
+// 'unsafe-eval'. frame-ancestors/object-src/base-uri/
 // form-action add the high-value clickjacking + injection protections. Enforced in
 // production only so it never interferes with the dev server's HMR websocket.
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://*.supabase.co",
