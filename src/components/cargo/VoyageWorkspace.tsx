@@ -9,6 +9,7 @@ import { type Voyage } from '@/lib/cargo/types'
 import { ensureDri, type DriReport } from '@/lib/cargo/dri'
 import { getVoyage, putVoyage, getPhotosForVoyage, countPhotosForVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
+import { voyageIdFromPath } from '@/lib/cargo/voyageIdFromPath'
 import { createClient } from '@/lib/supabase/client'
 import { syncVoyage, voyageDirty } from '@/lib/cargo/sync'
 import { effectiveEndDate, formatVoyageDate } from '@/lib/cargo/periods'
@@ -51,8 +52,24 @@ const tabMeta = (id: Tab) => TABS.find(t => t.id === id)!
 /** Cargo voyage workspace. Works under both /surveyor/cargo and /admin/cargo. */
 export default function VoyageWorkspace() {
   const params = useParams<{ id: string }>()
-  const id = params.id
   const pathname = usePathname()
+
+  // The voyage id comes from the ADDRESS BAR, not from useParams().
+  //
+  // Offline, the service worker serves a cached app shell for a voyage page it
+  // has never fetched — that is what lets a voyage created at sea reopen after
+  // the browser is closed. But the cached document carries the RSC route tree of
+  // whichever URL it was originally fetched for, and useParams() reads from that
+  // tree. It would therefore report the WRONG voyage id and quietly open another
+  // ship's readings. window.location is the one thing that is always right.
+  const id = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const fromUrl = voyageIdFromPath(window.location.pathname)
+      if (fromUrl) return fromUrl
+    }
+    return params.id
+  }, [params.id, pathname])
+
   const base = pathname.startsWith('/admin') ? '/admin/cargo' : '/surveyor/cargo'
 
   const [voyage, setVoyage] = useState<Voyage | null>(null)
