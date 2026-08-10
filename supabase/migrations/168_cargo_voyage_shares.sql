@@ -15,8 +15,13 @@
 
 CREATE TABLE IF NOT EXISTS public.cargo_voyage_shares (
   token          text PRIMARY KEY,
-  voyage_id      uuid NOT NULL REFERENCES public.cargo_voyages(id) ON DELETE CASCADE,
-  created_by     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- TEXT, not uuid: cargo_voyages.id is the id the DEVICE generated for the
+  -- voyage offline (mig 027), and cargo_voyage_photos.voyage_id is text for the
+  -- same reason. A uuid column here cannot be foreign-keyed to it.
+  voyage_id      text NOT NULL REFERENCES public.cargo_voyages(id) ON DELETE CASCADE,
+  -- profiles(id), matching cargo_voyages.owner_id — the app's convention is to
+  -- reference the profile rather than auth.users directly.
+  created_by     uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   created_at     timestamptz NOT NULL DEFAULT now(),
   -- Set to revoke. A revoked link 404s exactly like an unknown one, so a holder
   -- cannot tell "revoked" from "never existed".
@@ -42,7 +47,7 @@ ALTER TABLE public.cargo_voyage_shares ENABLE ROW LEVEL SECURITY;
 -- Creating a link is a DISCLOSURE action — it publishes readings to anyone
 -- holding the URL — so office (read-only elsewhere in cargo) is deliberately
 -- excluded until that is an explicit decision.
-CREATE OR REPLACE FUNCTION public.can_share_cargo_voyage(p_voyage_id uuid)
+CREATE OR REPLACE FUNCTION public.can_share_cargo_voyage(p_voyage_id text)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
 AS $$
