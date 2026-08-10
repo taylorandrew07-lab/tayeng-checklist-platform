@@ -583,6 +583,13 @@ export async function updateInvoice(invoiceId: string, data: {
   if (error) return { error: error.message }
   if (!upd || upd.length === 0) return { error: 'Could not save — permission denied or the invoice no longer exists.' }
 
+  // Which jobs this invoice billed BEFORE the edit. Compared against the jobs still
+  // billed after it, so a job whose last line was deleted gets released below. Read
+  // it from the lines (not jobs.invoice_id) so a standalone invoice's report-only
+  // job — stamped but never line-linked — is never mistaken for a removal.
+  const { data: priorLines } = await supabase.from('invoice_line_items').select('job_id').eq('invoice_id', invoiceId)
+  const priorJobIds = new Set(((priorLines ?? []) as { job_id: string | null }[]).map(l => l.job_id).filter(Boolean) as string[])
+
   await supabase.from('invoice_line_items').delete().eq('invoice_id', invoiceId)
   if (data.lines.length) {
     const rows = data.lines.map((l, i) => ({
@@ -600,7 +607,22 @@ export async function updateInvoice(invoiceId: string, data: {
     const { error: e } = await supabase.from('invoice_taxes').insert(rows)
     if (e) return { error: e.message }
   }
-  await logActivity('invoice', invoiceId, 'invoice:update', { total })
+
+  // A job dropped from the invoice must not stay stamped and closed on it — it would
+  // be silently unbilled AND still frozen to surveyors. Release it the same way
+  // deleteInvoice does, so it reappears as available to invoice. Un-stamp the close
+  // columns too, else it sits at invoice_ready carrying a stale closed_at/closed_by.
+  const keptJobIds = new Set(data.lines.map(l => l.job_id).filter(Boolean) as string[])
+  const releasedJobIds = [...priorJobIds].filter(id => !keptJobIds.has(id))
+  if (releasedJobIds.length) {
+    const { error: relErr } = await supabase.from('jobs')
+      .update({ workflow_status: 'invoice_ready', invoice_id: null, closed_at: null, closed_by: null, paid_at: null })
+      .in('id', releasedJobIds)
+      .eq('invoice_id', invoiceId)
+    if (relErr) return { error: relErr.message }
+  }
+
+  await logActivity('invoice', invoiceId, 'invoice:update', { total, released_jobs: releasedJobIds.length })
   return {}
 }
 

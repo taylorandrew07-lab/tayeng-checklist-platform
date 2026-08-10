@@ -4,11 +4,13 @@
 // reimbursable expenses (each expense can carry an attached vendor receipt with an
 // editable value). Used by both the Create-invoice builder (for extra/expense
 // lines) and the invoice editor (for every line). Job-linked lines show their
-// vessel and can't be removed here (unlink from the job instead).
+// vessel; removing one also releases that job back to "Invoice ready"
+// (updateInvoice does the un-stamping), so it can be billed again.
 
 import { useState } from 'react'
 import { Plus, X, Trash2, Loader2, Upload, FileText } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
+import { confirmDialog } from '@/components/ui/confirm'
 import { money } from '@/lib/jobs/tracker'
 import { uploadInvoiceReceipt, invoiceReceiptUrl } from '@/lib/jobs/invoicing'
 import type { Currency } from '@/lib/types/database'
@@ -42,8 +44,27 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
 
   const patch = (key: string, p: Partial<DraftLine>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...p } : l))
-  const remove = (key: string) => setLines(prev => prev.filter(l => l.key !== key))
   const add = (is_expense: boolean) => setLines(prev => [...prev, blankLine(is_expense)])
+
+  // A job-linked line can be taken off the invoice — billing it was a decision, not
+  // a fact. Confirm first, because it also releases the job: the save un-stamps it
+  // and reverts it to "Invoice ready" (which unlocks surveyor edits again).
+  async function remove(key: string) {
+    const line = lines.find(l => l.key === key)
+    if (!line) return
+    if (lines.length === 1) { toast.error('An invoice needs at least one line — delete the whole invoice instead.'); return }
+    if (line.job_id) {
+      const label = line.description.trim() || 'this line'
+      const ok = await confirmDialog({
+        title: 'Remove this job from the invoice?',
+        message: `"${label}" will come off the invoice and its job goes back to Invoice ready, so it can be billed again later.`,
+        confirmLabel: 'Remove line',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    setLines(prev => prev.filter(l => l.key !== key))
+  }
 
   async function upload(key: string, file: File | undefined) {
     if (!file) return
@@ -74,7 +95,7 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
               <input type="number" min={0} step="0.5" value={l.qty} onChange={e => patch(l.key, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
               <input type="number" min={0} step="0.01" value={l.unit_price} onChange={e => patch(l.key, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
               <span className="text-sm text-gray-700 text-right tnum">{amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <button onClick={() => remove(l.key)} disabled={!!l.job_id} aria-label="Remove line" title={l.job_id ? 'Linked to a job — edit on the job instead' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"><Trash2 className="h-3.5 w-3.5" /></button>
+              <button onClick={() => void remove(l.key)} aria-label="Remove line" title={l.job_id ? 'Remove line — the job goes back to Invoice ready' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {/* A vessel's job-linked survey-fee line can't be flipped to an expense
