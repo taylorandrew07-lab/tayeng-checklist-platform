@@ -55,12 +55,18 @@ export interface CargoReportData {
 const styles = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 9, color: '#1e293b', paddingTop: 28, paddingBottom: 44, paddingLeft: 30, paddingRight: 30 },
 
+  // Letterhead — the standard block, identical in shape to the invoice, JobPDF,
+  // Borescoping and DRI reports: logo, address line, contact line, brand rule.
+  // Cover page only; continuation pages carry SmallHeader instead.
+  logo: { width: 210, alignSelf: 'center', objectFit: 'contain', marginBottom: 4 },
+  wordmark: { fontSize: 17, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', textAlign: 'center', letterSpacing: 0.3 },
+  tagline: { fontSize: 7, color: '#64748b', textAlign: 'center', letterSpacing: 1.3, marginTop: 2 },
+  headLine: { fontSize: 7.5, color: '#64748b', textAlign: 'center' },
+  headRule: { borderBottomWidth: 1.5, borderBottomColor: '#1d4ed8', marginTop: 8, marginBottom: 12 },
+
   // Cover
   coverWrap: { flex: 1 },
-  coverLogo: { width: 220, alignSelf: 'center', objectFit: 'contain', marginTop: 40, marginBottom: 8 },
-  coverCompany: { textAlign: 'center', fontSize: 8, color: '#64748b', marginBottom: 2 },
-  coverTagline: { textAlign: 'center', fontSize: 7.5, color: '#94a3b8', letterSpacing: 0.5, marginBottom: 28 },
-  coverTitle: { textAlign: 'center', fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', marginBottom: 4 },
+  coverTitle: { textAlign: 'center', fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#1d4ed8', marginTop: 36, marginBottom: 4 },
   coverSubtitle: { textAlign: 'center', fontSize: 11, color: '#475569', marginBottom: 30 },
   coverBox: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 4, padding: 16, marginHorizontal: 30 },
   coverRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', paddingVertical: 5 },
@@ -139,6 +145,30 @@ function SmallHeader({ voyage, dateISO, period, holdRange }: { voyage: Voyage; d
   )
 }
 
+/** The company letterhead. Same block, same order and same wording as every other
+ *  document the firm issues — logo, address, contacts, brand rule. When the logo
+ *  fails to load (only possible offline before the SW has precached it) it falls
+ *  back to the company name + tagline as text, exactly as the invoice does, so a
+ *  report is never issued with no letterhead at all. */
+function Letterhead({ logoDataUrl }: { logoDataUrl: string | null }) {
+  return (
+    <>
+      {logoDataUrl ? (
+        // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image renders to PDF, no HTML alt
+        <Image src={logoDataUrl} style={styles.logo} />
+      ) : (
+        <>
+          <Text style={styles.wordmark}>{COMPANY.name}</Text>
+          <Text style={styles.tagline}>{COMPANY.tagline}</Text>
+        </>
+      )}
+      <Text style={styles.headLine}>{COMPANY.address}</Text>
+      <Text style={styles.headLine}>T {COMPANY.phone}, {COMPANY.phoneAlt}   F {COMPANY.fax}   E {COMPANY.email}</Text>
+      <View style={styles.headRule} />
+    </>
+  )
+}
+
 function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: string | null }) {
   const rows: Array<[string, string]> = [
     ['Vessel', withVesselPrefix(voyage.vesselName, voyage.vesselType)],
@@ -158,10 +188,7 @@ function CoverPage({ voyage, logoDataUrl }: { voyage: Voyage; logoDataUrl: strin
   return (
     <Page size="LETTER" style={styles.page}>
       <View style={styles.coverWrap}>
-        {/* eslint-disable-next-line jsx-a11y/alt-text */}
-        {logoDataUrl ? <Image src={logoDataUrl} style={styles.coverLogo} /> : null}
-        <Text style={styles.coverCompany}>{COMPANY.name}</Text>
-        <Text style={styles.coverTagline}>{COMPANY.tagline}</Text>
+        <Letterhead logoDataUrl={logoDataUrl} />
 
         <Text style={styles.coverTitle}>Cargo Hold Monitoring Report</Text>
         <Text style={styles.coverSubtitle}>{withVesselPrefix(voyage.vesselName, voyage.vesselType)}{voyage.voyageNumber ? ` — Voyage ${voyage.voyageNumber}` : ''}</Text>

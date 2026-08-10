@@ -1,7 +1,7 @@
 /* Minimal service worker for offline app-shell + previously-visited pages.
    Never caches Supabase (cross-origin) or same-origin /api responses, so
    private API/auth/storage data is never stored. */
-const VERSION = 'v6'
+const VERSION = 'v7'
 const STATIC_CACHE = `tayeng-static-${VERSION}`
 const PAGE_CACHE = `tayeng-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
@@ -10,9 +10,13 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
       caches.open(PAGE_CACHE).then((cache) => cache.add(OFFLINE_URL)).catch(() => {}),
-      // Precache the logo so offline-generated cargo PDFs always include it,
-      // even if the user never loaded a page that referenced it first.
-      caches.open(STATIC_CACHE).then((cache) => cache.add('/logo-full.png')).catch(() => {}),
+      // Precache both logos so offline-generated cargo PDFs always include the
+      // letterhead, even if the user never loaded a page that referenced it first.
+      // logo-invoice.png is the PRINT logo the PDFs use (dark wordmark);
+      // logo-full.png is the white-wordmark screen logo for the sidebar/auth pages.
+      caches.open(STATIC_CACHE)
+        .then((cache) => cache.addAll(['/logo-invoice.png', '/logo-full.png']))
+        .catch(() => {}),
     ])
   )
   self.skipWaiting()
