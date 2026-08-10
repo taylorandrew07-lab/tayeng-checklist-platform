@@ -32,6 +32,7 @@ import {
 } from '@/lib/jobs/tracker'
 import type { WorkflowStatus, Invoice } from '@/lib/types/database'
 import { InvoiceStatusPill } from '@/components/job/StatusPill'
+import { useStickyState } from '@/lib/hooks/useStickyState'
 
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
 type Filter = 'open' | 'invoice_ready' | 'closed' | 'all'
@@ -45,6 +46,10 @@ const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: '
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
+// The chosen filter is remembered across reloads — see useStickyState. 'open' is
+// only the first-ever default, not something the page reverts to.
+const FILTER_STORAGE_KEY = 'te_jobs_filter'
+const FILTER_KEYS = FILTERS.map(f => f.key)
 
 // Shared look for an editable cell's resting (button) state. py-2.5 below sm: this
 // grid is how a job gets corrected from a phone, and py-1 made every target ~28px
@@ -478,7 +483,7 @@ export default function JobsTrackerPage() {
   const [rows, setRows] = useState<TrackerRow[]>([])
   const [jobTypes, setJobTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<Filter>('open')
+  const [filter, setFilter] = useStickyState<Filter>(FILTER_STORAGE_KEY, 'open', FILTER_KEYS)
   const [typeFilter, setTypeFilter] = useState('')
   const [surveyorFilter, setSurveyorFilter] = useState('')
   const [otOnly, setOtOnly] = useState(false)

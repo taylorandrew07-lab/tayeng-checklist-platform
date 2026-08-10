@@ -12,7 +12,13 @@ import { useRealtimeRefresh } from '@/lib/realtime'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
+import { useStickyState } from '@/lib/hooks/useStickyState'
+import { WORKFLOW } from '@/lib/jobs/tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
+
+// '' = every status. The rest come from WORKFLOW so a status retired later can
+// never be restored from storage into a filter with no matching option.
+const OFFICE_STATUS_FILTERS: readonly string[] = ['', ...Object.keys(WORKFLOW)]
 
 interface MonitorJob {
   id: string
@@ -38,7 +44,11 @@ export default function OfficeJobsMonitor() {
   const tick = useRealtimeRefresh('jobs')
   const view = useJobsView()
   const [q, setQ] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Remembered across reloads, like the admin tracker's filter. '' is "all"
+  // and stays the first-ever default, not a value the page reverts to.
+  const [statusFilter, setStatusFilter] = useStickyState(
+    'te_office_jobs_status', '', OFFICE_STATUS_FILTERS
+  )
 
   const statusOptions = useMemo(() => Array.from(new Set(jobs.map(j => j.workflow_status))).sort(), [jobs])
   const filteredJobs = useMemo(() => {
