@@ -371,10 +371,19 @@ h1{font-size:22px;font-weight:640;letter-spacing:-.015em;margin:0;text-wrap:bala
 .note{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:8px;font-size:12.5px}
 .note.prelim{background:#fef9c3;color:#854d0e;border:1px solid #eab30840}
 .note.final{background:#dcfce7;color:#166534;border:1px solid #16a34a40}
-.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+/* Five columns, two rows: identity and route on top, timing and people below.
+   auto-fit chose its own column count from the viewport and left a hole in the
+   last row whenever the item count didn't divide by it. Fixed at 5 and centred,
+   because the block is a caption for the document, not a full-bleed table. */
+.meta{display:grid;grid-template-columns:repeat(5,1fr);max-width:1160px;margin:0 auto;width:100%;
   background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;
   box-shadow:0 1px 2px rgb(15 23 42/.06),0 8px 24px -12px rgb(15 23 42/.18)}
 .meta div{padding:10px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;min-width:0}
+.meta div:nth-child(5n){border-right:0}
+/* An optional field (client, report reference) can leave the last row short.
+   The final cell stretches over the remainder so the row still closes flush
+   instead of trailing an empty box. */
+.f2{grid-column:span 2}.f3{grid-column:span 3}.f4{grid-column:span 4}.f5{grid-column:span 5}
 .meta dt{font-size:10.5px;text-transform:uppercase;letter-spacing:.075em;color:#8a95a6;margin:0 0 2px}
 .meta dd{margin:0;font-weight:560;font-size:13.5px;overflow-wrap:anywhere}
 .tabs{display:flex;gap:2px;border-bottom:1px solid #e2e8f0}
@@ -471,7 +480,21 @@ text.thr-w{fill:#a97c1e}text.thr-c{fill:#dc2626}
 footer{color:#8a95a6;font-size:11.5px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
   border-top:1px solid #e2e8f0;padding-top:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-@media (max-width:640px){.wrap{padding:16px 10px 44px}.lh-c{text-align:left}.pane{max-height:70vh}}
+/* Below the desktop width the five columns stop fitting. The span classes are
+   reset here so a stretched final cell can't drag a narrow layout out of shape;
+   .meta>div outranks .f2-.f5 on specificity, so no !important is needed. */
+@media (max-width:1023px){
+  .meta{grid-template-columns:repeat(3,1fr);max-width:none}
+  .meta>div{grid-column:auto}
+  .meta div:nth-child(5n){border-right:1px solid #e2e8f0}
+  .meta div:nth-child(3n){border-right:0}
+}
+@media (max-width:640px){
+  .wrap{padding:16px 10px 44px}.lh-c{text-align:left}.pane{max-height:70vh}
+  .meta{grid-template-columns:repeat(2,1fr)}
+  .meta div:nth-child(3n){border-right:1px solid #e2e8f0}
+  .meta div:nth-child(2n){border-right:0}
+}
 `.trim()
 }
 
@@ -592,7 +615,13 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
     voyage.loadingPort && voyage.dischargePort ? ` &middot; ${esc(voyage.loadingPort)} &rarr; ${esc(voyage.dischargePort)}` : ''}</p>
 </div>
 
-<dl class="meta">${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+<dl class="meta">${meta.map(([k, v], i) => {
+    // Close the last row: if the count doesn't divide by five, the final cell
+    // takes the slack rather than leaving a gap beside it.
+    const slack = (5 - (meta.length % 5)) % 5
+    const cls = slack && i === meta.length - 1 ? ` class="f${slack + 1}"` : ''
+    return `<div${cls}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`
+  }).join('')}</dl>
 
 <div class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-panel="p-r">Readings</button>

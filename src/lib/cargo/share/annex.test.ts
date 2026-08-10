@@ -104,6 +104,24 @@ describe('renderVoyageAnnex', () => {
     expect((html.match(/<script>/g) ?? []).length).toBe(1)
   })
 
+  it('lays the header out as a filled 5-column grid, commenced starting row 2', () => {
+    const labels = [...renderVoyageAnnex(voyage()).matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1])
+    expect(labels).toEqual([
+      'Vessel', 'Voyage number', 'Cargo', 'Loading port', 'Discharge port',
+      'Monitoring commenced', 'Monitoring completed', 'Holds monitored', 'Surveyor', 'Client',
+    ])
+    // Exactly two full rows of five — no stretched cell needed, no hole left.
+    expect(labels).toHaveLength(10)
+    expect(renderVoyageAnnex(voyage())).not.toMatch(/class="f[2-5]"/)
+  })
+
+  it('closes a short last row rather than leaving a gap beside it', () => {
+    // No client → 9 fields → the last cell spans the remaining two columns.
+    const html = renderVoyageAnnex(voyage({ clientName: undefined }))
+    expect([...html.matchAll(/<dt>/g)]).toHaveLength(9)
+    expect(html).toContain('class="f2"')
+  })
+
   it('marks an unfinalised voyage preliminary and a finalised one final', () => {
     expect(renderVoyageAnnex(voyage())).toContain('Preliminary')
     expect(renderVoyageAnnex(voyage({ status: 'finalized' }))).toContain('finalised')
