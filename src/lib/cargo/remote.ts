@@ -114,6 +114,71 @@ export async function setVoyageJob(supabase: SupabaseClient, voyageId: string, j
   if (error) throw error
 }
 
+/** A synced voyage as it appears in the jobs registers, alongside jobs. */
+export interface VoyageListRow {
+  id: string
+  vessel_name: string | null
+  vessel_type: VesselPrefix | null
+  voyage_number: string | null
+  status: string
+  /** From doc.startDate / doc.endDate. endDate is '' while open-ended — see
+   *  lib/cargo/voyageDate.ts, which is the only thing that should interpret them. */
+  start_date: string | null
+  end_date: string | null
+  surveyor_name: string | null
+  client_name: string | null
+  client_color: string | null
+  /** Set once staff attach the voyage to a job for billing (migration 085).
+   *  A linked voyage is shown ON its job's row rather than as its own. */
+  job_id: string | null
+  job_number: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Synced voyages for the jobs registers and dashboards.
+ *
+ * No owner/status filter — RLS scopes the rows (admin: all · office with
+ * cargo.view: all · surveyor: their own). Critically this does NOT select `doc`:
+ * that column holds every reading of the voyage and can run to hundreds of KB a
+ * row. The two dates are lifted out of it with PostgREST arrow paths instead, so
+ * a list of fifty voyages stays a few KB.
+ */
+export async function listVoyageListRows(supabase: SupabaseClient): Promise<VoyageListRow[]> {
+  const { data, error } = await supabase
+    .from('cargo_voyages')
+    .select(
+      'id, vessel_name, vessel_type, voyage_number, status, created_at, updated_at, job_id,' +
+      ' start_date:doc->>startDate, end_date:doc->>endDate, surveyor_name:doc->>surveyorName,' +
+      ' owner:profiles!owner_id(full_name), client:clients(name, color),' +
+      ' job:jobs!cargo_voyages_job_id_fkey(job_number)'
+    )
+    .order('synced_at', { ascending: false })
+  if (error) throw error
+
+  return ((data ?? []) as any[]).map(r => ({
+    id: r.id,
+    vessel_name: r.vessel_name,
+    vessel_type: r.vessel_type ?? null,
+    voyage_number: r.voyage_number,
+    status: r.status,
+    // '' means "not set yet" in the document; normalise it here so no caller has
+    // to know that and accidentally treat the empty string as a real date.
+    start_date: r.start_date || null,
+    end_date: r.end_date || null,
+    // The document's own surveyor name is what the report shows; the profile is
+    // the fallback for a voyage saved before that field was filled in.
+    surveyor_name: r.surveyor_name || r.owner?.full_name?.trim() || null,
+    client_name: r.client?.name ?? null,
+    client_color: r.client?.color ?? null,
+    job_id: r.job_id ?? null,
+    job_number: r.job?.job_number ?? null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }))
+}
+
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
