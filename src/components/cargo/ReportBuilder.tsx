@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { FileDown, Loader2, Images, LineChart, Table, FileText, SlidersHorizontal } from 'lucide-react'
+import { FileDown, Loader2, Images, LineChart, Table, FileText, SlidersHorizontal, FileCode2 } from 'lucide-react'
 import { type Voyage, type CargoPhoto } from '@/lib/cargo/types'
 import { getPhotosForVoyage } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
@@ -9,6 +9,7 @@ import { downloadCargoReport } from '@/lib/cargo/pdf/render'
 import { type ReportInclude } from '@/lib/cargo/pdf/CargoReportDocument'
 import type { Quality } from '@/lib/cargo/photo'
 import { voyageDirty } from '@/lib/cargo/sync'
+import { downloadVoyageSnapshot, annexFilename } from '@/lib/cargo/share/exportAnnex'
 import ShareLinkPanel from '@/components/cargo/ShareLinkPanel'
 
 interface Props {
@@ -41,6 +42,28 @@ export default function ReportBuilder({ voyage, onChange }: Props) {
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [snapshotting, setSnapshotting] = useState(false)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
+
+  async function handleSnapshot() {
+    setSnapshotting(true)
+    setSnapshotError(null)
+    try {
+      // Read-only: exporting a report must never mark the voyage as changed.
+      await downloadVoyageSnapshot(voyage)
+    } catch (err) {
+      // Never surface a raw bundler/browser message. A surveyor at sea reading
+      // "Loading chunk 1820 failed" concludes the app is broken and stops trying.
+      const raw = err instanceof Error ? err.message : ''
+      setSnapshotError(
+        /chunk|import|dynamically imported module/i.test(raw)
+          ? 'The snapshot tool has not finished downloading to this device. Open this page once with an internet connection, then try again — after that it works offline.'
+          : 'Could not build the snapshot. Your readings are safe on this device; please try again.'
+      )
+    } finally {
+      setSnapshotting(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -78,10 +101,35 @@ export default function ReportBuilder({ voyage, onChange }: Props) {
 
   return (
     <div className="space-y-5">
-      {/* The data deliverable. Sits above the PDF builder because for most
-          voyages this is what actually goes to the client — the PDF carries the
-          photos and the signed record. Requires a synced voyage: the annex is
-          rendered from the row in Supabase, not from this device. */}
+      {/* First, because at sea it is the only one of the three that works: it is
+          rendered on this device from the voyage in IndexedDB and needs no signal.
+          The surveyor hands it to the captain, who emails it from the ship. This
+          is the direct replacement for the Excel workbook. */}
+      <div className="card p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-brand-50 text-brand-700 p-2"><FileCode2 className="h-4 w-4" /></div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-sm">Daily snapshot for email</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              A single web page of every reading and chart for the voyage so far. Opens in any
+              browser &mdash; no internet, no sign-in, nothing to install. Give it to the captain to email.
+            </p>
+          </div>
+        </div>
+        {snapshotError && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5">{snapshotError}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={handleSnapshot} disabled={snapshotting} className="btn-primary">
+            {snapshotting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCode2 className="h-4 w-4" />}
+            {snapshotting ? 'Preparing…' : 'Download daily snapshot'}
+          </button>
+          <span className="text-xs text-gray-400 font-mono truncate">{annexFilename(voyage)}</span>
+        </div>
+      </div>
+
+      {/* The live version of the same data, for anyone ashore. Needs a synced
+          voyage — it renders from the row in Supabase, not from this device. */}
       <ShareLinkPanel
         voyageId={voyage.id}
         canShare={!voyageDirty(voyage)}

@@ -56,7 +56,13 @@ describe('byListRowDesc', () => {
 
   it('sorts an open-ended voyage by today, not by the day it started', () => {
     // Otherwise a voyage that began months ago sinks out of sight while still running.
-    const today = new Date().toISOString().slice(0, 10)
+    //
+    // "Today" is the LOCAL calendar day, matching dayKey() and the date the grid
+    // actually displays. Comparing against toISOString() (UTC) made this fail
+    // every evening between local midnight and UTC midnight — in Trinidad,
+    // every day after 8pm.
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     expect(listRowLastDateKey(voyage('v', { start_date: '2020-01-01', end_date: null }))).toBe(today)
   })
 

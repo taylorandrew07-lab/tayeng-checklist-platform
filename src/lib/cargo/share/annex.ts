@@ -53,6 +53,32 @@ export interface AnnexOptions {
    */
   dataAsAt?: number | null
   receivedAt?: string | null
+  /**
+   * Whether the chart hover readout is included. Default true.
+   *
+   * The hover needs every series value embedded a SECOND time as JSON beside
+   * the table that already holds them. Measured at a real voyage's scale that
+   * is about 12% of the file, not the half it sounds like — the readings grid
+   * and the chart polylines dominate. The daily snapshot a surveyor emails off
+   * a vessel drops it anyway: the grid still has every figure and the charts
+   * still draw every line, you simply cannot hover a point to read them out.
+   * The share link keeps it — served over a normal connection, the size is
+   * irrelevant there.
+   *
+   * Tab switching is NOT part of this. It stays in both, because the Charts
+   * panel is `hidden` until a tab is clicked and would be unreachable without it.
+   */
+  interactive?: boolean
+  /**
+   * True when this copy is rendered ON the device that recorded the readings —
+   * the daily snapshot a surveyor exports at sea.
+   *
+   * It changes what the page can honestly claim. The share link is served from
+   * the cloud and may genuinely be behind the device, so it warns that later
+   * readings have not reached us. A snapshot rendered from the device IS the
+   * record: nothing is being withheld, and saying so would be false.
+   */
+  selfContained?: boolean
 }
 
 // ── escaping ────────────────────────────────────────────────────────────────
@@ -222,6 +248,7 @@ function chartDomain(model: ChartModel, thresholds?: Threshold[]): [number, numb
 function svgChart(id: string, model: ChartModel, colorFor: (key: string, i: number) => string, opts: {
   direct?: boolean
   thresholds?: Threshold[]
+  interactive?: boolean
 } = {}): string {
   const n = model.timepoints.length
   if (!model.hasData || n === 0) return '<p class="none">No readings recorded for this chart.</p>'
@@ -301,9 +328,12 @@ function svgChart(id: string, model: ChartModel, colorFor: (key: string, i: numb
     }
   }
 
-  s += `<rect class="hit" x="${PL}" y="${PT}" width="${PLOTW}" height="${PLOTH}"/>`
-  s += `<line class="cross" x1="0" y1="${PT}" x2="0" y2="${PT + PLOTH}"/></svg>`
-  return s
+  // The hover target and crosshair only exist when there is a script to drive them.
+  if (opts.interactive !== false) {
+    s += `<rect class="hit" x="${PL}" y="${PT}" width="${PLOTW}" height="${PLOTH}"/>`
+    s += `<line class="cross" x1="0" y1="${PT}" x2="0" y2="${PT + PLOTH}"/>`
+  }
+  return s + '</svg>'
 }
 
 function legendOf(items: { label: string; color: string }[]): string {
@@ -318,7 +348,7 @@ interface BuiltChart {
   domain: [number, number]
 }
 
-function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): BuiltChart[] {
+function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean, interactive = true): BuiltChart[] {
   const out: BuiltChart[] = []
   const holds = holdNumbers(voyage.holdCount)
 
@@ -334,7 +364,7 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
       out.push({
         id: `t-${rt.id}`, title: `${rt.name} by hold`,
         caption: `${rt.unit ? `${rt.unit}. ` : ''}One line per hold across every monitoring round.`,
-        svg: svgChart(`t-${rt.id}`, model, colorFor, { direct: true, thresholds }),
+        svg: svgChart(`t-${rt.id}`, model, colorFor, { direct: true, thresholds, interactive }),
         legend: legendOf(model.series.map((s, i) => ({ label: s.label, color: seriesColor(i) }))),
         model, colorFor, domain: chartDomain(model, thresholds),
       })
@@ -349,7 +379,7 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
       out.push({
         id: `peak-${rt.id}`, title: `Peak ${rt.name.toLowerCase()} by hold`,
         caption: `The highest of the ${rt.points.length} points in each hold, at every round.`,
-        svg: svgChart(`peak-${rt.id}`, peak, colorFor, { direct: true, thresholds }),
+        svg: svgChart(`peak-${rt.id}`, peak, colorFor, { direct: true, thresholds, interactive }),
         legend: legendOf(peak.series.map((s, i) => ({ label: s.label, color: seriesColor(i) }))),
         model: peak, colorFor, domain: chartDomain(peak, thresholds),
       })
@@ -368,9 +398,11 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean): B
       out.push({
         id: `${rt.id}-h${hold}`, title: `Hold ${hold} — ${rt.name.toLowerCase()}`,
         caption: gmap.size
-          ? `All ${rt.points.length} points, coloured by location rather than by probe. Hover the chart for every reading at that round.`
-          : `All ${rt.points.length} points. Hover the chart for every reading at that round — beyond a handful of lines, colour alone cannot tell them apart.`,
-        svg: svgChart(`${rt.id}-h${hold}`, model, colorFor, { thresholds }),
+          ? `All ${rt.points.length} points, coloured by location rather than by probe.${interactive ? ' Hover the chart for every reading at that round.' : ''}`
+          : `All ${rt.points.length} points.${interactive
+              ? ' Hover the chart for every reading at that round — beyond a handful of lines, colour alone cannot tell them apart.'
+              : ' Beyond a handful of lines colour alone cannot separate them, so read individual figures from the table above.'}`,
+        svg: svgChart(`${rt.id}-h${hold}`, model, colorFor, { thresholds, interactive }),
         // ALWAYS a key. Grouped points key by location; ungrouped ones list every
         // probe, because a chart of 21 unlabelled lines with no legend is unreadable.
         legend: gmap.size
@@ -440,6 +472,7 @@ h1{font-size:22px;font-weight:640;letter-spacing:-.015em;margin:0;text-wrap:bala
 .f2{grid-column:span 2}.f3{grid-column:span 3}.f4{grid-column:span 4}.f5{grid-column:span 5}
 .meta dt{font-size:10.5px;text-transform:uppercase;letter-spacing:.075em;color:#8a95a6;margin:0 0 2px}
 .meta dd{margin:0;font-weight:560;font-size:13.5px;overflow-wrap:anywhere}
+h2.sec{font-size:15px;font-weight:640;margin:8px 0 0;padding-bottom:8px;border-bottom:2px solid #1d4ed8;color:#0f172a}
 .tabs{display:flex;gap:2px;border-bottom:1px solid #e2e8f0}
 .tabs button{appearance:none;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;
   padding:9px 16px;font:inherit;font-weight:560;color:#475569;cursor:pointer;border-radius:7px 7px 0 0;
@@ -576,12 +609,20 @@ footer{color:#8a95a6;font-size:11.5px;display:flex;justify-content:space-between
 `.trim()
 }
 
-const SCRIPT = `
-var V=__P__,tip=document.getElementById('tip'),tabs=[].slice.call(document.querySelectorAll('.tabs button'));
+// Tab switching. Always shipped — the Charts panel starts `hidden` and would be
+// unreachable without it, in every copy of this document.
+const TAB_SCRIPT = `
+var tabs=[].slice.call(document.querySelectorAll('.tabs button'));
 tabs.forEach(function(b){b.addEventListener('click',function(){
   tabs.forEach(function(o){o.setAttribute('aria-selected',String(o===b))});
   [].forEach.call(document.querySelectorAll('[role=tabpanel]'),function(p){p.hidden=p.id!==b.dataset.panel});
 })});
+`.trim()
+
+// The chart hover readout. Omitted from the emailed snapshot along with its data
+// payload — see AnnexOptions.interactive.
+const HOVER_SCRIPT = `
+var V=__P__,tip=document.getElementById('tip');
 function show(chart,e){
   var d=V.c[chart.dataset.chart];if(!d)return;
   var box=chart.getBoundingClientRect(),vb=chart.viewBox.baseVal,n=V.t.length;
@@ -630,6 +671,7 @@ function show(chart,e){
 /** Render the whole annex. Pure: same voyage in, same document out. */
 export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): string {
   const generatedAt = opts.generatedAt ?? new Date()
+  const interactive = opts.interactive !== false
   // Fall back to the document's own updatedAt when the caller doesn't supply one,
   // so the age is stated even from a plain render.
   const asAt = stamp(opts.dataAsAt ?? voyage.updatedAt ?? null)
@@ -641,7 +683,7 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
   const tps = voyageTimepoints(voyage)
   const finalized = voyage.status === 'finalized'
   const vessel = withVesselPrefix(voyage.vesselName, voyage.vesselType)
-  const charts = buildCharts(voyage, chartTypes, colorsOn)
+  const charts = buildCharts(voyage, chartTypes, colorsOn, interactive)
 
   const meta: [string, string][] = [
     ['Vessel', vessel],
@@ -689,7 +731,9 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
   <div>${finalized
     ? `This report has been finalised.${asAt ? ` Readings are complete to <strong>${esc(asAt)}</strong>.` : ''}`
     : `<b>Preliminary &mdash; monitoring is ongoing.</b> ${asAt
-        ? `These readings are as at <strong>${esc(asAt)}</strong>. Monitoring continues at sea, where there is often no signal, so anything recorded since has not yet reached us and is not shown here.`
+        ? `These readings are as at <strong>${esc(asAt)}</strong>.${opts.selfContained
+            ? ' Monitoring continues, so later rounds will appear on a subsequent report.'
+            : ' Monitoring continues at sea, where there is often no signal, so anything recorded since has not yet reached us and is not shown here.'}`
         : 'Figures are current as at the surveyor&rsquo;s last sync and may change.'}`}</div>
 </div>
 
@@ -707,12 +751,12 @@ ${/* Just the heading. The vessel, voyage and ports used to be repeated here as 
     return `<div${cls}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`
   }).join('')}</dl>
 
-<div class="tabs" role="tablist">
+${interactive ? `<div class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-panel="p-r">Readings</button>
   <button role="tab" aria-selected="false" data-panel="p-c">Charts</button>
-</div>
+</div>` : '<h2 class="sec">Readings</h2>'}
 
-<section id="p-r" role="tabpanel">
+<section id="p-r"${interactive ? ' role="tabpanel"' : ''}>
   <div style="display:flex;flex-direction:column;gap:12px">
     <div class="key">${colorsOn
       ? `<span><i style="background:${GREEN_BG}"></i>Normal</span>
@@ -731,7 +775,8 @@ ${/* Just the heading. The vessel, voyage and ports used to be repeated here as 
   </div>
 </section>
 
-<section id="p-c" role="tabpanel" hidden>
+${interactive ? '' : '<h2 class="sec">Charts</h2>'}
+<section id="p-c"${interactive ? ' role="tabpanel" hidden' : ''}>
   <div class="charts">${charts.length ? charts.map(c => `<div class="card">
     <h2>${esc(c.title)}</h2><p class="cap">${esc(c.caption)}</p>${c.svg}${c.legend}</div>`).join('')
     : '<p class="none">No charts &mdash; no reading type on this voyage is set to appear in charts.</p>'}
@@ -748,11 +793,23 @@ ${voyage.observations ? `<div class="obs"><h2>Surveyor&rsquo;s observations</h2>
     received ? ` &middot; received ${esc(received)}` : ''} &middot; page opened ${esc(stamp(generatedAt) ?? '')}</span>
 </footer>
 </div>
-<div class="tip" id="tip"></div>`
+${interactive ? '<div class="tip" id="tip"></div>' : ''}`
 
   // JSON is embedded in a <script>; "</script>" inside a string would close the
   // block early, so the closing angle bracket is escaped.
   const json = JSON.stringify(payload).replace(/</g, '\\u003c')
+  // The emailed copy carries NO JavaScript at all. Its Charts section is a plain
+  // visible block rather than a hidden tab panel, so there is nothing left for a
+  // script to reveal — and a recipient whose mail client or viewer blocks
+  // scripts still sees the whole document rather than half of it.
+  //
+  // The payload goes in via a FUNCTION replacement, not a string: `$&`, `$'` and
+  // "$`" inside a surveyor's vessel or point name would otherwise be read by
+  // String.replace as replacement patterns, corrupting the JSON and taking the
+  // entire script — tab switching included — down with it.
+  const script = interactive
+    ? `${TAB_SCRIPT}\n${HOVER_SCRIPT.replace('__P__', () => json)}`
+    : ''
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -762,5 +819,5 @@ ${/* The vessel stays in the browser title (not on the page): it names the tab,
      these open side by side. */''}
 <title>${esc(vessel)} — Cargo Monitoring Data Annex</title>
 <style>${styles()}</style></head><body>${body}
-<script>${SCRIPT.replace('__P__', json)}</script></body></html>`
+${script ? `<script>${script}</script>` : ''}</body></html>`
 }
