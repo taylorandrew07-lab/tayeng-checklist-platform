@@ -1,4 +1,5 @@
 import type { FieldType, FieldOption, FieldValidation, ConditionalLogic } from '@/lib/types/database'
+import { getDefaultAnswerOptions, type AnswerFamily } from '@/lib/checklist/answerOptions'
 
 export interface BuilderField {
   id: string
@@ -50,21 +51,10 @@ export const FIELD_TYPE_OPTIONS: { value: FieldType; label: string; group: strin
   { value: 'signature', label: 'Signature', group: 'Special' },
 ]
 
-export function getDefaultYesNoOptions(type: 'yes_no' | 'yes_no_na' | 'pass_fail'): FieldOption[] {
-  if (type === 'pass_fail') {
-    return [
-      { value: 'pass', label: 'Pass', color: 'green' },
-      { value: 'fail', label: 'Fail', color: 'red' },
-    ]
-  }
-  const base: FieldOption[] = [
-    { value: 'yes', label: 'Yes', color: 'green' },
-    { value: 'no', label: 'No', color: 'red' },
-  ]
-  if (type === 'yes_no_na') {
-    return [...base, { value: 'na', label: 'N/A', color: 'gray' }]
-  }
-  return base
+// Re-exported from the shared seam so the builder, the survey form and the PDF cannot
+// drift apart on what a yes/no field's choices are. See lib/checklist/answerOptions.ts.
+export function getDefaultYesNoOptions(type: AnswerFamily): FieldOption[] {
+  return getDefaultAnswerOptions(type)
 }
 
 export function createBlankField(order_index: number, field_type: BuilderField['field_type'] = 'text'): BuilderField {

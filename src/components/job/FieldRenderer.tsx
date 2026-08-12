@@ -6,6 +6,7 @@ import type { TemplateField } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { getCachedNewJobData } from '@/lib/offline/db'
 import { evaluateCalculation, checkConditionalLogic, formatDiffPercentage } from '@/lib/utils'
+import { resolveAnswerOptions } from '@/lib/checklist/answerOptions'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import SignaturePad from './SignaturePad'
 
@@ -171,38 +172,21 @@ function FieldRenderer({
           gray: 'border-gray-400 bg-gray-100 text-gray-600',
           amber: 'border-amber-500 bg-amber-50 text-amber-700',
         }
-        const DEFAULT_COLORS: Record<string, string> = {
-          yes: 'green',
-          no: 'red',
-          na: 'gray',
-          pass: 'green',
-          fail: 'red',
-        }
-        const allOpts = field.field_type === 'pass_fail'
-          ? [
-              { value: 'pass', label: 'Pass' },
-              { value: 'fail', label: 'Fail' },
-            ]
-          : field.field_type === 'yes_no_na'
-          ? [
-              { value: 'yes', label: 'Yes' },
-              { value: 'no', label: 'No' },
-              { value: 'na', label: 'N/A' },
-            ]
-          : [
-              { value: 'yes', label: 'Yes' },
-              { value: 'no', label: 'No' },
-            ]
-        const opts = allOpts.map(o => {
-          const configuredColor = field.options?.find(opt => opt.value === o.value)?.color
-          const colorKey = configuredColor ?? DEFAULT_COLORS[o.value] ?? 'gray'
-          return { ...o, active: COLOR_ACTIVE_CLASSES[colorKey] ?? COLOR_ACTIVE_CLASSES.gray }
-        })
+        // The choices come from the template when it supplies a complete list (that is
+        // how "Not inspected" reaches the Pre-Hire Inspection template); otherwise the
+        // house Yes/No/N-A defaults. resolveAnswerOptions has already folded in the
+        // per-option colour override. See lib/checklist/answerOptions.ts.
+        const opts = resolveAnswerOptions(field.field_type, field.options).map(o => ({
+          ...o,
+          active: COLOR_ACTIVE_CLASSES[o.color ?? 'gray'] ?? COLOR_ACTIVE_CLASSES.gray,
+        }))
         // Parse combined value: "yes|||some remarks"
         const [answer, remarks] = value.includes('|||') ? value.split('|||') : [value, '']
         return (
           <div className="space-y-2">
-            <div className="flex gap-3">
+            {/* Wraps: a template may supply a 4th choice ("Not inspected"), which does not
+                fit one phone-width row alongside Yes/No/N-A. */}
+            <div className="flex flex-wrap gap-2 sm:gap-3">
               {opts.map(opt => (
                 <label key={opt.value} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-colors ${
                   answer === opt.value ? opt.active : 'border-gray-200 hover:border-gray-300'

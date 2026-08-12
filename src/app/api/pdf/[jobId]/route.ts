@@ -72,7 +72,7 @@ export async function GET(
   // keyed off it — avoids a second jobs round-trip just to get template_id.
   const { data: job } = await db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_disclaimer, pdf_preamble),
+      template:checklist_templates(name, pdf_include_photos, pdf_photos_inline, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_disclaimer, pdf_preamble),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single()
@@ -216,6 +216,7 @@ export async function GET(
         hideClient: job.template?.pdf_hide_client === true,
         hideSurveyor: job.template?.pdf_hide_surveyor === true,
         balancedHeader: job.template?.pdf_balanced_header === true,
+        photosInline: job.template?.pdf_photos_inline === true,
       }) as any
     )
   } catch (e) {

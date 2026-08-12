@@ -528,7 +528,9 @@ export default function FieldEditor({ field, allFields, displayNumber, manualNum
                   <div className="space-y-2">
                     {field.options.map((opt, idx) => (
                       <div key={opt.value} className="flex items-center gap-3">
-                        <span className="text-sm text-gray-700 w-10 font-medium">{opt.label}</span>
+                        {/* w-28: a template may supply its own choices, so the label is
+                            not always as short as "Yes" / "N/A" ("Not inspected"). */}
+                        <span className="text-sm text-gray-700 w-28 shrink-0 font-medium">{opt.label}</span>
                         <div className="flex gap-2">
                           {COLOR_OPTIONS.map(color => {
                             const swatch = COLOR_SWATCH[color]

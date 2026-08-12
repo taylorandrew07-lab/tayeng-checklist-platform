@@ -220,3 +220,173 @@ describe('JobPDF pdf_hide_when_empty', () => {
     expect(withText.length).toBeGreaterThan(withoutText.length)
   })
 })
+
+// A photo field in a REPEATABLE section has always printed under its entry. In an
+// ordinary section the association was computed and then discarded, so the photo landed
+// on an "Additional Photographs" page at the back captioned "Additional — Photo 3" —
+// nothing tied it to the item it evidenced. pdf_photos_inline prints it under its own
+// section instead. Off by default, so every pre-existing report is unchanged.
+describe('JobPDF pdf_photos_inline', () => {
+  const IMG_ = IMG
+  const ordinarySections = [
+    {
+      id: 's1', title: 'Life-Saving Appliances', is_repeatable: false,
+      fields: [
+        { id: 'q1', label: 'Liferaft cradles and HRUs in good order?', field_type: 'yes_no_na', item_number: '6.7', order_index: 0 },
+        { id: 'ph', label: 'Photographs', field_type: 'photo', item_number: '6.12', order_index: 1 },
+      ],
+    },
+  ]
+  const common = {
+    job: { id: 'j1', title: 'Pre-Hire', job_number: '26-08-001', vessel_name: 'Test Vessel',
+      template: { name: 'Pre-Hire Inspection', pdf_include_photos: true } } as any,
+    fieldValues: { q1: 'no|||stbd cradle cracked at weld' },
+    arrayValues: {}, signatures: {}, photoCount: 4,
+    photos: Array.from({ length: 4 }, (_, i) => ({
+      field_id: 'ph', instance: 0, url: IMG_, caption: null, filename: `p${i}.jpg`,
+    })),
+  }
+
+  it('renders both ways', async () => {
+    for (const photosInline of [false, true]) {
+      const buf = await renderToBuffer(
+        React.createElement(JobPDF, { ...common, sections: ordinarySections as any, photosInline } as any) as any)
+      expect(buf.length).toBeGreaterThan(1000)
+    }
+  }, 25000)
+
+  it('inlining avoids the forced "Additional Photographs" page, so the document is smaller', async () => {
+    // Off, the 4 photos force a `break` onto their own page at the back. On, they flow
+    // under the section that produced them.
+    const [inline, atBack] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: ordinarySections as any, photosInline: true } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: ordinarySections as any, photosInline: false } as any) as any),
+    ])
+    expect(inline.length).toBeLessThan(atBack.length)
+  }, 25000)
+
+  it('renders a section whose ONLY field is a photo field', async () => {
+    // The old code returned null for a section with no non-photo fields, which would
+    // have swallowed the photos along with the heading.
+    const photoOnly = [{ id: 's1', title: 'Deck Photographs', is_repeatable: false,
+      fields: [{ id: 'ph', label: 'Photographs', field_type: 'photo', item_number: '12.12', order_index: 0 }] }]
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, sections: photoOnly as any, photosInline: true } as any) as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+
+  it('is a no-op when every photo field already lives in a repeatable section', async () => {
+    // The regression guard: Brine and Borescoping only have repeatable photo fields, so
+    // turning the flag on must not move a single photo. Compare byte LENGTH rather than
+    // contents — the embedded creation timestamp differs between renders but is
+    // fixed-width, so equal length means equal layout.
+    const repeatable = [{
+      id: 's2', title: 'Hourly Shore Line Inspection', is_repeatable: true, pdf_page_break: false,
+      fields: [
+        { id: 'g1', label: 'Line', field_type: 'text', order_index: 0 },
+        { id: 'ph', label: 'Photo', field_type: 'photo', order_index: 1 },
+      ],
+    }]
+    const [off, on] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: repeatable as any, fieldValues: { g1: 'Line 1' }, photosInline: false } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: repeatable as any, fieldValues: { g1: 'Line 1' }, photosInline: true } as any) as any),
+    ])
+    expect(on.length).toBe(off.length)
+  }, 25000)
+
+  it('leaves general (field-less) photos on the Additional Photographs pages', async () => {
+    // Photos with field_id null belong to the job's own "Additional Photos" card — they
+    // have no question to sit under, so inlining must not strand them.
+    const generals = [...common.photos, { field_id: null, instance: 0, url: IMG_, caption: null, filename: 'g.jpg' }]
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...common, sections: ordinarySections as any, photos: generals, photoCount: 5, photosInline: true } as any) as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+})
+
+// The Pre-Hire Inspection template (migration 170) is far larger than anything that
+// came before: 17 sections, ~160 fields, dotted item numbers, a gated repeatable
+// findings section and two signatures. This is the cheap standing proof that a report
+// that size renders at all.
+describe('JobPDF at Pre-Hire Inspection scale', () => {
+  it('renders 17 sections / ~160 fields with inline photos and signatures', async () => {
+    const types = ['yes_no_na', 'yes_no', 'text', 'number', 'textarea', 'date'] as const
+    const sections: any[] = Array.from({ length: 14 }, (_, s) => ({
+      id: `s${s}`, title: `Section ${s + 1}`, is_repeatable: false,
+      fields: [
+        ...Array.from({ length: 11 }, (_, f) => ({
+          id: `s${s}f${f}`,
+          label: `Question ${s + 1}.${f + 1} — is the equipment in good order and within its service date?`,
+          field_type: types[(s + f) % types.length],
+          item_number: `${s + 1}.${f + 1}`,
+          order_index: f,
+          with_remarks: true,
+          options: [
+            { value: 'yes', label: 'Yes', color: 'green' },
+            { value: 'no', label: 'No', color: 'red' },
+            { value: 'na', label: 'N/A', color: 'gray' },
+            { value: 'ni', label: 'Not inspected', color: 'gray' },
+          ],
+        })),
+        { id: `s${s}ph`, label: 'Photographs', field_type: 'photo', item_number: `${s + 1}.12`, order_index: 11 },
+      ],
+    }))
+    sections.push({
+      id: 'findings', title: 'Findings — Observations & Deficiencies', is_repeatable: true,
+      fields: [
+        { id: 'fa', label: 'Area / location', field_type: 'text', order_index: 0 },
+        { id: 'fb', label: 'Item number referenced', field_type: 'text', order_index: 1 },
+        { id: 'fc', label: 'What was observed', field_type: 'textarea', order_index: 2, pdf_hide_when_empty: true },
+        { id: 'fd', label: 'Photographs', field_type: 'photo', order_index: 3 },
+      ],
+    })
+    sections.push({
+      id: 'signoff', title: 'Surveyor Sign-off', is_repeatable: false,
+      fields: [
+        { id: 'sa', label: 'Report prepared by', field_type: 'text', order_index: 0 },
+        { id: 'sb', label: 'Signature', field_type: 'signature', order_index: 1, is_required: true },
+        { id: 'sc', label: 'Signed on', field_type: 'date', order_index: 2 },
+        { id: 'sd', label: 'Ship’s representative present at sign-off', field_type: 'text', order_index: 3 },
+        { id: 'se', label: 'Ship’s representative signature', field_type: 'signature', order_index: 4 },
+      ],
+    })
+
+    const fieldValues: Record<string, string> = { sa: 'A. Taylor', sc: '2026-08-14', sd: 'C/O J. Doe' }
+    const answers = ['yes', 'no|||replacement on order', 'na', 'ni|||engine room not entered']
+    for (let s = 0; s < 14; s++) {
+      for (let f = 0; f < 11; f++) fieldValues[`s${s}f${f}`] = answers[(s + f) % answers.length]
+    }
+    // Two findings entries.
+    Object.assign(fieldValues, {
+      fa: 'Boat deck, stbd', fb: '6.7', fc: 'Liferaft cradle cracked at the weld.',
+      'fa@@1': 'Engine room', 'fb@@1': '11.3', 'fc@@1': 'Oil accumulation in the bilge.',
+    })
+
+    // Photos: 2 per area section, 2 per finding.
+    const photos = [
+      ...Array.from({ length: 28 }, (_, i) => ({
+        field_id: `s${Math.floor(i / 2)}ph`, instance: 0, url: IMG, caption: null, filename: `s${i}.jpg`,
+      })),
+      ...Array.from({ length: 4 }, (_, i) => ({
+        field_id: 'fd', instance: i < 2 ? 0 : 1, url: IMG, caption: null, filename: `f${i}.jpg`,
+      })),
+    ]
+
+    const el = React.createElement(JobPDF as any, {
+      job: {
+        id: 'j1', title: 'Pre-Hire Inspection', job_number: '26-08-014', vessel_name: 'Test Vessel',
+        client: { name: 'Test Client' }, repeatable_order: { findings: [0, 1] },
+        template: { name: 'Pre-Hire Inspection', pdf_include_photos: true },
+      },
+      sections, fieldValues, arrayValues: {},
+      signatures: { sb: IMG, se: IMG },
+      photoCount: photos.length, photos,
+      surveyors: ['Captain Andrew Taylor'],
+      preamble: 'This report records the condition, certification and equipment of the vessel as observed on board on the date stated.',
+      disclaimer: 'This report remains the property of Taylor Engineering.',
+      balancedHeader: true, photosInline: true,
+    })
+    const buf = await renderToBuffer(el as any)
+    expect(buf.length).toBeGreaterThan(10000)
+  }, 60000)
+})

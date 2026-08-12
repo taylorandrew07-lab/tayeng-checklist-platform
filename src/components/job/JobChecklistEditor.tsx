@@ -37,6 +37,25 @@ interface MissingField {
 /** DOM id of a field's scroll anchor. */
 const fieldAnchorId = (key: string) => `field-${key}`
 
+/** Stand-in "storage path" for a photo still queued on the device. It is never sent to
+ *  the server — it only keys the object URL in photoUrls and marks the row as local. */
+const queuedPath = (localId: string) => `local:${localId}`
+const isQueuedPath = (path: string | null | undefined) => !!path?.startsWith('local:')
+
+/** Corner marker on a thumbnail whose bytes are still only on this device. Without it a
+ *  surveyor has no way to tell a saved photo from one that has actually reached the
+ *  server — which is exactly the reassurance needed before leaving the vessel. */
+function PendingPhotoBadge() {
+  return (
+    <span
+      title="Saved on this device — uploads when the connection returns"
+      className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white"
+    >
+      <CloudOff className="h-3 w-3" /> Pending
+    </span>
+  )
+}
+
 /**
  * Scroll a required-but-blank field into view and focus its first control.
  * A long checklist can hide a missed question hundreds of pixels off-screen, and naming it in
@@ -86,10 +105,14 @@ import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
 import { completeJob, COMPLETE_LABEL } from '@/lib/jobs/complete'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { SaveStatus } from '@/components/ui/SaveStatus'
-import { offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage } from '@/lib/offline/db'
+import {
+  offlineAvailable, getDraft, putDraft, deleteDraft, requestPersistentStorage,
+  putPhoto, getPhotosForJob, deletePhoto as deleteQueuedPhoto,
+} from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
-import type { OfflineDraft } from '@/lib/offline/types'
+import type { OfflineDraft, QueuedPhoto } from '@/lib/offline/types'
+import { downscaleImages } from '@/lib/files/downscaleImage'
 
 interface SectionWithFields extends TemplateSection {
   fields: TemplateField[]
@@ -171,7 +194,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [generalPhotos, setGeneralPhotos] = useState<any[]>([])
     // photoUrls: storage_path → short-lived signed URL, so the editor can show real
     // thumbnails (the job-photos bucket is private). Display-only; never persisted.
+    // A QUEUED photo has no storage path yet, so it is keyed by its `local:<id>` stand-in
+    // and the "URL" is an object URL over the blob held in IndexedDB.
     const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
+    // Photos taken with no signal. They live in IndexedDB (the source of truth) and are
+    // surfaced here as pseudo-rows so every existing render path — thumbnails, counts,
+    // required-field validation — treats them exactly like uploaded photos.
+    const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhoto[]>([])
     // Clicking a thumbnail opens it full-size in an on-screen lightbox (no download,
     // no navigation). null = closed.
     const [lightbox, setLightbox] = useState<{ url: string; filename?: string | null } | null>(null)
@@ -182,6 +211,31 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       window.addEventListener('keydown', onKey)
       return () => window.removeEventListener('keydown', onKey)
     }, [lightbox])
+    // Server rows + queued rows, merged. EVERY read path (thumbnails, per-section
+    // completion counts, the required-photo check on submit) uses these, so a photo the
+    // surveyor has taken counts as taken whether or not it has reached the server yet.
+    const queuedRow = (p: QueuedPhoto) => ({
+      id: p.localId,
+      field_id: p.fieldId,
+      instance: p.instance ?? 0,
+      storage_path: queuedPath(p.localId),
+      filename: p.filename,
+      pending: true as const,
+    })
+    const allFieldPhotos = useMemo(() => {
+      const merged: Record<string, any[]> = { ...fieldPhotos }
+      for (const p of queuedPhotos) {
+        if (!p.fieldId || p.uploaded) continue
+        const k = instanceKey(p.fieldId, p.instance ?? 0)
+        merged[k] = [...(merged[k] ?? []), queuedRow(p)]
+      }
+      return merged
+    }, [fieldPhotos, queuedPhotos])
+    const allGeneralPhotos = useMemo(
+      () => [...generalPhotos, ...queuedPhotos.filter(p => !p.fieldId && !p.uploaded).map(queuedRow)],
+      [generalPhotos, queuedPhotos],
+    )
+
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [submitting, setSubmitting] = useState(false)
@@ -329,6 +383,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setFieldPhotos(draft.fieldPhotos ?? {})
       setGeneralPhotos(draft.generalPhotos ?? [])
       void signPhotos([...Object.values(draft.fieldPhotos ?? {}).flat(), ...(draft.generalPhotos ?? [])])
+      void refreshQueuedPhotos()
       // Rebuild each repeatable section's entry order from the draft's instance keys +
       // the saved order on the cached job, so a draft edited offline reopens with all
       // its entries in the order they were left.
@@ -425,6 +480,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         setIsDirty(!!after?.dirty)
         if (after) serverBaselineRef.current = { values: after.serverValues, arrayValues: after.serverArrayValues, signatures: after.serverSignatures }
         setSyncStatus(after && (after.needsSync || after.pendingSubmit) ? 'pending' : 'synced')
+        // Queued photos that just went up stop being pending; their server rows arrive
+        // on the next load. Clears the "Pending upload" badges without a refresh.
+        await refreshQueuedPhotos()
       } else {
         setSyncStatus('error'); setSyncMessage(result.message)
       }
@@ -609,6 +667,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       setFieldPhotos(fPhotos)
       setGeneralPhotos(gPhotos)
       void signPhotos([...Object.values(fPhotos).flat(), ...gPhotos])
+      // Surface anything still waiting on the device from an earlier offline session.
+      void refreshQueuedPhotos()
 
       if (!jobData.started_at && !jobData.submitted_at) {
         await supabase.from('jobs').update({ started_at: new Date().toISOString() }).eq('id', jobId)
@@ -964,7 +1024,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 missing.push(miss)
               } else if ((field.field_type === 'multiple_choice' || field.field_type === 'video_link') && !(arrayValues[key]?.length)) {
                 missing.push(miss)
-              } else if (field.field_type === 'photo' && !(fieldPhotos[key]?.length)) {
+              } else if (field.field_type === 'photo' && !(allFieldPhotos[key]?.length)) {
+                // Counts queued photos: a photo taken with no signal has been taken.
                 missing.push(miss)
               } else if (!['signature', 'multiple_choice', 'video_link', 'photo', 'heading', 'divider', 'calculated'].includes(field.field_type)) {
                 // yes_no / pass_fail store "answer|||remarks" — validate the ANSWER half,
@@ -1103,6 +1164,61 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
+    // --- Queued (offline) photos ---
+    // IndexedDB is the source of truth. This reloads it, drops anything the sync has
+    // since uploaded (the server rows now cover those), and mints object URLs so the
+    // pending thumbnails render exactly like uploaded ones.
+    const refreshQueuedPhotos = useCallback(async () => {
+      if (!offlineAvailable() || !currentUserId) return
+      let rows: QueuedPhoto[] = []
+      try { rows = await getPhotosForJob(currentUserId, jobId) } catch { return }
+      // Uploaded ones are finished business — clear them so the queue can't grow forever
+      // and hold multi-megabyte blobs on the device after a successful survey.
+      for (const p of rows.filter(p => p.uploaded)) {
+        await deleteQueuedPhoto(p.localId).catch(() => {})
+      }
+      const pending = rows.filter(p => !p.uploaded)
+      setQueuedPhotos(pending)
+      setPhotoUrls(prev => {
+        const next = { ...prev }
+        for (const p of pending) {
+          const path = queuedPath(p.localId)
+          if (!next[path]) next[path] = URL.createObjectURL(p.blob)
+        }
+        return next
+      })
+    }, [currentUserId, jobId])
+
+    // Hold a photo on the device for the sync to push later. Used when there is no
+    // connection, AND when an online upload fails — on a vessel the request often just
+    // never lands, and "Photo upload failed" used to mean the evidence was simply lost.
+    async function queuePhotos(fieldId: string | null, instance: number, prepared: { blob: Blob; filename: string }[]) {
+      if (!offlineAvailable() || !currentUserId) {
+        setSaveError('This device cannot store photos offline — reconnect and try again.')
+        return
+      }
+      void requestPersistentStorage()
+      const capturedAt = new Date().toISOString()
+      for (const { blob, filename } of prepared) {
+        const localId = crypto.randomUUID()
+        await putPhoto({
+          localId, jobId, userId: currentUserId, fieldId, instance, filename, blob,
+          capturedAt, gpsLat: null, gpsLng: null, gpsAccuracyM: null,
+          uploaded: false, storagePath: null, error: null, createdAt: Date.now(),
+        })
+      }
+      await refreshQueuedPhotos()
+      // The draft must know there is work to push, or syncNow() bails early and nothing
+      // ever drains the queue. Loud on failure: a silently un-draining queue means the
+      // photos never reach the report.
+      try {
+        await persistDraft(false)
+        setSyncStatus('pending')
+      } catch {
+        setSaveError('Photos are saved on this device, but the draft could not be marked for upload. Use "Save" once you have a connection.')
+      }
+    }
+
     // Import photos via the device's file picker so a plugged-in USB/OTG drive (where
     // the borescope saves photos) is reachable — see lib/files/pickImageFiles.
     function pickFromFiles(onFiles: (files: File[]) => void) {
@@ -1121,22 +1237,40 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const key = instanceKey(fieldId, instance)
       setUploadingField(key)
       try {
+        // Downscale first, whichever way the photo is going: it keeps the offline queue
+        // inside the device's storage budget, and bakes the EXIF rotation into the
+        // pixels so the report route can skip its rotate/re-encode pass entirely.
+        const prepared = await downscaleImages(files)
+
+        if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+          await queuePhotos(fieldId, instance, prepared)
+          return
+        }
+
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
         const rows: any[] = []
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]
-          const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${i}_${file.name}`
+        // Anything that doesn't make it to the server is queued rather than dropped.
+        const failed: { blob: Blob; filename: string }[] = []
+        for (let i = 0; i < prepared.length; i++) {
+          const { blob, filename } = prepared[i]
+          const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${i}_${filename}`
           let upErr: any = null
-          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
-          catch { setSaveError('A photo upload timed out — check your connection and try again.'); continue }
-          if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); continue }
-          rows.push({ job_id: jobId, field_id: fieldId, instance, storage_path: path, filename: file.name, uploaded_by: user.id })
+          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg' }), 60_000, 'Uploading photo')) }
+          catch { failed.push(prepared[i]); continue }
+          if (upErr) { failed.push(prepared[i]); continue }
+          rows.push({ job_id: jobId, field_id: fieldId, instance, storage_path: path, filename, uploaded_by: user.id })
         }
         if (rows.length) {
           const { error: dbErr } = await supabase.from('job_photos').insert(rows)
-          if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); return }
+          // The bytes are in the bucket but the row didn't land — queue them so the
+          // sync writes the rows; the upsert is idempotent on client_local_id.
+          if (dbErr) { await queuePhotos(fieldId, instance, prepared); return }
+        }
+        if (failed.length) {
+          await queuePhotos(fieldId, instance, failed)
+          setSaveError(`${failed.length} photo${failed.length > 1 ? 's are' : ' is'} saved on this device and will upload when the connection returns.`)
         }
         const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
         const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
@@ -1152,22 +1286,34 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (!files.length) return
       setUploadingField('general')
       try {
+        const prepared = await downscaleImages(files)
+
+        if (offlineAvailable() && typeof navigator !== 'undefined' && !navigator.onLine) {
+          await queuePhotos(null, 0, prepared)
+          return
+        }
+
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
         const rows: any[] = []
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]
-          const path = `${jobId}/general/${Date.now()}_${i}_${file.name}`
+        const failed: { blob: Blob; filename: string }[] = []
+        for (let i = 0; i < prepared.length; i++) {
+          const { blob, filename } = prepared[i]
+          const path = `${jobId}/general/${Date.now()}_${i}_${filename}`
           let upErr: any = null
-          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, file), 60_000, 'Uploading photo')) }
-          catch { setSaveError('A photo upload timed out — check your connection and try again.'); continue }
-          if (upErr) { setSaveError('Photo upload failed: ' + upErr.message); continue }
-          rows.push({ job_id: jobId, field_id: null, storage_path: path, filename: file.name, uploaded_by: user.id })
+          try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg' }), 60_000, 'Uploading photo')) }
+          catch { failed.push(prepared[i]); continue }
+          if (upErr) { failed.push(prepared[i]); continue }
+          rows.push({ job_id: jobId, field_id: null, storage_path: path, filename, uploaded_by: user.id })
         }
         if (rows.length) {
           const { error: dbErr } = await supabase.from('job_photos').insert(rows)
-          if (dbErr) { setSaveError('Photo record failed: ' + dbErr.message); return }
+          if (dbErr) { await queuePhotos(null, 0, prepared); return }
+        }
+        if (failed.length) {
+          await queuePhotos(null, 0, failed)
+          setSaveError(`${failed.length} photo${failed.length > 1 ? 's are' : ' is'} saved on this device and will upload when the connection returns.`)
         }
         const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
         const nextGp = fresh ?? []
@@ -1181,6 +1327,20 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     async function deletePhoto(photoId: string, storagePath: string, fieldKey?: string | null) {
       if (!(await confirmDialog({ message: 'Delete this photo? This cannot be undone.', danger: true, confirmLabel: 'Delete' }))) return
+
+      // Still queued on the device: there is nothing on the server to remove, and the
+      // network call would fail anyway (deleting a queued photo is an offline action).
+      if (isQueuedPath(storagePath)) {
+        await deleteQueuedPhoto(photoId).catch(() => {})
+        setPhotoUrls(prev => {
+          const next = { ...prev }
+          if (next[storagePath]) { URL.revokeObjectURL(next[storagePath]); delete next[storagePath] }
+          return next
+        })
+        await refreshQueuedPhotos()
+        return
+      }
+
       const supabase = createClient()
       const { error: storErr } = await supabase.storage.from('job-photos').remove([storagePath])
       if (storErr) { setSaveError('Delete failed: ' + storErr.message); return }
@@ -1501,7 +1661,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             const k = instanceKey(f.id, inst)
             if (f.field_type === 'signature') return !!signatures[k]
             if (f.field_type === 'multiple_choice' || f.field_type === 'video_link') return (arrayValues[k] ?? []).length > 0
-            if (f.field_type === 'photo') return (fieldPhotos[k] ?? []).length > 0
+            if (f.field_type === 'photo') return (allFieldPhotos[k] ?? []).length > 0
             return !!values[k]
           }
           let completedCount = 0
@@ -1530,7 +1690,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             if (!checkConditionalLogic(field.conditional_logic, values)) return null
             const key = instanceKey(field.id, inst)
             if (field.field_type === 'photo') {
-              const photos = fieldPhotos[key] ?? []
+              const photos = allFieldPhotos[key] ?? []
               const uploading = uploadingField === key
               // For a repeatable section, name the line so the surveyor knows these
               // photos attach HERE (not to the separate "Additional Photos" card).
@@ -1592,6 +1752,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                                 ) : (
                                   <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                                 )}
+                                {p.pending && <PendingPhotoBadge />}
                                 <button
                                   onClick={() => deletePhoto(p.id, p.storage_path, key)}
                                   aria-label="Delete photo"
@@ -1630,6 +1791,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                             ) : (
                               <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                             )}
+                            {p.pending && <PendingPhotoBadge />}
                           </div>
                         ))}
                       </div>
@@ -1807,7 +1969,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 }}
               />
             </div>
-            {generalPhotos.length > 0 ? (
+            {allGeneralPhotos.length > 0 ? (
               (() => {
                 // Targets to re-attach a misfiled general photo to a cargo line + entry.
                 const lineTargets: { fieldId: string; inst: number; label: string }[] = []
@@ -1823,7 +1985,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 }
                 return (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {generalPhotos.map(p => (
+                    {allGeneralPhotos.map(p => (
                       <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
                         <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
                           {photoUrls[p.storage_path] ? (
@@ -1831,6 +1993,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           ) : (
                             <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
                           )}
+                          {p.pending && <PendingPhotoBadge />}
                           <button
                             onClick={() => deletePhoto(p.id, p.storage_path, null)}
                             aria-label="Delete photo"
@@ -1839,7 +2002,10 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                             <X className="h-4 w-4" />
                           </button>
                         </div>
-                        {lineTargets.length > 0 && (
+                        {/* "Move to a line" is a server-side update — a photo that hasn't
+                            uploaded yet has no row to move. It becomes available once it
+                            syncs; until then the badge explains why. */}
+                        {lineTargets.length > 0 && !p.pending && (
                           <select
                             value=""
                             onChange={e => { if (e.target.value) { const [fid, ii] = e.target.value.split('|'); void moveGeneralPhotoToLine(p, fid, Number(ii)) } }}
@@ -2053,7 +2219,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       if (!checkConditionalLogic(field.conditional_logic, values)) return null
                       const key = instanceKey(field.id, inst)
                       if (field.field_type === 'photo') {
-                        const count = (fieldPhotos[key] ?? []).length
+                        const count = (allFieldPhotos[key] ?? []).length
                         return (
                           <div key={key} className="space-y-1">
                             <p className="text-xs font-medium text-gray-500">

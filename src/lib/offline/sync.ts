@@ -231,15 +231,21 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       try { await supabase.from('jobs').update({ repeatable_order: order }).eq('id', jobId) } catch { /* re-syncs next time */ }
     }
 
-    // Queued photos (phase 2; no-op in phase 1). Idempotent via client_local_id.
+    // Queued photos (captured with no signal). Idempotent via client_local_id: a retry
+    // re-uploads to the same path and upserts the same row rather than duplicating it.
+    // The path mirrors the online one (`jobId/fieldId/instance/…`) so both routes are
+    // greppable in the bucket.
     for (const p of await getPhotosForJob(user.id, jobId)) {
       if (p.uploaded) continue
-      const path = p.storagePath ?? `${jobId}/${p.fieldId ?? 'general'}/${p.localId}_${p.filename}`
+      const instance = p.instance ?? 0
+      const path = p.storagePath ?? (p.fieldId
+        ? `${jobId}/${p.fieldId}/${instance}/${p.localId}_${p.filename}`
+        : `${jobId}/general/${p.localId}_${p.filename}`)
       const { error: upErr } = await supabase.storage.from('job-photos')
-        .upload(path, p.blob, { contentType: 'image/jpeg', upsert: true })
+        .upload(path, p.blob, { contentType: p.blob.type || 'image/jpeg', upsert: true })
       if (upErr) { await putPhoto({ ...p, storagePath: path, error: upErr.message }); throw upErr }
       const { error: rowErr } = await supabase.from('job_photos').upsert({
-        job_id: jobId, field_id: p.fieldId, storage_path: path, filename: p.filename,
+        job_id: jobId, field_id: p.fieldId, instance, storage_path: path, filename: p.filename,
         uploaded_by: user.id, client_local_id: p.localId, captured_at: p.capturedAt,
         gps_lat: p.gpsLat, gps_lng: p.gpsLng, gps_accuracy_m: p.gpsAccuracyM, uploaded_offline: true,
       }, { onConflict: 'client_local_id' })

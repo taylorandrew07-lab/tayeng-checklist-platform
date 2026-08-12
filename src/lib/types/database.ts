@@ -267,6 +267,11 @@ export interface ChecklistTemplate {
   /** When true, the report PDF embeds the job's photos as a captioned grid
    *  (default false keeps the legacy "photos stored internally" behaviour). */
   pdf_include_photos: boolean
+  /** When true, each photo field's photos print under THEIR OWN section rather than
+   *  being pooled onto "Additional Photographs" pages at the back — so a defect photo
+   *  sits with the item it evidences. Photos in a repeatable section already print per
+   *  entry regardless. Default false. See migration 170. */
+  pdf_photos_inline: boolean
   /** When true, the report letterhead hides the graphic logo (falls back to the
    *  company-name text header). Default false. Seeded true for fuel/loadout checklists. */
   pdf_hide_logo: boolean

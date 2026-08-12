@@ -46,8 +46,12 @@ export interface QueuedPhoto {
   jobId: string
   userId: string
   fieldId: string | null
+  /** Repeatable-section entry this photo belongs to (0 for an ordinary section, and for
+   *  general job photos). WITHOUT this every queued photo lands on entry 0 on sync —
+   *  which would silently pile every finding's photos onto the first finding. */
+  instance: number
   filename: string
-  /** Stamped/compressed image bytes to upload. */
+  /** Downscaled image bytes to upload — see lib/files/downscaleImage.ts. */
   blob: Blob
   capturedAt: string
   gpsLat: number | null

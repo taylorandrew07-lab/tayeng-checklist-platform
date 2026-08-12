@@ -11,6 +11,7 @@ import {
 import { formatDiffPercentage, isSurveyedVesselNameField, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
+import { answerColor, answerBadgeText } from '@/lib/checklist/answerOptions'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -377,9 +378,9 @@ function resolveDropdownValue(field: any, rawValue: string): string {
 function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | null | undefined }) {
   const answerKey = rawValue.includes('|||') ? rawValue.split('|||')[0] : rawValue
   const remarks = rawValue.includes('|||') ? rawValue.split('|||')[1] : ''
-  const optColor = (options ?? []).find((o: any) => o.value === answerKey)?.color as string | undefined
-  const fallback = answerKey === 'yes' ? 'green' : answerKey === 'no' ? 'red' : 'gray'
-  const c = optColor ?? fallback
+  // Colour and badge text both come from the shared answer-option seam, so a template
+  // that adds a choice ("ni" = Not inspected) prints it the same way the form shows it.
+  const c = answerColor(answerKey, options)
   // Answer and its remark sit in TWO columns on ONE line (fixed-width answer badge,
   // remark beside it) so a comment never pushes the row onto a second line — keeps the
   // whole checklist compact / single-page. alignSelf keeps the coloured pill tight.
@@ -387,7 +388,7 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <View style={{ width: 40 }}>
         <Text style={[styles.yesNoValue, { alignSelf: 'flex-start', backgroundColor: YES_NO_BG[c] ?? '#f1f5f9', color: YES_NO_FG[c] ?? '#94a3b8' }]}>
-          {answerKey ? answerKey.toUpperCase() : '—'}
+          {answerBadgeText(answerKey, options)}
         </Text>
       </View>
       {remarks ? <Text style={{ flex: 1, fontSize: 7.5, color: '#64748b', marginLeft: 4 }}>{remarks}</Text> : null}
@@ -475,6 +476,15 @@ interface PDFProps {
   /** Split the header rows evenly across the two columns instead of the historic
    *  job-rows-left / checklist-rows-right split. Opt-in per template (migration 141). */
   balancedHeader?: boolean
+  /** Print each photo field's photos under ITS OWN section, instead of collecting them
+   *  onto "Additional Photographs" pages at the back. Opt-in per template
+   *  (checklist_templates.pdf_photos_inline, migration 170).
+   *
+   *  Photos in a REPEATABLE section have always printed under their entry; this is the
+   *  same treatment for an ordinary section, where the association was previously
+   *  computed and then thrown away. Off by default, so every existing report is
+   *  byte-identical — no template had a photo field outside a repeatable section. */
+  photosInline?: boolean
 }
 
 export interface HeaderRow { label: string; value: string }
@@ -523,17 +533,21 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
-  // Photo fields inside a repeatable section render INLINE per entry (above), so keep
-  // them out of the end-of-report grid to avoid showing them twice.
-  const repeatablePhotoFieldIds = new Set<string>()
+  // Photo fields that render INLINE (per repeatable entry, or — when the template opts
+  // into photosInline — under their own ordinary section) are kept out of the
+  // end-of-report grid so they never appear twice.
+  const inlinePhotoFieldIds = new Set<string>()
   for (const s of sections as any[]) {
-    if (s.is_repeatable) for (const f of (s.fields ?? [])) if (f.field_type === 'photo') repeatablePhotoFieldIds.add(f.id)
+    if (s.is_repeatable || photosInline) {
+      for (const f of (s.fields ?? [])) if (f.field_type === 'photo') inlinePhotoFieldIds.add(f.id)
+    }
   }
-  const endPhotos = photos.filter(p => !(p.field_id && repeatablePhotoFieldIds.has(p.field_id)))
+  // Photos with no field_id (the job's general "Additional Photos") always end up here.
+  const endPhotos = photos.filter(p => !(p.field_id && inlinePhotoFieldIds.has(p.field_id)))
 
   // Locate key Job Detail fields by label pattern. CRITICAL: only ever consider
   // IDENTITY-style field types (text/date/dropdown/number/time) as header candidates.
@@ -736,7 +750,18 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
             )
           }
 
-          if (visibleFields.length === 0) return null
+          // Ordinary section. When the template opts into photosInline, this section's
+          // photos print HERE — under the questions they were taken for — instead of
+          // being pooled into "Additional Photographs" at the back, where nothing tied
+          // a photo to the item it evidences. Non-repeatable sections are always
+          // instance 0.
+          const inlineGroups = photosInline
+            ? photoFields
+                .map((pf: any) => ({ field: pf, items: photos.filter(p => p.field_id === pf.id) }))
+                .filter((g: any) => g.items.length > 0)
+            : []
+
+          if (visibleFields.length === 0 && inlineGroups.length === 0) return null
 
           return (
             <View key={section.id} style={styles.sectionContainer}>
@@ -745,13 +770,33 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>{section.title}</Text>
                 </View>
-                {renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
+                {visibleFields.length > 0 && renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
               </View>
 
               {/* Remaining fields wrap freely */}
               {visibleFields.slice(1).map((field: any) =>
                 renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)
               )}
+
+              {inlineGroups.map((group: any) => {
+                const heading = [group.field.item_number, group.field.label].filter(Boolean).join(' ')
+                return (
+                  <React.Fragment key={group.field.id}>
+                    {/* minPresenceAhead keeps the heading with at least the first photo
+                        row, so it never sits alone at the bottom of a page. */}
+                    <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{heading}</Text>
+                    <View style={styles.reportPhotoGrid}>
+                      {group.items.map((p: JobPhoto, i: number) => (
+                        <View key={i} style={styles.reportPhotoItem} wrap={false}>
+                          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                          <Image src={p.url} style={styles.reportPhotoImage} />
+                          <Text style={styles.photoCaption}>{p.caption || `${heading} — Photo ${i + 1}`}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </React.Fragment>
+                )
+              })}
             </View>
           )
         })}
