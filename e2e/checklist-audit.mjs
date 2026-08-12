@@ -62,6 +62,27 @@ const main = async () => {
       const m = META.find(x => x.test(f.label))
       console.log(`    ⚠ DOUBLE-ENTRY: "${f.label}" duplicates ${m.label}${f.show_in_header ? ' (show_in_header)' : ''}`)
     }
+    // HEADER CAPTURE — the highest-consequence defect a template can carry, because it
+    // is SILENT. JobPDF picks the report's Vessel / Date / Port header rows by matching
+    // field labels, and then SUPPRESSES the winner from the report body. A question that
+    // happens to match therefore vanishes from a signed report with no error anywhere.
+    // It has happened three times: a yes/no about bunker suppliers, then "Port of
+    // registry" and "Date of last drydocking" under the old loose word-match, then a
+    // dropdown asking what the vessel navigates on. Only identity-style field types are
+    // candidates, and Date/Port must now match exactly — so what remains is the vessel
+    // rule, which still matches any label containing "vessel" without a qualifier.
+    const HEADER_TYPES = ['text', 'number', 'date', 'dropdown', 'time']
+    const VESSEL_QUALIFIERS = /type|imo|flag|owner|call sign|grt|nrt|dwt|length|beam|draft|draught|year|built|class|port|registry|number|no\.|gross|net|tonnage|loa|bunker/i
+    for (const f of tf) {
+      if (!HEADER_TYPES.includes(f.field_type)) continue
+      const l = String(f.label ?? '').trim()
+      if (/\bvessel\b/i.test(l) && !VESSEL_QUALIFIERS.test(l)) {
+        console.log(`    ⚠ HEADER CAPTURE: "${f.label}" (${f.item_number || '—'}) reads as the vessel-name field and will be DROPPED from the report body`)
+      }
+      if (/^(date|port)$/i.test(l) && !f.show_in_header) {
+        console.log(`    ℹ header field: "${f.label}" (${f.item_number || '—'}) drives a header row and is not printed in the body`)
+      }
+    }
     // Duplicate labels within the template
     const byLabel = new Map(); for (const f of tf) byLabel.set(norm(f.label), (byLabel.get(norm(f.label)) ?? 0) + 1)
     for (const [lbl, n] of byLabel) if (n > 1 && lbl) console.log(`    ⚠ DUPLICATE field label ×${n}: "${lbl}"`)
