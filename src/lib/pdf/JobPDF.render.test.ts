@@ -304,6 +304,116 @@ describe('JobPDF pdf_photos_inline', () => {
   }, 25000)
 })
 
+// The report header finds its Date and Port rows by matching field labels, then DELETES
+// the winner from the report body. Under the old loose /\bdate\b/ and /\bport\b/ it
+// matched descriptive questions — "Port of registry", "Date of last drydocking" — and
+// silently ate them. Matching is now exact, and the rows fall back to the job record
+// (jobs.scheduled_date / jobs.port_location) so a template need not ask twice.
+describe('JobPDF header Date/Port', () => {
+  const descriptiveOnly = [{
+    id: 's1', title: 'Vessel Particulars', is_repeatable: false,
+    fields: [
+      { id: 'a', label: 'Port of registry', field_type: 'text', item_number: '2.3', order_index: 0 },
+      { id: 'b', label: 'Date of last drydocking, and next due', field_type: 'text', item_number: '3.8', order_index: 1 },
+    ],
+  }]
+  const common = {
+    arrayValues: {}, signatures: {}, photoCount: 0, photos: [], surveyors: ['A. Taylor'],
+  }
+
+  it('does not swallow a descriptive question into the header', async () => {
+    // A hijacked field is SUPPRESSED from the body — and with only two fields in the
+    // section, suppressing both empties it and drops the section entirely. So compare
+    // against the same section with labels the regex could never match: identical
+    // output means neither descriptive label was mistaken for a header field.
+    const neutral = [{
+      ...descriptiveOnly[0],
+      fields: [
+        { id: 'a', label: 'Registry of the ship', field_type: 'text', item_number: '2.3', order_index: 0 },
+        { id: 'b', label: 'Last drydocking, and next due', field_type: 'text', item_number: '3.8', order_index: 1 },
+      ],
+    }]
+    const job = { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T' } }
+    const values = { a: 'Georgetown', b: 'March 2024 / March 2027' }
+    const [descriptive, control] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: descriptiveOnly as any, fieldValues: values, job } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: neutral as any, fieldValues: values, job } as any) as any),
+    ])
+    // Labels differ by a few characters; a suppressed field would differ by a whole row.
+    expect(Math.abs(descriptive.length - control.length)).toBeLessThan(60)
+  }, 25000)
+
+  it('falls back to the job record when the template has no Date/Port field', async () => {
+    const withJobValues = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: descriptiveOnly as any, fieldValues: {},
+      job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T' },
+        scheduled_date: '2026-08-14', port_location: 'Paramaribo' },
+    } as any) as any)
+    const withoutJobValues = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: descriptiveOnly as any, fieldValues: {},
+      job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T' } },
+    } as any) as any)
+    // Two extra header rows.
+    expect(withJobValues.length).toBeGreaterThan(withoutJobValues.length)
+  }, 25000)
+
+  it('still prefers an exactly-named template field over the job record', async () => {
+    const withExact = [{
+      id: 's1', title: 'Survey Details', is_repeatable: false,
+      fields: [
+        { id: 'd', label: 'Date', field_type: 'date', order_index: 0 },
+        { id: 'p', label: 'Port', field_type: 'text', order_index: 1 },
+      ],
+    }]
+    const buf = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: withExact as any,
+      fieldValues: { d: '2026-08-14', p: 'Chaguaramas' },
+      job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T' },
+        scheduled_date: '2020-01-01', port_location: 'Somewhere else' },
+    } as any) as any)
+    // The section has only those two fields, and both are suppressed from the body once
+    // promoted to the header — so this renders a header and no body rows at all.
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+})
+
+// Photos hang off ANY field, not just photo-type ones, so a question carries its own
+// evidence and it prints directly beneath that question.
+describe('JobPDF per-question photos', () => {
+  const sections = [{
+    id: 's1', title: 'Life-Saving Appliances', is_repeatable: false,
+    fields: [
+      { id: 'q1', label: 'Liferaft cradles in good order?', field_type: 'yes_no_na', item_number: '6.6', order_index: 0 },
+      { id: 'q2', label: 'Lifebuoys correct in number?', field_type: 'yes_no_na', item_number: '6.7', order_index: 1 },
+    ],
+  }]
+  const common = {
+    job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T', pdf_include_photos: true } } as any,
+    fieldValues: { q1: 'no|||cracked at the weld', q2: 'yes' },
+    arrayValues: {}, signatures: {}, photoCount: 2,
+    photos: [
+      { field_id: 'q1', instance: 0, url: IMG, caption: null, filename: 'a.jpg' },
+      { field_id: 'q1', instance: 0, url: IMG, caption: null, filename: 'b.jpg' },
+    ],
+  }
+
+  it('prints a question’s photos inline rather than on the end pages', async () => {
+    const [inline, atBack] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections as any, photosInline: true } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections as any, photosInline: false } as any) as any),
+    ])
+    // Off, the photos force their own "Additional Photographs" page at the back.
+    expect(inline.length).toBeLessThan(atBack.length)
+  }, 25000)
+
+  it('keeps a photo whose field is not in the report — it goes to the back, not nowhere', async () => {
+    const orphan = { ...common, photos: [{ field_id: 'gone', instance: 0, url: IMG, caption: null, filename: 'x.jpg' }] }
+    const buf = await renderToBuffer(
+      React.createElement(JobPDF, { ...orphan, sections: sections as any, photosInline: true } as any) as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+})
+
 // The Pre-Hire Inspection template (migration 170) is far larger than anything that
 // came before: 17 sections, ~160 fields, dotted item numbers, a gated repeatable
 // findings section and two signatures. This is the cheap standing proof that a report

@@ -1800,6 +1800,16 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 </div>
               )
             }
+            // Evidence belongs to the question that raised it. job_photos.field_id has
+            // never required a photo-TYPE field, so every question can carry its own
+            // photos — the dedicated photo field is now just the "anything else" case.
+            const attachPhotos = allFieldPhotos[key] ?? []
+            const attachUploading = uploadingField === key
+            // Cheap identity for the memo comparator: changes only when the attach UI's
+            // content does. Passing the elements alone would defeat the memo and bring
+            // back per-keystroke re-renders of every field.
+            const attachSignature = `${attachUploading ? 'u' : ''}|${attachPhotos.map(p => `${p.id}${photoUrls[p.storage_path] ? '+' : '-'}`).join(',')}`
+
             return (
               <FieldRenderer
                 key={key}
@@ -1810,6 +1820,61 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 signature={signatures[key]}
                 allValues={values}
                 instance={inst}
+                attachSignature={attachSignature}
+                attachAction={readOnly ? undefined : (
+                  <>
+                    <input
+                      ref={el => { fieldPhotoRefs.current[key] = el }}
+                      type="file" accept="image/*" multiple className="hidden"
+                      onChange={async e => {
+                        const files = e.target.files
+                        if (!files) return
+                        await uploadPhotosForField(field.id, inst, Array.from(files))
+                        if (fieldPhotoRefs.current[key]) fieldPhotoRefs.current[key]!.value = ''
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => !attachUploading && fieldPhotoRefs.current[key]?.click()}
+                      disabled={attachUploading}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                    >
+                      {attachUploading
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Camera className="h-3.5 w-3.5" />}
+                      {attachPhotos.length > 0 ? `Photos (${attachPhotos.length})` : 'Attach photo'}
+                    </button>
+                  </>
+                )}
+                attachPreview={attachPhotos.length > 0 ? (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                    {attachPhotos.map(p => (
+                      <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 overflow-hidden group">
+                        {photoUrls[p.storage_path] ? (
+                          <img
+                            src={photoUrls[p.storage_path]}
+                            alt={p.filename ?? 'photo'}
+                            loading="lazy"
+                            onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })}
+                            className="absolute inset-0 w-full h-full object-cover cursor-zoom-in"
+                          />
+                        ) : (
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-500 p-1 text-center break-all">{p.filename}</span>
+                        )}
+                        {p.pending && <PendingPhotoBadge />}
+                        {!readOnly && (
+                          <button
+                            onClick={() => deletePhoto(p.id, p.storage_path, key)}
+                            aria-label="Delete photo"
+                            className="absolute top-1 right-1 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : undefined}
                 onChange={field.field_type === 'calculated' ? v => updateCalculatedValue(key, v) : v => updateValue(key, v)}
                 onArrayChange={v => updateArrayValue(key, v)}
                 onSignatureChange={data => updateSignature(key, data)}

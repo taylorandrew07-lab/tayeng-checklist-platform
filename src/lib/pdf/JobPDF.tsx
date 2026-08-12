@@ -537,17 +537,41 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
-  // Photo fields that render INLINE (per repeatable entry, or — when the template opts
-  // into photosInline — under their own ordinary section) are kept out of the
-  // end-of-report grid so they never appear twice.
+  // Photos that render INLINE are kept out of the end-of-report grid so they never
+  // appear twice. Two ways a photo goes inline:
+  //   * it hangs off a photo field in a REPEATABLE section — always, printed per entry;
+  //   * the template sets photosInline, in which case a photo hanging off ANY field
+  //     prints under that field. job_photos.field_id has never required a photo-type
+  //     field, so every question can carry its own evidence.
   const inlinePhotoFieldIds = new Set<string>()
   for (const s of sections as any[]) {
-    if (s.is_repeatable || photosInline) {
-      for (const f of (s.fields ?? [])) if (f.field_type === 'photo') inlinePhotoFieldIds.add(f.id)
+    for (const f of (s.fields ?? [])) {
+      if (photosInline || (s.is_repeatable && f.field_type === 'photo')) inlinePhotoFieldIds.add(f.id)
     }
   }
-  // Photos with no field_id (the job's general "Additional Photos") always end up here.
+  // Photos with no field_id (the job's general "Additional Photos") end up here, and so
+  // do any whose field is absent from the report — a conditionally hidden section, say.
+  // Better at the back than dropped.
   const endPhotos = photos.filter(p => !(p.field_id && inlinePhotoFieldIds.has(p.field_id)))
+
+  /** This field/entry's photos, as a captioned grid printed directly beneath its row. */
+  const inlinePhotosFor = (field: any, inst: number): React.ReactElement | null => {
+    if (!photosInline) return null
+    const mine = photos.filter(p => p.field_id === field.id && p.instance === inst)
+    if (mine.length === 0) return null
+    const caption = [field.item_number, field.label].filter(Boolean).join(' ')
+    return (
+      <View style={styles.reportPhotoGrid} key={`ph-${field.id}-${inst}`}>
+        {mine.map((p, i) => (
+          <View key={i} style={styles.reportPhotoItem} wrap={false}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <Image src={p.url} style={styles.reportPhotoImage} />
+            <Text style={styles.photoCaption}>{p.caption || `${caption} — Photo ${i + 1}`}</Text>
+          </View>
+        ))}
+      </View>
+    )
+  }
 
   // Locate key Job Detail fields by label pattern. CRITICAL: only ever consider
   // IDENTITY-style field types (text/date/dropdown/number/time) as header candidates.
@@ -568,8 +592,16 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const vesselField = headerCandidates.find((f: any) =>
     isSurveyedVesselNameField(f.label) && f.id !== bunkerVesselField?.id
   ) ?? null
-  const dateField = headerCandidates.find((f: any) => /\bdate\b/i.test(f.label)) ?? null
-  const portField = headerCandidates.find((f: any) => /\bport\b/i.test(f.label)) ?? null
+  // EXACT labels, not "contains the word". The loose /\bdate\b/ and /\bport\b/ patterns
+  // matched descriptive questions — "Date of last drydocking", "Port of registry" — and
+  // the winner is then SUPPRESSED from the report body, so a real question silently
+  // vanished. (The same class of bug as the bunker-vessel one described above; it cost a
+  // question out of a signed report once already.) A template that wants to drive these
+  // header rows names the field exactly `Date` / `Port`, which is what every template
+  // that relies on this already does.
+  const exactly = (name: string) => (f: any) => String(f.label ?? '').trim().toLowerCase() === name
+  const dateField = headerCandidates.find(exactly('date')) ?? null
+  const portField = headerCandidates.find(exactly('port')) ?? null
   const methodField = headerCandidates.find((f: any) => /method.*delivery|delivery.*method/i.test(f.label)) ?? null
 
   // Generic header mechanism (cross-template-safe): fields flagged show_in_header are
@@ -600,14 +632,23 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   const labelColWidth = (labels: string[]) =>
     labels.length ? Math.max(...labels.map(l => (l.length + 1) * 4.6)) : undefined
 
+  // Date and Port: prefer a template field, but fall back to the JOB RECORD, which
+  // already holds both (jobs.scheduled_date, and jobs.port_location from migration 153).
+  // Without the fallback a template had to re-ask for data the job already carried, and
+  // the surveyor typed it twice — the checklist audit has always flagged that as
+  // DOUBLE-ENTRY. Templates with their own Date/Port field are unaffected: the field
+  // still wins, and is still suppressed from the body.
+  const headerDate = (dateField && fieldValues[dateField.id]) || job.scheduled_date || ''
+  const headerPort = (portField && fieldValues[portField.id]) || job.port_location || ''
+
   // The header rows that actually have a value, in print order.
   const headerRows: Array<{ label: string; value: string }> = [
     job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name, job.vessel_type) } : null,
     job.client?.name && !hideClient ? { label: 'Client', value: job.client.name } : null,
-    dateField && fieldValues[dateField.id] ? { label: 'Date', value: fieldValues[dateField.id] } : null,
+    headerDate ? { label: 'Date', value: headerDate } : null,
     surveyors.length > 0 && !hideSurveyor
       ? { label: `Surveyor${surveyors.length > 1 ? 's' : ''}`, value: surveyors.join(', ') } : null,
-    portField && fieldValues[portField.id] ? { label: 'Port', value: fieldValues[portField.id] } : null,
+    headerPort ? { label: 'Port', value: headerPort } : null,
     methodDisplay ? { label: 'Method of Delivery', value: methodDisplay } : null,
     showBunkerVessel && bunkerVesselField && fieldValues[bunkerVesselField.id]
       ? { label: 'Bunker Vessel Name', value: fieldValues[bunkerVesselField.id] } : null,
@@ -722,7 +763,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                       <View style={styles.entryBlock} wrap={false}>
                         <Text style={styles.entryHeading}>Entry {pos + 1}{lineName ? ` — ${lineName}` : ''}</Text>
                         <View style={styles.entryBody}>
-                          {visibleFields.map((field: any) => renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst))}
+                          {visibleFields.map((field: any) => (
+                            <React.Fragment key={field.id}>
+                              {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst)}
+                              {/* A question inside an entry can carry its own photos too. */}
+                              {inlinePhotosFor(field, inst)}
+                            </React.Fragment>
+                          ))}
                         </View>
                       </View>
                       {/* Photos flow right after the line (no forced page break) — they fill the
@@ -750,18 +797,17 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
             )
           }
 
-          // Ordinary section. When the template opts into photosInline, this section's
-          // photos print HERE — under the questions they were taken for — instead of
-          // being pooled into "Additional Photographs" at the back, where nothing tied
-          // a photo to the item it evidences. Non-repeatable sections are always
-          // instance 0.
-          const inlineGroups = photosInline
-            ? photoFields
-                .map((pf: any) => ({ field: pf, items: photos.filter(p => p.field_id === pf.id) }))
-                .filter((g: any) => g.items.length > 0)
+          // Ordinary section. With photosInline, a question's photos print immediately
+          // beneath that question — the evidence sits with the item it evidences,
+          // instead of being pooled onto "Additional Photographs" pages at the back
+          // where nothing connects the two. Non-repeatable sections are instance 0.
+          // A dedicated photo FIELD keeps its own row out of the body (it has no
+          // answer), but its photos still print in its position.
+          const sectionPhotoFields = photosInline
+            ? photoFields.filter((pf: any) => photos.some(p => p.field_id === pf.id))
             : []
 
-          if (visibleFields.length === 0 && inlineGroups.length === 0) return null
+          if (visibleFields.length === 0 && sectionPhotoFields.length === 0) return null
 
           return (
             <View key={section.id} style={styles.sectionContainer}>
@@ -772,31 +818,27 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 </View>
                 {visibleFields.length > 0 && renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
               </View>
+              {visibleFields.length > 0 && inlinePhotosFor(visibleFields[0], 0)}
 
-              {/* Remaining fields wrap freely */}
-              {visibleFields.slice(1).map((field: any) =>
-                renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)
-              )}
+              {visibleFields.slice(1).map((field: any) => (
+                <React.Fragment key={field.id}>
+                  {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)}
+                  {inlinePhotosFor(field, 0)}
+                </React.Fragment>
+              ))}
 
-              {inlineGroups.map((group: any) => {
-                const heading = [group.field.item_number, group.field.label].filter(Boolean).join(' ')
-                return (
-                  <React.Fragment key={group.field.id}>
-                    {/* minPresenceAhead keeps the heading with at least the first photo
-                        row, so it never sits alone at the bottom of a page. */}
-                    <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{heading}</Text>
-                    <View style={styles.reportPhotoGrid}>
-                      {group.items.map((p: JobPhoto, i: number) => (
-                        <View key={i} style={styles.reportPhotoItem} wrap={false}>
-                          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                          <Image src={p.url} style={styles.reportPhotoImage} />
-                          <Text style={styles.photoCaption}>{p.caption || `${heading} — Photo ${i + 1}`}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </React.Fragment>
-                )
-              })}
+              {/* Photo-type fields last: they carry no answer row of their own, so this
+                  is the section's "anything else" bucket. */}
+              {sectionPhotoFields.map((pf: any) => (
+                <React.Fragment key={pf.id}>
+                  {/* minPresenceAhead keeps the heading with at least the first photo
+                      row, so it never sits alone at the bottom of a page. */}
+                  <Text style={styles.photoGroupHeading} minPresenceAhead={230}>
+                    {[pf.item_number, pf.label].filter(Boolean).join(' ')}
+                  </Text>
+                  {inlinePhotosFor(pf, 0)}
+                </React.Fragment>
+              ))}
             </View>
           )
         })}

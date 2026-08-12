@@ -50,7 +50,10 @@ const FALLBACK_COLORS: Record<string, string> = {
   yes: 'green',
   no: 'red',
   na: 'gray',
-  ni: 'gray',
+  // Amber, not grey: "not inspected" is an open item someone still has to close, which
+  // is a different thing from N/A ("does not apply here"), and it should catch the eye
+  // when the report is read.
+  ni: 'amber',
   pass: 'green',
   fail: 'red',
 }

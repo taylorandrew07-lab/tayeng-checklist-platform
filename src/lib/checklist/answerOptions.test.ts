@@ -64,21 +64,22 @@ describe('resolveAnswerOptions — template-supplied lists', () => {
     { value: 'yes', label: 'Yes', color: 'green' as const },
     { value: 'no', label: 'No', color: 'red' as const },
     { value: 'na', label: 'N/A', color: 'gray' as const },
-    { value: 'ni', label: 'Not inspected', color: 'gray' as const },
+    { value: 'ni', label: 'N/I', color: 'amber' as const },
   ]
 
   it('uses a complete labelled list verbatim, in order', () => {
     expect(resolveAnswerOptions('yes_no_na', fourWay).map(o => o.label))
-      .toEqual(['Yes', 'No', 'N/A', 'Not inspected'])
+      .toEqual(['Yes', 'No', 'N/A', 'N/I'])
   })
 
   it('colours a value the template did not colour, from the house vocabulary', () => {
     const got = resolveAnswerOptions('yes_no_na', [
       { value: 'yes', label: 'Yes' },
       { value: 'no', label: 'No' },
-      { value: 'ni', label: 'Not inspected' },
+      { value: 'ni', label: 'N/I' },
     ])
-    expect(got.map(o => o.color)).toEqual(['green', 'red', 'gray'])
+    // N/I is amber: an open item someone must still close, unlike N/A.
+    expect(got.map(o => o.color)).toEqual(['green', 'red', 'amber'])
   })
 
   it('does not mutate the caller’s options array', () => {
@@ -98,13 +99,14 @@ describe('PDF helpers', () => {
   it('answerColor prefers the template, then the house default, then grey', () => {
     expect(answerColor('no', [{ value: 'no', label: 'No', color: 'green' }])).toBe('green')
     expect(answerColor('no', [])).toBe('red')
-    expect(answerColor('ni', [])).toBe('gray')
+    expect(answerColor('ni', [])).toBe('amber')
     expect(answerColor('something-else', [])).toBe('gray')
   })
 
   it('answerBadgeText keeps the badge short', () => {
     expect(answerBadgeText('', [])).toBe('—')
     expect(answerBadgeText('yes', [])).toBe('YES')
+    expect(answerBadgeText('ni', [{ value: 'ni', label: 'N/I' }])).toBe('N/I')
     // A long label falls back to the value, so the fixed-width badge cell still fits.
     expect(answerBadgeText('ni', [{ value: 'ni', label: 'Not inspected' }])).toBe('NI')
     expect(answerBadgeText('na', [{ value: 'na', label: 'N/A' }])).toBe('N/A')

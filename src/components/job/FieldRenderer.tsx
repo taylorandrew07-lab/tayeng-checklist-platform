@@ -1,7 +1,7 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Info, Plus, X, Video } from 'lucide-react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Info, Plus, X, Video, MessageSquarePlus } from 'lucide-react'
 import type { TemplateField } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { getCachedNewJobData } from '@/lib/offline/db'
@@ -27,6 +27,19 @@ interface FieldRendererProps {
   /** Repeatable-section entry instance (0 = bare/non-repeatable). Drives calc-field
    *  token resolution so each entry computes from its own inputs. */
   instance?: number
+  /** "Attach photo" control for THIS question, rendered on the footer row beside
+   *  "Add note". Photos can hang off any field — job_photos.field_id has never required
+   *  a photo-type field — so every question can carry its own evidence. Supplied by
+   *  JobChecklistEditor, which owns the photo state. */
+  attachAction?: ReactNode
+  /** Thumbnails for this question's photos, rendered under the footer row. */
+  attachPreview?: ReactNode
+  /** Cheap identity for the two nodes above. They are fresh elements on every parent
+   *  render, so the memo below cannot compare them directly without re-rendering every
+   *  field on every keystroke — the exact lag this component was memoised to fix.
+   *  The parent supplies a string that changes only when the attach UI's CONTENT does
+   *  (photo ids, upload in flight, thumbnail URLs resolved). */
+  attachSignature?: string
 }
 
 function FieldRenderer({
@@ -42,7 +55,16 @@ function FieldRenderer({
   readOnly = false,
   resolvedLabel,
   instance = 0,
+  attachAction,
+  attachPreview,
 }: FieldRendererProps) {
+  // Notes are click-to-reveal, but one already written must always be visible.
+  const existingNote = value.includes('|||') ? value.split('|||')[1] : ''
+  const [noteOpen, setNoteOpen] = useState(!!existingNote)
+  const noteRef = useRef<HTMLInputElement>(null)
+  // Reopen if a note arrives from elsewhere (offline draft hydrating, sync landing).
+  useEffect(() => { if (existingNote) setNoteOpen(true) }, [existingNote])
+
   // Check conditional visibility
   const isVisible = checkConditionalLogic(field.conditional_logic, allValues)
   if (!isVisible) return null
@@ -198,13 +220,17 @@ function FieldRenderer({
                 </label>
               ))}
             </div>
-            {field.with_remarks && (
+            {/* The note is click-to-reveal (see noteOpen): a checklist of 190 questions
+                with a permanent text input under every one is unreadable on a phone. A
+                note already written always shows. */}
+            {field.with_remarks && noteOpen && (
               <input
                 type="text"
+                ref={noteRef}
                 value={remarks}
                 onChange={(e) => onChange((answer || '') + '|||' + e.target.value)}
                 disabled={readOnly}
-                placeholder="Remarks…"
+                placeholder="Note…"
                 className={`input-base text-sm ${readOnly ? 'bg-gray-50' : ''}`}
               />
             )}
@@ -298,6 +324,40 @@ function FieldRenderer({
       {field.field_type === 'photo' && readOnly && value && (
         <p className="text-sm text-gray-600">{value} photo(s) uploaded</p>
       )}
+
+      {/* Footer: the per-question affordances. "Add note" reveals the remarks box (only
+          the yes/no family stores one — the "answer|||note" encoding is theirs);
+          "Attach photo" is supplied by the editor and applies to EVERY question. Both
+          stay out of the way until wanted, which is what keeps a 190-question checklist
+          readable on a phone. */}
+      {(attachAction || (field.with_remarks && !readOnly)) && (
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 pt-0.5">
+          {field.with_remarks && !readOnly && (
+            noteOpen ? (
+              // Only offer to discard an EMPTY note — never a click away from losing text.
+              !existingNote && (
+                <button
+                  type="button"
+                  onClick={() => setNoteOpen(false)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3.5 w-3.5" /> Cancel note
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setNoteOpen(true); setTimeout(() => noteRef.current?.focus(), 0) }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" /> Add note
+              </button>
+            )
+          )}
+          {attachAction}
+        </div>
+      )}
+      {attachPreview}
     </div>
   )
 }
@@ -574,7 +634,8 @@ function fieldPropsEqual(prev: FieldRendererProps, next: FieldRendererProps): bo
     prev.signature === next.signature &&
     prev.readOnly === next.readOnly &&
     prev.resolvedLabel === next.resolvedLabel &&
-    prev.instance === next.instance
+    prev.instance === next.instance &&
+    prev.attachSignature === next.attachSignature
   )
 }
 
