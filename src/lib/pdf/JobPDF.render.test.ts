@@ -414,6 +414,75 @@ describe('JobPDF per-question photos', () => {
   }, 25000)
 })
 
+// The report opens with an auto-built list of findings. It is driven by the ANSWER
+// COLOUR, not the word "No", because several questions are deliberately reversed — where
+// Yes is the problem and No is green. A naive "list every No" would report those
+// backwards and miss the real finding.
+describe('JobPDF summary of findings', () => {
+  const REVERSED = [
+    { value: 'yes', label: 'Yes', color: 'amber' },
+    { value: 'no', label: 'No', color: 'green' },
+    { value: 'na', label: 'N/A', color: 'gray' },
+  ]
+  const FOUR = [
+    { value: 'yes', label: 'Yes', color: 'green' },
+    { value: 'no', label: 'No', color: 'red' },
+    { value: 'na', label: 'N/A', color: 'gray' },
+    { value: 'ni', label: 'N/I', color: 'amber' },
+  ]
+  const sections = [{
+    id: 's1', title: 'Certification', is_repeatable: false,
+    fields: [
+      { id: 'ok', label: 'Are all certificates valid?', field_type: 'yes_no_na', item_number: '3.1', order_index: 0, options: FOUR },
+      { id: 'bad', label: 'Are lifejackets in date?', field_type: 'yes_no_na', item_number: '6.1', order_index: 1, options: FOUR },
+      { id: 'rev', label: 'Any outstanding conditions of class?', field_type: 'yes_no_na', item_number: '3.7', order_index: 2, options: REVERSED },
+      { id: 'ni', label: 'Are void spaces satisfactory?', field_type: 'yes_no_na', item_number: '12.9', order_index: 3, options: FOUR },
+      { id: 'na', label: 'Is a gangway fitted?', field_type: 'yes_no_na', item_number: '9.1', order_index: 4, options: FOUR },
+      { id: 'txt', label: 'Flag', field_type: 'text', item_number: '2.2', order_index: 5 },
+    ],
+  }]
+  const common = {
+    job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T' } } as any,
+    arrayValues: {}, signatures: {}, photoCount: 0, photos: [], surveyors: ['A. Taylor'],
+  }
+
+  it('renders with findings and with none', async () => {
+    const clean = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, deficiencySummary: true,
+      fieldValues: { ok: 'yes', bad: 'yes', rev: 'no', ni: 'yes', na: 'na', txt: 'Vanuatu' },
+    } as any) as any)
+    const dirty = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, deficiencySummary: true,
+      fieldValues: { ok: 'yes', bad: 'no|||two expired', rev: 'yes|||CoC 24-01 open', ni: 'ni', na: 'na', txt: 'Vanuatu' },
+    } as any) as any)
+    // Three findings (red No, amber reversed-Yes, amber N/I) plus their remarks make the
+    // document meaningfully larger than the all-clear version.
+    expect(dirty.length).toBeGreaterThan(clean.length)
+  }, 25000)
+
+  it('a reversed question contributes only when its answer is the adverse one', async () => {
+    // "Any outstanding conditions of class?" — Yes is amber (a finding), No is green.
+    const revYes = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, deficiencySummary: true,
+      fieldValues: { rev: 'yes' },
+    } as any) as any)
+    const revNo = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, deficiencySummary: true,
+      fieldValues: { rev: 'no' },
+    } as any) as any)
+    // Answering No must produce the "nothing adverse" line, not a listed finding.
+    expect(revYes.length).toBeGreaterThan(revNo.length)
+  }, 25000)
+
+  it('is off unless the template asks for it', async () => {
+    const [on, off] = await Promise.all([
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections as any, deficiencySummary: true, fieldValues: { bad: 'no|||two expired' } } as any) as any),
+      renderToBuffer(React.createElement(JobPDF, { ...common, sections: sections as any, fieldValues: { bad: 'no|||two expired' } } as any) as any),
+    ])
+    expect(on.length).toBeGreaterThan(off.length)
+  }, 25000)
+})
+
 // The Pre-Hire Inspection template (migration 170) is far larger than anything that
 // came before: 17 sections, ~160 fields, dotted item numbers, a gated repeatable
 // findings section and two signatures. This is the cheap standing proof that a report

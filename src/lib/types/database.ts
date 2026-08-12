@@ -272,6 +272,11 @@ export interface ChecklistTemplate {
    *  sits with the item it evidences. Photos in a repeatable section already print per
    *  entry regardless. Default false. See migration 170. */
   pdf_photos_inline: boolean
+  /** When true, the report opens with an auto-built "Summary of Findings": every answer
+   *  whose colour reads as a finding (red or amber), so reversed questions — where YES
+   *  is the problem — are caught, and a reader need not walk the whole checklist.
+   *  Default false. See migration 182. */
+  pdf_deficiency_summary: boolean
   /** When true, the report letterhead hides the graphic logo (falls back to the
    *  company-name text header). Default false. Seeded true for fuel/loadout checklists. */
   pdf_hide_logo: boolean

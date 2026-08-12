@@ -11,7 +11,7 @@ import {
 import { formatDiffPercentage, isSurveyedVesselNameField, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
-import { answerColor, answerBadgeText } from '@/lib/checklist/answerOptions'
+import { answerColor, answerBadgeText, isAnswerFamily } from '@/lib/checklist/answerOptions'
 import { COMPANY } from '@/lib/company'
 
 const YES_NO_BG: Record<string, string> = { green: '#dcfce7', red: '#fee2e2', gray: '#f1f5f9', amber: '#fef3c7' }
@@ -247,6 +247,39 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
     textAlign: 'center',
+  },
+  // Summary of findings — the auto-built list of every answer that reads as a finding.
+  findingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 2.5,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f1f5f9',
+  },
+  findingNum: {
+    width: 30,
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1d4ed8',
+  },
+  findingText: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  findingLabel: {
+    fontSize: 8,
+    color: '#1e293b',
+  },
+  findingRemark: {
+    fontSize: 7.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  findingNone: {
+    fontSize: 8,
+    color: '#64748b',
+    fontStyle: 'italic',
+    paddingVertical: 4,
   },
   // Letterhead — mirrors the invoice for a consistent, clean header.
   logo: {
@@ -485,6 +518,11 @@ interface PDFProps {
    *  computed and then thrown away. Off by default, so every existing report is
    *  byte-identical — no template had a photo field outside a repeatable section. */
   photosInline?: boolean
+  /** Print an auto-built "Summary of Findings" — every answer on the checklist that
+   *  reads as a finding, gathered in one place so a reader does not have to hunt
+   *  through 180 questions for the handful that matter.
+   *  (checklist_templates.pdf_deficiency_summary, migration 182.) */
+  deficiencySummary?: boolean
 }
 
 export interface HeaderRow { label: string; value: string }
@@ -533,7 +571,7 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
@@ -553,6 +591,41 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // do any whose field is absent from the report — a conditionally hidden section, say.
   // Better at the back than dropped.
   const endPhotos = photos.filter(p => !(p.field_id && inlinePhotoFieldIds.has(p.field_id)))
+
+  // Every answer that reads as a finding, in checklist order.
+  //
+  // The rule is the ANSWER COLOUR, not the word "No". Some questions are deliberately
+  // reversed — outstanding conditions of class, overdue maintenance, PSC deficiencies,
+  // breakdowns — where YES is the problem and No is green. Listing every "No" would
+  // report those backwards AND miss the real finding. The colour already encodes the
+  // judgement: red or amber is a finding, green is not, grey is N/A. N/I lands in amber
+  // by design, so an item nobody could inspect appears here too, which is right — it is
+  // an open question, not a pass.
+  const findings: Array<{ num: string; label: string; answer: string; remark: string; amber: boolean }> = []
+  if (deficiencySummary) {
+    for (const section of sections as any[]) {
+      const instances = section.is_repeatable
+        ? orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos)
+        : [0]
+      for (const inst of instances) {
+        for (const field of (section.fields ?? []) as any[]) {
+          if (!isAnswerFamily(field.field_type)) continue
+          const raw = fieldValues[instanceKey(field.id, inst)] ?? ''
+          const value = raw.includes('|||') ? raw.split('|||')[0] : raw
+          if (!value) continue
+          const colour = answerColor(value, field.options)
+          if (colour !== 'red' && colour !== 'amber') continue
+          findings.push({
+            num: field.item_number || '',
+            label: resolvePdfLabel(field.label, fieldValues, allFieldsFlat),
+            answer: answerBadgeText(value, field.options),
+            remark: raw.includes('|||') ? raw.split('|||')[1] : '',
+            amber: colour === 'amber',
+          })
+        }
+      }
+    }
+  }
 
   /** This field/entry's photos, as a captioned grid printed directly beneath its row. */
   const inlinePhotosFor = (field: any, inst: number): React.ReactElement | null => {
@@ -711,6 +784,40 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           </View>
         )}
         {!useFlagHeader && preambleNode}
+
+        {/* Summary of findings, up front — a reader should not have to walk 180
+            questions to find the handful that matter. Each row still carries its item
+            number, so the detail (and any photographs) can be found in place below. */}
+        {deficiencySummary && (
+          <View style={styles.sectionContainer}>
+            <View wrap={false}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Summary of Findings</Text>
+              </View>
+              {findings.length === 0 && (
+                <Text style={styles.findingNone}>
+                  No item on this checklist was answered adversely.
+                </Text>
+              )}
+            </View>
+            {findings.map((f, i) => (
+              <View key={i} style={styles.findingRow} wrap={false}>
+                <Text style={styles.findingNum}>{f.num}</Text>
+                <View style={styles.findingText}>
+                  <Text style={styles.findingLabel}>{f.label}</Text>
+                  {f.remark ? <Text style={styles.findingRemark}>{f.remark}</Text> : null}
+                </View>
+                <View style={{ width: 40 }}>
+                  <Text style={[styles.yesNoValue, {
+                    alignSelf: 'flex-start',
+                    backgroundColor: YES_NO_BG[f.amber ? 'amber' : 'red'],
+                    color: YES_NO_FG[f.amber ? 'amber' : 'red'],
+                  }]}>{f.answer}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}
         {sections.map(section => {
