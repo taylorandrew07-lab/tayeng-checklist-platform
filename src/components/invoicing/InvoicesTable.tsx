@@ -35,7 +35,10 @@ function RowActions({ row, onChanged, onEdit }: { row: InvoiceListRow; onChanged
   async function setVoid(next: boolean) {
     if (next && !(await confirmDialog({
       title: 'Void this invoice?',
-      message: 'It stops counting towards billing totals but the record and its number are kept. The job stays closed — delete the invoice instead if you need to re-bill it.',
+      // Voiding used to leave every job on the invoice closed and frozen with no route
+      // back. It now releases them, which also means voiding is not reversible for a
+      // job-linked invoice — say both plainly here rather than in an error afterwards.
+      message: 'It stops counting towards billing totals, and the record and its number are kept. Any jobs it billed are reopened and become available to invoice again — so this can’t be undone for an invoice that billed jobs. Delete it instead if you want to rebuild it.',
       confirmLabel: 'Void invoice',
     }))) return
     setBusy(next ? 'void' : 'restore')

@@ -78,6 +78,26 @@ export async function listJobActivity(jobId: string): Promise<(ActivityLogRow & 
 export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Promise<{ error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  // A BILLED job's status is the invoice's to change, not this function's.
+  //
+  // The jobs grid exposes status as a bare <select> over all four values with no
+  // confirmation, so without this an admin could reopen a job that stays stamped onto
+  // a live invoice — which unfreezes surveyor writes on billed work and is then
+  // invisible to BOTH the invoice pool (it filters invoice_id IS NULL) and
+  // reconciliation (which stops looking the moment invoice_id resolves a live invoice).
+  // The mig-186 trigger refuses it too; this is the readable error, raised before the
+  // write, naming what to do instead.
+  const { data: current } = await supabase.from('jobs')
+    .select('workflow_status, invoice_id, billed_under_job_id').eq('id', jobId).maybeSingle()
+  if (current) {
+    if (current.billed_under_job_id) {
+      return { error: 'This survey is billed under its voyage’s final survey. Edit or delete that invoice to change it.' }
+    }
+    if (current.invoice_id && current.workflow_status === 'closed' && next !== 'closed') {
+      return { error: 'This job is billed on an invoice. Delete or edit the invoice to reopen it.' }
+    }
+  }
   // Stamp on entry; on a BACKWARD move, clear any stamp now ahead of the new status
   // so closed_at/paid_at/approved never contradict a job that was pulled back (L3).
   const ni = WORKFLOW_ORDER.indexOf(next)

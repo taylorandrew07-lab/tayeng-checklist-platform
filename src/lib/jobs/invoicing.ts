@@ -255,8 +255,45 @@ export async function setInvoiceStatus(invoiceId: string, status: Invoice['statu
   return {}
 }
 
-export const voidInvoice = (invoiceId: string) => setInvoiceStatus(invoiceId, 'void')
-export const restoreInvoice = (invoiceId: string) => setInvoiceStatus(invoiceId, 'active')
+/**
+ * Void an invoice AND release its jobs.
+ *
+ * Voiding used to write invoices.status and nothing else, which stranded every job on
+ * it: still closed, still frozen by job_is_open(), invoice_id still set so invisible to
+ * listInvoiceableJobs — and then re-flagged by reconciliation as an invoice that is
+ * missing, with no route back. A voided invoice bills nothing, so its jobs must be
+ * billable again, exactly as they are when it is deleted.
+ */
+export async function voidInvoice(invoiceId: string): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: released, error: relErr } = await supabase.rpc('release_jobs_from_invoice', {
+    p_invoice_id: invoiceId, p_keep_job_ids: [],
+  })
+  if (relErr) return { error: relErr.message }
+  const res = await setInvoiceStatus(invoiceId, 'void')
+  if (res.error) return res
+  await logActivity('invoice', invoiceId, 'invoice:void', {
+    released: Array.isArray(released) ? released.length : 0,
+  })
+  return {}
+}
+
+/**
+ * Un-void an invoice. Deliberately REFUSES once its jobs have been released: the jobs
+ * are billable again and may already be on another invoice, so flipping the status back
+ * would claim work this invoice no longer holds — and would not re-close anything. The
+ * correction flow is to delete it and rebuild, which is what the ledger's confirm says.
+ */
+export async function restoreInvoice(invoiceId: string): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { count } = await supabase.from('invoice_line_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('invoice_id', invoiceId).not('job_id', 'is', null)
+  if ((count ?? 0) > 0) {
+    return { error: 'This invoice billed jobs, and voiding it released them. Delete it and raise a new one rather than restoring it.' }
+  }
+  return setInvoiceStatus(invoiceId, 'active')
+}
 
 // ── Invoices list (admin + office read) ──────────────────────────────────────
 export interface InvoiceListRow {
@@ -775,7 +812,19 @@ export async function updateInvoice(invoiceId: string, data: {
   // deleteInvoice does, so it reappears as available to invoice. Un-stamp the close
   // columns too, else it sits at invoice_ready carrying a stale closed_at/closed_by.
   const keptLineJobIds = [...new Set(data.lines.map(l => l.job_id).filter(Boolean) as string[])]
-  const { releasedJobIds } = releaseSets({ priorLineJobIds, stamped, keptLineJobIds })
+  const { releasedJobIds, addedJobIds } = releaseSets({ priorLineJobIds, stamped, keptLineJobIds })
+
+  // A job ADDED through the invoice editor was never stamped — it stayed open, unbilled,
+  // and sitting on a live invoice line. That hole predates the roll-up; the roll-up turns
+  // it into exactly the "billed but still open" state this feature exists to kill.
+  // Stamped through the same RPC create uses, so the same preconditions apply: a job
+  // already on another invoice aborts here instead of being silently re-billed.
+  if (addedJobIds.length) {
+    const { error: addErr } = await supabase.rpc('bill_jobs_onto_invoice', {
+      p_invoice_id: invoiceId, p_line_job_ids: addedJobIds, p_absorbed: {},
+    })
+    if (addErr) return { error: addErr.message }
+  }
   if (releasedJobIds.length) {
     // The RPC releases every stamped job outside its keep-set, so the keep-set must
     // ALSO name the standalone report-only job: it is stamped on purpose but has never
