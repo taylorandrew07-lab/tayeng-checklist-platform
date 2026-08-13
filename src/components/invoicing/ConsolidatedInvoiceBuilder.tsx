@@ -25,7 +25,7 @@ import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
-  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays, seedCharge,
   type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
 import { listClientBilling } from '@/lib/clients/billing'
@@ -169,72 +169,14 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     if (acct) { setBankAccountId(acct.id); setBankDetails(acct.details) }
   }, [payerId, bankAccounts, clientBankLinks]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // forcedRateId: the user picked a rate for this line by hand — honour it instead of
-  // re-matching. '' means "no rate", which seeds a blank price to fill in manually.
-  const seedLine = useCallback((job: InvoiceableJob, clientRates: ClientRate[], forcedRateId?: string): LineState => {
-    const active = clientRates.filter(r => r.is_active)
-    // per_km rates drive the separate mileage line only — never the main survey
-    // line (else a client with just a per_km rate gets a bogus qty-1 line).
-    const billable = active.filter(r => r.rate_type !== 'per_km')
-    const rate = forcedRateId !== undefined
-      ? (forcedRateId ? billable.find(r => r.id === forcedRateId) ?? null : null)
-      : pickRate(billable, job)
-    const label = job.vessel_name ? withVesselPrefix(job.vessel_name, job.vessel_type) : (job.report_number ?? 'Survey')
-    const hourly = rate?.rate_type === 'hourly'
-    const daily = rate?.rate_type === 'daily'
-    const perUnit = rate?.rate_type === 'per_unit'
-    // A day-billed job (migration 148) carries no billable_hours at all, so an hourly
-    // rate can never multiply its day count — the client's DAY rate (migration 169)
-    // prices it. A per-unit rate whose unit IS the day still works the same way.
-    const perDayUnit = perUnit && /^days?$/i.test((rate?.unit_label ?? '').trim())
-    // The day count a DAY rate multiplies is the job's own attendance window, both
-    // ends counted (10→13 Aug = 4 days), not the labour ledger: the ledger is per
-    // surveyor, so two surveyors on that discharge would bill the client 8 days.
-    // The ledger is the fallback for a job with no dates at all.
-    const daysBilled = billedDays(job)
-    // Hourly rate → bill hours × rate (qty = billable hours). Day rate → bill the span
-    // × rate. Per-unit rate → bill qty × rate where qty is the job's billable quantity
-    // (e.g. UHT holds/bilges). Fixed rates stay qty 1.
-    // An hourly rate on a day-billed job is a mismatch we must not paper over: seed
-    // the DAY count as the qty but leave the price at 0, so the line reads as
-    // visibly incomplete (3 × 0) instead of a plausible-looking 1 × the hourly rate,
-    // which would undercharge three days of work by two-thirds.
-    const hourlyOnDays = hourly && job.labour_unit === 'days'
-    // A day rate is deliberately NOT gated on jobs.labour_unit: that column decides how
-    // surveyors log their own time (pay), while the client rate decides how the client
-    // is charged. An hours-logged discharge still bills 4 days at the day rate.
-    const qty = hourlyOnDays ? (job.billable_days && job.billable_days > 0 ? job.billable_days : 1)
-      : hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
-      : daily ? daysBilled
-      : perUnit && job.billable_quantity && job.billable_quantity > 0 ? job.billable_quantity
-      : perDayUnit ? billedDays(job)
-      : 1
-    // Second description line spells out the job: its date, the overall work window
-    // (time from–to, not each leg) and — when hourly — the hours being billed. The
-    // PDF shows the live "qty × unit price" beneath, so the maths stays correct.
-    // A day-rate line shows the DATE RANGE it is billing instead of a single date, so
-    // the client can check 4 days against 10–13 Aug without opening the report.
-    const rangeStr = daily && job.scheduled_date && job.end_date && job.end_date !== job.scheduled_date
-      ? `${formatDate(job.scheduled_date)} – ${formatDate(job.end_date)}` : null
-    const dateStr = rangeStr ?? (job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null))
-    const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
-    const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
-    const unitStr = perUnit && job.billable_quantity && job.billable_quantity > 0 ? `${job.billable_quantity} ${rate?.unit_label || 'units'}` : null
-    // A day-billed job says DAYS on the client's invoice — never "hrs". On a day-rate
-    // line the figure shown is the one being charged, not the ledger's surveyor-days.
-    const dayCount = daily ? daysBilled : (job.billable_days ?? 0)
-    const daysStr = !unitStr && dayCount > 0 ? `${dayCount} day${dayCount === 1 ? '' : 's'}` : null
-    const detail = [dateStr, span, hoursStr, daysStr, unitStr].filter(Boolean).join(' · ')
-    // The stage qualifies the type and belongs on the client's invoice: a vessel can
-    // take an Initial AND a Final Draught Survey in the same month, and "M.V. Chaconia
-    // — Draught Survey" twice over is unbillable-looking to them and unverifiable to
-    // us. Cargo type is deliberately left off — it describes the product, not the
-    // service being charged for. The description is a textarea, so this is a seed.
-    const typeStr = job.job_type && job.job_stage ? `${job.job_type} (${job.job_stage})`
-      : (job.job_type ?? job.job_stage ?? null)
-    const head = typeStr ? `${label} — ${typeStr}` : label
-    return { description: detail ? `${head}\n${detail}` : head, qty, unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0, rate_id: rate?.id ?? null }
-  }, [])
+  // Pricing one job lives in invoicing.ts (seedCharge) so the draught-survey voyage
+  // roll-up prices each of its legs through exactly this code. Two spellings of "what
+  // does this job cost" would drift, and the one that drifted would be the roll-up —
+  // where three legs collapse into a single figure nobody can eyeball.
+  const seedLine = useCallback(
+    (job: InvoiceableJob, clientRates: ClientRate[], forcedRateId?: string): LineState =>
+      seedCharge(job, clientRates, forcedRateId),
+    [])
 
   // Reload the available jobs (+ rates) on client/month change. Auto-selects every
   // job — the common case is "bill all of this client's vessels for the month".

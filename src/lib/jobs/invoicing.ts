@@ -4,7 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
-import { sanitizeStorageName, type VesselPrefix } from '@/lib/utils'
+import { formatDate, sanitizeStorageName, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { byLastDateDesc, jobDaySpan } from '@/lib/jobs/jobDate'
 import type {
   AppSettings, BankAccount, ClientRate, Currency, Invoice, Job,
@@ -68,6 +68,102 @@ export function billedDays(job: { day_span?: number | null; billable_days?: numb
   return 1
 }
 
+/** One priced charge: what a single job contributes to an invoice line.
+ *  `rate_id` is the rate it was priced from — seeded by pickRate() and overridable per
+ *  line, so a wrongly auto-matched rate can be corrected without retyping the price. */
+export interface ChargeSeed {
+  description: string
+  qty: number
+  unit_price: number
+  rate_id: string | null
+}
+
+/**
+ * Price one job. Lifted verbatim out of ConsolidatedInvoiceBuilder.seedLine so a
+ * draught-survey voyage can price EACH of its legs through the same code the single-job
+ * path uses. Two spellings of "what does this job cost" would drift, and the one that
+ * drifted would be the roll-up — where three legs collapse into a single figure nobody
+ * can eyeball.
+ *
+ * Pure: no supabase, no React. `forcedRateId` means the user picked a rate for this
+ * line by hand — honour it instead of re-matching; '' means "no rate", which seeds a
+ * blank price to fill in manually.
+ */
+export function seedCharge(
+  job: InvoiceableJob,
+  clientRates: ClientRate[],
+  forcedRateId?: string,
+): ChargeSeed {
+  const active = clientRates.filter(r => r.is_active)
+  // per_km rates drive the separate mileage line only — never the main survey
+  // line (else a client with just a per_km rate gets a bogus qty-1 line).
+  const billable = active.filter(r => r.rate_type !== 'per_km')
+  const rate = forcedRateId !== undefined
+    ? (forcedRateId ? billable.find(r => r.id === forcedRateId) ?? null : null)
+    : pickRate(billable, job)
+  const label = job.vessel_name ? withVesselPrefix(job.vessel_name, job.vessel_type) : (job.report_number ?? 'Survey')
+  const hourly = rate?.rate_type === 'hourly'
+  const daily = rate?.rate_type === 'daily'
+  const perUnit = rate?.rate_type === 'per_unit'
+  // A day-billed job (migration 148) carries no billable_hours at all, so an hourly
+  // rate can never multiply its day count — the client's DAY rate (migration 169)
+  // prices it. A per-unit rate whose unit IS the day still works the same way.
+  const perDayUnit = perUnit && /^days?$/i.test((rate?.unit_label ?? '').trim())
+  // The day count a DAY rate multiplies is the job's own attendance window, both
+  // ends counted (10→13 Aug = 4 days), not the labour ledger: the ledger is per
+  // surveyor, so two surveyors on that discharge would bill the client 8 days.
+  const daysBilled = billedDays(job)
+  // An hourly rate on a day-billed job is a mismatch we must not paper over: seed
+  // the DAY count as the qty but leave the price at 0, so the line reads as
+  // visibly incomplete (3 × 0) instead of a plausible-looking 1 × the hourly rate,
+  // which would undercharge three days of work by two-thirds.
+  //
+  // NB inside a voyage roll-up that visible zero becomes INVISIBLE — it is summed away.
+  // isZeroPriced() below is what turns this seed into a hard block there.
+  const hourlyOnDays = hourly && job.labour_unit === 'days'
+  // A day rate is deliberately NOT gated on jobs.labour_unit: that column decides how
+  // surveyors log their own time (pay), while the client rate decides how the client
+  // is charged. An hours-logged discharge still bills 4 days at the day rate.
+  const qty = hourlyOnDays ? (job.billable_days && job.billable_days > 0 ? job.billable_days : 1)
+    : hourly && job.billable_hours && job.billable_hours > 0 ? job.billable_hours
+    : daily ? daysBilled
+    : perUnit && job.billable_quantity && job.billable_quantity > 0 ? job.billable_quantity
+    : perDayUnit ? billedDays(job)
+    : 1
+  // Second description line spells out the job: its date, the overall work window
+  // (time from–to, not each leg) and — when hourly — the hours being billed.
+  const rangeStr = daily && job.scheduled_date && job.end_date && job.end_date !== job.scheduled_date
+    ? `${formatDate(job.scheduled_date)} – ${formatDate(job.end_date)}` : null
+  const dateStr = rangeStr ?? (job.job_date ? formatDate(job.job_date) : (job.scheduled_date ? formatDate(job.scheduled_date) : null))
+  const span = job.time_from && job.time_to ? `${job.time_from}–${job.time_to}` : (job.time_from ?? null)
+  const hoursStr = hourly && job.billable_hours && job.billable_hours > 0 ? `${job.billable_hours} hrs` : null
+  const unitStr = perUnit && job.billable_quantity && job.billable_quantity > 0 ? `${job.billable_quantity} ${rate?.unit_label || 'units'}` : null
+  const dayCount = daily ? daysBilled : (job.billable_days ?? 0)
+  const daysStr = !unitStr && dayCount > 0 ? `${dayCount} day${dayCount === 1 ? '' : 's'}` : null
+  const detail = [dateStr, span, hoursStr, daysStr, unitStr].filter(Boolean).join(' · ')
+  // The stage qualifies the type and belongs on the client's invoice: a vessel can
+  // take an Initial AND a Final Draught Survey in the same month, and "M.V. Chaconia
+  // — Draught Survey" twice over is unbillable-looking to them and unverifiable to us.
+  //
+  // TRAP: InvoicePDF.tsx splits this head on ' — ' to build three fixed-width columns
+  // (vessel 118pt / type flex / report 96pt). Changing the separator or adding a second
+  // one silently breaks the printed invoice's column alignment.
+  const typeStr = job.job_type && job.job_stage ? `${job.job_type} (${job.job_stage})`
+    : (job.job_type ?? job.job_stage ?? null)
+  const head = typeStr ? `${label} — ${typeStr}` : label
+  return {
+    description: detail ? `${head}\n${detail}` : head,
+    qty,
+    unit_price: rate && !hourlyOnDays ? Number(rate.rate) : 0,
+    rate_id: rate?.id ?? null,
+  }
+}
+
+/** What a charge actually comes to. */
+export function chargeAmount(c: Pick<ChargeSeed, 'qty' | 'unit_price'>): number {
+  return r2((Number(c.qty) || 0) * (Number(c.unit_price) || 0))
+}
+
 export async function addClientRate(rate: Omit<ClientRate, 'id' | 'created_at' | 'is_active'>): Promise<{ error?: string }> {
   const { error } = await createClient().from('client_rates').insert({ ...rate, is_active: true })
   return { error: error?.message }
@@ -90,6 +186,63 @@ export function computeTotals(lines: LineDraft[], taxes: TaxDraft[]) {
   const taxAmounts = taxes.map(t => r2(subtotal * (Number(t.rate) || 0) / 100))
   const tax_total = r2(taxAmounts.reduce((s, a) => s + a, 0))
   return { subtotal, taxAmounts, tax_total, total: r2(subtotal + tax_total) }
+}
+
+// ── Which jobs does an invoice bill? One derivation, three callers ──────────
+// This used to be spelled inline three times — in create, delete and update — and the
+// three did NOT agree. Once a draught-survey voyage rolls three jobs onto one line, the
+// disagreement stops being cosmetic: an absorbed leg sits on no line at all, so a
+// release derived from the lines alone leaves it closed and frozen forever.
+
+/** A job stamped onto an invoice, and the job whose LINE it was billed under.
+ *  billed_under_job_id is null for a job that owns its own line, and for the standalone
+ *  report-only job that createConsolidatedInvoice creates. */
+export interface InvoiceJobLink { id: string; billed_under_job_id: string | null }
+
+/** The two views of an invoice's jobs: the ones that own a line, and every job actually
+ *  stamped with it (which includes absorbed legs and the standalone report-only job). */
+export async function invoiceJobSets(invoiceId: string): Promise<{
+  lineJobIds: string[]
+  stamped: InvoiceJobLink[]
+}> {
+  const supabase = createClient()
+  const [{ data: lines }, { data: jobs }] = await Promise.all([
+    supabase.from('invoice_line_items').select('job_id').eq('invoice_id', invoiceId),
+    supabase.from('jobs').select('id, billed_under_job_id').eq('invoice_id', invoiceId),
+  ])
+  const lineJobIds = [...new Set(
+    ((lines ?? []) as { job_id: string | null }[]).map(l => l.job_id).filter(Boolean) as string[]
+  )]
+  return { lineJobIds, stamped: ((jobs ?? []) as InvoiceJobLink[]) }
+}
+
+/**
+ * Given what an invoice billed before an edit and what it bills after, work out which
+ * jobs to release and which to newly stamp.
+ *
+ * Parents are taken FROM THE LINES, not from jobs.invoice_id — that is what keeps the
+ * standalone report-only job (stamped, but deliberately never line-linked) out of the
+ * release set. Children are then pulled in THROUGH their parent, which is the half that
+ * the roll-up adds: an absorbed Initial is on no line, so nothing else would find it.
+ *
+ * Pure, so the awkward cases are unit-testable without a database.
+ */
+export function releaseSets(input: {
+  priorLineJobIds: string[]
+  stamped: InvoiceJobLink[]
+  keptLineJobIds: string[]
+}): { releasedJobIds: string[]; addedJobIds: string[] } {
+  const kept = new Set(input.keptLineJobIds)
+  const prior = new Set(input.priorLineJobIds)
+  const releasedParents = input.priorLineJobIds.filter(id => !kept.has(id))
+  const releasedParentSet = new Set(releasedParents)
+  const releasedChildren = input.stamped
+    .filter(j => j.billed_under_job_id && releasedParentSet.has(j.billed_under_job_id))
+    .map(j => j.id)
+  return {
+    releasedJobIds: [...new Set([...releasedParents, ...releasedChildren])],
+    addedJobIds: input.keptLineJobIds.filter(id => !prior.has(id)),
+  }
 }
 
 /** Cancel an invoice, or bring a cancelled one back. Payment is not tracked
@@ -503,26 +656,34 @@ export async function createConsolidatedInvoice(input: {
  *  flips back to true) — deleting the invoice is the correction flow. */
 export async function deleteInvoice(invoiceId: string): Promise<{ error?: string }> {
   const supabase = createClient()
-  // Capture linked jobs before the row (and its FK link) disappears.
-  const { data: linked } = await supabase.from('jobs').select('id').eq('invoice_id', invoiceId)
   const { data: legacy } = await supabase.from('invoices').select('job_id').eq('id', invoiceId).maybeSingle()
-  const jobIds = [...new Set([...(linked ?? []).map((j: any) => j.id), ...(legacy?.job_id ? [legacy.job_id] : [])])] as string[]
+
+  // RELEASE FIRST, THEN DELETE. jobs.invoice_id is ON DELETE SET NULL, so deleting the
+  // invoice erases the only link back to its jobs — after that no query can find them.
+  // The old order captured ids up front and reverted afterwards, which had the failure
+  // the wrong way round: if the revert failed, the jobs were left closed and frozen
+  // with a nulled invoice_id, invisible to the invoice pool AND to reconciliation. This
+  // way a failure leaves the invoice intact and its jobs released, which is loud.
+  // An empty keep-set releases everything, absorbed legs and the standalone
+  // report-only job included — deleting the invoice un-bills all of it.
+  const { data: released, error: relErr } = await supabase.rpc('release_jobs_from_invoice', {
+    p_invoice_id: invoiceId, p_keep_job_ids: [],
+  })
+  if (relErr) return { error: relErr.message }
 
   const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
   if (error) return { error: error.message }
-  if (jobIds.length) {
-    // Un-stamp the close as well as the status, else a reverted job sits at
-    // invoice_ready carrying a stale closed_at/closed_by. paid_at is pre-145 legacy.
-    const { error: revErr } = await supabase.from('jobs')
-      .update({
-        workflow_status: 'invoice_ready', invoice_id: null,
-        closed_at: null, closed_by: null, paid_at: null,
-      })
-      .in('id', jobIds)
+
+  // Pre-075 invoices linked the other way round (invoices.job_id) and may carry a job
+  // the RPC never saw, because that job's own invoice_id was never stamped.
+  if (legacy?.job_id) {
+    await supabase.from('jobs')
+      .update({ workflow_status: 'invoice_ready', invoice_id: null, closed_at: null, closed_by: null, paid_at: null })
+      .eq('id', legacy.job_id)
       .eq('workflow_status', 'closed')
-    if (revErr) return { error: revErr.message }
   }
-  await logActivity('invoice', invoiceId, 'invoice:delete', { jobs: jobIds.length })
+  const count = Array.isArray(released) ? released.length : 0
+  await logActivity('invoice', invoiceId, 'invoice:delete', { jobs: count })
   return {}
 }
 
@@ -583,12 +744,13 @@ export async function updateInvoice(invoiceId: string, data: {
   if (error) return { error: error.message }
   if (!upd || upd.length === 0) return { error: 'Could not save — permission denied or the invoice no longer exists.' }
 
-  // Which jobs this invoice billed BEFORE the edit. Compared against the jobs still
-  // billed after it, so a job whose last line was deleted gets released below. Read
-  // it from the lines (not jobs.invoice_id) so a standalone invoice's report-only
-  // job — stamped but never line-linked — is never mistaken for a removal.
-  const { data: priorLines } = await supabase.from('invoice_line_items').select('job_id').eq('invoice_id', invoiceId)
-  const priorJobIds = new Set(((priorLines ?? []) as { job_id: string | null }[]).map(l => l.job_id).filter(Boolean) as string[])
+  // Which jobs this invoice billed BEFORE the edit, and which are absorbed under them.
+  // Parents come from the LINES (not jobs.invoice_id) so a standalone invoice's
+  // report-only job — stamped but deliberately never line-linked — is never mistaken
+  // for a removal. Absorbed legs of a draught-survey voyage sit on no line at all, so
+  // they are pulled in through their parent instead; releasing a parent without its
+  // children would leave them closed and frozen with no invoice to reopen.
+  const { lineJobIds: priorLineJobIds, stamped } = await invoiceJobSets(invoiceId)
 
   await supabase.from('invoice_line_items').delete().eq('invoice_id', invoiceId)
   if (data.lines.length) {
@@ -612,13 +774,23 @@ export async function updateInvoice(invoiceId: string, data: {
   // be silently unbilled AND still frozen to surveyors. Release it the same way
   // deleteInvoice does, so it reappears as available to invoice. Un-stamp the close
   // columns too, else it sits at invoice_ready carrying a stale closed_at/closed_by.
-  const keptJobIds = new Set(data.lines.map(l => l.job_id).filter(Boolean) as string[])
-  const releasedJobIds = [...priorJobIds].filter(id => !keptJobIds.has(id))
+  const keptLineJobIds = [...new Set(data.lines.map(l => l.job_id).filter(Boolean) as string[])]
+  const { releasedJobIds } = releaseSets({ priorLineJobIds, stamped, keptLineJobIds })
   if (releasedJobIds.length) {
-    const { error: relErr } = await supabase.from('jobs')
-      .update({ workflow_status: 'invoice_ready', invoice_id: null, closed_at: null, closed_by: null, paid_at: null })
-      .in('id', releasedJobIds)
-      .eq('invoice_id', invoiceId)
+    // The RPC releases every stamped job outside its keep-set, so the keep-set must
+    // ALSO name the standalone report-only job: it is stamped on purpose but has never
+    // been on a line, so "not on a line" cannot mean "removed by this edit". That is
+    // the carve-out the comment above exists for, spelled out rather than implied.
+    const standaloneIds = stamped
+      .filter(j => !j.billed_under_job_id && !priorLineJobIds.includes(j.id))
+      .map(j => j.id)
+    // One RPC, one transaction, and the same status-restoration rule as delete: a leg
+    // that was only report_ready when it was absorbed must not come back as
+    // invoice_ready, which would assert an approval that never happened.
+    const { error: relErr } = await supabase.rpc('release_jobs_from_invoice', {
+      p_invoice_id: invoiceId,
+      p_keep_job_ids: [...keptLineJobIds, ...standaloneIds],
+    })
     if (relErr) return { error: relErr.message }
   }
 
