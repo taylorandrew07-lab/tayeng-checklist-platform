@@ -33,6 +33,14 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
 - **Don't trust "it submitted" as proof it saved.** On flaky mobile the request may never
   land. The submit path is retry-and-verify for exactly this reason; keep new write paths
   verifying, and read `lib/offline/sync.ts` before touching any of it.
+- **A draught survey is a VOYAGE, not a job.** Initial → Interim* → exactly one Final;
+  the Final carries the report number *and* the whole bill, and the earlier legs are
+  absorbed into its single invoice line (`jobs.billed_under_job_id`, mig 186). Never
+  offer an Initial or an Interim as a billable line, and never derive an invoice's job
+  set from its lines alone — absorbed legs sit on no line. Scope is Draught Survey only.
+- **`listInvoiceableJobs` is a POOL, not a source of truth.** It filters by client,
+  month (on the *start* date), status and `invoice_id IS NULL`. Any completeness
+  question must be re-asked unfiltered — see `fetchVoyageContext`.
 
 ## Security model
 
@@ -66,6 +74,10 @@ Each exists because the logic had already drifted across surfaces once.
 | Picking image files (incl. USB import) | `lib/files/pickImageFiles.ts` |
 | Repeatable-entry ordering | `lib/checklist/entryOrder.ts` |
 | Status badges | `components/job/StatusPill.tsx` |
+| Which draught surveys are one voyage | `lib/jobs/voyage.ts` — imported by the invoice pool, the builder AND reconciliation |
+| Pricing a voyage as one line | `lib/jobs/voyageBilling.ts` · completeness: `lib/jobs/voyageContext.ts` |
+| Pricing ONE job | `lib/jobs/invoicing.ts` — `seedCharge()` |
+| Which jobs an invoice bills | `lib/jobs/invoicing.ts` — `invoiceJobSets()` + `releaseSets()` |
 | Feature flags | `lib/features.ts` — client portal and competition video are both OFF |
 
 **Report numbers** are one global running series (`next_report_number()` = `max + 1` +
