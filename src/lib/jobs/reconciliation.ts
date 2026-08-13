@@ -9,6 +9,11 @@
 // pre-145 query did) would leave four of the six categories permanently empty and
 // silently kill the only tool that catches forgotten billing.
 //
+// NOTE (migration 188): invoicing now stamps 'invoiced', and the manual close comes
+// later — so "billed" is the two-value set isJobLocked(), not 'closed' alone. Every
+// status test in this file reads through that helper for the same reason as above:
+// a bare 'closed' comparison would make freshly-billed jobs invisible here.
+//
 // NOTE (migration 186): a draught survey is a VOYAGE — Initial, Interim(s), Final —
 // billed as one line on the Final. That breaks three assumptions this file used to
 // make, and each break is silent:
@@ -26,6 +31,7 @@ import {
   DRAUGHT_SURVEY, draughtStage, groupDraughtVoyages, isDraughtStageJob,
   type VoyageGroup, type VoyageJob,
 } from './voyage'
+import { isJobLocked } from './tracker'
 
 export type ReconCategory =
   | 'not_completed'           // work looks done but the job was never marked complete
@@ -148,7 +154,11 @@ export function categorize(job: ReconJob, ctx: CategorizeContext = {}): ReconCat
   }
 
   // ── No live invoice ───────────────────────────────────────────────────────
-  if (job.workflow_status === 'closed') return 'missing_invoice_record'
+  // isJobLocked, not === 'closed': an INVOICED job with no live invoice is the identical
+  // fault — stamped, frozen, and nothing billing it. Left as a bare 'closed' test, every
+  // job billed since mig 188 would be invisible to the one page built to catch exactly
+  // this, and would stay invisible until someone happened to close it by hand.
+  if (isJobLocked(job.workflow_status)) return 'missing_invoice_record'
 
   // Draught legs answer to their voyage, not to their own status. Doing this BEFORE
   // the ready_to_invoice rule is the whole point: that rule would tell an admin to

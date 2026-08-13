@@ -3,7 +3,7 @@
 // the invoicing.view permission (enforced by RLS — this layer just queries).
 
 import { createClient } from '@/lib/supabase/client'
-import { logActivity, setWorkflowStatus } from '@/lib/jobs/tracker'
+import { logActivity, setWorkflowStatus, LOCKED_STATUSES } from '@/lib/jobs/tracker'
 import { formatDate, sanitizeStorageName, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { byLastDateDesc, jobDaySpan } from '@/lib/jobs/jobDate'
 import type {
@@ -467,6 +467,9 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   let q = supabase.from('jobs')
     .select('id, report_number, vessel_name, vessel_type, job_type, job_stage, cargo_type, client_id, template_id, labour_unit, scheduled_date, end_date, created_at, workflow_status, client:clients(name)')
     .is('invoice_id', null)
+    // 'invoiced' is deliberately NOT in this list (mig 188). An already-billed job must
+    // never re-enter the pool — that is the same set bill_jobs_onto_invoice enforces as
+    // a precondition, and together they are what makes "billed exactly once" true.
     .in('workflow_status', ['report_ready', 'invoice_ready'])
     .order('scheduled_date', { ascending: true, nullsFirst: false })
   if (opts.clientId) q = q.eq('client_id', opts.clientId)
@@ -688,8 +691,12 @@ export async function createConsolidatedInvoice(input: {
   const jobIds = [...new Set(input.lines.map(l => l.job_id).filter(Boolean))] as string[]
   const absorbed = input.absorbed ?? {}
   if (jobIds.length > 0) {
-    // Invoicing CLOSES the job (migration 145) — this is what locks surveyor edits
-    // via job_is_open().
+    // Invoicing moves the job to INVOICED (migration 188, was 'closed' under 145) —
+    // this is what locks surveyor edits via job_is_open(). The lock still starts here,
+    // at billing; an admin closes the job by hand afterwards. Absorbed voyage legs are
+    // the exception and go straight to 'closed': they own no line and there is no
+    // later close to make, so leaving them at 'invoiced' would strand them there.
+    // The status write itself lives in the RPC, not here.
     const { error: jErr } = await supabase.rpc('bill_jobs_onto_invoice', {
       p_invoice_id: invoiceId, p_line_job_ids: jobIds, p_absorbed: absorbed,
     })
@@ -697,6 +704,11 @@ export async function createConsolidatedInvoice(input: {
   } else if (input.new_job) {
     // Standalone invoice: create a report-only job (no checklist template) so the
     // invoice still shows on the job sheet, linked to it.
+    //
+    // Deliberately born 'closed', NOT 'invoiced' (mig 188): this job has no surveyor,
+    // no checklist and no hours. There is nothing anyone would do to it between being
+    // billed and being closed, so putting it in the awaiting-close worklist would be
+    // pure noise in the one list that exists to be actionable.
     const { error: njErr } = await supabase.from('jobs').insert({
       title: input.new_job.title || 'Invoice',
       client_id: input.client_id,
@@ -762,7 +774,10 @@ export async function deleteInvoice(invoiceId: string): Promise<{ error?: string
     await supabase.from('jobs')
       .update({ workflow_status: 'invoice_ready', invoice_id: null, closed_at: null, closed_by: null, paid_at: null })
       .eq('id', legacy.job_id)
-      .eq('workflow_status', 'closed')
+      // Both billed stages (mig 188). A pre-075 row can in practice only be 'closed',
+      // but matching the whole set is what keeps this a no-op rather than a wrong-op
+      // if one of them was ever re-billed under the new model.
+      .in('workflow_status', LOCKED_STATUSES)
   }
   const count = Array.isArray(released) ? released.length : 0
   await logActivity('invoice', invoiceId, 'invoice:delete', { jobs: count })

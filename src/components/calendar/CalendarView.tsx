@@ -33,6 +33,7 @@ const JOB_STATUS_COLOR: Record<string, string> = {
   in_progress: '#3b82f6',   // blue
   report_ready: '#8b5cf6',  // violet
   invoice_ready: '#22c55e', // green
+  invoiced: '#f59e0b',      // amber — matches the Invoiced pill (mig 188)
   closed: '#94a3b8',        // slate
 }
 const jobColor = (status: string) => JOB_STATUS_COLOR[status] ?? JOB_COLOR

@@ -108,7 +108,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/deliver'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
-import { advanceWorkflowTo, WORKFLOW } from '@/lib/jobs/tracker'
+import { advanceWorkflowTo, WORKFLOW, isJobLocked } from '@/lib/jobs/tracker'
 import { completeJob, COMPLETE_LABEL } from '@/lib/jobs/complete'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { SaveStatus } from '@/components/ui/SaveStatus'
@@ -1427,9 +1427,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     if (!job) return null
 
     const isSubmitted = !!job.submitted_at
-    // A closed job is frozen for surveyors too (it has been invoiced). It
-    // behaves like a submitted job: read-only for everyone except a privileged re-open.
-    const isClosed = job.workflow_status === 'closed'
+    // A BILLED job is frozen for surveyors too — since mig 188 that means 'invoiced'
+    // as well as 'closed', because the freeze starts when the invoice is raised, not
+    // when someone gets round to closing it. Behaves like a submitted job: read-only
+    // for everyone except a privileged re-open.
+    const isClosed = isJobLocked(job.workflow_status)
     const isLocked = isSubmitted || isClosed
 
     // --- Profile-based edit rights ---

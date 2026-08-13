@@ -50,7 +50,10 @@ export async function GET(request: Request) {
     .not('reminder_due_at', 'is', null)
     .lte('reminder_due_at', now.toISOString())
     .gte('reminder_due_at', staleBefore)
-    .not('workflow_status', 'in', '("invoice_ready","closed")')
+    // Must stay in step with ReportsDuePanel's identical filter. 'invoiced' joins the
+    // list (mig 188): a billed job's report is done, and this one sends EMAIL — a
+    // reminder to write a report that was already invoiced is the worst kind of noise.
+    .not('workflow_status', 'in', '("invoice_ready","invoiced","closed")')
     .order('reminder_due_at', { ascending: true })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

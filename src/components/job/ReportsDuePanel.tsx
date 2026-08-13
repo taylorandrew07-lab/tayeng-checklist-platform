@@ -48,7 +48,9 @@ export default function ReportsDuePanel() {
       .select('id, title, job_number, report_number, vessel_name, job_type, reminder_due_at, workflow_status')
       .not('reminder_due_at', 'is', null)
       .lte('reminder_due_at', new Date().toISOString())
-      .not('workflow_status', 'in', '("invoice_ready","closed")')
+      // 'invoiced' joins the list (mig 188): a billed job's report is plainly done, and
+      // a job can reach it from report_ready without ever passing through invoice_ready.
+      .not('workflow_status', 'in', '("invoice_ready","invoiced","closed")')
       .order('reminder_due_at', { ascending: true })
       .limit(50)
 

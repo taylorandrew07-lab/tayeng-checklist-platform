@@ -3,7 +3,7 @@ import { getDraft, putDraft, deleteDraft, getPhotosForJob, putPhoto, deletePhoto
 import { instanceKey, parseInstanceKey } from './instanceKeys'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { createDraftJob } from '@/lib/jobs/drafts'
-import { advanceWorkflowTo } from '@/lib/jobs/tracker'
+import { advanceWorkflowTo, isJobLocked } from '@/lib/jobs/tracker'
 
 export type SyncResult =
   /** billedLocked: the server job has been invoiced, so this device's later edits to
@@ -84,7 +84,10 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       // absorbed Interim into a Final after the invoice was raised. The mig-186 trigger
       // refuses this anyway — skipping here turns a hard RLS error into a clean no-op
       // and tells the surveyor rather than failing the whole sync silently.
-      const frozen = alreadyCreated.workflow_status === 'closed' || alreadyCreated.billed_under_job_id != null
+      // isJobLocked, not === 'closed': since mig 188 an invoice stamps 'invoiced', and
+      // that is where the freeze now starts. A device that was offline through the
+      // billing would otherwise sail past this check and try to patch a locked job.
+      const frozen = isJobLocked(alreadyCreated.workflow_status) || alreadyCreated.billed_under_job_id != null
       if (frozen) {
         draft = { ...draft, pendingCreate: false, syncError: null }
         await putDraft(draft)

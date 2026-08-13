@@ -21,7 +21,7 @@ import JobInvoiceSummary from '@/components/job/JobInvoiceSummary'
 import JobCargoVoyages from '@/components/job/JobCargoVoyages'
 import UhtSummary from '@/components/uht/UhtSummary'
 import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
-import { WORKFLOW } from '@/lib/jobs/tracker'
+import { WorkflowPill } from '@/components/job/StatusPill'
 import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { deliverJobPdf } from '@/lib/pdf/deliver'
@@ -256,10 +256,7 @@ export default function AdminChecklistDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="page-title truncate">{job.title}</h1>
             {job.workflow_status && (
-              <span className={`inline-flex flex-shrink-0 items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.pill ?? ''}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.dot ?? ''}`} />
-                {WORKFLOW[job.workflow_status as keyof typeof WORKFLOW]?.label ?? job.workflow_status}
-              </span>
+              <WorkflowPill status={job.workflow_status} className="flex-shrink-0" />
             )}
           </div>
           <p className="text-gray-500 mt-0.5 text-sm truncate">

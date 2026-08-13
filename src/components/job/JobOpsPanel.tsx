@@ -7,7 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, normalizeWorkflowStatus, ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
+  WORKFLOW, WORKFLOW_ORDER, normalizeWorkflowStatus, nextStatusFor, isJobLocked,
+  ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, updateJobField, clearJobLabourForFixed, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
   listSurveyorOvertime, addSurveyorOvertime, deleteSurveyorOvertime, shiftHours,
@@ -609,19 +610,23 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   }, [job.id])
 
   const current = job.workflow_status
-  // Once an admin closes a job, surveyors can no longer edit it (RLS enforces this;
-  // this just makes the UI read-only so they see the lock instead of hitting errors).
-  const surveyorLocked = !isAdmin && current === 'closed'
+  // Once a job is BILLED, surveyors can no longer edit it (RLS enforces this; this just
+  // makes the UI read-only so they see the lock instead of hitting errors). Since mig
+  // 188 that starts at 'invoiced' — the invoice is what freezes the job, not the close.
+  const surveyorLocked = !isAdmin && isJobLocked(current)
   const idx = WORKFLOW_ORDER.indexOf(current)
-  const next = idx >= 0 && idx < WORKFLOW_ORDER.length - 1 ? WORKFLOW_ORDER[idx + 1] : null
+  // nextStatusFor, NOT WORKFLOW_ORDER[idx + 1]: stepping through the raw order would
+  // offer "Advance to Invoiced" on an invoice_ready job, and that status is a claim
+  // that an invoice exists. Only invoicing may make it.
+  const next = nextStatusFor(current)
 
   async function advance(to: WorkflowStatus) {
-    // Closing is normally what CREATING AN INVOICE does. Closing by hand is allowed
+    // Closing is normally the last step AFTER invoicing. Closing by hand is allowed
     // (report-only jobs still need a way to finish) but it locks every surveyor edit
     // and leaves no billing record, so make that explicit first.
-    if (to === 'closed' && job.workflow_status !== 'closed' && !job.invoice_id) {
+    if (to === 'closed' && !isJobLocked(job.workflow_status) && !job.invoice_id) {
       if (!(await confirmDialog({
-        message: 'Closing this job locks all surveyor edits (hours, overtime, km, answers and photos). There is no invoice on it, so it will show up under “Invoice missing” on the Reconcile page. Jobs are normally closed automatically when you create their invoice. Close it anyway?',
+        message: 'Closing this job locks all surveyor edits (hours, overtime, km, answers and photos). There is no invoice on it, so it will show up under “Invoice missing” on the Reconcile page. Jobs normally reach “Invoiced” by creating their invoice, and are closed from there. Close it anyway?',
         danger: true, confirmLabel: 'Close without invoicing',
       }))) return
     }
@@ -702,7 +707,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   // A non-admin's job_surveyors read is scoped to their own row (RLS), so an empty
   // list means they're not on this job. They may self-join any OPEN job (mig 152).
   const isMember = selfId ? surveyors.some(s => s.surveyor_id === selfId) : false
-  const canSelfJoin = !isAdmin && !isMember && !!selfId && current !== 'closed'
+  const canSelfJoin = !isAdmin && !isMember && !!selfId && !isJobLocked(current)
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -734,7 +739,14 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
             )}
             <select value="" onChange={e => { if (e.target.value) advance(e.target.value as WorkflowStatus) }} className="input-base text-sm py-1.5 w-auto" aria-label="Set status">
               <option value="">Set status…</option>
-              {WORKFLOW_ORDER.map(s => <option key={s} value={s} disabled={s === current}>{WORKFLOW[s].label}</option>)}
+              {/* 'Invoiced' is listed so an invoiced job shows its real stage, but is
+                  never SELECTABLE from here — it asserts that an invoice exists, and
+                  only creating one may say that (setWorkflowStatus refuses it too). */}
+              {WORKFLOW_ORDER.map(s => (
+                <option key={s} value={s} disabled={s === current || (s === 'invoiced' && current !== 'invoiced')}>
+                  {WORKFLOW[s].label}
+                </option>
+              ))}
             </select>
           </div>
         )}

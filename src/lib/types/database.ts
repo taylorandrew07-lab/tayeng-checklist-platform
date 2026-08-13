@@ -361,14 +361,21 @@ export interface TemplateField {
 }
 
 /** Ops workflow lifecycle (separate from the checklist `status`). Collapsed to
- *  four stages by migration 145:
+ *  four stages by migration 145; the fifth was added by migration 188:
  *    in_progress   — job created / work ongoing
  *    report_ready  — surveyor submitted
  *    invoice_ready — admin finished the report; job is billable
- *    closed        — an invoice was created; LOCKS surveyor edits (job_is_open)
- *  Deleting the invoice reverts the job to invoice_ready and unlocks it again. */
+ *    invoiced      — an invoice was created; LOCKS surveyor edits (job_is_open)
+ *    closed        — an admin decided we are finished with it. A DELIBERATE act,
+ *                    not a side effect of billing (that is what mig 188 split out)
+ *  Deleting the invoice reverts the job to invoice_ready and unlocks it again.
+ *
+ *  Both 'invoiced' and 'closed' freeze surveyor writes — use isJobLocked() from
+ *  lib/jobs/tracker, never a bare === 'closed'. Note that dashboards deliberately
+ *  still count 'invoiced' as an OPEN job; the write-lock and the "open jobs" tally
+ *  are different questions (see mig 188 §7). */
 export type WorkflowStatus =
-  | 'in_progress' | 'report_ready' | 'invoice_ready' | 'closed'
+  | 'in_progress' | 'report_ready' | 'invoice_ready' | 'invoiced' | 'closed'
 
 export interface Job {
   id: string

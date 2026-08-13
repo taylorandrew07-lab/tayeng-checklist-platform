@@ -16,24 +16,57 @@ const FILES_BUCKET = 'job-files'
 // ORDER IS LOAD-BEARING. Both transition helpers below derive all their index
 // math from this array: setWorkflowStatus clears the stamps that sit AHEAD of a
 // backward move, and advanceWorkflowTo refuses to move a job that is already at
-// or past the target. 'invoice_ready' must stay at index 2, before 'closed'.
+// or past the target. 'invoiced' must stay between 'invoice_ready' and 'closed' —
+// it is the stage an invoice puts a job into (mig 188), and 'closed' must remain
+// last so "already at or past the target" keeps meaning what it says.
 export const WORKFLOW_ORDER: WorkflowStatus[] = [
-  'in_progress', 'report_ready', 'invoice_ready', 'closed',
+  'in_progress', 'report_ready', 'invoice_ready', 'invoiced', 'closed',
 ]
 
 export const WORKFLOW: Record<WorkflowStatus, { label: string; pill: string; dot: string }> = {
   in_progress:   { label: 'In progress',   pill: 'bg-sky-100 text-sky-700',       dot: 'bg-sky-500' },
   report_ready:  { label: 'Report ready',  pill: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
   invoice_ready: { label: 'Invoice ready', pill: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  invoiced:      { label: 'Invoiced',      pill: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500' },
   closed:        { label: 'Closed',        pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
 }
 
+/** Statuses that FREEZE surveyor writes. Mirrors job_is_open() (mig 188 §3) — if
+ *  these two ever disagree, the UI shows an editable job the database will refuse.
+ *  Always ask through isJobLocked(); a bare `=== 'closed'` is now a bug. */
+export const LOCKED_STATUSES: WorkflowStatus[] = ['invoiced', 'closed']
+
+export const isJobLocked = (s: WorkflowStatus | string | null | undefined): boolean =>
+  LOCKED_STATUSES.includes(normalizeWorkflowStatus(s))
+
+/** The stage a one-step advance moves to, or null at the end of the line.
+ *
+ *  DELIBERATELY SKIPS 'invoiced': that status means "an invoice exists", and only
+ *  invoicing may assert it. Letting the jobs grid hand it out would make the pill
+ *  lie about whether anyone had actually been billed. So invoice_ready advances
+ *  straight to 'closed', and an already-invoiced job advances to 'closed' too. */
+export function nextStatusFor(s: WorkflowStatus): WorkflowStatus | null {
+  switch (normalizeWorkflowStatus(s)) {
+    case 'in_progress':   return 'report_ready'
+    case 'report_ready':  return 'invoice_ready'
+    case 'invoice_ready': return 'closed'
+    case 'invoiced':      return 'closed'
+    case 'closed':        return null
+  }
+}
+
 /** Retired pre-145 statuses → their collapsed replacement. Used to render old
- *  `workflow:*` activity-log slugs (history stays honest; only the label folds). */
+ *  `workflow:*` activity-log slugs (history stays honest; only the label folds).
+ *
+ *  'invoiced' is NO LONGER an alias — mig 188 brought the word back as a live
+ *  stage, and normalizeWorkflowStatus checks WORKFLOW first, so an entry here
+ *  would be dead code that reads as if old rows still fold to 'closed'. They do
+ *  not: a pre-145 `workflow:invoiced` log line now renders as "Invoiced", which
+ *  is closer to what actually happened. Mig 145 left no job rows on the slug. */
 export const LEGACY_WORKFLOW_ALIAS: Record<string, WorkflowStatus> = {
   new: 'in_progress', assigned: 'in_progress', report_uploaded: 'report_ready',
   approved: 'invoice_ready', report_approved: 'invoice_ready',
-  invoiced: 'closed', sent: 'closed', paid: 'closed',
+  sent: 'closed', paid: 'closed',
 }
 
 /** Normalise any status string (incl. retired ones) to a current WorkflowStatus. */
@@ -94,8 +127,19 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
     if (current.billed_under_job_id) {
       return { error: 'This survey is billed under its voyage’s final survey. Edit or delete that invoice to change it.' }
     }
-    if (current.invoice_id && current.workflow_status === 'closed' && next !== 'closed') {
+    // The billed stages are 'invoiced' and 'closed' (mig 188). Moving BETWEEN them is
+    // the admin's manual close — allowed, and the whole point of the split. Moving OUT
+    // of them while the job is still stamped is the reopen this guard exists to refuse.
+    if (current.invoice_id && isJobLocked(current.workflow_status) && !isJobLocked(next)) {
       return { error: 'This job is billed on an invoice. Delete or edit the invoice to reopen it.' }
+    }
+    // 'Invoiced' asserts that an invoice EXISTS. The grid exposes status as a bare
+    // <select> over every value, so without this an admin could hand out the label to
+    // a job nobody had billed — and the invoice pool would then skip it for ever
+    // (it filters invoice_id IS NULL), quietly losing the money. Conditional on
+    // invoice_id rather than an outright ban so undoing a close can restore it.
+    if (next === 'invoiced' && !current.invoice_id) {
+      return { error: 'A job only becomes “Invoiced” by creating its invoice.' }
     }
   }
   // Stamp on entry; on a BACKWARD move, clear any stamp now ahead of the new status
@@ -108,6 +152,11 @@ export async function setWorkflowStatus(jobId: string, next: WorkflowStatus): Pr
   if (next === 'closed') { patch.closed_at = new Date().toISOString(); patch.closed_by = user?.id ?? null }
   // Moving back out of 'closed' un-stamps the close. paid_at is legacy (payment is
   // no longer tracked on the job) — clear any pre-145 value so it can't mislead.
+  //
+  // 'invoiced' sits BELOW 'closed' in the order, so it lands here and clears the close
+  // stamps — which is right: an invoiced job has been billed, not finished with, and a
+  // closed_at on it would date a decision nobody has made. The close stamps arrive when
+  // an admin actually closes it. mig 188 §6a stops the invoicing RPC writing them too.
   else if (ni < WORKFLOW_ORDER.indexOf('closed')) { patch.closed_at = null; patch.closed_by = null; patch.paid_at = null }
   // .select('id') so an RLS-filtered 0-row update (e.g. a read-only office user) is
   // detected as a denial instead of silently reporting success.
@@ -191,7 +240,10 @@ export const CLIENT_STATUS: Record<ClientStatus, { label: string; pill: string; 
 export function clientStatusFor(ws: WorkflowStatus): ClientStatus {
   switch (ws) {
     case 'report_ready': return 'report_ready'
-    case 'invoice_ready': return 'completed'
+    // 'invoiced' reads the same as 'invoice_ready' on purpose: this layer exists to
+    // hide billing internals, and nothing has changed from the client's side. Without
+    // a case here it would hit `default` and tell them the job was In progress.
+    case 'invoice_ready': case 'invoiced': return 'completed'
     case 'closed': return 'closed'
     default: return 'in_progress'
   }

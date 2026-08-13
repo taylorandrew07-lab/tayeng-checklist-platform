@@ -28,14 +28,13 @@ import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, normalizeWorkflowStatus,
+  WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, nextStatusFor, isJobLocked,
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
   type TrackerRow,
 } from '@/lib/jobs/tracker'
 import type { WorkflowStatus, Invoice } from '@/lib/types/database'
-import { InvoiceStatusPill } from '@/components/job/StatusPill'
 import { useStickyState } from '@/lib/hooks/useStickyState'
-import { CargoStatusPill } from '@/components/job/StatusPill'
+import { InvoiceStatusPill, CargoStatusPill, WorkflowPill } from '@/components/job/StatusPill'
 import { listVoyageListRows, type VoyageListRow } from '@/lib/cargo/remote'
 import { voyageIsOngoing, voyageLastDate, voyageSpansDays } from '@/lib/cargo/voyageDate'
 import { voyageHref } from '@/lib/cargo/links'
@@ -45,7 +44,7 @@ import { byListRowDesc, splitVoyagesByJob, type JobsListRow } from '@/lib/jobs/l
 const CARGO_TYPE_LABEL = 'Cargo Monitoring'
 
 type SortKey = 'report' | 'vessel' | 'type' | 'client' | 'hours' | 'regular' | 'overtime' | 'km' | 'status' | 'date'
-type Filter = 'open' | 'invoice_ready' | 'closed' | 'all'
+type Filter = 'open' | 'invoice_ready' | 'invoiced' | 'closed' | 'all'
 
 // Persisted column layout (visibility + weights + order). Bumped when the schema changes.
 const COLS_STORAGE_KEY = 'te_jobs_cols_v2'
@@ -53,8 +52,11 @@ const COLS_STORAGE_KEY = 'te_jobs_cols_v2'
 const MIN_COL_PX = 46
 const BILLING_LABEL: Record<string, string> = { overtime: 'Overtime', regular: 'Regular', fixed: 'Fixed' }
 
+// 'Invoiced' earns its own chip rather than folding into Closed: it IS the worklist
+// the stage exists to create — billed, locked, waiting for someone to close it.
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open' }, { key: 'invoice_ready', label: 'Invoice ready' },
+  { key: 'invoiced', label: 'Invoiced' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
 // The chosen filter is remembered across reloads — see useStickyState. 'open' is
 // only the first-ever default, not something the page reverts to.
@@ -189,19 +191,71 @@ function EditableDate({ value, fallback, min, max, title, prefix, fine, onSave }
   )
 }
 
-function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s: WorkflowStatus) => void }) {
+// How long a single click waits before opening the <select>, so a second click can
+// claim the interaction instead. Comfortably under the ~500ms system double-click
+// threshold, and it only ever delays a local state swap — never a request.
+const DBLCLICK_MS = 220
+
+// Status cell. SINGLE click opens the <select> (unchanged); DOUBLE click advances the
+// job one stage and leaves an Undo on Ctrl+Z.
+//
+// WHY ONE onClick BRANCHING ON e.detail, AND NOT onDoubleClick: the DOM fires `click`
+// TWICE before `dblclick`. Wired naively, the first click would swap this button out
+// for the <select>, so the second click lands INSIDE that select (opening its native
+// popup) and the dblclick is dispatched against a different element than it started
+// on — browsers disagree about what happens next. Deferring the open behind a short
+// timer and reading MouseEvent.detail means we only ever depend on `click`, and the
+// element under the pointer is the same both times. Don't "simplify" this back.
+//
+// e.detail is 0 for keyboard activation (Enter/Space), so keyboard users get the
+// select immediately with no timer at all.
+function StatusCell({ status, onChange, onAdvance }: {
+  status: WorkflowStatus
+  onChange: (s: WorkflowStatus) => void
+  onAdvance: (from: WorkflowStatus, to: WorkflowStatus) => void
+}) {
   const [editing, setEditing] = useState(false)
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The grid reloads on every realtime tick, so a pending open must never fire into
+  // an unmounted cell.
+  useEffect(() => () => { if (openTimer.current) clearTimeout(openTimer.current) }, [])
+
+  function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
+    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null }
+    if (e.detail >= 2) {
+      // null at Closed — the end of the line. A double-click there is deliberately a
+      // no-op: no wrap, no going backwards, so a stray click can't reopen a job.
+      const to = nextStatusFor(status)
+      if (to) onAdvance(status, to)
+      return
+    }
+    if (e.detail === 0) { setEditing(true); return }
+    openTimer.current = setTimeout(() => { openTimer.current = null; setEditing(true) }, DBLCLICK_MS)
+  }
+
   if (editing) return (
     <select autoFocus defaultValue={status} onBlur={() => setEditing(false)}
       onChange={e => { onChange(e.target.value as WorkflowStatus); setEditing(false) }}
       className="rounded-md border border-brand-400 bg-white px-1.5 py-1 text-xs outline-none ring-2 ring-brand-200">
-      {WORKFLOW_ORDER.map(s => <option key={s} value={s}>{WORKFLOW[s].label}</option>)}
+      {/* 'Invoiced' is LISTED so an invoiced job shows its real stage here, but is never
+          selectable — it asserts that an invoice exists, and only creating one may say
+          so. setWorkflowStatus refuses it independently. */}
+      {WORKFLOW_ORDER.map(s => (
+        <option key={s} value={s} disabled={s === 'invoiced' && status !== 'invoiced'}>{WORKFLOW[s].label}</option>
+      ))}
     </select>
   )
-  const w = WORKFLOW[status] ?? WORKFLOW[normalizeWorkflowStatus(status)]
+  const next = nextStatusFor(status)
   return (
-    <button onClick={() => setEditing(true)} title="Change status" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-      <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${w.pill}`}><span className={`h-1.5 w-1.5 rounded-full ${w.dot}`} />{w.label}</span>
+    <button
+      onClick={handleClick}
+      title={next
+        ? `Click to change status · double-click to advance to ${WORKFLOW[next].label}`
+        : 'Click to change status'}
+      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+    >
+      {/* select-none: without it, a double-click selects the label text. */}
+      <WorkflowPill status={status} className="select-none" />
     </button>
   )
 }
@@ -213,6 +267,7 @@ function StatusCell({ status, onChange }: { status: WorkflowStatus; onChange: (s
 interface CellCtx {
   patchRow: (id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) => void
   changeStatus: (id: string, status: WorkflowStatus) => void
+  advanceStatus: (id: string, from: WorkflowStatus, to: WorkflowStatus) => void
 }
 interface ColumnDef {
   key: string
@@ -346,7 +401,15 @@ const COLUMNS: ColumnDef[] = [
   { key: 'invoice_total', label: 'Invoice total', defaultVisible: false, width: 120, min: 90, align: 'right',
     cell: r => <div className="px-3 text-right tnum text-gray-700">{r.invoice_total != null ? money(r.invoice_total, r.invoice_currency ?? 'USD') : <span className="text-gray-300">—</span>}</div> },
   { key: 'status', label: 'Status', sortKey: 'status', defaultVisible: true, width: 120, min: 90,
-    cell: (r, { changeStatus }) => <div className="px-3"><StatusCell status={r.workflow_status} onChange={s => changeStatus(r.id, s)} /></div>,
+    cell: (r, { changeStatus, advanceStatus }) => (
+      <div className="px-3">
+        <StatusCell
+          status={r.workflow_status}
+          onChange={s => changeStatus(r.id, s)}
+          onAdvance={(from, to) => advanceStatus(r.id, from, to)}
+        />
+      </div>
+    ),
     // CargoStatusPill, never WorkflowPill: the latter runs its input through
     // normalizeWorkflowStatus, which returns 'in_progress' for anything it does
     // not recognise — so a FINALISED voyage would render as "In progress". A
@@ -880,19 +943,55 @@ export default function JobsTrackerPage() {
     return () => clearTimeout(h)
   }, [filter, typeFilter, surveyorFilter, otOnly, q, sort, pathname, router])
 
+  // Returns the persist result so callers can tell a landed write from a rejected one
+  // (the double-click advance needs to know before it offers an Undo). Existing
+  // callers ignore it.
   const mutate = useCallback(async (id: string, patch: Partial<TrackerRow>, persist: () => Promise<{ error?: string }>) => {
     const prev = rows
     suppressUntil.current = Date.now() + 2500
     setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
     const res = await persist()
     if (res.error) { setRows(prev); toast.error(res.error) }
+    return res
   }, [rows])
 
   const patchRow = useCallback((id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) =>
     mutate(id, patch, () => updateJobField(id, dbPatch)), [mutate])
   const changeStatus = useCallback((id: string, status: WorkflowStatus) =>
     mutate(id, { workflow_status: status }, () => setWorkflowStatus(id, status)), [mutate])
-  const cellCtx = useMemo<CellCtx>(() => ({ patchRow, changeStatus }), [patchRow, changeStatus])
+
+  // The last double-click advance, so Ctrl+Z can put it back. One level deep and
+  // cleared once used — this is an undo for a mis-click, not an edit history.
+  const lastAdvance = useRef<{ id: string; from: WorkflowStatus } | null>(null)
+
+  const advanceStatus = useCallback(async (id: string, from: WorkflowStatus, to: WorkflowStatus) => {
+    const res = await mutate(id, { workflow_status: to }, () => setWorkflowStatus(id, to))
+    if (res.error) return                    // mutate already reverted the row and toasted
+    lastAdvance.current = { id, from }
+    toast.success(`Status → ${WORKFLOW[to].label} · Ctrl+Z to undo`)
+  }, [mutate])
+
+  // Ctrl/Cmd+Z undoes the last advance. Restores the ORIGINAL status rather than
+  // stepping back one place, which is what makes undoing a close on an invoiced job
+  // land on 'invoiced' and not 'invoice_ready'.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
+      // The grid is full of inline editors; inside one, Ctrl+Z means undo the typing.
+      const t = e.target as HTMLElement | null
+      if (t && (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) || t.isContentEditable)) return
+      const last = lastAdvance.current
+      if (!last) return
+      e.preventDefault()
+      lastAdvance.current = null
+      void mutate(last.id, { workflow_status: last.from }, () => setWorkflowStatus(last.id, last.from))
+        .then(res => { if (!res.error) toast.info(`Reverted to ${WORKFLOW[last.from].label}`) })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mutate])
+
+  const cellCtx = useMemo<CellCtx>(() => ({ patchRow, changeStatus, advanceStatus }), [patchRow, changeStatus, advanceStatus])
 
   function handleSort(key: SortKey) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })
@@ -904,7 +1003,14 @@ export default function JobsTrackerPage() {
     const term = q.trim().toLowerCase()
     const filtered = rows.filter(r => {
       const ws = r.workflow_status
-      const pass = filter === 'all' ? true : filter === 'invoice_ready' ? ws === 'invoice_ready' : filter === 'closed' ? ws === 'closed' : ws !== 'closed'
+      // 'Open' stays "not closed", so an INVOICED job still shows there — it is not
+      // finished with until someone closes it, and that matches how the dashboards
+      // count open jobs (mig 188 §7). The Invoiced chip narrows to just that backlog.
+      const pass = filter === 'all' ? true
+        : filter === 'invoice_ready' ? ws === 'invoice_ready'
+        : filter === 'invoiced' ? ws === 'invoiced'
+        : filter === 'closed' ? ws === 'closed'
+        : ws !== 'closed'
       if (!pass) return false
       // Filter by the job's own date (its last day), matching the Date column and
       // sort — not by when the row was created. A job created in June but run in July
@@ -975,7 +1081,7 @@ export default function JobsTrackerPage() {
       const ongoing = voyageIsOngoing(v)
       // A voyage has no workflow_status: ongoing reads as Open, finalised as
       // Closed, and neither is ever Invoice ready — voyages aren't invoiced.
-      if (filter === 'invoice_ready') return false
+      if (filter === 'invoice_ready' || filter === 'invoiced') return false
       if (filter === 'closed' && ongoing) return false
       if (filter === 'open' && !ongoing) return false
       if (!inYearMonth(voyageLastDate(v) ?? v.created_at, view.year, view.month)) return false

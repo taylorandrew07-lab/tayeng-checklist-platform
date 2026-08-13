@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, CloudOff, Loader2, Save, FileQuestion } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
+import { isJobLocked } from '@/lib/jobs/tracker'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
@@ -198,7 +199,7 @@ export default function SurveyorJobPage() {
       />
     </div>
   )
-  const locked = job.workflow_status === 'closed'
+  const locked = isJobLocked(job.workflow_status)
   const stageConfig = STAGE_OPTIONS[job.job_type ?? ''] ?? null
   const showCargoType = CARGO_JOB_TYPES.has(job.job_type ?? '')
 
@@ -305,9 +306,9 @@ export default function SurveyorJobPage() {
         </div>
       )}
 
-      {job.workflow_status === 'closed' && (
+      {locked && (
         <div className="rounded-lg bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
-          This job has been invoiced and closed. Your hours, overtime, distance and checklist are locked and can no longer be edited. If something needs correcting, ask an admin.
+          This job has been invoiced. Your hours, overtime, distance and checklist are locked and can no longer be edited. If something needs correcting, ask an admin.
         </div>
       )}
 

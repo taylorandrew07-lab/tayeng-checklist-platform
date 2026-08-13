@@ -48,8 +48,10 @@ Authorization is **Postgres RLS**, never `user_metadata` and never the UI. SQL h
 `get_my_role()`, `is_admin()`, `is_office()`, `is_super_admin()`, `is_active_staff()`,
 `has_office_permission(key)`, `can_access_job()`, `job_is_open()`.
 
-- `job_is_open()` is AND-ed into every surveyor-write policy — closing a job freezes all
+- `job_is_open()` is AND-ed into every surveyor-write policy — **invoicing** a job freezes all
   surveyor writes (hours/OT/km/answers/photos/uploads) and protects payable overtime (mig 117).
+  Locked = `workflow_status IN ('invoiced','closed')` since mig 188. In app code always ask
+  `isJobLocked()` (`lib/jobs/tracker.ts`) — a bare `=== 'closed'` is a bug, and a silent one.
 - **Office** is a per-user permission system (`office_user_permissions` + a catalog), not a
   second admin. It has no write policies anywhere.
 - `src/proxy.ts` only checks for the presence of a session cookie. It deliberately does *not*
@@ -122,7 +124,7 @@ e2e/                     smoke + audit scripts
   — `gh run list --workflow=db-migrate.yml`. Green CI ≠ migration applied, and the runner
   silently skips a duplicate version number.
 - **Gates:** `npx tsc --noEmit` (0 errors) · `npm run lint` (0 errors; some advisory
-  React-Compiler warnings are expected) · `npm test` (29 vitest files) · `npm run build`.
+  React-Compiler warnings are expected) · `npm test` (46 vitest files) · `npm run build`.
   `npm run smoke` after anything touching RLS, the checklist editor, the submit path, or
   migrations.
 - **On audit findings: triage first.** Flag security-vs-functionality tradeoffs and get

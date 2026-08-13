@@ -8,7 +8,7 @@ import { formatDate, vesselWithVoyage, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import EmptyState from '@/components/ui/EmptyState'
 import { deliverFile, PDF_MIME } from '@/lib/pdf/deliver'
-import { WORKFLOW } from '@/lib/jobs/tracker'
+import { WORKFLOW, isJobLocked, LOCKED_STATUSES } from '@/lib/jobs/tracker'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -108,10 +108,13 @@ export default function SurveyorDashboard() {
         // Open jobs this surveyor ISN'T on yet — so they can add themselves and log
         // their hours (e.g. a cargo loadout the office set up). RLS already lets a
         // surveyor read every job (mig 056) and join any OPEN one (mig 152 =
-        // job_is_open = not 'closed'), so match that: any non-closed job, not just
-        // in_progress — a report-ready/invoice-ready job is still open and still
+        // job_is_open = not invoiced/closed), so match that: any unlocked job, not
+        // just in_progress — a report-ready/invoice-ready job is still open and still
         // takes km/OT (mig 117). Drop the ones they're already on. Online-only: a
         // failed fetch just leaves the section empty (never blocks the board).
+        //
+        // MUST stay in step with job_is_open() (mig 188): offering a job the database
+        // will refuse to join is a button that can only ever produce an error.
         const mineIds = new Set((jRes.data ?? []).map((x: any) => x.id))
         const jn = await withTimeout(
           supabase.from('jobs')
@@ -120,7 +123,7 @@ export default function SurveyorDashboard() {
               template:checklist_templates(name),
               client:clients(name)
             `)
-            .neq('workflow_status', 'closed')
+            .not('workflow_status', 'in', `(${LOCKED_STATUSES.join(',')})`)
             .order('created_at', { ascending: false }),
           15_000, 'Loading jobs you can join').catch(() => ({ data: [] as any[] }))
         if (active) setJoinable([...((jn.data ?? []) as any[])].filter(j => !mineIds.has(j.id)).sort(byLastDateDesc))
@@ -170,13 +173,15 @@ export default function SurveyorDashboard() {
   const jobDate = (j: any) => (j.scheduled_date ?? j.created_at ?? '').slice(0, 10)
   const inRange = (j: any) => { const d = jobDate(j); return (!range.from || d >= range.from) && (!range.to || d <= range.to) }
 
-  // Bucket by OPEN vs CLOSED, not by in_progress. A job stays editable — the surveyor
-  // can still add km/OT — on ANY non-closed status (mig 117 job_is_open), so every open
+  // Bucket by OPEN vs BILLED, not by in_progress. A job stays editable — the surveyor
+  // can still add km/OT — on any unlocked status (mig 117/188 job_is_open), so every open
   // job (in_progress / report_ready / invoice_ready) is ALWAYS shown, all-time; a job
   // that advanced to report_ready must never fall off the board just because its date is
-  // outside the current pay period. Only CLOSED jobs are history and get period-scoped.
-  const active = jobs.filter(j => j.workflow_status !== 'closed')
-  const submittedAll = jobs.filter(j => j.workflow_status === 'closed')
+  // outside the current pay period. Billed jobs (invoiced/closed) are history and get
+  // period-scoped — a surveyor can do nothing on either, so listing an invoiced one as
+  // "active" would be a to-do they are not allowed to act on.
+  const active = jobs.filter(j => !isJobLocked(j.workflow_status))
+  const submittedAll = jobs.filter(j => isJobLocked(j.workflow_status))
   const submitted = submittedAll.filter(inRange)
 
   // Split the open board by "have I finished this?". Both halves stay open and

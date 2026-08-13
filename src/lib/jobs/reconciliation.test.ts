@@ -160,6 +160,18 @@ describe('non-draught jobs are completely unaffected', () => {
     expect(categorize(job({ workflow_status: 'closed' }))).toBe('missing_invoice_record')
   })
 
+  it('an INVOICED job with no invoice is "invoice missing" too (mig 188)', () => {
+    // Invoicing now stamps 'invoiced' and the close comes later, so this is where a
+    // forgotten-billing fault actually shows up. Keyed on 'closed' alone, every job
+    // billed since mig 188 would be invisible to the page built to catch this.
+    expect(categorize(job({ workflow_status: 'invoiced' }))).toBe('missing_invoice_record')
+  })
+
+  it('a voided invoice on an INVOICED job does not count as billed', () => {
+    const j = job({ invoice_id: 'inv-1', workflow_status: 'invoiced' })
+    expect(categorize(j, { inv: { id: 'inv-1', status: 'void' } })).toBe('missing_invoice_record')
+  })
+
   it('a submitted job stuck in progress is still "not completed"', () => {
     const j = job({ workflow_status: 'in_progress', submitted_at: '2026-08-02T00:00:00Z' })
     expect(categorize(j)).toBe('not_completed')
