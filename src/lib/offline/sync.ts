@@ -119,8 +119,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
           is_overtime: j.is_overtime ?? false,
           notes: j.notes ?? null,
           // Carry the report-only flag the surveyor page stamped (report-only templates
-          // show N/A). Fall back to false; createDraftJob still applies the job_type rule.
-          report_not_required: j.report_not_required ?? false,
+          // show N/A). MUST fall back to null, not false: createDraftJob only applies
+          // the job_type/stage rule when this is null (drafts.ts, `if (row.report_not_required
+          // == null)`), so an explicit false silently skips it — and every Interim draught
+          // survey already sitting on a phone would burn a number off the single global
+          // series (mig 158) even after the mig-186 fix. The trigger is the real safety
+          // net for drafts saved before this line was corrected.
+          report_not_required: j.report_not_required ?? null,
           scheduled_date: j.scheduled_date ?? null,
           end_date: j.end_date ?? null,
           start_time: j.start_time ?? null,
