@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { Receipt, Plus, X, Trash2, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search, Pencil } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import { cn, formatDate, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
+import { cn, formatDate, vesselWithVoyage, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { CURRENCIES, money, WORKFLOW } from '@/lib/jobs/tracker'
 import {
   listInvoices,
@@ -18,7 +18,7 @@ import {
   listBankAccounts, saveBankAccount, deleteBankAccount, clientsPayingInto,
   type InvoiceListRow, type InvoiceCounter,
 } from '@/lib/jobs/invoicing'
-import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
+import { listReconciliation, snoozeReconciliation, RECON_META, RECON_ORDER, RECON_SNOOZE_DAYS, NON_SNOOZABLE, type ReconItem, type ReconCategory } from '@/lib/jobs/reconciliation'
 import { getInvoicingDashboard, type InvoicingDashboard } from '@/lib/jobs/dashboard'
 import {
   metricsLabourSplit, metricsLabourByJobSplit, splitQty, qtyWithUnit,
@@ -381,8 +381,14 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
 
   async function clearAll() {
     if (!items || items.length === 0) return
-    if (!(await confirmDialog({ title: 'Clear all flags?', message: `Hide all ${items.length} reconciliation item${items.length === 1 ? '' : 's'} for ${RECON_SNOOZE_DAYS} days. The jobs aren't deleted — flags re-check automatically later.`, confirmLabel: 'Clear all' }))) return
-    const res = await snoozeReconciliation(items.map(i => i.job_id))
+    const snoozable = items.filter(i => !NON_SNOOZABLE.includes(i.category))
+    const kept = items.length - snoozable.length
+    if (snoozable.length === 0) { toast.error('These flags mean money is already wrong — fix them rather than clearing them.'); return }
+    if (!(await confirmDialog({ title: 'Clear all flags?', message: `Hide ${snoozable.length} reconciliation item${snoozable.length === 1 ? '' : 's'} for ${RECON_SNOOZE_DAYS} days. The jobs aren't deleted — flags re-check automatically later.${kept > 0 ? ` ${kept} billing fault${kept === 1 ? '' : 's'} will stay: they mean a survey is already unbilled or uncharged.` : ''}`, confirmLabel: 'Clear all' }))) return
+    // The money-wrong categories are never snoozed, even by Clear all: each means a
+    // survey is already billed at nothing or billed to nobody, and hiding one for a
+    // fortnight is how it becomes permanent.
+    const res = await snoozeReconciliation(snoozable.map(i => i.job_id))
     if (res.error) { toast.error(res.error); return }
     toast.success('All cleared'); load()
   }
@@ -426,12 +432,12 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
                     <span className="tnum text-sm font-medium text-gray-900 w-24 shrink-0">{i.report_number ?? '—'}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-gray-900 truncate">{i.client_name ?? 'No client'}</p>
-                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">{withVesselPrefix(i.vessel_name, i.vessel_type)}</p>}
+                      {i.vessel_name && <p className="text-xs text-gray-400 truncate">{vesselWithVoyage(i.vessel_name, i.vessel_type, i.voyage_number)}{i.billed_under_job_id ? ' · billed under the final' : ''}</p>}
                     </div>
                     {i.invoice_total != null && <span className="tnum text-sm text-gray-600">{money(i.invoice_total, i.currency ?? 'USD')}</span>}
                     <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
                   </Link>
-                  <ClearReconButton jobId={i.job_id} onCleared={load} />
+                  {!NON_SNOOZABLE.includes(i.category) && <ClearReconButton jobId={i.job_id} groupJobIds={items.filter(x => i.group_key && x.group_key === i.group_key).map(x => x.job_id)} onCleared={load} />}
                 </div>
               ))}
             </div>
@@ -442,11 +448,13 @@ function ReconcileTab({ onCount }: { onCount?: (n: number) => void }) {
   )
 }
 
-function ClearReconButton({ jobId, onCleared }: { jobId: string; onCleared: () => void }) {
+// groupJobIds: the whole voyage. Snoozing one leg while its siblings stay visible
+// leaves a group that reads as complete when it isn't, so a grouped row clears together.
+function ClearReconButton({ jobId, groupJobIds, onCleared }: { jobId: string; groupJobIds?: string[]; onCleared: () => void }) {
   const [busy, setBusy] = useState(false)
   async function clear() {
     setBusy(true)
-    const res = await snoozeReconciliation(jobId)
+    const res = await snoozeReconciliation(groupJobIds && groupJobIds.length > 1 ? groupJobIds : jobId)
     setBusy(false)
     if (res.error) { toast.error(res.error); return }
     toast.success('Cleared'); onCleared()
