@@ -48,13 +48,27 @@ export async function POST(
   }
 
   // Audit trail.
+  //
+  // This used to be gated on rendered.jobId, which is the LEGACY per-job invoices.job_id
+  // — and createConsolidatedInvoice always leaves that null. So no consolidated invoice
+  // has ever recorded that it was emailed, which is every invoice raised since migration
+  // 075. That matters more now: a voyage roll-up closes and freezes several surveys on
+  // the strength of a delivery, so the delivery has to leave a trace.
+  const db = createServiceClient()
+  const rows: any[] = [{
+    entity: 'invoice', entity_id: invoiceId, action: 'invoice:email_draft',
+    actor_id: gate.userId,
+    meta: { invoice_number: num, to: rendered.clientEmail ?? null, mailbox: cfg.mailbox },
+  }]
+  // Keep the per-job row for a legacy single-job invoice, so its Activity card still
+  // reads the way it always has.
   if (rendered.jobId) {
-    const db = createServiceClient()
-    await db.from('activity_log').insert({
+    rows.push({
       entity: 'job', entity_id: rendered.jobId, action: 'invoice:email_draft',
       actor_id: gate.userId, meta: { invoice_number: num, to: rendered.clientEmail ?? null },
     })
   }
+  await db.from('activity_log').insert(rows)
 
   return NextResponse.json({
     ok: true,

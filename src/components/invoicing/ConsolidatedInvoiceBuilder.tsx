@@ -28,6 +28,9 @@ import {
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays, seedCharge,
   type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
+import { groupDraughtVoyages, isRollUp, isBillableAsVoyage, describeGrouping, type VoyageGroup } from '@/lib/jobs/voyage'
+import { seedVoyageLine, describeBlock, breakdownNote, type VoyageLineSeed } from '@/lib/jobs/voyageBilling'
+import { fetchVoyageContext, describeContextProblem, type VoyageContext } from '@/lib/jobs/voyageContext'
 import { listClientBilling } from '@/lib/clients/billing'
 import LineItemsEditor, { blankLine, type DraftLine } from '@/components/invoicing/LineItemsEditor'
 import { TaxEditor, TotalsSummary } from '@/components/invoicing/TaxEditor'
@@ -95,6 +98,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [rates, setRates] = useState<ClientRate[]>([])
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'asc' })
   const [lines, setLines] = useState<Record<string, LineState[]>>({}) // job id → its charges
+  // Draught-survey voyages in the current pool, the priced roll-up for each, and the
+  // map of absorbed leg → the Final whose line bills it.
+  const [voyages, setVoyages] = useState<VoyageGroup<InvoiceableJob>[]>([])
+  const [voyageSeeds, setVoyageSeeds] = useState<Map<string, VoyageLineSeed>>(new Map())
+  const [absorbed, setAbsorbed] = useState<Record<string, string>>({})
+  const [voyageCtx, setVoyageCtx] = useState<Map<string, VoyageContext>>(new Map())
   const [extra, setExtra] = useState<DraftLine[]>([])               // manual lines + expenses
 
   const [currency, setCurrency] = useState<Currency>('USD')
@@ -183,7 +192,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const loadJobs = useCallback(async () => {
     // A blank invoice bills no jobs, so it loads none — nothing can be auto-selected
     // and accidentally closed behind a typed-up expense.
-    if (!clientId || mode === 'blank') { setJobs([]); setLines({}); return }
+    if (!clientId || mode === 'blank') { setJobs([]); setLines({}); setVoyages([]); setAbsorbed({}); return }
     setLoadingJobs(true)
     const [js, rs] = await Promise.all([
       listInvoiceableJobs({ clientId, month: month || undefined }),
@@ -195,25 +204,74 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     // for a one-click review — never auto-selected, or the deliberate second look
     // the invoice-ready step exists for would be skipped silently.
     const billableJs = js.filter(j => j.workflow_status === 'invoice_ready')
+    const poolById = new Map(billableJs.map(j => [j.id, j]))
+    const cur = (rs.find(r => r.is_active)?.currency ?? currency) as Currency
+
+    // ── Draught-survey voyages ────────────────────────────────────────────
+    // A voyage bills as ONE line on its Final; the earlier legs are absorbed into it
+    // and must never appear as selectable jobs of their own. Only a CONFIDENT group
+    // (every leg carrying the same voyage number) rolls up on its own — a group
+    // inferred from dates is a suggestion and is handled separately, and until the
+    // admin decides, its members are left as ordinary jobs.
+    const groups = groupDraughtVoyages(billableJs)
+    const rollUps = groups.filter(g => isRollUp(g) && g.confidence === 'confident' && isBillableAsVoyage(g))
+    const seeds = new Map<string, VoyageLineSeed>()
+    const absorbedMap: Record<string, string> = {}
+    for (const g of rollUps) {
+      const seed = seedVoyageLine({ group: g, members: poolById, rates: rs, invoiceCurrency: cur })
+      seeds.set(g.key, seed)
+      for (const m of g.members) if (m.id !== seed.anchorJobId) absorbedMap[m.id] = seed.anchorJobId!
+    }
+    setVoyages(groups)
+    setVoyageSeeds(seeds)
+    setAbsorbed(absorbedMap)
+
+    // One line per billable job, EXCEPT that a voyage's legs collapse onto its Final.
     const seeded: Record<string, LineState[]> = {}
-    billableJs.forEach(j => { seeded[j.id] = [seedLine(j, rs)] })
+    billableJs.forEach(j => {
+      if (absorbedMap[j.id]) return // billed on its Final's line, not its own
+      const voyage = rollUps.find(g => g.final?.id === j.id)
+      const seed = voyage ? seeds.get(voyage.key) : undefined
+      seeded[j.id] = seed
+        ? [{ description: seed.description, qty: seed.qty, unit_price: seed.unit_price, rate_id: null }]
+        : [seedLine(j, rs)]
+    })
     setLines(seeded)
+
+    // The completeness check runs against the database with no filters, because the
+    // pool above is filtered five ways and every one of them can hide a leg. Only the
+    // groups we would actually roll up need it.
+    fetchVoyageContext(rollUps, clientId).then(setVoyageCtx).catch(() => setVoyageCtx(new Map()))
+
     // Auto-add a mileage line per job when the client carries a per_km rate and the
     // job has km logged. Editable/removable; previous auto-mileage lines are dropped
     // on reload, while any manual/expense lines the user added are kept.
+    //
+    // A voyage's km is SUMMED across its legs and attached to the Final: the absorbed
+    // legs leave the billable list, and iterating that list alone would silently drop
+    // their travel — the firm eating the cost with nothing to show it happened.
     const perKm = rs.filter(r => r.is_active && r.rate_type === 'per_km')
-    const mileageLines: DraftLine[] = perKm.length ? billableJs.flatMap(j => {
-      if (!j.billable_km || j.billable_km <= 0) return []
+    const mileageSources: { job: InvoiceableJob; km: number }[] = billableJs
+      .filter(j => !absorbedMap[j.id])
+      .map(j => {
+        const voyage = rollUps.find(g => g.final?.id === j.id)
+        const km = voyage
+          ? voyage.members.reduce((s, m) => s + Number(poolById.get(m.id)?.billable_km ?? 0), 0)
+          : Number(j.billable_km ?? 0)
+        return { job: j, km }
+      })
+    const mileageLines: DraftLine[] = perKm.length ? mileageSources.flatMap(({ job: j, km }) => {
+      if (!km || km <= 0) return []
       const rate = pickRate(perKm, j)
       if (!rate) return []
       const label = j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : (j.report_number ?? 'Survey')
-      return [{ ...blankLine(false), description: `${label} — Mileage\n${j.billable_km} km`, qty: j.billable_km, unit_price: Number(rate.rate), auto_mileage: true }]
+      return [{ ...blankLine(false), description: `${label} — Mileage\n${km} km`, qty: km, unit_price: Number(rate.rate), auto_mileage: true }]
     }) : []
     setExtra(prev => [...prev.filter(l => !l.auto_mileage), ...mileageLines])
     const firstRate = rs.find(r => r.is_active)
     if (firstRate) setCurrency(firstRate.currency)
     setLoadingJobs(false)
-  }, [clientId, month, mode, seedLine])
+  }, [clientId, month, mode, seedLine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJobs() }, [loadJobs])
 
@@ -231,7 +289,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // Billable = invoice-ready. Awaiting = submitted but not yet reviewed; shown below
   // the billable list with a one-click "Mark invoice ready" so a forgotten flip
   // never means hunting through the jobs list.
-  const billable = useMemo(() => sortJobs(jobs.filter(j => j.workflow_status === 'invoice_ready'), sort), [jobs, sort])
+  // Absorbed legs are deliberately absent: they are billed on their Final's line, and
+  // showing them here as tickable jobs is exactly the three-line invoice this exists
+  // to prevent. The Final's row lists them instead.
+  const billable = useMemo(
+    () => sortJobs(jobs.filter(j => j.workflow_status === 'invoice_ready' && !absorbed[j.id]), sort),
+    [jobs, sort, absorbed])
   const awaiting = useMemo(() => sortJobs(jobs.filter(j => j.workflow_status === 'report_ready'), sort), [jobs, sort])
 
   const [markingId, setMarkingId] = useState<string | null>(null)
@@ -372,13 +435,48 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         return
       }
     }
+    // ── Voyage roll-ups: refuse, never warn ───────────────────────────────
+    // Three legs collapsed into one figure destroys the reader's ability to notice
+    // that one of them priced at zero, or came from the wrong rate, or was quietly
+    // left out. So every one of those is a hard block — and the leg would still be
+    // closed and locked behind the wrong number.
+    const selectedIds = new Set(selectedJobs.map(j => j.id))
+    for (const g of voyages) {
+      const seed = voyageSeeds.get(g.key)
+      if (!seed || !g.final || !selectedIds.has(g.final.id)) continue
+      const block = seed.blocks[0]
+      if (block) { toast.error(`${describeGrouping(g)}: ${describeBlock(block)}`); return }
+      const problem = voyageCtx.get(g.key)?.problems[0]
+      if (problem) { toast.error(`${describeGrouping(g)}: ${describeContextProblem(problem)}`); return }
+      // The line's job must BE the Final: it is what carries the report number the PDF
+      // prints and what every absorbed leg points at. If those ever diverge, the client
+      // gets one survey's report reference against another survey's money.
+      if (seed.anchorJobId !== g.final.id) {
+        toast.error(`${describeGrouping(g)}: the voyage line is not anchored on its final survey. Reload and try again.`)
+        return
+      }
+    }
+    // Only the absorbed legs of voyages actually being billed.
+    const absorbedForInvoice: Record<string, string> = {}
+    for (const [legId, finalId] of Object.entries(absorbed)) {
+      if (selectedIds.has(finalId)) absorbedForInvoice[legId] = finalId
+    }
+    // The per-leg arithmetic goes on the invoice's INTERNAL notes: the client's line
+    // deliberately shows one figure, and a year from now somebody will ask how 1,050
+    // was arrived at.
+    const rollUpNotes = voyages
+      .filter(g => g.final && selectedIds.has(g.final.id) && voyageSeeds.get(g.key)?.breakdown.length! > 1)
+      .map(g => breakdownNote(voyageSeeds.get(g.key)!, g.voyage))
+      .join('\n\n')
+
     setSaving(true)
     const res = await createConsolidatedInvoice({
       client_id: clientId,
       bill_to_client_id: billToId || null,
       invoice_number: invNumber.trim() || null,
       issue_date: issueDate || null,
-      currency, due_date: dueDate || null, notes: notes || null,
+      currency, due_date: dueDate || null,
+      notes: [notes || null, rollUpNotes || null].filter(Boolean).join('\n\n') || null,
       description: description || null, reference: reference || null,
       attention: attention || null, bank_details: bankDetails || null,
       lines: [
@@ -386,6 +484,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         ...extra.map(l => ({ job_id: null, description: l.description, qty: l.qty, unit_price: l.unit_price, is_expense: l.is_expense, receipt_path: l.receipt_path })),
       ],
       taxes: taxes.filter(t => t.name.trim()),
+      absorbed: absorbedForInvoice,
       // No vessels ticked AND you asked for one → create a job for this invoice on
       // the job sheet. Opt-in: an invoice stands on its own everywhere it's read.
       // A typed "M.T."/"MT"/"M/T" here is captured too, and the name is stored bare —
@@ -532,6 +631,43 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
                           {/* Day-billed (migration 148) — flagged here so the line is never priced as hours. */}
                           {j.labour_unit === 'days' && <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Billed by the day</span>}
                         </div>
+                        {/* A voyage roll-up: this Final's line bills the whole voyage, so
+                            show WHAT it is billing and what each leg contributed. The
+                            client sees one figure; the person pressing Create must be able
+                            to check 350 + 350 + 350 = 1050 before they do. */}
+                        {(() => {
+                          const g = voyages.find(v => v.final?.id === j.id && voyageSeeds.has(v.key))
+                          const seed = g ? voyageSeeds.get(g.key) : undefined
+                          if (!g || !seed || seed.breakdown.length < 2) return null
+                          const ctx = voyageCtx.get(g.key)
+                          const blocked = seed.blocks.length > 0 || (ctx?.problems.length ?? 0) > 0
+                          return (
+                            <div className={`mt-1.5 rounded-lg border px-2.5 py-2 ${blocked ? 'border-red-200 bg-red-50/60' : 'border-brand-200 bg-brand-50/40'}`}>
+                              <p className="text-[11px] font-medium text-gray-700">
+                                {describeGrouping(g)} — billed as one survey
+                              </p>
+                              <ul className="mt-1 space-y-0.5">
+                                {seed.breakdown.map(c => (
+                                  <li key={c.job_id} className="flex items-baseline gap-2 text-[11px] text-gray-500">
+                                    <span className="w-16 shrink-0">{c.stage}</span>
+                                    <span className="text-gray-400 truncate flex-1">{c.report_number ?? 'no report #'}</span>
+                                    <span className="tnum">{money(c.amount, currency)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="mt-1 pt-1 border-t border-gray-200/70 flex items-baseline gap-2 text-[11px] font-medium text-gray-700">
+                                <span className="flex-1">Total on this line</span>
+                                <span className="tnum">{money(seed.total, currency)}</span>
+                              </p>
+                              {seed.blocks.map((b, bi) => (
+                                <p key={bi} className="mt-1 text-[11px] text-red-700">{describeBlock(b)}</p>
+                              ))}
+                              {(ctx?.problems ?? []).map((p, pi) => (
+                                <p key={pi} className="mt-1 text-[11px] text-red-700">{describeContextProblem(p)}</p>
+                              ))}
+                            </div>
+                          )
+                        })()}
                         {sel ? (
                           <>
                           {/* One block per charge. A job usually has one, but it can carry

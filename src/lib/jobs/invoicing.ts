@@ -603,6 +603,10 @@ export async function createConsolidatedInvoice(input: {
   currency: Currency; due_date: string | null; notes: string | null
   description: string | null; reference: string | null; attention: string | null; bank_details: string | null
   lines: ConsolidatedLine[]; taxes: TaxDraft[]
+  /** Draught-survey voyage roll-ups: absorbed job id → the Final job whose LINE bills
+   *  it. Those jobs get closed and stamped alongside the line jobs, but own no line and
+   *  no amount — the whole voyage's price is on the Final's single line. */
+  absorbed?: Record<string, string>
   // For a standalone invoice (no job-linked lines): create a report-only job so it
   // still appears on the job sheet, linked to this invoice.
   new_job?: { title: string; vessel_name: string | null; vessel_type?: VesselPrefix | null; job_type: string | null } | null
@@ -644,26 +648,24 @@ export async function createConsolidatedInvoice(input: {
     if (txErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: txErr.message } }
   }
 
-  // Stamp each vessel's job + move it into the billing stage. Confirm the stamp
-  // applied (RLS) — otherwise the invoice's jobs would be unlinked and wrongly
-  // reappear as "available to invoice". Roll the invoice back if it didn't.
+  // Stamp each vessel's job + move it into the billing stage, plus any voyage legs
+  // absorbed into a Final's line.
+  //
+  // One RPC, one transaction (migration 186). It carries `invoice_id IS NULL AND
+  // workflow_status IN (...)` on both updates, which is what makes "billed exactly
+  // once" a property of the database rather than a hope about the UI: without it a job
+  // already on invoice A is silently re-stamped onto B and a row-count check still
+  // passes, because nothing was filtered out. Absorbed legs are chosen by the grouper
+  // and never appear in the picker, so an admin cannot catch that collision themselves.
   const jobIds = [...new Set(input.lines.map(l => l.job_id).filter(Boolean))] as string[]
+  const absorbed = input.absorbed ?? {}
   if (jobIds.length > 0) {
     // Invoicing CLOSES the job (migration 145) — this is what locks surveyor edits
-    // via job_is_open(). These updates bypass setWorkflowStatus, so stamp the close
-    // columns here; the caller is an admin, so the mig-129 admin-column guard allows it.
-    const { data: stamped, error: jErr } = await supabase.from('jobs')
-      .update({
-        invoice_id: invoiceId, workflow_status: 'closed',
-        closed_at: new Date().toISOString(), closed_by: user?.id ?? null,
-      })
-      .in('id', jobIds)
-      .select('id')
+    // via job_is_open().
+    const { error: jErr } = await supabase.rpc('bill_jobs_onto_invoice', {
+      p_invoice_id: invoiceId, p_line_job_ids: jobIds, p_absorbed: absorbed,
+    })
     if (jErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: jErr.message } }
-    if (!stamped || stamped.length !== jobIds.length) {
-      await supabase.from('invoices').delete().eq('id', invoiceId)
-      return { error: 'Could not stamp every job onto the invoice (permission denied or a job changed). Nothing was billed.' }
-    }
   } else if (input.new_job) {
     // Standalone invoice: create a report-only job (no checklist template) so the
     // invoice still shows on the job sheet, linked to it.
@@ -683,7 +685,22 @@ export async function createConsolidatedInvoice(input: {
     if (njErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: njErr.message } }
   }
 
-  await logActivity('invoice', invoiceId, 'invoice:create_consolidated', { jobs: jobIds.length, standalone_job: jobIds.length === 0 && !!input.new_job, total })
+  // Per-JOB audit rows. listJobActivity filters entity='job', so an invoice-level row
+  // alone means a job's own Activity card says nothing about being closed, by whom, or
+  // under which invoice — and an absorbed leg is closed and frozen with no trace at all
+  // of why. The invoice-level row carries the full id list rather than a count, so the
+  // set can be reconstructed even after a later edit changes it.
+  const absorbedIds = Object.keys(absorbed)
+  await Promise.all([
+    logActivity('invoice', invoiceId, 'invoice:create_consolidated', {
+      jobs: jobIds.length, job_ids: jobIds, absorbed_ids: absorbedIds,
+      standalone_job: jobIds.length === 0 && !!input.new_job, total,
+    }),
+    ...jobIds.map(id => logActivity('job', id, 'invoice:billed', { invoice_id: invoiceId, invoice_number: input.invoice_number ?? null })),
+    ...absorbedIds.map(id => logActivity('job', id, 'invoice:absorbed', {
+      invoice_id: invoiceId, invoice_number: input.invoice_number ?? null, billed_under_job_id: absorbed[id],
+    })),
+  ])
   return { invoiceId }
 }
 
