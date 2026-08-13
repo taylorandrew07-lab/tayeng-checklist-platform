@@ -414,6 +414,44 @@ describe('JobPDF per-question photos', () => {
   }, 25000)
 })
 
+// A crew list or particulars sheet arrives as a PDF. It cannot be embedded — handing a
+// PDF URL to <Image> fails the whole render — so the route splits documents out and the
+// report names them under the question they were attached to.
+describe('JobPDF document attachments', () => {
+  const sections = [{
+    id: 's1', title: 'Crew', is_repeatable: false,
+    fields: [
+      { id: 'q', label: 'Master’s name', field_type: 'text', item_number: '4.1', order_index: 0 },
+      { id: 'doc', label: 'Crew list — attach', field_type: 'photo', item_number: '4.9', order_index: 1 },
+    ],
+  }]
+  const common = {
+    job: { id: 'j', job_number: '1', vessel_name: 'V', template: { name: 'T', pdf_include_photos: true } } as any,
+    fieldValues: { q: 'A. Taylor' },
+    arrayValues: {}, signatures: {}, photos: [], photoCount: 0,
+  }
+
+  it('names an attached document instead of embedding it', async () => {
+    const withDoc = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, photosInline: true,
+      documents: [{ field_id: 'doc', instance: 0, filename: 'crew-list.pdf' }],
+    } as any) as any)
+    const without = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, photosInline: true, documents: [],
+    } as any) as any)
+    expect(withDoc.length).toBeGreaterThan(without.length)
+  }, 25000)
+
+  it('names documents on a question that is not a photo field', async () => {
+    // Attachments hang off ANY field, so a document on an ordinary question must print.
+    const buf = await renderToBuffer(React.createElement(JobPDF, {
+      ...common, sections: sections as any, photosInline: true,
+      documents: [{ field_id: 'q', instance: 0, filename: 'particulars.pdf' }],
+    } as any) as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+})
+
 // The report opens with an auto-built list of findings. It is driven by the ANSWER
 // COLOUR, not the word "No", because several questions are deliberately reversed — where
 // Yes is the problem and No is green. A naive "list every No" would report those

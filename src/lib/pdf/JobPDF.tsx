@@ -523,6 +523,10 @@ interface PDFProps {
    *  through 180 questions for the handful that matter.
    *  (checklist_templates.pdf_deficiency_summary, migration 182.) */
   deficiencySummary?: boolean
+  /** Non-image attachments (a crew list or particulars sheet handed over as a PDF).
+   *  They cannot be embedded — passing one to <Image> fails the whole render — so they
+   *  are named under the question they belong to instead. */
+  documents?: Array<{ field_id: string | null; instance: number; filename: string }>
 }
 
 export interface HeaderRow { label: string; value: string }
@@ -571,7 +575,7 @@ function renderInfoRow(key: string, label: string, value: string): React.ReactEl
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false, documents = [] }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
   const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
 
@@ -625,6 +629,20 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         }
       }
     }
+  }
+
+  /** Documents attached to a question, named beneath it. The file itself lives in the
+   *  job record — the report states that it was taken and what it was called. */
+  const inlineDocsFor = (field: any, inst: number): React.ReactElement | null => {
+    const mine = documents.filter(d => d.field_id === field.id && d.instance === inst)
+    if (mine.length === 0) return null
+    return (
+      <View key={`doc-${field.id}-${inst}`} style={{ paddingLeft: 34, paddingBottom: 2 }}>
+        {mine.map((d, i) => (
+          <Text key={i} style={styles.findingRemark}>Attached: {d.filename}</Text>
+        ))}
+      </View>
+    )
   }
 
   /** This field/entry's photos, as a captioned grid printed directly beneath its row. */
@@ -874,6 +892,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                             <React.Fragment key={field.id}>
                               {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst)}
                               {/* A question inside an entry can carry its own photos too. */}
+                              {inlineDocsFor(field, inst)}
                               {inlinePhotosFor(field, inst)}
                             </React.Fragment>
                           ))}
@@ -910,9 +929,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           // where nothing connects the two. Non-repeatable sections are instance 0.
           // A dedicated photo FIELD keeps its own row out of the body (it has no
           // answer), but its photos still print in its position.
-          const sectionPhotoFields = photosInline
-            ? photoFields.filter((pf: any) => photos.some(p => p.field_id === pf.id))
-            : []
+          // A photo field carries no answer row of its own, so it only appears here when
+          // it actually holds something. Photos need the template to have opted into
+          // inline printing; DOCUMENTS are named regardless, because there is nowhere
+          // else for them to appear — they cannot be embedded in the photo grid.
+          const sectionPhotoFields = photoFields.filter((pf: any) =>
+            (photosInline && photos.some(p => p.field_id === pf.id)) ||
+            documents.some(d => d.field_id === pf.id))
 
           if (visibleFields.length === 0 && sectionPhotoFields.length === 0) return null
 
@@ -925,11 +948,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 </View>
                 {visibleFields.length > 0 && renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
               </View>
+              {visibleFields.length > 0 && inlineDocsFor(visibleFields[0], 0)}
               {visibleFields.length > 0 && inlinePhotosFor(visibleFields[0], 0)}
 
               {visibleFields.slice(1).map((field: any) => (
                 <React.Fragment key={field.id}>
                   {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)}
+                  {inlineDocsFor(field, 0)}
                   {inlinePhotosFor(field, 0)}
                 </React.Fragment>
               ))}
@@ -943,6 +968,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                   <Text style={styles.photoGroupHeading} minPresenceAhead={230}>
                     {[pf.item_number, pf.label].filter(Boolean).join(' ')}
                   </Text>
+                  {inlineDocsFor(pf, 0)}
                   {inlinePhotosFor(pf, 0)}
                 </React.Fragment>
               ))}

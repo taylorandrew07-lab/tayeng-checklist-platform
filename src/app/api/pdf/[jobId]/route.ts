@@ -117,7 +117,19 @@ export async function GET(
   // The template flag is the gate: when on, every stored photo is embedded. (The
   // per-photo include_in_pdf column has no UI and defaults false, so gating on it
   // would embed nothing — it is intentionally ignored here.)
-  const photoRows = (photoData ?? []) as Array<{ field_id: string | null; instance: number | null; storage_path: string; caption: string | null; filename: string | null }>
+  const allRows = (photoData ?? []) as Array<{ field_id: string | null; instance: number | null; storage_path: string; caption: string | null; filename: string | null }>
+
+  // An attachment field takes documents as well as photographs — a crew list or a
+  // ship's-particulars sheet is usually handed over as a PDF. Only real images can be
+  // embedded: handing a PDF's URL to <Image> fails the whole render, so documents are
+  // split out here and printed as a named attachment line instead.
+  const isImageFile = (name: string | null, path: string) =>
+    /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(name || path)
+  const photoRows = allRows.filter(p => isImageFile(p.filename, p.storage_path))
+  const documents = allRows
+    .filter(p => !isImageFile(p.filename, p.storage_path))
+    .map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, filename: p.filename || 'attachment' }))
+
   const photoCount = photoRows.length
   let photos: Array<{ field_id: string | null; instance: number; url: string; caption: string | null; filename: string | null }> = []
   if (job.template?.pdf_include_photos === true && photoRows.length > 0) {
@@ -218,6 +230,7 @@ export async function GET(
         balancedHeader: job.template?.pdf_balanced_header === true,
         photosInline: job.template?.pdf_photos_inline === true,
         deficiencySummary: job.template?.pdf_deficiency_summary === true,
+        documents,
       }) as any
     )
   } catch (e) {

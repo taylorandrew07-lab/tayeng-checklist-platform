@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Loader2, Save, Download, Camera, X, CheckCircle2,
+  Loader2, Save, Download, Camera, FileText, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2, Usb,
 } from 'lucide-react'
@@ -36,6 +36,13 @@ interface MissingField {
 
 /** DOM id of a field's scroll anchor. */
 const fieldAnchorId = (key: string) => `field-${key}`
+
+/** A crew list or particulars sheet is usually handed over as a PDF, so an attachment
+ *  field takes documents as well as photographs. Anything that is not an image gets a
+ *  named tile instead of a thumbnail — and the report names it rather than embedding it,
+ *  because handing a PDF to the renderer's <Image> fails the whole document. */
+const isImageAttachment = (name: string | null | undefined, path: string | null | undefined) =>
+  /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(name || path || '')
 
 /** Stand-in "storage path" for a photo still queued on the device. It is never sent to
  *  the server — it only keys the object URL in photoUrls and marks the row as local. */
@@ -277,7 +284,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [editSubmitted, setEditSubmitted] = useState(false) // admin re-opened a submitted/completed checklist
     const [showEditSubmittedDialog, setShowEditSubmittedDialog] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
-    // Photo inputs carry `accept="image/*"` and NOTHING else — no `capture`, no
+    // Photo inputs carry `accept="image/*,application/pdf"` and NOTHING else — no `capture`, no
     // `multiple`. That bare form is what makes the device offer its own chooser (Android:
     // Camera / Photos / Files; iOS: Take Photo / Photo Library / Choose File) from a
     // single button. `capture` would force the camera and take the gallery away;
@@ -1729,7 +1736,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       <input
                         ref={el => { fieldPhotoRefs.current[key] = el }}
                         type="file"
-                        accept="image/*"
+                        accept="image/*,application/pdf"
                         className="hidden"
                         onChange={async e => {
                           const files = e.target.files
@@ -1831,7 +1838,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 attachSignature={attachSignature}
                 attachAction={readOnly ? undefined : (
                   <>
-                    {/* ONE input, and deliberately NO `multiple`: a bare accept="image/*"
+                    {/* ONE input, and deliberately NO `multiple`: a bare accept="image/*,application/pdf"
                         is what makes Android offer its own chooser — Camera alongside
                         Photos and Files — and iOS offer Take Photo / Photo Library.
                         Adding `multiple` suppresses the camera entry on a number of
@@ -1839,7 +1846,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         file. Tapping Attach again adds the next photo. */}
                     <input
                       ref={el => { fieldPhotoRefs.current[key] = el }}
-                      type="file" accept="image/*" className="hidden"
+                      type="file" accept="image/*,application/pdf" className="hidden"
                       onChange={async e => {
                         const files = e.target.files
                         if (!files) return
@@ -1864,7 +1871,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
                     {attachPhotos.map(p => (
                       <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 overflow-hidden group">
-                        {photoUrls[p.storage_path] ? (
+                        {!isImageAttachment(p.filename, p.storage_path) ? (
+                          // A document, not a picture: name it and open it in a new tab.
+                          <a
+                            href={photoUrls[p.storage_path] || undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1 text-center bg-gray-50 hover:bg-gray-100"
+                          >
+                            <FileText className="h-5 w-5 text-gray-400" />
+                            <span className="text-[9px] text-gray-600 break-all line-clamp-2">{p.filename}</span>
+                          </a>
+                        ) : photoUrls[p.storage_path] ? (
                           <img
                             src={photoUrls[p.storage_path]}
                             alt={p.filename ?? 'photo'}
@@ -2037,7 +2055,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               <input
                 ref={generalPhotoRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 onChange={async e => {
                   const files = e.target.files
