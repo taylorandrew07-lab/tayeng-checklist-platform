@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Loader2, Save, Download, Camera, ImagePlus, X, CheckCircle2,
+  Loader2, Save, Download, Camera, X, CheckCircle2,
   AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Eye,
   Cloud, CloudOff, RefreshCw, Plus, GripVertical, Trash2, Usb,
 } from 'lucide-react'
@@ -277,18 +277,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [editSubmitted, setEditSubmitted] = useState(false) // admin re-opened a submitted/completed checklist
     const [showEditSubmittedDialog, setShowEditSubmittedDialog] = useState(false)
     const generalPhotoRef = useRef<HTMLInputElement>(null)
-    const generalCameraRef = useRef<HTMLInputElement>(null)
+    // Photo inputs carry `accept="image/*"` and NOTHING else — no `capture`, no
+    // `multiple`. That bare form is what makes the device offer its own chooser (Android:
+    // Camera / Photos / Files; iOS: Take Photo / Photo Library / Choose File) from a
+    // single button. `capture` would force the camera and take the gallery away;
+    // `multiple` suppresses the camera entry on a number of Android builds, since the
+    // camera can only return one file. Bulk selection lives on the Files / USB button.
     const fieldPhotoRefs = useRef<Record<string, HTMLInputElement | null>>({})
-    // A SECOND input per field, carrying capture="environment". Without it the camera is
-    // only ever one option inside the browser's own file chooser — and on Android that
-    // chooser often opens straight into the gallery, so a surveyor standing in front of
-    // the defect has no obvious way to just photograph it. This one opens the camera.
-    const fieldCameraRefs = useRef<Record<string, HTMLInputElement | null>>({})
-    // capture is a no-op on desktop (the browser falls back to a file dialog), so the
-    // camera button is only offered where it does something. Set after mount to avoid a
-    // hydration mismatch.
-    const [isMobile, setIsMobile] = useState(false)
-    useEffect(() => { setIsMobile(isMobileDevice()) }, [])
     // Offline state
     const [online, setOnline] = useState(true)
     const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'syncing' | 'synced' | 'error'>('idle')
@@ -1728,24 +1723,13 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         await uploadPhotosForField(field.id, inst, Array.from(fs))
                       }}
                     >
-                      <input
-                        ref={el => { fieldCameraRefs.current[key] = el }}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={async e => {
-                          const files = e.target.files
-                          if (!files) return
-                          await uploadPhotosForField(field.id, inst, Array.from(files))
-                          if (fieldCameraRefs.current[key]) fieldCameraRefs.current[key]!.value = ''
-                        }}
-                      />
+                      {/* No `multiple` here either — see the note on the per-question
+                          input above. Bulk import stays on the Files / USB button below,
+                          which is where a borescope's folder of photos comes from. */}
                       <input
                         ref={el => { fieldPhotoRefs.current[key] = el }}
                         type="file"
                         accept="image/*"
-                        multiple
                         className="hidden"
                         onChange={async e => {
                           const files = e.target.files
@@ -1754,16 +1738,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           if (fieldPhotoRefs.current[key]) fieldPhotoRefs.current[key]!.value = ''
                         }}
                       />
-                      {isMobile && (
-                        <button
-                          type="button"
-                          onClick={() => !uploading && fieldCameraRefs.current[key]?.click()}
-                          disabled={uploading}
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg border-2 border-brand-200 bg-brand-50 py-2.5 text-sm font-medium text-brand-700 hover:border-brand-300 disabled:opacity-50"
-                        >
-                          <Camera className="h-4 w-4" /> Take photo
-                        </button>
-                      )}
                       {photos.length === 0 ? (
                         <div
                           onClick={() => !uploading && fieldPhotoRefs.current[key]?.click()}
@@ -1771,7 +1745,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         >
                           {uploading ? <Loader2 className="h-6 w-6 mx-auto text-brand-400 animate-spin" /> : (
                             <>
-                              <ImagePlus className="h-6 w-6 mx-auto text-gray-300 mb-1" />
+                              <Camera className="h-6 w-6 mx-auto text-gray-300 mb-1" />
                               <p className="text-sm text-gray-500">Drag &amp; drop or click to add photos{entryLabel ? ` for ${entryLabel}` : ''}</p>
                             </>
                           )}
@@ -1857,21 +1831,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 attachSignature={attachSignature}
                 attachAction={readOnly ? undefined : (
                   <>
-                    {/* Two inputs, deliberately: capture="environment" goes straight to
-                        the camera, the other to the gallery / Files / a USB drive. */}
-                    <input
-                      ref={el => { fieldCameraRefs.current[key] = el }}
-                      type="file" accept="image/*" capture="environment" className="hidden"
-                      onChange={async e => {
-                        const files = e.target.files
-                        if (!files) return
-                        await uploadPhotosForField(field.id, inst, Array.from(files))
-                        if (fieldCameraRefs.current[key]) fieldCameraRefs.current[key]!.value = ''
-                      }}
-                    />
+                    {/* ONE input, and deliberately NO `multiple`: a bare accept="image/*"
+                        is what makes Android offer its own chooser — Camera alongside
+                        Photos and Files — and iOS offer Take Photo / Photo Library.
+                        Adding `multiple` suppresses the camera entry on a number of
+                        Android builds, because the camera can only ever hand back one
+                        file. Tapping Attach again adds the next photo. */}
                     <input
                       ref={el => { fieldPhotoRefs.current[key] = el }}
-                      type="file" accept="image/*" multiple className="hidden"
+                      type="file" accept="image/*" className="hidden"
                       onChange={async e => {
                         const files = e.target.files
                         if (!files) return
@@ -1879,28 +1847,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                         if (fieldPhotoRefs.current[key]) fieldPhotoRefs.current[key]!.value = ''
                       }}
                     />
-                    {isMobile && (
-                      <button
-                        type="button"
-                        onClick={() => !attachUploading && fieldCameraRefs.current[key]?.click()}
-                        disabled={attachUploading}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
-                      >
-                        {attachUploading
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <Camera className="h-3.5 w-3.5" />}
-                        Take photo
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => !attachUploading && fieldPhotoRefs.current[key]?.click()}
                       disabled={attachUploading}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
                     >
-                      {!isMobile && attachUploading
+                      {attachUploading
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <ImagePlus className="h-3.5 w-3.5" />}
+                        : <Camera className="h-3.5 w-3.5" />}
                       {attachPhotos.length > 0 ? `Photos (${attachPhotos.length})` : 'Attach photo'}
                     </button>
                   </>
@@ -2071,44 +2026,18 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                 <h2 className="section-title">Additional Photos</h2>
                 <p className="text-xs text-gray-500 mt-0.5">Photos NOT tied to an inspection line — rarely needed. Add line photos in each line&apos;s own Photos box above. (Already added one here? Use &ldquo;Move to a line&rdquo;.)</p>
               </div>
-              <div className="flex items-center gap-2">
-                {isMobile && (
-                  <button
-                    onClick={() => generalCameraRef.current?.click()}
-                    disabled={uploadingField === 'general'}
-                    className="btn-secondary text-sm"
-                  >
-                    {uploadingField === 'general' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    Take photo
-                  </button>
-                )}
-                <button
-                  onClick={() => generalPhotoRef.current?.click()}
-                  disabled={uploadingField === 'general'}
-                  className="btn-secondary text-sm"
-                >
-                  {!isMobile && uploadingField === 'general' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Upload
-                </button>
-              </div>
-              <input
-                ref={generalCameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={async e => {
-                  const files = e.target.files
-                  if (!files) return
-                  await uploadGeneralPhotos(Array.from(files))
-                  if (generalCameraRef.current) generalCameraRef.current.value = ''
-                }}
-              />
+              <button
+                onClick={() => generalPhotoRef.current?.click()}
+                disabled={uploadingField === 'general'}
+                className="btn-secondary text-sm"
+              >
+                {uploadingField === 'general' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                Upload
+              </button>
               <input
                 ref={generalPhotoRef}
                 type="file"
                 accept="image/*"
-                multiple
                 className="hidden"
                 onChange={async e => {
                   const files = e.target.files
