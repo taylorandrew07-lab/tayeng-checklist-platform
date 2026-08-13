@@ -8,8 +8,11 @@ import Link from 'next/link'
 import { toast } from '@/components/ui/toast'
 import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { findOrCreateVessel } from '@/lib/vessels/api'
-import { parseVesselName, type VesselPrefix } from '@/lib/utils'
+import { formatDate, parseVesselName, splitVoyageFromVesselName, type VesselPrefix } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
+import { fetchRecentVoyages, suggestVoyageFor, suggestedValue, describeSuggestion, type RecentVoyage } from '@/lib/jobs/recentVoyages'
+import VoyageNumberInput from '@/components/job/VoyageNumberInput'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { isoDateLocal, dmyFromISO, STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
@@ -44,6 +47,8 @@ export default function NewJobPage() {
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
   const [portLocation, setPortLocation] = useState('')
+  const [voyageNumber, setVoyageNumber] = useState('')
+  const [recentVoyages, setRecentVoyages] = useState<RecentVoyage[]>([])
   const [notes, setNotes] = useState('')
   const [reportNotRequired, setReportNotRequired] = useState(false)
 
@@ -55,8 +60,17 @@ export default function NewJobPage() {
   // Vessel prefix: what the surveyor TYPED wins ("M.T. Lila" / "MT Lila" / "M/T Lila"),
   // else the directory's record for a known vessel, else M.V. Resolved here because
   // the title is STORED text — it must be built from the same prefix that gets saved.
-  const parsedVessel = parseVesselName(vesselName)
+  // A voyage typed into the vessel name ("Chaconia (V086)") is lifted out before the
+  // name is parsed, so it can never reach jobs.vessel_name or the vessels directory
+  // again — and is offered as the voyage instead of being lost.
+  const vesselSplit = splitVoyageFromVesselName(vesselName)
+  const parsedVessel = parseVesselName(vesselSplit.name)
   const bareVessel = parsedVessel.name
+  // Ghost suggestion: the last voyage this vessel ran, if it was recent enough. Falls
+  // back to a voyage the surveyor typed into the name, which is a certainty, not a guess.
+  const voyageSuggestion = vesselSplit.voyage
+    ? { vessel_key: '', vessel_name: bareVessel, voyage_number: vesselSplit.voyage, job_stage: null, scheduled_date: null }
+    : suggestVoyageFor(bareVessel, recentVoyages, scheduledDate)
   const knownPrefix = vessels.find(v => v.name.toLowerCase() === bareVessel.toLowerCase())?.vessel_type
   const vesselPrefix: VesselPrefix = parsedVessel.prefix ?? knownPrefix ?? 'M.V.'
   const autoTitle = vesselName.trim() && label ? `${vesselPrefix} ${bareVessel} - ${labelWithStage} - ${dmyFromISO(scheduledDate)}` : ''
@@ -64,18 +78,22 @@ export default function NewJobPage() {
   useEffect(() => {
     async function loadData() {
       const supabase = createClient()
-      const [{ data: tmpl }, { data: cls }, { data: vsl }, jt, srv] = await Promise.all([
+      const [{ data: tmpl }, { data: cls }, { data: vsl }, jt, srv, rv] = await Promise.all([
         supabase.from('checklist_templates').select('*').eq('status', 'active').order('name'),
         supabase.from('clients').select('*').eq('is_active', true).order('name'),
         supabase.from('vessels').select('id, name, vessel_type').eq('is_active', true).order('name'),
         listJobTypes(),
         listSurveyorAccounts(),
+        // Powers the voyage-number ghost suggestion. Best-effort: a failure here must
+        // never stop the form loading — it just means no suggestion.
+        fetchRecentVoyages(supabase).catch(() => []),
       ])
       setTemplates(tmpl ?? [])
       setClients(cls ?? [])
       setVessels((vsl ?? []) as { id: string; name: string; vessel_type: VesselPrefix }[])
       setJobTypes(jt)
       setSurveyors(srv)
+      setRecentVoyages(rv)
       setLoading(false)
     }
     loadData()
@@ -196,6 +214,10 @@ export default function NewJobPage() {
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
         port_location: portLocation.trim() || null,
+        // Falls back to a voyage typed into the vessel name even if the suggestion was
+        // never accepted — the token is stripped out of the name either way, so without
+        // this the voyage would be silently lost rather than merely misplaced.
+        voyage_number: normaliseVoyage(voyageNumber || vesselSplit.voyage),
         report_not_required: reportNotRequired,
         scheduled_date: scheduledDate,
         end_date: endDate || null,
@@ -304,6 +326,16 @@ export default function NewJobPage() {
           <label className="label-base">Port / Location <span className="text-gray-400 font-normal">(optional)</span></label>
           <input type="text" value={portLocation} onChange={e => setPortLocation(e.target.value)} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
           <p className="text-xs text-gray-400 mt-1">Where the survey takes place — useful on report-only jobs with no checklist.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Voyage number <span className="text-gray-400 font-normal">(optional)</span></label>
+          <VoyageNumberInput
+            value={voyageNumber}
+            onChange={setVoyageNumber}
+            suggestion={suggestedValue(voyageSuggestion) || null}
+            suggestionNote={voyageSuggestion ? describeSuggestion(voyageSuggestion, formatDate) : null}
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

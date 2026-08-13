@@ -507,6 +507,11 @@ export interface TrackerRow {
   cargo_type: string | null
   notes: string | null
   vessel_name: string | null
+  /** Canonical V-### voyage (migration 186). Rendered as a muted sub-line under the
+   *  vessel, the same shape the cargo rows already use. */
+  voyage_number: string | null
+  /** Non-null when this survey was absorbed into another job's invoice line. */
+  billed_under_job_id: string | null
   title: string
   client_id: string | null
   client_name: string | null
@@ -540,7 +545,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const supabase = createClient()
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
-      .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, labour_unit, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, voyage_number, billed_under_job_id, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, labour_unit, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),
@@ -581,7 +586,7 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
     // jobs assigned the old way still show their surveyor.
     const surveyors = s?.names.length ? s.names : (j.surveyor_name ? [j.surveyor_name] : [])
     return {
-      id: j.id, report_number: j.report_number, report_not_required: !!j.report_not_required, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, title: j.title,
+      id: j.id, report_number: j.report_number, report_not_required: !!j.report_not_required, job_type: j.job_type, job_stage: j.job_stage ?? null, cargo_type: j.cargo_type ?? null, notes: j.notes ?? null, vessel_name: j.vessel_name, voyage_number: j.voyage_number ?? null, billed_under_job_id: j.billed_under_job_id ?? null, title: j.title,
       client_id: j.client_id, client_name: j.client?.name ?? null,
       client_color: j.client?.color ?? null, template_color: j.template?.color ?? null, template_name: j.template?.name ?? null,
       workflow_status: j.workflow_status, is_overtime: !!j.is_overtime, billing_mode: (j.billing_mode ?? 'regular') as 'overtime' | 'regular' | 'fixed', labour_unit: (j.labour_unit === 'days' ? 'days' : 'hours') as 'hours' | 'days', scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,

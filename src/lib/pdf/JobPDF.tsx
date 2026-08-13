@@ -735,6 +735,12 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // The header rows that actually have a value, in print order.
   const headerRows: Array<{ label: string; value: string }> = [
     job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name, job.vessel_type) } : null,
+    // The voyage used to reach this page for free, because surveyors typed it INTO the
+    // vessel name and it printed as "M.V. Chaconia (V086)". Migration 186 moved it to
+    // its own column, so without this row the delivered report would silently LOSE
+    // information it has always carried. Its own row rather than glued to the vessel:
+    // the header is a label/value grid, and the client reads down the labels.
+    job.voyage_number ? { label: 'Voyage', value: job.voyage_number } : null,
     job.client?.name && !hideClient ? { label: 'Client', value: job.client.name } : null,
     headerDate ? { label: 'Date', value: headerDate } : null,
     surveyors.length > 0 && !hideSurveyor

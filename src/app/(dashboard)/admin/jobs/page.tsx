@@ -18,7 +18,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getUiPrefs, setUiPref } from '@/lib/preferences'
-import { formatDate, parseVesselName, withVesselPrefix } from '@/lib/utils'
+import { formatDate, parseVesselName, splitVoyageFromVesselName, withVesselPrefix } from '@/lib/utils'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { createClient } from '@/lib/supabase/client'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
@@ -254,13 +255,34 @@ const COLUMNS: ColumnDef[] = [
       </div>
     ) },
   { key: 'vessel', label: 'Vessel', sortKey: 'vessel', defaultVisible: true, width: 150, min: 100,
-    cell: (r, { patchRow }) => <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => {
-      // A typed "M.T."/"MT"/"M/T" is captured here too — without it the stripper would
-      // eat the token and this inline edit would silently record nothing.
-      const p = parseVesselName(v ?? '')
-      const patch = p.prefix ? { vessel_name: p.name, vessel_type: p.prefix } : { vessel_name: p.name }
-      return patchRow(r.id, patch, patch)
-    }} />,
+    cell: (r, { patchRow }) => (
+      <div className="min-w-0">
+        <EditableText value={r.vessel_name} placeholder="Set vessel" onSave={v => {
+          // A typed "M.T."/"MT"/"M/T" is captured here too — without it the stripper would
+          // eat the token and this inline edit would silently record nothing.
+          //
+          // A typed voyage ("Chaconia (V086)") is lifted out the same way and recorded as
+          // the VOYAGE, not swallowed into the name. This inline editor is how the token
+          // got into vessel_name in the first place, so it has to be the place that stops
+          // it coming back.
+          const split = splitVoyageFromVesselName(v ?? '')
+          const p = parseVesselName(split.name)
+          const patch: Record<string, unknown> = p.prefix
+            ? { vessel_name: p.name, vessel_type: p.prefix } : { vessel_name: p.name }
+          if (split.voyage) patch.voyage_number = normaliseVoyage(split.voyage)
+          return patchRow(r.id, patch, patch)
+        }} />
+        {/* The voyage as its own muted sub-line — byte-identical in shape to the cargo
+            row's voyageCell below, so one register reads one way. This is what replaces
+            the "(V086)" the guys used to type into the name. */}
+        {r.voyage_number && (
+          <span className="block px-3 text-[11px] text-gray-400 leading-tight truncate">Voyage {r.voyage_number}</span>
+        )}
+        {r.billed_under_job_id && (
+          <span className="block px-3 text-[11px] text-gray-400 leading-tight truncate italic">Billed under the final</span>
+        )}
+      </div>
+    ),
     voyageCell: v => (
       <div className="px-3 truncate">
         {withVesselPrefix(v.vessel_name, v.vessel_type)}
@@ -891,7 +913,7 @@ export default function JobsTrackerPage() {
       if (otOnly && !r.is_overtime) return false
       if (surveyorFilter && !r.surveyors.includes(surveyorFilter)) return false
       if (!term) return true
-      return [r.report_number, r.vessel_name, r.client_name, r.job_type, r.title, r.invoice_number, ...r.surveyors]
+      return [r.report_number, r.vessel_name, r.voyage_number, r.client_name, r.job_type, r.title, r.invoice_number, ...r.surveyors]
         .some(v => (v ?? '').toString().toLowerCase().includes(term))
     })
     const val = (r: TrackerRow): string | number => {
@@ -1000,11 +1022,11 @@ export default function JobsTrackerPage() {
   function exportCsv() {
     // Quantity columns are unit-neutral and carry a Labour unit column beside the
     // billing mode (mig 148) — otherwise a spreadsheet would sum hours and days.
-    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular qty', 'Overtime qty', 'Billing mode', 'Labour unit', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
+    const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Voyage', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular qty', 'Overtime qty', 'Billing mode', 'Labour unit', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
     const lines = [headers.join(',')]
     for (const r of visible) {
       lines.push([
-        csv(r.report_not_required ? 'N/A' : r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.cargo_type), csv(r.vessel_name), csv(r.title),
+        csv(r.report_not_required ? 'N/A' : r.report_number), csv(r.job_type), csv(r.job_stage), csv(r.cargo_type), csv(r.vessel_name), csv(r.voyage_number), csv(r.title),
         csv(r.client_name), csv(r.surveyors.join('; ')),
         csv(WORKFLOW[r.workflow_status as keyof typeof WORKFLOW]?.label ?? r.workflow_status),
         csv(formatDate(r.scheduled_date ?? r.created_at)), csv(r.end_date ? formatDate(r.end_date) : ''),

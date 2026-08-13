@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, CloudOff, Loader2, Save, FileQuestion } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
 import JobChecklistEditor, { type JobChecklistEditorHandle } from '@/components/job/JobChecklistEditor'
 import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import JobOpsPanel from '@/components/job/JobOpsPanel'
@@ -48,13 +49,13 @@ export default function SurveyorJobPage() {
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', port_location: '', notes: '', job_stage: '', cargo_type: '' })
+  const [editForm, setEditForm] = useState({ vessel_name: '', scheduled_date: '', port_location: '', voyage_number: '', notes: '', job_stage: '', cargo_type: '' })
   // The job exists only in this device's IndexedDB draft — no server row yet.
   const [localOnly, setLocalOnly] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
 
   function fillEditForm(j: any) {
-    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', port_location: j?.port_location ?? '', notes: j?.notes ?? '', job_stage: j?.job_stage ?? '', cargo_type: j?.cargo_type ?? '' })
+    setEditForm({ vessel_name: j?.vessel_name ?? '', scheduled_date: j?.scheduled_date ?? '', port_location: j?.port_location ?? '', voyage_number: j?.voyage_number ?? '', notes: j?.notes ?? '', job_stage: j?.job_stage ?? '', cargo_type: j?.cargo_type ?? '' })
   }
 
   async function load() {
@@ -75,7 +76,7 @@ export default function SurveyorJobPage() {
         // submitted_at drives MarkJobCompleteButton's repair path: with the checklist
         // already submitted it completes directly instead of reopening the (locked)
         // checklist dialog.
-        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, vessel_type, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, is_overtime, billing_mode, labour_unit, client:clients(name)')
+        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, vessel_type, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, voyage_number, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -137,6 +138,7 @@ export default function SurveyorJobPage() {
           vessel_type: nextPrefix,
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
+          voyage_number: normaliseVoyage(editForm.voyage_number),
           notes: editForm.notes || null,
           job_stage: editForm.job_stage || null,
           cargo_type: CARGO_JOB_TYPES.has(draft.job?.job_type ?? '') ? (editForm.cargo_type.trim() || null) : (draft.job?.cargo_type ?? null),
@@ -159,6 +161,7 @@ export default function SurveyorJobPage() {
           title: retitleForVessel(job.title ?? null, job.vessel_name ?? null, vessel, oldPrefix, nextPrefix),
           scheduled_date: editForm.scheduled_date || null,
           port_location: editForm.port_location.trim() || null,
+          voyage_number: normaliseVoyage(editForm.voyage_number),
           notes: editForm.notes || null,
           // job_stage / cargo_type aren't in enforce_surveyor_job_update's blacklist
           // (mig 148), so a surveyor may set them. Only write cargo_type on cargo jobs.
@@ -279,6 +282,11 @@ export default function SurveyorJobPage() {
             <label className="label-base">Port / Location</label>
             <input type="text" value={editForm.port_location} onChange={(e) => setEditForm(p => ({ ...p, port_location: e.target.value }))} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
             <p className="text-xs text-gray-400 mt-1">Where the survey took place.</p>
+          </div>
+          <div>
+            <label className="label-base">Voyage number</label>
+            <input type="text" value={editForm.voyage_number} onChange={(e) => setEditForm(p => ({ ...p, voyage_number: e.target.value }))} className="input-base" placeholder="e.g. V-086" />
+            <p className="text-xs text-gray-400 mt-1">Groups this survey with the other draught surveys of the same voyage.</p>
           </div>
           <div>
             <label className="label-base">Notes</label>

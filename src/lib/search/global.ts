@@ -3,7 +3,8 @@
 // Each category is capped — this is a "jump to it" search, not a report.
 
 import { createClient } from '@/lib/supabase/client'
-import { titleCaseVesselName, withVesselPrefix } from '@/lib/utils'
+import { titleCaseVesselName, vesselWithVoyage, withVesselPrefix } from '@/lib/utils'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
 
 export interface SearchHit {
   kind: 'job' | 'client' | 'invoice'
@@ -31,17 +32,26 @@ export async function globalSearch(term: string, role: string): Promise<SearchHi
 
   // Jobs — report #, vessel, title, surveyor name.
   tasks.push((async () => {
+    // Voyage is matched on BOTH the raw term and its canonical form, so typing "86",
+    // "V86" or "V-086" all find voyage V-086. Without this, searching a voyage stopped
+    // working the moment migration 186 lifted the token out of vessel_name and title —
+    // and looking a voyage up is the first thing anyone does when reconciling one.
+    const voyageCanonical = normaliseVoyage(safe)
+    const voyageClauses = [`voyage_number.ilike.${like}`]
+    if (voyageCanonical && voyageCanonical.toLowerCase() !== safe.toLowerCase()) {
+      voyageClauses.push(`voyage_number.ilike.%${voyageCanonical}%`)
+    }
     const { data } = await supabase.from('jobs')
-      .select('id, report_number, vessel_name, vessel_type, title, client:clients(name)')
-      .or(`report_number.ilike.${like},vessel_name.ilike.${vesselLike},title.ilike.${like},surveyor_name.ilike.${like}`)
+      .select('id, report_number, vessel_name, vessel_type, voyage_number, title, client:clients(name)')
+      .or(`report_number.ilike.${like},vessel_name.ilike.${vesselLike},title.ilike.${like},surveyor_name.ilike.${like},${voyageClauses.join(',')}`)
       .order('created_at', { ascending: false })
       .limit(6)
     return ((data ?? []) as any[]).map(j => ({
       kind: 'job' as const,
       id: j.id,
       title: j.report_number
-        ? `${j.report_number} · ${j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : j.title}`
-        : (j.vessel_name ? withVesselPrefix(j.vessel_name, j.vessel_type) : j.title),
+        ? `${j.report_number} · ${j.vessel_name ? vesselWithVoyage(j.vessel_name, j.vessel_type, j.voyage_number) : j.title}`
+        : (j.vessel_name ? vesselWithVoyage(j.vessel_name, j.vessel_type, j.voyage_number) : j.title),
       subtitle: [j.client?.name, j.title].filter(Boolean).join(' — ') || undefined,
       href: `${jobBase}/${j.id}`,
     }))

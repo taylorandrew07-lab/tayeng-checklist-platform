@@ -4,6 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { listSurveyorAccounts } from '@/lib/jobs/tracker'
+import { fetchRecentVoyages, type RecentVoyage } from '@/lib/jobs/recentVoyages'
 import { cacheNewJobData, getCachedNewJobData, type CachedNewJobData } from './db'
 
 export interface NewJobData {
@@ -13,6 +14,10 @@ export interface NewJobData {
   /** Surveyor accounts for the co-surveyor picker (empty on a device that hasn't
    *  cached them yet — the picker just doesn't show until it's been online once). */
   surveyors: any[]
+  /** Each vessel's latest draught-survey voyage number, for the voyage field's ghost
+   *  suggestion. Empty on a device that hasn't been online since this shipped — the
+   *  field then simply offers nothing, which is the correct degraded behaviour. */
+  recentVoyages: RecentVoyage[]
   fromCache: boolean
 }
 
@@ -21,7 +26,7 @@ export async function loadNewJobData(): Promise<NewJobData> {
   try {
     if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('offline')
     const supabase = createClient()
-    const [{ data: tmpl, error: tErr }, { data: cls }, { data: jt, error: jtErr }, srv] = await Promise.all([
+    const [{ data: tmpl, error: tErr }, { data: cls }, { data: jt, error: jtErr }, srv, rv] = await Promise.all([
       supabase.from('checklist_templates')
         .select('*, sections:template_sections(*, fields:template_fields(*))')
         .eq('status', 'active').eq('allow_surveyor_start', true).order('name'),
@@ -33,6 +38,9 @@ export async function loadNewJobData(): Promise<NewJobData> {
       // profiles, mig 002). Returns [] rather than throwing, so a permission hiccup
       // just leaves the picker empty instead of blocking the whole load.
       listSurveyorAccounts().catch(() => []),
+      // Voyage suggestions for the New Job form. Best-effort like the surveyor list —
+      // a failure must degrade to "no suggestion", never block the whole load.
+      fetchRecentVoyages(supabase).catch(() => [] as RecentVoyage[]),
     ])
     if (tErr) throw tErr
 
@@ -62,9 +70,22 @@ export async function loadNewJobData(): Promise<NewJobData> {
       if (previous?.surveyors?.length) surveyors = previous.surveyors
     }
 
-    const payload: CachedNewJobData = { templates, clients: cls ?? [], jobTypes, surveyors, cachedAt: Date.now() }
+    // Same carry-forward rule as job types and surveyors: a degraded read must never
+    // blank a good cached list, or the voyage field silently stops suggesting on the
+    // one trip where the device had half a signal.
+    let recentVoyages = rv ?? []
+    if (recentVoyages.length === 0) {
+      const previous = await getCachedNewJobData().catch(() => undefined)
+      if (previous?.recentVoyages?.length) recentVoyages = previous.recentVoyages
+    }
+
+    const payload: CachedNewJobData = { templates, clients: cls ?? [], jobTypes, surveyors, recentVoyages, cachedAt: Date.now() }
     await cacheNewJobData(payload).catch(() => {})
-    return { templates: payload.templates, clients: payload.clients, jobTypes: payload.jobTypes ?? [], surveyors: payload.surveyors ?? [], fromCache: false }
+    return {
+      templates: payload.templates, clients: payload.clients,
+      jobTypes: payload.jobTypes ?? [], surveyors: payload.surveyors ?? [],
+      recentVoyages: (payload.recentVoyages ?? []) as RecentVoyage[], fromCache: false,
+    }
   } catch {
     const cached = await getCachedNewJobData().catch(() => undefined)
     return {
@@ -74,6 +95,7 @@ export async function loadNewJobData(): Promise<NewJobData> {
       // to the template's default type rather than blocking the create.
       jobTypes: cached?.jobTypes ?? [],
       surveyors: cached?.surveyors ?? [],
+      recentVoyages: (cached?.recentVoyages ?? []) as RecentVoyage[],
       fromCache: true,
     }
   }

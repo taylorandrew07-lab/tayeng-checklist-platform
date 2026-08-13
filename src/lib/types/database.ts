@@ -410,6 +410,16 @@ export interface Job {
   // Free-text port / location of the survey (migration 153). Mainly for report-only
   // (no-checklist) jobs that have nowhere else to record where the survey happened.
   port_location: string | null
+  // The vessel's voyage reference, canonically 'V-###' (migration 186). Surveyors used
+  // to type this INTO vessel_name ("Chaconia (V086)"); it is now data, rendered NEXT to
+  // the vessel name and never baked into title. It is what groups the legs of a
+  // draught survey — Initial, Interim(s), Final — into one billable voyage. See
+  // lib/jobs/voyage.ts, which owns every rule about it.
+  voyage_number: string | null
+  // Set when this job was ABSORBED into another job's invoice line — the Final draught
+  // survey of the same voyage (migration 186). Non-null means "billed under that job":
+  // this one is closed and locked but owns no line and no amount of its own.
+  billed_under_job_id: string | null
   report_number: string | null
   // When true the job does not require a report — no report number, shown as "N/A" (migration 119).
   report_not_required: boolean

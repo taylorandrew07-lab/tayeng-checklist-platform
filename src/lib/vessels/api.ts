@@ -2,7 +2,7 @@
 // cargo voyages link to via vessel_id. vessel_name stays as a historical snapshot.
 
 import { createClient } from '@/lib/supabase/client'
-import { parseVesselName, type VesselPrefix } from '@/lib/utils'
+import { parseVesselName, splitVoyageFromVesselName, type VesselPrefix } from '@/lib/utils'
 import { byLastDateDesc } from '@/lib/jobs/jobDate'
 
 export interface Vessel {
@@ -73,7 +73,13 @@ export async function findOrCreateVessel(
   name: string,
   typedPrefix?: VesselPrefix | null,
 ): Promise<string | null> {
-  const parsed = parseVesselName(name)
+  // Strip any voyage a caller still has inside the name ("Chaconia (V086)"). This
+  // function matches on the WHOLE name, so without it every voyage creates its own
+  // vessel row and the directory accumulates one bogus vessel per trip. It is the last
+  // line of defence — jobs.voyage_number is captured upstream (see
+  // splitVoyageFromVesselName in the forms and createDraftJob) — but it is the one
+  // every caller passes through.
+  const parsed = parseVesselName(splitVoyageFromVesselName(name).name)
   const n = parsed.name
   if (!n) return null
   const prefix = typedPrefix ?? parsed.prefix

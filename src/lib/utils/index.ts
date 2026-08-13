@@ -206,6 +206,49 @@ export function withVesselPrefix(
   return titled ? `${prefixForVesselType(prefix)} ${titled}` : ''
 }
 
+// A voyage token a surveyor typed INTO a vessel name — "Chaconia (V086)". Anchored to
+// a parenthetical at the END containing only a V-token and digits, so "(Final)",
+// "(Hull 4)" and "Ocean Star 7" never match. Same pattern as migration 186's backfill.
+const VOYAGE_IN_NAME = /\s*\(\s*([Vv][-._ ]?[0-9]+)\s*\)\s*$/
+
+/**
+ * Split a typed vessel name into the bare name and any voyage reference smuggled into
+ * it. This is the guard that stops "Chaconia (V086)" being stored as a vessel again —
+ * and stops findOrCreateVessel creating a new vessel row per voyage.
+ *
+ * Returns the voyage EXACTLY as typed; canonicalising it to V-### is
+ * normaliseVoyage's job (lib/jobs/voyage.ts), which owns every voyage rule. Kept here
+ * rather than there so the vessel-name seam has no dependency on the billing seam.
+ */
+export function splitVoyageFromVesselName(raw: string | null | undefined): {
+  name: string
+  voyage: string | null
+} {
+  if (!raw) return { name: '', voyage: null }
+  const m = VOYAGE_IN_NAME.exec(raw)
+  if (!m) return { name: raw, voyage: null }
+  return { name: raw.replace(VOYAGE_IN_NAME, '').trim(), voyage: m[1] }
+}
+
+/**
+ * Vessel name for display with its voyage alongside — "Chaconia (V-086)".
+ *
+ * The voyage is rendered NEXT TO the name, never inside the stored one. The jobs grid
+ * shows it as its own muted sub-line instead (matching the cargo row's existing
+ * voyageCell); this single-string form is for the places that only have room for one
+ * line: dashboards, CSV exports, PDF headers, search results.
+ */
+export function vesselWithVoyage(
+  name: string | null | undefined,
+  prefix: VesselPrefixInput,
+  voyage: string | null | undefined,
+): string {
+  const base = withVesselPrefix(name, prefix)
+  if (!base) return ''
+  const v = (voyage ?? '').trim()
+  return v ? `${base} (${v})` : base
+}
+
 export function getFieldTypeLabel(type: FieldType): string {
   const labels: Record<FieldType, string> = {
     text: 'Text',

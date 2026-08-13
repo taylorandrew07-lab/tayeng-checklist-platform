@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Loader2, CloudOff, AlertTriangle, RefreshCw, Download, ChevronDown, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { formatDate, withTimeout } from '@/lib/utils'
+import { formatDate, vesselWithVoyage, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import EmptyState from '@/components/ui/EmptyState'
 import { deliverFile, PDF_MIME } from '@/lib/pdf/deliver'
@@ -88,7 +88,7 @@ export default function SurveyorDashboard() {
         const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
-              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, surveyor_name, port_location,
+              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, vessel_type, voyage_number, surveyor_name, port_location,
               template:checklist_templates(name),
               client:clients(name)
             `)
@@ -232,7 +232,7 @@ export default function SurveyorDashboard() {
     for (const j of periodJobs) {
       const m = mine[j.id] ?? { reg: 0, ot: 0, km: 0 }
       lines.push([
-        j.report_number, j.job_number, jobDate(j), j.vessel_name, j.job_type, j.port_location, j.client?.name,
+        j.report_number, j.job_number, jobDate(j), vesselWithVoyage(j.vessel_name, j.vessel_type, j.voyage_number), j.job_type, j.port_location, j.client?.name,
         WORKFLOW[j.workflow_status as keyof typeof WORKFLOW]?.label ?? j.workflow_status,
         labourLabels(j.labour_unit).noun, m.reg || '', m.ot || '', m.km || '',
       ].map(esc).join(','))

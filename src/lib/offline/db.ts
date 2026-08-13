@@ -11,6 +11,10 @@ export interface CachedNewJobData {
   /** Optional (added later, same rule): surveyor accounts for the co-surveyor
    *  picker, so a surveyor can attach co-surveyors with no signal. Read as `?? []`. */
   surveyors?: any[]
+  /** Optional (same rule): each vessel's most recent draught-survey voyage number, so
+   *  the voyage field can offer it dockside with no signal. There is no live query to
+   *  fall back on out there — if it is not cached, there is no suggestion. */
+  recentVoyages?: any[]
   cachedAt: number
 }
 

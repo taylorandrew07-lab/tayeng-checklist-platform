@@ -12,7 +12,10 @@ import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
 import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { toast } from '@/components/ui/toast'
-import { parseVesselName, type VesselPrefix } from '@/lib/utils'
+import { formatDate, parseVesselName, splitVoyageFromVesselName, type VesselPrefix } from '@/lib/utils'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
+import { suggestVoyageFor, suggestedValue, describeSuggestion, type RecentVoyage } from '@/lib/jobs/recentVoyages'
+import VoyageNumberInput from '@/components/job/VoyageNumberInput'
 import { isoDateLocal, dmyFromISO, STAGE_OPTIONS, CARGO_JOB_TYPES, CARGO_SUGGESTIONS, TAP_BTN } from '@/lib/jobs/newJobConfig'
 
 export default function SurveyorNewChecklistPage() {
@@ -37,6 +40,8 @@ export default function SurveyorNewChecklistPage() {
   const [jobStage, setJobStage] = useState('')
   const [cargoType, setCargoType] = useState('')
   const [portLocation, setPortLocation] = useState('')
+  const [voyageNumber, setVoyageNumber] = useState('')
+  const [recentVoyages, setRecentVoyages] = useState<RecentVoyage[]>([])
   // Extra surveyors on this job, beyond the owner (you). The owner is always the
   // primary via assigned_to; these attach as co-surveyors on sync (mig 150).
   const [coSurveyors, setCoSurveyors] = useState<Set<string>>(new Set())
@@ -65,8 +70,16 @@ export default function SurveyorNewChecklistPage() {
   // Vessel prefix: what the surveyor TYPED wins ("M.T. Lila" / "MT Lila" / "M/T Lila"),
   // else the directory's record, else M.V. Offline the vessels list is empty, so a
   // typed prefix (or M.V.) decides — which is exactly the intended behaviour dockside.
-  const parsedVessel = parseVesselName(vesselName)
+  // A voyage typed into the vessel name ("Chaconia (V086)") is lifted out before the
+  // name is parsed, so it never reaches jobs.vessel_name or the vessels directory again.
+  const vesselSplit = splitVoyageFromVesselName(vesselName)
+  const parsedVessel = parseVesselName(vesselSplit.name)
   const bareVessel = parsedVessel.name
+  // Ghost suggestion for the voyage field. Offline this comes from newjobcache —
+  // there is no live query to fall back on dockside.
+  const voyageSuggestion = vesselSplit.voyage
+    ? { vessel_key: '', vessel_name: bareVessel, voyage_number: vesselSplit.voyage, job_stage: null, scheduled_date: null }
+    : suggestVoyageFor(bareVessel, recentVoyages, scheduledDate)
   const knownPrefix = vessels.find(v => v.name.toLowerCase() === bareVessel.toLowerCase())?.vessel_type
   const vesselPrefix: VesselPrefix = parsedVessel.prefix ?? knownPrefix ?? 'M.V.'
   const autoTitle = vesselName.trim() && label
@@ -98,6 +111,7 @@ export default function SurveyorNewChecklistPage() {
       setClients(d.clients)
       setJobTypes(d.jobTypes)
       setSurveyors(d.surveyors)
+      setRecentVoyages(d.recentVoyages)
       setFromCache(d.fromCache)
       setLoading(false)
       // Vessel datalist — online only; offline you just type (still linked on sync).
@@ -224,6 +238,10 @@ export default function SurveyorNewChecklistPage() {
         job_stage: jobStage || null,
         cargo_type: CARGO_JOB_TYPES.has(jobType) ? (cargoType.trim() || null) : null,
         port_location: portLocation.trim() || null,
+        // Falls back to a voyage typed into the vessel name even if the suggestion was
+        // never accepted — the token is stripped from the name either way, so without
+        // this the voyage would be silently lost rather than merely misplaced.
+        voyage_number: normaliseVoyage(voyageNumber || vesselSplit.voyage),
         vessel_name: bareVessel, vessel_type: vesselPrefix, surveyor_name: finalSurveyor,
         client_id: finalClientId, client: finalClientId ? { name: clients.find(c => c.id === finalClientId)?.name ?? '' } : null,
         workflow_status: 'in_progress', created_by: userId, assigned_to: userId,
@@ -247,6 +265,11 @@ export default function SurveyorNewChecklistPage() {
         values: {}, arrayValues: {}, signatures: {}, fieldPhotos: {}, generalPhotos: [],
         serverValues: {}, serverArrayValues: {}, serverSignatures: {},
         pendingSubmit: false, pendingCreate: true, dirty: true, needsSync: true,
+        // handleCreate only ever runs from the Create button's onClick (never during
+        // render), and the draft's timestamp has to be the moment it was saved — it is
+        // what sync.ts orders retries by. The React Compiler flags any Date.now() it
+        // cannot prove is out of render; here it can't see the call site.
+        // eslint-disable-next-line react-hooks/purity
         updatedAt: Date.now(), lastSyncedAt: null, syncError: null,
       })
 
@@ -384,6 +407,16 @@ export default function SurveyorNewChecklistPage() {
           <label className="label-base">Port / Location <span className="text-gray-400 font-normal">(optional)</span></label>
           <input type="text" value={portLocation} onChange={(e) => setPortLocation(e.target.value)} className="input-base" placeholder="e.g. Port of Point Lisas, Berth 3" />
           <p className="text-xs text-gray-400 mt-1">Where the survey takes place — useful on report-only jobs with no checklist.</p>
+        </div>
+
+        <div>
+          <label className="label-base">Voyage number <span className="text-gray-400 font-normal">(optional)</span></label>
+          <VoyageNumberInput
+            value={voyageNumber}
+            onChange={setVoyageNumber}
+            suggestion={suggestedValue(voyageSuggestion) || null}
+            suggestionNote={voyageSuggestion ? describeSuggestion(voyageSuggestion, formatDate) : null}
+          />
         </div>
 
         {/* One field per row on a phone; two up from sm: — never a cramped grid at 360px. */}

@@ -6,7 +6,10 @@ import { createDraftJob } from '@/lib/jobs/drafts'
 import { advanceWorkflowTo } from '@/lib/jobs/tracker'
 
 export type SyncResult =
-  | { ok: true; submitted: boolean; nothing?: boolean }
+  /** billedLocked: the server job has been invoiced, so this device's later edits to
+   *  its vessel/stage/dates/voyage were deliberately NOT applied. The draft is cleared
+   *  either way — it must not retry forever against a job that can never accept it. */
+  | { ok: true; submitted: boolean; nothing?: boolean; billedLocked?: boolean }
   | { ok: false; reason: 'no-user' | 'wrong-user' | 'conflict' | 'error'; message: string }
 
 function canon(
@@ -64,7 +67,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
     const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
-      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, job_stage, cargo_type, notes').eq('id', jobId).maybeSingle()
+      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, voyage_number, job_stage, cargo_type, notes, workflow_status, billed_under_job_id').eq('id', jobId).maybeSingle()
     // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
     // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
     // a fresh report number off the counter even though the row already exists (the
@@ -75,6 +78,18 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       return { ok: false, reason: 'error', message: preErr.message }
     }
     if (alreadyCreated) {
+      // A job that has been BILLED is frozen: its vessel, stage, dates and voyage are
+      // what decided which voyage it was rolled up into and what the client was
+      // charged. A draft that publishes days late must not be able to retro-change an
+      // absorbed Interim into a Final after the invoice was raised. The mig-186 trigger
+      // refuses this anyway — skipping here turns a hard RLS error into a clean no-op
+      // and tells the surveyor rather than failing the whole sync silently.
+      const frozen = alreadyCreated.workflow_status === 'closed' || alreadyCreated.billed_under_job_id != null
+      if (frozen) {
+        draft = { ...draft, pendingCreate: false, syncError: null }
+        await putDraft(draft)
+        return { ok: true, submitted: false, billedLocked: true }
+      }
       // Only the columns that actually differ, so the ordinary retry writes nothing.
       const patch: Record<string, unknown> = {}
       if ((j.title ?? null) !== alreadyCreated.title) patch.title = j.title ?? null
@@ -82,6 +97,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       if (j.vessel_type && j.vessel_type !== alreadyCreated.vessel_type) patch.vessel_type = j.vessel_type
       if ((j.scheduled_date ?? null) !== alreadyCreated.scheduled_date) patch.scheduled_date = j.scheduled_date ?? null
       if ((j.port_location ?? null) !== alreadyCreated.port_location) patch.port_location = j.port_location ?? null
+      if ((j.voyage_number ?? null) !== alreadyCreated.voyage_number) patch.voyage_number = j.voyage_number ?? null
       if ((j.job_stage ?? null) !== alreadyCreated.job_stage) patch.job_stage = j.job_stage ?? null
       if ((j.cargo_type ?? null) !== alreadyCreated.cargo_type) patch.cargo_type = j.cargo_type ?? null
       if ((j.notes ?? null) !== alreadyCreated.notes) patch.notes = j.notes ?? null
@@ -104,6 +120,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
           job_stage: j.job_stage ?? null,
           cargo_type: j.cargo_type ?? null,
           port_location: j.port_location ?? null,
+          voyage_number: j.voyage_number ?? null,
           vessel_name: j.vessel_name ?? null,
           vessel_id: vesselId,
           vessel_type: j.vessel_type ?? 'M.V.',

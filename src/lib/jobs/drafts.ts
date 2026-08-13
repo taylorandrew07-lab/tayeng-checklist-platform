@@ -10,7 +10,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyAssignment } from '@/lib/jobs/notify'
 import { typeSkipsReportNumber } from '@/lib/jobs/reportPolicy'
-import { parseVesselName } from '@/lib/utils'
+import { parseVesselName, splitVoyageFromVesselName } from '@/lib/utils'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
 
 export type JobSource = 'manual' | 'whatsapp' | 'email' | 'ai'
 
@@ -65,6 +66,23 @@ export async function createDraftJob(
   // what the future AI/WhatsApp intake will extract from a message) gets the tanker
   // recorded and the name stored bare, instead of the prefix being silently dropped.
   // An explicit vessel_type from the caller always wins.
+  // Voyage safety net, in the same shape as the flag above but UNCONDITIONAL. A voyage
+  // typed into the vessel name ("Chaconia (V086)") is lifted out here no matter what
+  // else the caller set, because leaving it in the name is what polluted the vessels
+  // directory (findOrCreateVessel matches on the whole name, so every voyage made its
+  // own vessel row) and what hid the voyage from billing. Deliberately NOT gated the
+  // way the vessel-prefix net below is: that one only fires when vessel_type is unset,
+  // and a caller that happens to pass a prefix would otherwise skip this too.
+  // An explicit voyage_number from the caller always wins.
+  if (typeof row.vessel_name === 'string') {
+    const split = splitVoyageFromVesselName(row.vessel_name)
+    if (split.voyage) {
+      row.vessel_name = split.name
+      if (row.voyage_number == null) row.voyage_number = normaliseVoyage(split.voyage)
+    }
+  }
+  if (typeof row.voyage_number === 'string') row.voyage_number = normaliseVoyage(row.voyage_number)
+
   if (row.vessel_type == null && typeof row.vessel_name === 'string') {
     const parsed = parseVesselName(row.vessel_name)
     if (parsed.prefix) row.vessel_type = parsed.prefix
