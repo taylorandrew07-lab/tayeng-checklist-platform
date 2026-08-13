@@ -272,21 +272,22 @@ const COLUMNS: ColumnDef[] = [
           if (split.voyage) patch.voyage_number = normaliseVoyage(split.voyage)
           return patchRow(r.id, patch, patch)
         }} />
-        {/* The voyage as its own muted sub-line — byte-identical in shape to the cargo
-            row's voyageCell below, so one register reads one way. This is what replaces
-            the "(V086)" the guys used to type into the name. */}
+        {/* The voyage as its own muted sub-line. px-2 matches cellBtn's padding, NOT the
+            px-3 the cargo voyageCell uses — that one sits in a plain div, while this sits
+            under an EditableText button, so px-3 would indent the voyage 4px past the
+            vessel name it belongs to. The V lines up under the vessel's first letter. */}
         {r.voyage_number && (
-          <span className="block px-3 text-[11px] text-gray-400 leading-tight truncate">Voyage {r.voyage_number}</span>
+          <span className="block px-2 text-[11px] text-gray-500 leading-tight truncate">Voyage {r.voyage_number}</span>
         )}
         {r.billed_under_job_id && (
-          <span className="block px-3 text-[11px] text-gray-400 leading-tight truncate italic">Billed under the final</span>
+          <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate italic">Billed under the final</span>
         )}
       </div>
     ),
     voyageCell: v => (
       <div className="px-3 truncate">
         {withVesselPrefix(v.vessel_name, v.vessel_type)}
-        {v.voyage_number && <span className="block text-[11px] text-gray-400 leading-tight truncate">Voyage {v.voyage_number}</span>}
+        {v.voyage_number && <span className="block text-[11px] text-gray-500 leading-tight truncate">Voyage {v.voyage_number}</span>}
       </div>
     ) },
   { key: 'client', label: 'Client', sortKey: 'client', defaultVisible: true, width: 150, min: 90,
