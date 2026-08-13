@@ -25,10 +25,10 @@ import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
-  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays, seedCharge,
+  createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays, seedCharge, setJobsVoyageNumber,
   type InvoiceableJob, type TaxDraft,
 } from '@/lib/jobs/invoicing'
-import { groupDraughtVoyages, isRollUp, isBillableAsVoyage, describeGrouping, type VoyageGroup } from '@/lib/jobs/voyage'
+import { groupDraughtVoyages, isRollUp, isBillableAsVoyage, describeGrouping, normaliseVoyage, type VoyageGroup } from '@/lib/jobs/voyage'
 import { seedVoyageLine, describeBlock, breakdownNote, type VoyageLineSeed } from '@/lib/jobs/voyageBilling'
 import { fetchVoyageContext, describeContextProblem, type VoyageContext } from '@/lib/jobs/voyageContext'
 import { listClientBilling } from '@/lib/clients/billing'
@@ -104,6 +104,9 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [voyageSeeds, setVoyageSeeds] = useState<Map<string, VoyageLineSeed>>(new Map())
   const [absorbed, setAbsorbed] = useState<Record<string, string>>({})
   const [voyageCtx, setVoyageCtx] = useState<Map<string, VoyageContext>>(new Map())
+  // What the admin decided about each SUGGESTED group. Absent = still undecided, which
+  // is why its members are neither seeded nor selectable.
+  const [voyageDecisions, setVoyageDecisions] = useState<Record<string, 'voyage' | 'separate'>>({})
   const [extra, setExtra] = useState<DraftLine[]>([])               // manual lines + expenses
 
   const [currency, setCurrency] = useState<Currency>('USD')
@@ -192,7 +195,7 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const loadJobs = useCallback(async () => {
     // A blank invoice bills no jobs, so it loads none — nothing can be auto-selected
     // and accidentally closed behind a typed-up expense.
-    if (!clientId || mode === 'blank') { setJobs([]); setLines({}); setVoyages([]); setAbsorbed({}); return }
+    if (!clientId || mode === 'blank') { setJobs([]); setLines({}); setVoyages([]); setAbsorbed({}); setVoyageDecisions({}); return }
     setLoadingJobs(true)
     const [js, rs] = await Promise.all([
       listInvoiceableJobs({ clientId, month: month || undefined }),
@@ -226,10 +229,21 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
     setVoyageSeeds(seeds)
     setAbsorbed(absorbedMap)
 
+    // A SUGGESTED group (inferred from vessel + dates, no voyage number) must not
+    // auto-seed. Auto-seeding every invoice-ready job is what makes one click on Create
+    // produce the forbidden three-line invoice — the DEFAULT path being the wrong one.
+    // Its members stay unticked until the admin picks one of the three options on the
+    // amber card, so "suggests, never auto-bills" is true of the default, not just of
+    // the roll-up.
+    const suggestedIds = new Set(
+      groups.filter(g => isRollUp(g) && g.confidence === 'suggested')
+        .flatMap(g => g.members.map(m => m.id)))
+
     // One line per billable job, EXCEPT that a voyage's legs collapse onto its Final.
     const seeded: Record<string, LineState[]> = {}
     billableJs.forEach(j => {
       if (absorbedMap[j.id]) return // billed on its Final's line, not its own
+      if (suggestedIds.has(j.id)) return // waiting on a decision, not selected
       const voyage = rollUps.find(g => g.final?.id === j.id)
       const seed = voyage ? seeds.get(voyage.key) : undefined
       seeded[j.id] = seed
@@ -289,12 +303,70 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   // Billable = invoice-ready. Awaiting = submitted but not yet reviewed; shown below
   // the billable list with a one-click "Mark invoice ready" so a forgotten flip
   // never means hunting through the jobs list.
+  // Voyages we THINK exist but cannot prove: same vessel, same client, close together
+  // in time, no voyage number. Shown as a decision, never billed on their own say-so.
+  const suggestedVoyages = useMemo(
+    () => voyages.filter(g => isRollUp(g) && g.confidence === 'suggested' && !voyageDecisions[g.key]),
+    [voyages, voyageDecisions])
+  const undecidedIds = useMemo(
+    () => new Set(suggestedVoyages.flatMap(g => g.members.map(m => m.id))),
+    [suggestedVoyages])
+
   // Absorbed legs are deliberately absent: they are billed on their Final's line, and
   // showing them here as tickable jobs is exactly the three-line invoice this exists
-  // to prevent. The Final's row lists them instead.
+  // to prevent. The Final's row lists them instead. Undecided suggestions are absent
+  // for the same reason — they live on the amber card until the admin chooses.
   const billable = useMemo(
-    () => sortJobs(jobs.filter(j => j.workflow_status === 'invoice_ready' && !absorbed[j.id]), sort),
-    [jobs, sort, absorbed])
+    () => sortJobs(jobs.filter(j =>
+      j.workflow_status === 'invoice_ready' && !absorbed[j.id] && !undecidedIds.has(j.id)), sort),
+    [jobs, sort, absorbed, undecidedIds])
+
+  const poolById = useMemo(() => new Map(jobs.map(j => [j.id, j])), [jobs])
+
+  /** "Bill as one voyage" — treat the suggestion as real for this invoice only. */
+  function billAsOneVoyage(g: VoyageGroup<InvoiceableJob>) {
+    const seed = seedVoyageLine({ group: g, members: poolById, rates, invoiceCurrency: currency })
+    if (!seed.anchorJobId) { toast.error('This group has no single final survey to carry the bill.'); return }
+    setVoyageSeeds(prev => new Map(prev).set(g.key, seed))
+    setAbsorbed(prev => {
+      const next = { ...prev }
+      for (const m of g.members) if (m.id !== seed.anchorJobId) next[m.id] = seed.anchorJobId!
+      return next
+    })
+    setLines(prev => {
+      const next = { ...prev }
+      for (const m of g.members) delete next[m.id]
+      next[seed.anchorJobId!] = [{ description: seed.description, qty: seed.qty, unit_price: seed.unit_price, rate_id: null }]
+      return next
+    })
+    // The unfiltered completeness check still applies — a suggestion is no less likely
+    // to be missing a leg the pool cannot see.
+    fetchVoyageContext([g], clientId).then(ctx => setVoyageCtx(prev => new Map([...prev, ...ctx]))).catch(() => {})
+    setVoyageDecisions(p => ({ ...p, [g.key]: 'voyage' }))
+  }
+
+  /** "Keep separate" — these are not one voyage; bill each on its own as before. */
+  function keepSeparate(g: VoyageGroup<InvoiceableJob>) {
+    setLines(prev => {
+      const next = { ...prev }
+      for (const m of g.members) {
+        const job = poolById.get(m.id)
+        if (job) next[m.id] = [seedLine(job, rates)]
+      }
+      return next
+    })
+    setVoyageDecisions(p => ({ ...p, [g.key]: 'separate' }))
+  }
+
+  /** "Set voyage number" — record the grouping so it never has to be guessed again. */
+  async function applyVoyageNumber(g: VoyageGroup<InvoiceableJob>, value: string) {
+    const canonical = normaliseVoyage(value)
+    if (!canonical) { toast.error('Enter a voyage number, e.g. V-086'); return }
+    const res = await setJobsVoyageNumber(g.members.map(m => m.id), canonical)
+    if (res.error) { toast.error(res.error); return }
+    toast.success(`Voyage ${canonical} recorded on ${g.members.length} surveys`)
+    loadJobs()
+  }
   const awaiting = useMemo(() => sortJobs(jobs.filter(j => j.workflow_status === 'report_ready'), sort), [jobs, sort])
 
   const [markingId, setMarkingId] = useState<string | null>(null)
@@ -603,6 +675,20 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
             </p>
           ) : (
             <div className="divide-y divide-gray-50">
+              {/* Voyages we think exist but cannot prove. Deliberately a DECISION, not a
+                  default: these surveys are neither seeded nor tickable until one of the
+                  three buttons is pressed, so pressing Create without looking can never
+                  produce the three-line invoice this whole feature exists to prevent. */}
+              {suggestedVoyages.map(g => (
+                <SuggestedVoyageCard
+                  key={g.key}
+                  group={g}
+                  currency={currency}
+                  onBillAsOne={() => billAsOneVoyage(g)}
+                  onKeepSeparate={() => keepSeparate(g)}
+                  onSetVoyage={v => applyVoyageNumber(g, v)}
+                />
+              ))}
               {billable.length === 0 && (
                 <p className="px-4 py-6 text-center text-sm text-gray-400">
                   Nothing marked invoice ready yet — review the jobs below and mark the ones you want to bill.
@@ -891,6 +977,101 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A voyage inferred from vessel + dates, with no voyage number to prove it.
+ *
+ * Andrew's rule: date-proximity grouping SUGGESTS, it never auto-bills. So this is a
+ * decision the admin has to make, and until they make it these surveys are neither
+ * seeded onto the invoice nor selectable — the wrong outcome must not be reachable by
+ * doing nothing.
+ *
+ * "Set voyage number" is the option worth pushing: it turns the guess into a recorded
+ * fact, so this voyage (and every later one on the same hull) groups confidently from
+ * then on, here and on the reconcile page.
+ */
+function SuggestedVoyageCard({ group, currency, onBillAsOne, onKeepSeparate, onSetVoyage }: {
+  group: VoyageGroup<InvoiceableJob>
+  currency: Currency
+  onBillAsOne: () => void
+  onKeepSeparate: () => void
+  onSetVoyage: (value: string) => void
+}) {
+  const [showVoyageInput, setShowVoyageInput] = useState(false)
+  const [voyage, setVoyage] = useState('')
+  const [saving, setSaving] = useState(false)
+  const noFinal = group.problems.includes('no_final')
+  const twoFinals = group.problems.includes('multiple_finals')
+
+  return (
+    <div className="px-4 py-3 bg-amber-50/50 border-l-2 border-amber-300">
+      <p className="text-sm font-medium text-gray-800">
+        {group.members.length} draught surveys on {withVesselPrefix(group.vesselName, group.members[0]?.vessel_type)} look like one voyage
+      </p>
+      <p className="text-xs text-gray-500 mt-0.5">{describeGrouping(group)}</p>
+
+      <ul className="mt-2 space-y-0.5">
+        {group.members.map(m => (
+          <li key={m.id} className="flex items-baseline gap-2 text-xs text-gray-500">
+            <span className="w-16 shrink-0 text-gray-600">{m.job_stage}</span>
+            <span className="tnum text-gray-400 w-24 shrink-0">{m.report_number ?? 'no report #'}</span>
+            <span className="text-gray-400">{formatDate(jobLastDate(m))}</span>
+          </li>
+        ))}
+      </ul>
+
+      {twoFinals && (
+        <p className="mt-2 text-xs text-red-700">
+          Two of these are marked Final, so this cannot be one voyage. Fix the stages on the job pages first.
+        </p>
+      )}
+      {noFinal && (
+        <p className="mt-2 text-xs text-amber-800">
+          None of these is marked Final, so nothing can carry the voyage&apos;s bill or its report number.
+          Set the last one&apos;s stage to Final on its job page.
+        </p>
+      )}
+
+      {showVoyageInput ? (
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            autoFocus
+            value={voyage}
+            onChange={e => setVoyage(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && voyage.trim()) { setSaving(true); onSetVoyage(voyage) } }}
+            placeholder="e.g. V-086"
+            className="input-base py-1 text-sm max-w-[10rem]"
+          />
+          <button
+            onClick={() => { setSaving(true); onSetVoyage(voyage) }}
+            disabled={!voyage.trim() || saving}
+            className="btn-primary py-1 px-2.5 text-xs"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save to all'}
+          </button>
+          <button onClick={() => setShowVoyageInput(false)} className="btn-ghost py-1 px-2 text-xs text-gray-500">Cancel</button>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {!noFinal && !twoFinals && (
+            <button onClick={onBillAsOne} className="btn-primary py-1 px-2.5 text-xs">
+              Bill as one voyage
+            </button>
+          )}
+          <button onClick={() => setShowVoyageInput(true)} className="btn-secondary py-1 px-2.5 text-xs">
+            Set voyage number
+          </button>
+          <button onClick={onKeepSeparate} className="btn-ghost py-1 px-2.5 text-xs text-gray-600">
+            Not one voyage — bill separately
+          </button>
+        </div>
+      )}
+      <p className="mt-1.5 text-[11px] text-gray-400">
+        Until you choose, these surveys are left off the invoice — none of them can be billed by accident.
+      </p>
     </div>
   )
 }

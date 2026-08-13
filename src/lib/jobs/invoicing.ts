@@ -581,6 +581,34 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
   return rows
 }
 
+/**
+ * Stamp one voyage number across a set of jobs.
+ *
+ * This is how a date-proximity SUGGESTION is turned into a recorded fact: the admin
+ * confirms the grouping once, and from then on the voyage groups confidently — here,
+ * on the reconcile page, and on every future invoice — without anyone having to infer
+ * it from dates again. It is also the fastest way to fix the data, which matters:
+ * almost none of the historic draught surveys carry a voyage number.
+ *
+ * Refuses to touch a billed job: its grouping identity is frozen (migration 186), and
+ * silently skipping it would leave the group half-stamped and still ambiguous.
+ */
+export async function setJobsVoyageNumber(jobIds: string[], voyage: string): Promise<{ error?: string }> {
+  if (jobIds.length === 0) return {}
+  const supabase = createClient()
+  const { data, error } = await supabase.from('jobs')
+    .update({ voyage_number: voyage })
+    .in('id', jobIds)
+    .is('invoice_id', null)
+    .select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length !== jobIds.length) {
+    return { error: 'One of these surveys has already been billed, so its voyage can no longer be changed. Nothing was updated.' }
+  }
+  await Promise.all(jobIds.map(id => logActivity('job', id, 'voyage:set', { voyage_number: voyage })))
+  return {}
+}
+
 /** Flip a submitted job to "Invoice ready" — the one-click confirmation that the
  *  report is finished and the job can be billed. Exposed here (not just on the job
  *  page) so it can be done straight from the Finance invoice builder. */
