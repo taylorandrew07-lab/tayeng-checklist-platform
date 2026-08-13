@@ -52,3 +52,57 @@ describe('InvoicePDF render', () => {
     expect((buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBeGreaterThan(1)
   }, 25000)
 })
+
+// A draught-survey VOYAGE bills as one line on its Final (migration 186). Two things
+// about that line are load-bearing on the printed page, and both are silent if broken:
+//   * qty is 1, so no "n × price" note appears — the client sees one figure for the
+//     voyage, not a multiplication of something they never agreed to.
+//   * the head still splits on exactly one ' — ', which is how InvoicePDF lays out its
+//     three fixed-width columns (vessel 118pt / type flex / report 96pt).
+describe('InvoicePDF — voyage roll-up line', () => {
+  it('renders a rolled-up voyage with the final’s report number and no × note', async () => {
+    const invoice: any = {
+      id: 'i3', invoice_number: '26-08-011', currency: 'USD', issue_date: '2026-08-13',
+      total: 1050, subtotal: 1050, tax_total: 0, attention: null, reference: null,
+      description: null, bank_details: null,
+    }
+    const lines: any[] = [
+      {
+        id: 'l1',
+        description: 'M.V. Chaconia — Draught Survey (Final)\nVoyage V-086 · Includes Initial + Interim + Final',
+        qty: 1, unit_price: 1050, amount: 1050,
+        job: { report_number: '26-08-240' },
+      },
+    ]
+    const el = React.createElement(InvoicePDF as any, {
+      invoice, lines, taxes: [],
+      client: { name: 'Nu-Iron Unlimited', contact_name: null, address: null, contact_phone: null },
+      reportNumber: null,
+    })
+    const buf = await renderToBuffer(el as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+
+  it('keeps the three-column head shape for a long vessel name', async () => {
+    // The vessel column is a fixed 118pt. A long name must not push the type or the
+    // report reference out of their columns.
+    const invoice: any = {
+      id: 'i4', invoice_number: '26-08-012', currency: 'USD', issue_date: '2026-08-13',
+      total: 700, subtotal: 700, tax_total: 0, attention: null, reference: null,
+      description: null, bank_details: null,
+    }
+    const lines: any[] = [{
+      id: 'l1',
+      description: 'M.T. Lila Montreal Of Panama City — Draught Survey (Final)\nVoyage V-1204 · Includes Initial + Final',
+      qty: 1, unit_price: 700, amount: 700,
+      job: { report_number: '26-08-241' },
+    }]
+    const el = React.createElement(InvoicePDF as any, {
+      invoice, lines, taxes: [],
+      client: { name: 'Nu-Iron Unlimited', contact_name: null, address: null, contact_phone: null },
+      reportNumber: null,
+    })
+    const buf = await renderToBuffer(el as any)
+    expect(buf.length).toBeGreaterThan(1000)
+  }, 25000)
+})

@@ -28,6 +28,9 @@ export interface DraftLine {
   vessel_name?: string | null
   vessel_type?: VesselPrefix | null
   report_number?: string | null
+  /** Draught-survey legs this line also bills (migration 186). Read-only: removing
+   *  the line releases these jobs too, so the editor has to say so. */
+  absorbed?: { job_id: string; job_stage: string | null; report_number: string | null }[]
   /** Auto-seeded mileage line (per_km rate × job km); replaced on each reload. */
   auto_mileage?: boolean
 }
@@ -90,12 +93,21 @@ export default function LineItemsEditor({ lines, setLines, currency }: {
             {l.job_id && (
               <p className="text-[11px] text-gray-400">{[l.report_number, l.vessel_name ? withVesselPrefix(l.vessel_name, l.vessel_type) : null].filter(Boolean).join(' · ') || 'Linked job'}</p>
             )}
+            {/* A voyage roll-up bills several surveys on this ONE line. Removing it
+                releases all of them, not just the job named above — an editor that
+                didn't show them would make that a silent side effect. */}
+            {(l.absorbed?.length ?? 0) > 0 && (
+              <p className="text-[11px] text-brand-700">
+                Also bills {l.absorbed!.map(a => a.job_stage ?? 'survey').join(' + ')} on this voyage
+                <span className="text-gray-400"> ({l.absorbed!.map(a => a.report_number ?? 'no report #').join(', ')})</span>
+              </p>
+            )}
             <div className="grid grid-cols-[1fr_3rem_5.5rem_5rem_auto] gap-2 items-center">
               <input value={l.description} onChange={e => patch(l.key, { description: e.target.value })} placeholder={l.is_expense ? 'e.g. Launch' : 'Description'} className={cell} />
               <input type="number" min={0} step="0.5" value={l.qty} onChange={e => patch(l.key, { qty: Number(e.target.value) })} className={`${cell} text-right`} />
               <input type="number" min={0} step="0.01" value={l.unit_price} onChange={e => patch(l.key, { unit_price: Number(e.target.value) })} className={`${cell} text-right`} />
               <span className="text-sm text-gray-700 text-right tnum">{amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <button onClick={() => void remove(l.key)} aria-label="Remove line" title={l.job_id ? 'Remove line — the job goes back to Invoice ready' : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+              <button onClick={() => void remove(l.key)} aria-label="Remove line" title={l.job_id ? ((l.absorbed?.length ?? 0) > 0 ? `Remove line — this job and the ${l.absorbed!.length} survey(s) it bills all go back to Invoice ready` : 'Remove line — the job goes back to Invoice ready') : 'Remove line'} className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {/* A vessel's job-linked survey-fee line can't be flipped to an expense

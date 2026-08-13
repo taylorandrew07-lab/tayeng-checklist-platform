@@ -774,6 +774,10 @@ export interface EditableLine {
   description: string; qty: number; unit_price: number
   is_expense: boolean; receipt_path: string | null; job_id: string | null
   vessel_name?: string | null; vessel_type?: VesselPrefix | null; report_number?: string | null
+  /** The draught-survey legs this line also bills, absorbed into it (migration 186).
+   *  Read-only context: deleting this line releases these jobs too, and an editor that
+   *  didn't show them would make that a silent side effect. */
+  absorbed?: { job_id: string; job_stage: string | null; report_number: string | null }[]
 }
 export interface InvoiceForEdit { invoice: Invoice; lines: EditableLine[]; taxes: TaxDraft[] }
 
@@ -781,17 +785,27 @@ export async function getInvoiceForEdit(invoiceId: string): Promise<InvoiceForEd
   const supabase = createClient()
   const { data: invoice } = await supabase.from('invoices').select('*').eq('id', invoiceId).maybeSingle()
   if (!invoice) return null
-  const [{ data: lines }, { data: taxes }] = await Promise.all([
+  const [{ data: lines }, { data: taxes }, { data: absorbedRows }] = await Promise.all([
     // invoice_line_items → jobs is a single FK (job_id), so the embed needs no hint.
     supabase.from('invoice_line_items').select('*, job:jobs(vessel_name, vessel_type, report_number)').eq('invoice_id', invoiceId).order('sort'),
     supabase.from('invoice_taxes').select('*').eq('invoice_id', invoiceId),
+    // Legs billed under one of this invoice's lines rather than owning one.
+    supabase.from('jobs').select('id, job_stage, report_number, billed_under_job_id')
+      .eq('invoice_id', invoiceId).not('billed_under_job_id', 'is', null),
   ])
+  const absorbedByParent = new Map<string, { job_id: string; job_stage: string | null; report_number: string | null }[]>()
+  for (const a of (absorbedRows ?? []) as any[]) {
+    const list = absorbedByParent.get(a.billed_under_job_id) ?? []
+    list.push({ job_id: a.id, job_stage: a.job_stage ?? null, report_number: a.report_number ?? null })
+    absorbedByParent.set(a.billed_under_job_id, list)
+  }
   return {
     invoice: invoice as Invoice,
     lines: ((lines ?? []) as any[]).map(l => ({
       description: l.description, qty: Number(l.qty), unit_price: Number(l.unit_price),
       is_expense: !!l.is_expense, receipt_path: l.receipt_path ?? null, job_id: l.job_id ?? null,
       vessel_name: l.job?.vessel_name ?? null, vessel_type: l.job?.vessel_type ?? null, report_number: l.job?.report_number ?? null,
+      absorbed: l.job_id ? absorbedByParent.get(l.job_id) ?? [] : [],
     })),
     taxes: ((taxes ?? []) as any[]).map(t => ({ name: t.name, rate: Number(t.rate) })),
   }
@@ -811,6 +825,19 @@ export async function updateInvoice(invoiceId: string, data: {
   lines: EditableLine[]; taxes: TaxDraft[]
 }): Promise<{ error?: string }> {
   const supabase = createClient()
+
+  // An empty line set on an invoice that HAD lines is almost never an intention — it is
+  // a failed load being autosaved back. The editor saves on a debounce, so a slow or
+  // rejected read could otherwise blank a live invoice and, worse, release every job on
+  // it. Deleting an invoice is the way to un-bill it, and that path is explicit.
+  if (data.lines.length === 0) {
+    const { count } = await supabase.from('invoice_line_items')
+      .select('id', { count: 'exact', head: true }).eq('invoice_id', invoiceId)
+    if ((count ?? 0) > 0) {
+      return { error: 'That would remove every line from this invoice. Delete the invoice instead if you want to un-bill its jobs.' }
+    }
+  }
+
   const { subtotal, taxAmounts, tax_total, total } = computeTotals(data.lines, data.taxes)
   const header: Record<string, unknown> = {
     currency: data.currency, due_date: data.due_date || null, notes: data.notes || null,

@@ -62,7 +62,7 @@ export default function InvoiceEditModal({ invoiceId, onClose, onSaved }: { invo
       setLines(d.lines.map(l => ({
         key: crypto.randomUUID(), description: l.description, qty: l.qty, unit_price: l.unit_price,
         is_expense: l.is_expense, receipt_path: l.receipt_path, receipt_name: l.receipt_path ? 'Receipt' : null,
-        job_id: l.job_id, vessel_name: l.vessel_name, vessel_type: l.vessel_type, report_number: l.report_number,
+        job_id: l.job_id, vessel_name: l.vessel_name, vessel_type: l.vessel_type, report_number: l.report_number, absorbed: l.absorbed ?? [],
       })))
       setTaxes(d.taxes)
       loadedRef.current = true

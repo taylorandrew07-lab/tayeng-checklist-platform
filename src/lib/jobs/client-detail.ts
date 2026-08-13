@@ -21,6 +21,10 @@ export interface ClientJobRow {
   scheduled_date: string | null
   end_date: string | null
   created_at: string
+  voyage_number: string | null
+  /** Non-null when this survey is billed under another job's invoice line. Its money
+   *  belongs to that line, so this row must show none of its own. */
+  billed_under_job_id: string | null
   invoice_number: string | null
   invoice_status: string | null
   invoice_total: number | null
@@ -52,7 +56,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
   const [{ data: client }, { data: jobs }, { data: invs }, clientBilling] = await Promise.all([
     supabase.from('clients').select('*').eq('id', clientId).single(),
     supabase.from('jobs')
-      .select('id, report_number, vessel_name, vessel_type, title, workflow_status, scheduled_date, end_date, created_at, invoice_id')
+      .select('id, report_number, vessel_name, vessel_type, voyage_number, billed_under_job_id, title, workflow_status, scheduled_date, end_date, created_at, invoice_id')
       .eq('client_id', clientId).order('created_at', { ascending: false }),
     supabase.from('invoices')
       .select('id, invoice_number, status, total, currency, due_date, job_id, created_at')
@@ -76,8 +80,14 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
     return {
       id: j.id, report_number: j.report_number, vessel_name: j.vessel_name, vessel_type: j.vessel_type ?? null, title: j.title,
       workflow_status: j.workflow_status, scheduled_date: j.scheduled_date, end_date: j.end_date ?? null, created_at: j.created_at,
+      voyage_number: j.voyage_number ?? null, billed_under_job_id: j.billed_under_job_id ?? null,
       invoice_number: inv?.invoice_number ?? null, invoice_status: inv?.status ?? null,
-      invoice_total: inv ? Number(inv.total ?? 0) : null, invoice_currency: inv?.currency ?? null,
+      // An absorbed leg carries the SAME invoice_id as its Final, so reading the header
+      // total here would print one voyage's total once per leg — 1,050 three times on a
+      // client page that only billed 1,050 once. The amount belongs to the line, and
+      // only the job that owns the line shows it.
+      invoice_total: inv && !j.billed_under_job_id ? Number(inv.total ?? 0) : null,
+      invoice_currency: inv?.currency ?? null,
     }
   })
   // Ordered by the job's LAST day, matching what the table prints (PostgREST can't
