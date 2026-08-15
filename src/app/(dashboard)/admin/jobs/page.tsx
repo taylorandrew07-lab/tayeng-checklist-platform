@@ -27,6 +27,7 @@ import { qtyWithUnit } from '@/lib/jobs/labourUnit'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
+import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 import {
   WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, nextStatusFor, isJobLocked,
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
@@ -1126,7 +1127,7 @@ export default function JobsTrackerPage() {
   const filtersActive = !!typeFilter || !!surveyorFilter || otOnly
 
   // Download the currently-shown rows (current filters + sort + month/year) as CSV.
-  function exportCsv() {
+  async function exportCsv() {
     // Quantity columns are unit-neutral and carry a Labour unit column beside the
     // billing mode (mig 148) — otherwise a spreadsheet would sum hours and days.
     const headers = ['Report #', 'Type', 'Stage', 'Cargo type', 'Vessel', 'Voyage', 'Job name', 'Client', 'Surveyors', 'Status', 'Start date', 'End date', 'Regular qty', 'Overtime qty', 'Billing mode', 'Labour unit', 'Distance (km)', 'Invoice #', 'Invoice status', 'Invoice total', 'Currency', 'Notes']
@@ -1144,12 +1145,16 @@ export default function JobsTrackerPage() {
     }
     // BOM + CRLF so Excel opens the UTF-8 cleanly.
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
     const d = new Date()
-    a.href = url
-    a.download = `jobs-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.csv`
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+    const name = `jobs-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.csv`
+    // Through the seam, so a phone gets the share sheet and a failure is visible.
+    // Pass the CSV_MIME constant, NOT blob.type — the parameterised
+    // 'text/csv;charset=utf-8;' is rejected by showSaveFilePicker's accept map.
+    try {
+      await deliverFile(blob, name, CSV_MIME, { title: 'Jobs export' })
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not download the CSV')
+    }
   }
 
   return (

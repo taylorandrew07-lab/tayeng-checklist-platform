@@ -30,6 +30,19 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
   `SET check_function_bodies = off`.
 - **Cross-role pages must be in `SHARED_ROUTES`** (`src/app/(dashboard)/layout.tsx:145`) or
   users get bounced to their own role's home.
+- **An installed iPhone app cannot download. At all.** In an iOS PWA (`display: standalone`
+  — which is what our surveyors run) there is no download manager, so
+  `Content-Disposition: attachment` has no consumer, `<a download>` on a blob is inert, and
+  navigating to a file renders it chrome-less with no share button. `navigator.share({files})`
+  is the **only** way a file leaves the app — and it doubles as "save", because the iOS sheet's
+  first row is Save to Files. Never label a control that opens a URL "Download". Ask
+  `isIosStandalone()` (`lib/pdf/deliver.ts`); it is deliberately AND-ed with an iOS test because
+  installed Android and desktop PWAs match `display-mode: standalone` too and download fine.
+- **A file must exist before the gesture that shares it.** `navigator.share` and
+  `showSaveFilePicker` need an unspent user gesture, so anything that awaits a render or a fetch
+  and *then* shares has already lost it. That's why the job PDF is two taps on mobile:
+  `fetchJobPdfFile()` then `shareFile()`. Delivery functions **throw** rather than return `void` —
+  a silently-resolving delivery is how the iPhone bug hid for months.
 - **Don't trust "it submitted" as proof it saved.** On flaky mobile the request may never
   land. The submit path is retry-and-verify for exactly this reason; keep new write paths
   verifying, and read `lib/offline/sync.ts` before touching any of it.
@@ -72,7 +85,8 @@ Each exists because the logic had already drifted across surfaces once.
 | Creating any job (incl. future AI/WhatsApp intake) | `lib/jobs/drafts.ts` — `createDraftJob(payload, source)` |
 | Whether a job gets a report number | `lib/jobs/reportPolicy.ts` (mirrors the mig 136 trigger) |
 | Hours vs days wording + metrics | `lib/jobs/labourUnit.ts` |
-| Downloading/sharing any generated file | `lib/pdf/deliver.ts` — shares on mobile, downloads on desktop |
+| Downloading/sharing any generated file | `lib/pdf/deliver.ts` — shares on mobile, saves on desktop, throws on failure |
+| Getting a checklist report out (every role) | `components/job/JobPdfButton.tsx` — one control, one behaviour |
 | Picking image files (incl. USB import) | `lib/files/pickImageFiles.ts` |
 | Repeatable-entry ordering | `lib/checklist/entryOrder.ts` |
 | Status badges | `components/job/StatusPill.tsx` |

@@ -106,7 +106,7 @@ import FieldRenderer from '@/components/job/FieldRenderer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
-import { deliverJobPdf, isMobileDevice, openJobPdfInBrowser } from '@/lib/pdf/deliver'
+import JobPdfButton from '@/components/job/JobPdfButton'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
 import { advanceWorkflowTo, WORKFLOW, isJobLocked } from '@/lib/jobs/tracker'
 import { completeJob, COMPLETE_LABEL } from '@/lib/jobs/complete'
@@ -246,21 +246,9 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [submitting, setSubmitting] = useState(false)
-    const [sharing, setSharing] = useState(false)
-
-    // Get the report onto the device. Mobile opens the PDF endpoint in a new tab (the
-    // native viewer handles save/share — no Web-Share-API hang); desktop downloads.
-    async function downloadPdf() {
-      if (isMobileDevice()) { openJobPdfInBrowser(jobId); return }
-      setSharing(true)
-      try {
-        await deliverJobPdf(jobId)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not download the report.')
-      } finally {
-        setSharing(false)
-      }
-    }
+    // Getting the report onto the device lives entirely in <JobPdfButton> — it is the
+    // same control on every role's page, and it handles the iPhone case the old inline
+    // handler here could not (it opened a tab and never produced a file at all).
     const [isDirty, setIsDirty] = useState(false)
     const [saveError, setSaveError] = useState<string | null>(null)
     const [lastSaved, setLastSaved] = useState<Date | null>(null)
@@ -1637,13 +1625,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
               <p className="text-xs text-green-600">This checklist is read-only.</p>
             </div>
             {!hideInlinePdf && (
-              <button
-                onClick={downloadPdf}
-                disabled={sharing}
+              <JobPdfButton
+                jobId={jobId}
                 className="btn-secondary text-xs py-1.5 px-3"
-              >
-                {sharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Download / Share PDF
-              </button>
+                iconClassName="h-3.5 w-3.5"
+              />
             )}
           </div>
         )}
@@ -2175,9 +2161,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             page provides its own header download. */}
         {readOnly && !isSubmitted && !hideInlinePdf && (
           <div className="flex justify-end">
-            <button onClick={downloadPdf} disabled={sharing} className="btn-primary">
-              {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download / Share PDF
-            </button>
+            <JobPdfButton jobId={jobId} className="btn-primary" />
           </div>
         )}
 

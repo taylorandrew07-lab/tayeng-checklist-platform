@@ -24,7 +24,7 @@ import { UHT_TEMPLATE_ID } from '@/lib/uht/fields'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import { findOrCreateVessel } from '@/lib/vessels/api'
-import { deliverJobPdf } from '@/lib/pdf/deliver'
+import JobPdfButton from '@/components/job/JobPdfButton'
 import { parseVesselName, withVesselPrefix } from '@/lib/utils'
 
 // shortLabel is what a phone shows — see the tab strip below.
@@ -56,19 +56,6 @@ export default function AdminChecklistDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [sharing, setSharing] = useState(false)
-
-  // Share (mobile) or download (desktop) the server-rendered checklist PDF.
-  async function downloadPdf() {
-    setSharing(true)
-    try {
-      await deliverJobPdf(jobId)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not download the report.')
-    } finally {
-      setSharing(false)
-    }
-  }
   const [tab, setTabState] = useState<DetailTab>('overview')
   // Persist the active tab in the URL (?tab=) so reopening or reloading this job —
   // e.g. a mobile/desktop PWA returning from the background, or navigating away and
@@ -268,10 +255,11 @@ export default function AdminChecklistDetailPage() {
         </div>
         <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-shrink-0">
           {!!job.submitted_at && (
-            <button onClick={downloadPdf} disabled={sharing} className={`btn-secondary ${TAP_BTN}`} title="Download / Share PDF" aria-label="Download / Share PDF">
-              {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              <span className="hidden sm:inline">Download / Share PDF</span>
-            </button>
+            <JobPdfButton
+              jobId={jobId}
+              className={`btn-secondary ${TAP_BTN}`}
+              labelClassName="hidden sm:inline"
+            />
           )}
           {/* The SAME control a surveyor gets — admins do fieldwork too, so the word
               and the behaviour must not differ by role. The old "Mark submitted"

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatDate, vesselWithVoyage, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import EmptyState from '@/components/ui/EmptyState'
-import { deliverFile, PDF_MIME } from '@/lib/pdf/deliver'
+import { deliverFile, PDF_MIME, CSV_MIME } from '@/lib/pdf/deliver'
 import { WORKFLOW, isJobLocked, LOCKED_STATUSES } from '@/lib/jobs/tracker'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
@@ -228,7 +228,7 @@ export default function SurveyorDashboard() {
   })
 
   // Download the selected timeframe's work as CSV (one row per job + a totals row).
-  function downloadCsv() {
+  async function downloadCsv() {
     const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
     // Each row carries its job's unit and the totals are per unit — a spreadsheet
     // must never be able to add an hours quantity to a days one (mig 148).
@@ -248,12 +248,14 @@ export default function SurveyorDashboard() {
     }
     // BOM + CRLF so Excel opens the UTF-8 cleanly.
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `my-work-${range.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    // Through the seam, so a phone gets the share sheet and a failure is visible.
+    // Pass the CSV_MIME constant, NOT blob.type — the parameterised
+    // 'text/csv;charset=utf-8;' is rejected by showSaveFilePicker's accept map.
+    try {
+      await deliverFile(blob, `my-work-${range.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`, CSV_MIME, { title: 'My work' })
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not download the CSV')
+    }
   }
 
   // A clean, branded PDF work statement for the selected period — the jobs, tallied
