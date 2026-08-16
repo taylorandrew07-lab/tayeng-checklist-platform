@@ -679,6 +679,33 @@ export async function updateJobField(jobId: string, patch: Record<string, any>):
   return {}
 }
 
+/**
+ * Turn a job's report-number requirement on or off — THE seam for that flag, used by
+ * the jobs-grid Report # cell and the admin job page alike.
+ *
+ * Why not a plain `updateJobField({ report_not_required: false })`: set_report_number
+ * is a BEFORE **INSERT** trigger, so clearing the flag on an existing job leaves it
+ * with no number at all — it just joins the "missing a report number" bucket, which
+ * is how a job a surveyor mis-flagged stayed unnumbered. The RPC (mig 189) clears the
+ * flag AND issues the number from the single source, in one transaction.
+ *
+ * `releaseNumber` is required to move a job that ALREADY has an issued number to
+ * N/A — the RPC refuses otherwise, so a number can only be given back deliberately.
+ *
+ * Resolves with the job's resulting report number (null when it is now N/A).
+ */
+export async function setJobReportRequirement(
+  jobId: string,
+  required: boolean,
+  releaseNumber = false,
+): Promise<{ error?: string; reportNumber?: string | null }> {
+  const { data, error } = await createClient().rpc('set_job_report_requirement', {
+    p_job_id: jobId, p_required: required, p_release_number: releaseNumber,
+  })
+  if (error) return { error: error.message }
+  return { reportNumber: (data as string | null) ?? null }
+}
+
 /** Report number `YY-MM-NNN` from a date + running sequence (matches the real docs). */
 export function formatReportNumber(dateISO: string, seq: number): string {
   const d = new Date(dateISO)

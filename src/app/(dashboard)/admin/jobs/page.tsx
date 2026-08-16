@@ -31,8 +31,10 @@ import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 import {
   WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, nextStatusFor, isJobLocked,
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
+  setJobReportRequirement,
   type TrackerRow,
 } from '@/lib/jobs/tracker'
+import { confirmDialog } from '@/components/ui/confirm'
 import type { WorkflowStatus, Invoice } from '@/lib/types/database'
 import { useStickyState } from '@/lib/hooks/useStickyState'
 import { InvoiceStatusPill, CargoStatusPill, WorkflowPill } from '@/components/job/StatusPill'
@@ -269,6 +271,8 @@ interface CellCtx {
   patchRow: (id: string, patch: Partial<TrackerRow>, dbPatch: Record<string, any>) => void
   changeStatus: (id: string, status: WorkflowStatus) => void
   advanceStatus: (id: string, from: WorkflowStatus, to: WorkflowStatus) => void
+  /** N/A ⇄ numbered. Not a patchRow — see setReportRequired below. */
+  setReportRequired: (r: TrackerRow, required: boolean) => void
 }
 interface ColumnDef {
   key: string
@@ -289,13 +293,16 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   { key: 'report', label: 'Report #', sortKey: 'report', defaultVisible: true, width: 130, min: 90,
-    cell: (r, { patchRow }) => (
+    cell: (r, { patchRow, setReportRequired }) => (
       <ReportCell reportNumber={r.report_number} notRequired={r.report_not_required}
         onSaveNumber={v => {
-          if (isNaText(v)) { const p = { report_not_required: true, report_number: null }; return patchRow(r.id, p, p) }
+          // Typing "N/A" is the same act as picking N/A from the selector, so it takes
+          // the same route — the flag, never a literal report_number (which would
+          // collide on uq_jobs_report_number the second time).
+          if (isNaText(v)) return setReportRequired(r, false)
           patchRow(r.id, { report_number: v, report_not_required: false }, { report_number: v, report_not_required: false })
         }}
-        onSetNA={na => { const p = na ? { report_not_required: true, report_number: null } : { report_not_required: false }; patchRow(r.id, p, p) }} />
+        onSetNA={na => setReportRequired(r, !na)} />
     ) },
   { key: 'type', label: 'Type', sortKey: 'type', defaultVisible: true, width: 150, min: 100,
     cell: (r, { patchRow }) => (
@@ -992,7 +999,29 @@ export default function JobsTrackerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [mutate])
 
-  const cellCtx = useMemo<CellCtx>(() => ({ patchRow, changeStatus, advanceStatus }), [patchRow, changeStatus, advanceStatus])
+  // Deliberately NOT patchRow: clearing report_not_required with a plain UPDATE
+  // leaves the job with no number, because set_report_number is a BEFORE INSERT
+  // trigger. The RPC (mig 189) clears the flag and issues the number together, so
+  // the resulting number isn't known until it answers — hence the two-step patch.
+  const setReportRequired = useCallback(async (r: TrackerRow, required: boolean) => {
+    if (r.report_not_required === !required) return
+    if (!required && r.report_number && !(await confirmDialog({
+      message: `Mark "${r.title}" as not requiring a report? Report number ${r.report_number} will be released.`,
+      danger: true, confirmLabel: 'Release number',
+    }))) return
+
+    const prev = rows
+    suppressUntil.current = Date.now() + 2500
+    setRows(rs => rs.map(x => x.id === r.id
+      ? { ...x, report_not_required: !required, report_number: required ? x.report_number : null }
+      : x))
+    const res = await setJobReportRequirement(r.id, required, !required && !!r.report_number)
+    if (res.error) { setRows(prev); toast.error(res.error); return }
+    setRows(rs => rs.map(x => x.id === r.id ? { ...x, report_number: res.reportNumber ?? null } : x))
+    if (res.reportNumber) toast.success(`Report number ${res.reportNumber} assigned`)
+  }, [rows])
+
+  const cellCtx = useMemo<CellCtx>(() => ({ patchRow, changeStatus, advanceStatus, setReportRequired }), [patchRow, changeStatus, advanceStatus, setReportRequired])
 
   function handleSort(key: SortKey) {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' ? 'desc' : 'asc' })

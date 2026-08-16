@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
+import { setJobReportRequirement } from '@/lib/jobs/tracker'
+import { typeSkipsReportNumber } from '@/lib/jobs/reportPolicy'
 import {
   ArrowLeft, Loader2, Save, Download, Trash2, CheckCircle2,
   ClipboardList, ListChecks, FolderOpen, Receipt,
@@ -80,7 +82,13 @@ export default function AdminChecklistDetailPage() {
     port_location: '',
     voyage_number: '',
     notes: '',
+    report_not_required: false,
   })
+  // Some job kinds never carry a report number whatever anyone ticks (an Initial or
+  // Interim draught survey, hatch testing). Same rule the DB enforces — mig 189's
+  // type_skips_report_number() — so the control is disabled rather than offering a
+  // change the RPC would refuse.
+  const reportFixedByType = typeSkipsReportNumber(job?.job_type, job?.job_stage)
   // Conditional Stage qualifier — only the broad survey types carry one.
   const STAGE_OPTIONS: Record<string, { label: string; options: string[] }> = {
     'Draught Survey': { label: 'Stage', options: ['Initial', 'Interim', 'Final'] },
@@ -146,6 +154,7 @@ export default function AdminChecklistDetailPage() {
       port_location: jobData.port_location ?? '',
       voyage_number: jobData.voyage_number ?? '',
       notes: jobData.notes ?? '',
+      report_not_required: !!jobData.report_not_required,
     })
     setLoading(false)
   }
@@ -193,6 +202,28 @@ export default function AdminChecklistDetailPage() {
 
       if (err) { setError(err.message); return }
       if (!data || data.length === 0) { setError('Save was blocked — permission denied or the job no longer exists.'); return }
+
+      // The report-number flag goes through its own RPC, never the update above:
+      // set_report_number is BEFORE INSERT only, so clearing the flag with a plain
+      // UPDATE would leave the job unnumbered instead of issuing a number.
+      if (editForm.report_not_required !== !!job.report_not_required) {
+        const goingNA = editForm.report_not_required
+        // Giving an issued number back to the series is the one destructive half, so
+        // it is confirmed by name. Declining only skips the flag — everything else on
+        // the form has already saved and must not be rolled back with it.
+        const releasing = goingNA && !!job.report_number
+        const ok = !releasing || await confirmDialog({
+          message: `Mark this job "no report required"? Report number ${job.report_number} will be released and the job will show N/A.`,
+          danger: true, confirmLabel: 'Release number',
+        })
+        if (ok) {
+          const res = await setJobReportRequirement(jobId, !goingNA, releasing)
+          if (res.error) { setError(res.error); return }
+          toast.success(res.reportNumber
+            ? `Report number ${res.reportNumber} assigned`
+            : 'Job marked as not requiring a report')
+        }
+      }
 
       setEditMode(false)
       toast.success('Job saved')
@@ -404,11 +435,51 @@ export default function AdminChecklistDetailPage() {
                   <label className="label-base">Notes</label>
                   <textarea value={editForm.notes} onChange={(e) => setEditForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="input-base resize-y" placeholder="e.g. call number, gang count, special instructions…" />
                 </div>
+
+                {/* The only place a mis-flagged job can be repaired. The same tick sits
+                    on both New Job forms, but until now it vanished the moment the job
+                    existed — so a surveyor's stray tick was permanent from every screen
+                    an admin actually opens. Unticking ISSUES the number (mig 189); it
+                    does not merely leave the job in the "missing a number" bucket. */}
+                <div>
+                  <label className="label-base">Report number</label>
+                  <div className="text-sm text-gray-900 mb-2 tnum">
+                    {job.report_number
+                      ? job.report_number
+                      : <span className="italic text-gray-400">{job.report_not_required ? 'N/A — no report required' : 'Not yet assigned'}</span>}
+                  </div>
+                  <label className={`flex items-start gap-3 py-2 ${reportFixedByType ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
+                      disabled={reportFixedByType}
+                      checked={editForm.report_not_required}
+                      onChange={(e) => setEditForm(p => ({ ...p, report_not_required: e.target.checked }))}
+                      className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm text-gray-700">No report required <span className="text-gray-400">— shows N/A on the jobs list</span></span>
+                  </label>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {reportFixedByType
+                      ? `A ${job.job_stage ? `${job.job_stage} ` : ''}${job.job_type} never carries a report number — only the Final of a draught-survey voyage does.`
+                      : 'Untick to put this job back in the report series — a number is assigned when you save.'}
+                  </p>
+                </div>
               </div>
             ) : (
               // Stacks on a phone, matching the edit-mode grids above: at 360px two
               // columns are ~136px each and a vessel/client name wraps to three lines.
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Stated outright, because the header subtitle simply omits the number
+                    when there isn't one — so "N/A on purpose" and "nobody has numbered
+                    it yet" used to look identical from here. */}
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Report #</dt>
+                  <dd className="mt-1 text-sm text-gray-900 tnum">
+                    {job.report_number
+                      ? job.report_number
+                      : <span className="italic text-gray-400">{job.report_not_required ? 'N/A — no report required' : 'Not yet assigned'}</span>}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Vessel</dt>
                   <dd className="mt-1 text-sm text-gray-900">{job.vessel_name
