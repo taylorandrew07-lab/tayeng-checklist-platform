@@ -85,20 +85,30 @@ try {
   if (le) throw new Error('insert locations: ' + le.message)
   locA = locs[0].id; locB = locs[1].id
 
-  const { data: items, error: ie } = await admin.from('inventory_items').insert([
-    {
-      kind: 'consumable', name: `SMOKE Bottles ${stamp}`,
-      unit_label: 'bottle', pack_label: 'box', units_per_pack: 24, min_qty_units: 24,
-    },
-    { kind: 'asset', name: `SMOKE Gauge ${stamp}`, serial_number: `SN-${stamp}` },
-  ]).select('id')
-  if (ie) throw new Error('insert items: ' + ie.message)
-  itemId = items[0].id; assetId = items[1].id
+  // Two separate inserts, deliberately. A PostgREST BULK insert of objects with
+  // different keys sends an explicit NULL for every key a row is missing — it
+  // does not fall back to the column DEFAULT — so a mixed batch here fails on
+  // unit_label NOT NULL. Worth knowing before writing any bulk import.
+  const { data: consumable, error: ie } = await admin.from('inventory_items').insert({
+    kind: 'consumable', name: `SMOKE Bottles ${stamp}`,
+    unit_label: 'bottle', pack_label: 'box', units_per_pack: 24, min_qty_units: 24,
+  }).select('id').single()
+  if (ie) throw new Error('insert consumable: ' + ie.message)
+  itemId = consumable.id
 
-  // Someone else's movement, so we can prove the surveyor cannot see it.
+  const { data: asset, error: ae } = await admin.from('inventory_items').insert({
+    kind: 'asset', name: `SMOKE Gauge ${stamp}`, serial_number: `SN-${stamp}`,
+  }).select('id').single()
+  if (ae) throw new Error('insert asset: ' + ae.message)
+  assetId = asset.id
+
+  // A real person who is NOT our surveyor. The seed movements are attributed to
+  // them, which doubles as the fixture for the "can't see other people's
+  // movements" check further down.
   const { data: otherProf } = await admin.from('profiles')
     .select('id').eq('is_active', true).neq('id', userId).limit(1).single()
   otherId = otherProf?.id
+  if (!otherId) throw new Error('need one other active profile to attribute the seed to')
 
   cleanup.push(async () => {
     await admin.from('inventory_movements').delete().in('item_id', [itemId, assetId])
@@ -108,16 +118,22 @@ try {
     await admin.from('inventory_locations').delete().in('id', [locA, locB])
   })
 
-  // Seed 3 boxes = 72 bottles at A, as an admin would after a delivery.
-  const { error: seedErr } = await admin.rpc('inventory_record_movement', {
-    p_item_id: itemId, p_kind: 'receive', p_qty_units: 72,
-    p_to_location_id: locA, p_packs: 3, p_client_ref: uuid(),
-  })
+  // Seed 3 boxes = 72 bottles at A, plus the gauge.
+  //
+  // Written straight into the ledger as the service role rather than through the
+  // RPC: the RPC reads auth.uid(), which is NULL for a service-role client with
+  // no JWT, so it correctly refuses. (Worth knowing before anyone tries to seed
+  // inventory from an /api route — do it with a direct insert, or act as a user.)
+  // The rollup trigger still fires, so this doubles as proof it is armed.
+  const { error: seedErr } = await admin.from('inventory_movements').insert([
+    { item_id: itemId, kind: 'receive', qty_units: 72, to_location_id: locA,
+      packs_at_time: 3, units_per_pack_at_time: 24, actor_id: otherId, client_ref: uuid() },
+    { item_id: assetId, kind: 'receive', qty_units: 1, to_location_id: locA,
+      packs_at_time: null, units_per_pack_at_time: 1, actor_id: otherId, client_ref: uuid() },
+  ])
   if (seedErr) throw new Error('seed receive: ' + seedErr.message)
-  await admin.rpc('inventory_record_movement', {
-    p_item_id: assetId, p_kind: 'receive', p_qty_units: 1, p_to_location_id: locA, p_client_ref: uuid(),
-  })
   if (await stockAt(itemId, locA) !== 72) throw new Error('seed did not land — rollup trigger not firing?')
+  ok('the rollup trigger fires on a ledger insert (0 → 72)')
 
   console.log('Provisioned: 2 locations, 1 consumable (72 bottles at A), 1 asset. Acting as the surveyor:\n')
 
