@@ -16,6 +16,7 @@ import { expiryStatus } from '@/lib/personal-docs/api'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
 import MovementDialog from './MovementDialog'
+import ItemRowActions from './ItemRowActions'
 import type { InventoryLocation, ItemWithStock } from '@/lib/inventory/types'
 
 const LEVEL_BADGE = {
@@ -25,7 +26,7 @@ const LEVEL_BADGE = {
   ok: null,
 }
 
-export default function StockList({ canEdit }: { canEdit: boolean }) {
+export default function StockList({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const [items, setItems] = useState<ItemWithStock[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
   const [people, setPeople] = useState<{ id: string; full_name: string }[]>([])
@@ -112,7 +113,12 @@ export default function StockList({ canEdit }: { canEdit: boolean }) {
       align: 'right' as const,
       mobileLabel: '',
       cell: (i: ItemWithStock) => (
-        <button className="btn-secondary min-h-11 sm:min-h-0" onClick={() => setActive(i)}>Update</button>
+        <div className="flex items-center justify-end gap-1">
+          <button className="btn-secondary min-h-11 sm:min-h-0" onClick={() => setActive(i)}>Update</button>
+          {/* Removing an item belongs on the item, not two tabs away in Manage —
+              that is where anyone looks for it. */}
+          {isAdmin && <ItemRowActions item={i} onDone={load} />}
+        </div>
       ),
     }] : []),
   ]

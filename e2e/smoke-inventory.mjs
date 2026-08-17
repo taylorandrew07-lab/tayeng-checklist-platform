@@ -110,12 +110,29 @@ try {
   otherId = otherProf?.id
   if (!otherId) throw new Error('need one other active profile to attribute the seed to')
 
+  // Cleanup MUST go through inventory_purge_item (migration 193).
+  //
+  // A plain delete of inventory_movements is refused even for the service role —
+  // trg_inventory_movements_immutable is deliberately that strong. The first
+  // version of this script did exactly that, the delete raised, every later step
+  // in the stack was skipped, and four SMOKE items sat on the live Inventory page
+  // until someone noticed them. Migration 193 both fixed that and swept them up.
+  //
+  // Locations can only go AFTER their items: the ON DELETE RESTRICT FKs on the
+  // movement rows hold them until the history is gone.
   cleanup.push(async () => {
-    await admin.from('inventory_movements').delete().in('item_id', [itemId, assetId])
-    await admin.from('inventory_stock').delete().in('item_id', [itemId, assetId])
-    await admin.from('inventory_reminders').delete().in('item_id', [itemId, assetId])
-    await admin.from('inventory_items').delete().in('id', [itemId, assetId])
-    await admin.from('inventory_locations').delete().in('id', [locA, locB])
+    // A run that died between check_out and check_in would leave held_by set,
+    // and purge refuses a held asset by design. Release it first so cleanup is
+    // unconditional — this is teardown, not a user action.
+    await admin.from('inventory_items')
+      .update({ held_by: null, held_since: null }).in('id', [itemId, assetId])
+
+    for (const id of [itemId, assetId]) {
+      const { error } = await admin.rpc('inventory_purge_item', { p_item_id: id })
+      if (error) console.log(`  (cleanup warn: purge ${id}: ${error.message})`)
+    }
+    const { error: locErr } = await admin.from('inventory_locations').delete().in('id', [locA, locB])
+    if (locErr) console.log(`  (cleanup warn: locations: ${locErr.message})`)
   })
 
   // Seed 3 boxes = 72 bottles at A, plus the gauge.
@@ -293,6 +310,12 @@ try {
   const rebuild = await sb.rpc('inventory_stock_rebuild', {})
   if (rebuild.error) ok('inventory_stock_rebuild is admin-only — correctly refused')
   else bad('inventory_stock_rebuild WAS ALLOWED for a surveyor')
+
+  // The purge RPC destroys history, so it must be admin-only even though every
+  // surveyor holds EXECUTE on it (migration 193 gates on is_admin() inside).
+  const purge = await sb.rpc('inventory_purge_item', { p_item_id: itemId })
+  if (purge.error) ok('inventory_purge_item is admin-only — correctly refused')
+  else bad('inventory_purge_item WAS ALLOWED for a surveyor')
 
   // ---------- the rollup must equal the ledger ----------
   console.log('')

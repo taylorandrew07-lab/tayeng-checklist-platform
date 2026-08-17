@@ -17,6 +17,7 @@ import { unitsAt } from '@/lib/inventory/stock'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
 import MovementDialog from './MovementDialog'
+import ItemRowActions from './ItemRowActions'
 import type { InventoryLocation, ItemWithStock } from '@/lib/inventory/types'
 
 const SERVICE_LABEL: Record<string, { label: string; tone: 'neutral' | 'warn' | 'danger' }> = {
@@ -26,7 +27,7 @@ const SERVICE_LABEL: Record<string, { label: string; tone: 'neutral' | 'warn' | 
   retired: { label: 'Retired', tone: 'danger' },
 }
 
-export default function EquipmentList({ canEdit }: { canEdit: boolean }) {
+export default function EquipmentList({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const [items, setItems] = useState<ItemWithStock[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
   const [people, setPeople] = useState<{ id: string; full_name: string }[]>([])
@@ -119,9 +120,14 @@ export default function EquipmentList({ canEdit }: { canEdit: boolean }) {
       align: 'right' as const,
       mobileLabel: '',
       cell: (i: ItemWithStock) => (
-        <button className="btn-secondary min-h-11 sm:min-h-0" onClick={() => setActive(i)}>
-          {i.held_by ? 'Check in' : 'Check out'}
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          <button className="btn-secondary min-h-11 sm:min-h-0" onClick={() => setActive(i)}>
+            {i.held_by ? 'Check in' : 'Check out'}
+          </button>
+          {/* Removing a piece of equipment belongs on the equipment, not two tabs
+              away in Manage — that is where anyone looks for it. */}
+          {isAdmin && <ItemRowActions item={i} onDone={load} />}
+        </div>
       ),
     }] : []),
   ]

@@ -209,10 +209,39 @@ export async function setItemActive(id: string, is_active: boolean): Promise<{ e
   return updateItem(id, { is_active })
 }
 
+/**
+ * Plain delete. Succeeds only for an item with no history — the FKs see to that.
+ * Use purgeItem() when the caller has knowingly chosen to destroy the history too.
+ */
 export async function deleteItem(id: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('inventory_items').delete().eq('id', id)
   if (error) return { error: friendlyItemError(error) }
   return {}
+}
+
+/**
+ * Delete an item AND its history. Admin only (migration 193).
+ *
+ * This is the escape hatch for a catalogue mistake — a typo'd item, a duplicate,
+ * something added while working out how the page worked. It is NOT the way to
+ * fix a wrong movement: reverseMovement() is, because that keeps both the error
+ * and the correction on the record.
+ *
+ * Returns how many movements were destroyed, so the UI can say so afterwards.
+ */
+export async function purgeItem(id: string): Promise<{ error?: string; movements?: number }> {
+  const { data, error } = await createClient().rpc('inventory_purge_item', { p_item_id: id })
+  if (error) return { error: error.message }
+  return { movements: Number(data ?? 0) }
+}
+
+/** How much history an item carries — what a delete confirmation needs to say. */
+export async function countItemMovements(id: string): Promise<number> {
+  const { count } = await createClient()
+    .from('inventory_movements')
+    .select('id', { count: 'exact', head: true })
+    .eq('item_id', id)
+  return count ?? 0
 }
 
 function friendlyItemError(error: { code?: string; message: string }): string {

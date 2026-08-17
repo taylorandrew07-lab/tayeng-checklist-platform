@@ -84,8 +84,8 @@ export default function InventoryPage() {
         </div>
       ) : (
         <>
-          {tab === 'stock' && <StockList key={refresh} canEdit={isStaff} />}
-          {tab === 'equipment' && <EquipmentList key={refresh} canEdit={isStaff} />}
+          {tab === 'stock' && <StockList key={refresh} canEdit={isStaff} isAdmin={isAdmin} />}
+          {tab === 'equipment' && <EquipmentList key={refresh} canEdit={isStaff} isAdmin={isAdmin} />}
           {tab === 'mine' && isStaff && <MyActivity onChanged={() => setRefresh(n => n + 1)} />}
           {tab === 'history' && canSeeHistory && <HistoryTable />}
           {tab === 'manage' && isAdmin && (

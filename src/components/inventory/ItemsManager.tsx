@@ -10,15 +10,15 @@
 // stock it carries would no longer make sense.
 
 import { useEffect, useState } from 'react'
-import { Boxes, Gauge, Loader2, Package, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, Boxes, Gauge, Loader2, Package, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
-import { RowDeleteButton } from '@/components/ui/RowDeleteButton'
 import { ResponsiveTable, type Column } from '@/components/ui/ResponsiveTable'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import EmptyState from '@/components/ui/EmptyState'
-import { createItem, deleteItem, listAllItems, updateItem, type ItemInput } from '@/lib/inventory/api'
+import { createItem, listAllItems, updateItem, type ItemInput } from '@/lib/inventory/api'
+import { archiveItemWithPrompt, removeItemWithPrompt } from '@/lib/inventory/removeItem'
 import { nextDueDate } from '@/lib/inventory/calibration'
 import { formatQtyShort } from '@/lib/inventory/packs'
 import type { InventoryKind, ItemWithStock, ServiceStatus } from '@/lib/inventory/types'
@@ -156,18 +156,16 @@ export default function ItemsManager() {
     setOpen(false); void load()
   }
 
+  // Both go through lib/inventory/removeItem.ts, so Manage asks exactly the same
+  // question the Stock and Equipment rows ask.
   async function remove(i: ItemWithStock) {
-    const { error: err } = await deleteItem(i.id)
-    if (!err) { toast.success('Item deleted'); void load(); return }
-    const ok = await confirmDialog({
-      title: `${i.name} can't be deleted`,
-      message: `${err}\n\nArchive it instead? It leaves the lists but keeps its history.`,
-      confirmLabel: 'Archive it',
-    })
-    if (!ok) return
-    const res = await updateItem(i.id, { is_active: false })
-    if (res.error) { toast.error(res.error); return }
-    toast.success('Archived'); void load()
+    const result = await removeItemWithPrompt(i, { isAdmin: true })
+    if (result === 'deleted') void load()
+  }
+
+  async function archive(i: ItemWithStock) {
+    const result = await archiveItemWithPrompt(i)
+    if (result === 'archived') void load()
   }
 
   // Offer the next due date the moment there is enough to compute one, but never
@@ -220,15 +218,27 @@ export default function ItemsManager() {
       mobileLabel: '',
       cell: i => (
         <div className="flex items-center justify-end gap-1">
-          <button className="btn-ghost" onClick={() => openEdit(i)} aria-label={`Edit ${i.name}`}>
+          <button className="btn-ghost px-2" onClick={() => openEdit(i)} aria-label={`Edit ${i.name}`}>
             <Pencil className="h-4 w-4 text-gray-400" />
           </button>
-          <RowDeleteButton
-            onDelete={() => remove(i)}
-            ariaLabel={`Delete ${i.name}`}
-            itemLabel={i.name}
-            confirmMessage={`Delete ${i.name}? This only works if it has no history — otherwise you'll be offered Archive.`}
-          />
+          <button
+            className="btn-ghost px-2"
+            onClick={() => archive(i)}
+            aria-label={i.is_active ? `Archive ${i.name}` : `Restore ${i.name}`}
+            title={i.is_active ? 'Archive — hides it but keeps the record' : 'Restore'}
+          >
+            {i.is_active
+              ? <Archive className="h-4 w-4 text-gray-400" />
+              : <ArchiveRestore className="h-4 w-4 text-gray-400" />}
+          </button>
+          <button
+            className="btn-ghost px-2"
+            onClick={() => remove(i)}
+            aria-label={`Delete ${i.name}`}
+            title="Delete"
+          >
+            <Trash2 className="h-4 w-4 text-gray-400 transition-colors hover:text-red-600" />
+          </button>
         </div>
       ),
     },
