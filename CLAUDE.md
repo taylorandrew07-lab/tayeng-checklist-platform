@@ -68,6 +68,14 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
 - **A service-role client has no `auth.uid()`.** Any `SECURITY DEFINER` RPC gated on
   `is_active_staff()` correctly refuses it, so `/api/*` routes cannot seed through one.
   Write the row directly and let the trigger do its work.
+- **An append-only table needs an escape hatch, or mistakes become permanent.**
+  `inventory_movements` refuses DELETE even from the service role — right for history,
+  but it also made a typo'd item undeletable *and* stopped the smoke test cleaning up
+  after itself (SMOKE rows sat on the live page). Mig 193's answer: UPDATE stays
+  impossible always; DELETE yields only inside `inventory_purge_item()`, which is
+  admin-gated and says out loud how much history it will destroy.
+- **A PostgREST *bulk* insert sends an explicit NULL for every key a row omits** — it
+  does not fall back to the column DEFAULT. Mixed-shape batches fail on `NOT NULL`.
 
 ## Security model
 
