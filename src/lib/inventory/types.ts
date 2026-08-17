@@ -33,8 +33,6 @@ export type LocationKind = 'office' | 'store' | 'vehicle' | 'vessel' | 'other'
 export interface InventoryLocation {
   id: string
   name: string
-  /** Short form for pills and tight table columns ('Main', 'Deco'). */
-  short_name: string | null
   kind: LocationKind
   is_active: boolean
   sort_order: number

@@ -7,13 +7,15 @@ are the only thing that proves the database actually behaves.
 | Script | Guards |
 |---|---|
 | `npm run smoke` | An **admin creates a job, assigns it to a surveyor, and the surveyor completes and submits it** |
-| `npm run smoke-inventory` | **Inventory permissions and the movement RPC** (migrations 190/191) |
+| `npm run smoke-inventory` | **Inventory permissions and the movement RPC** — what a surveyor can and cannot do |
+| `npm run smoke-inventory-admin` | **The inventory admin lifecycle** — add, stock, correct, rename, archive, delete, clean up |
 
 ## Run it
 
 ```bash
 npm run smoke
 npm run smoke-inventory
+npm run smoke-inventory-admin
 ```
 
 It reads Supabase credentials from `.env.local` automatically (or from real
@@ -62,6 +64,26 @@ It also pins the three things most likely to break in silence:
   and confirming through with `p_allow_negative` records reality and flags it.
 - **The rollup** — `inventory_stock` must equal the sum of the ledger at the end.
   Any drift here means something bypassed the trigger.
+
+## What `smoke-inventory-admin` does
+
+The other half of the inventory story: that an admin can genuinely set it up and
+take it apart. It signs in as a throwaway **admin** and drives the exact calls
+the UI makes, so a break here is a break on screen.
+
+Add a location, reject a duplicate name, rename it. Add a consumable with a pack
+size; confirm a consumable cannot be given a calibration date and equipment
+cannot be given a pack size (migration 190's kind CHECK). Receive 3 boxes and
+confirm the expiry stamped the location. Take, move, recount. Rename the item and
+change its pack size — then confirm **history kept the old pack size**, so past
+entries still read as they were recorded. Add equipment, confirm one gauge cannot
+be received into two places, check it out, confirm a checked-out gauge cannot be
+deleted, check it in. Archive and restore. Confirm a location holding stock
+cannot be deleted but can be deactivated. Purge the items, confirm the history
+went with them, confirm a second delete is refused rather than silently ignored,
+and confirm the locations then delete cleanly.
+
+It leaves the database exactly as it found it.
 
 ## When to run it
 

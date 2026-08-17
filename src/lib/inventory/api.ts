@@ -21,7 +21,7 @@ import type {
 // — the same trap documented in lib/vessels/api.ts. Keep these in step with the
 // interfaces in types.ts.
 const LOC_COLS =
-  'id, name, short_name, kind, is_active, sort_order, notes, created_at'
+  'id, name, kind, is_active, sort_order, notes, created_at'
 
 const ITEM_COLS =
   'id, kind, name, category, sku, notes, is_active, unit_label, pack_label, units_per_pack, ' +
@@ -55,7 +55,6 @@ export async function listAllLocations(): Promise<InventoryLocation[]> {
 
 export interface LocationInput {
   name: string
-  short_name?: string | null
   kind?: InventoryLocation['kind']
   sort_order?: number
   notes?: string | null
@@ -294,7 +293,7 @@ export async function listMovements(filter: HistoryFilter = {}): Promise<Movemen
   const [{ data: moves }, { data: items }, { data: locs }, { data: people }] = await Promise.all([
     q,
     supabase.from('inventory_items').select('id, name, unit_label, pack_label'),
-    supabase.from('inventory_locations').select('id, name, short_name'),
+    supabase.from('inventory_locations').select('id, name'),
     supabase.from('profiles').select('id, full_name'),
   ])
 

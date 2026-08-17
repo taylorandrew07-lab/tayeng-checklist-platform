@@ -4,7 +4,7 @@
 // Modelled on JobTypesManager — inline add and rename, re-fetch after every
 // mutation, no optimistic updates.
 //
-// THE DELETE RULE, and why it is in the database rather than here:
+// THE DELETE RULE, and why it lives in the database rather than here:
 // inventory_stock.location_id and both movement FKs are ON DELETE RESTRICT, so
 // removing a location that still holds stock or appears in any history fails at
 // the schema level. We catch that and offer Deactivate instead. History can
@@ -34,11 +34,9 @@ export default function LocationsManager() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newShort, setNewShort] = useState('')
   const [newKind, setNewKind] = useState<LocationKind>('office')
   const [editId, setEditId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
-  const [editShort, setEditShort] = useState('')
 
   async function load() {
     setRows(await listAllLocations())
@@ -52,26 +50,21 @@ export default function LocationsManager() {
     setBusy(true)
     const { error } = await createLocation({
       name,
-      short_name: newShort.trim() || null,
       kind: newKind,
       // Append to the end so a new location never jumps the existing order.
       sort_order: (rows.at(-1)?.sort_order ?? 0) + 10,
     })
     setBusy(false)
     if (error) { toast.error(error); return }
-    setNewName(''); setNewShort(''); setNewKind('office')
-    toast.success('Location added')
+    setNewName(''); setNewKind('office')
+    toast.success(`${name} added`)
     void load()
   }
 
-  function startEdit(l: InventoryLocation) {
-    setEditId(l.id); setEditName(l.name); setEditShort(l.short_name ?? '')
-  }
-
-  async function saveEdit(id: string) {
+  async function saveRename(id: string) {
     const name = editName.trim()
     if (!name) { setEditId(null); return }
-    const { error } = await updateLocation(id, { name, short_name: editShort.trim() || null })
+    const { error } = await updateLocation(id, { name })
     if (error) { toast.error(error); return }
     setEditId(null); void load()
   }
@@ -101,8 +94,8 @@ export default function LocationsManager() {
     const index = rows.findIndex(r => r.id === l.id)
     const swap = rows[index + direction]
     if (!swap) return
-    // Swap the two sort values rather than renumbering the list — one round trip
-    // each, and untouched rows keep whatever spacing they had.
+    // Swap the two sort values rather than renumbering the whole list — one round
+    // trip each, and untouched rows keep whatever spacing they had.
     const [a, b] = await Promise.all([
       updateLocation(l.id, { sort_order: swap.sort_order }),
       updateLocation(swap.id, { sort_order: l.sort_order }),
@@ -113,7 +106,7 @@ export default function LocationsManager() {
 
   async function remove(l: InventoryLocation) {
     const { error } = await deleteLocation(l.id)
-    if (!error) { toast.success('Location deleted'); void load(); return }
+    if (!error) { toast.success(`${l.name} deleted`); void load(); return }
 
     // The schema refused it — offer the thing they actually want.
     const ok = await confirmDialog({
@@ -133,7 +126,7 @@ export default function LocationsManager() {
   }
 
   return (
-    <div className="card p-5 space-y-4">
+    <div className="card space-y-4 p-5">
       <div>
         <h2 className="section-title flex items-center gap-2">
           <MapPin className="h-4 w-4 text-gray-400" />
@@ -146,23 +139,21 @@ export default function LocationsManager() {
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
-          className="input-base flex-1"
+          className="input-base min-h-11 flex-1 sm:min-h-0"
           placeholder="Location name"
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void add() }}
         />
-        <input
-          className="input-base sm:w-32"
-          placeholder="Short"
-          value={newShort}
-          onChange={e => setNewShort(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') void add() }}
-        />
-        <select className="input-base sm:w-40" value={newKind} onChange={e => setNewKind(e.target.value as LocationKind)}>
+        <select
+          className="input-base min-h-11 sm:min-h-0 sm:w-40"
+          value={newKind}
+          onChange={e => setNewKind(e.target.value as LocationKind)}
+          aria-label="Type of location"
+        >
           {KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
         </select>
-        <button className="btn-primary gap-2" onClick={add} disabled={busy || !newName.trim()}>
+        <button className="btn-primary min-h-11 gap-2 sm:min-h-0" onClick={add} disabled={busy || !newName.trim()}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Add
         </button>
@@ -177,17 +168,13 @@ export default function LocationsManager() {
                   className="input-base flex-1"
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') void saveEdit(l.id); if (e.key === 'Escape') setEditId(null) }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') void saveRename(l.id)
+                    if (e.key === 'Escape') setEditId(null)
+                  }}
                   autoFocus
                 />
-                <input
-                  className="input-base w-24"
-                  value={editShort}
-                  placeholder="Short"
-                  onChange={e => setEditShort(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') void saveEdit(l.id); if (e.key === 'Escape') setEditId(null) }}
-                />
-                <button className="btn-ghost" onClick={() => saveEdit(l.id)} aria-label="Save">
+                <button className="btn-ghost" onClick={() => saveRename(l.id)} aria-label="Save">
                   <Check className="h-4 w-4 text-green-600" />
                 </button>
                 <button className="btn-ghost" onClick={() => setEditId(null)} aria-label="Cancel">
@@ -199,7 +186,6 @@ export default function LocationsManager() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={l.is_active ? 'font-medium text-gray-900' : 'text-gray-400'}>{l.name}</span>
-                    {l.short_name && <span className="text-xs text-gray-400">({l.short_name})</span>}
                     {!l.is_active && <Badge tone="neutral">Inactive</Badge>}
                   </div>
                 </div>
@@ -224,13 +210,19 @@ export default function LocationsManager() {
                   >↓</button>
                 </div>
 
-                <button className="btn-ghost" onClick={() => startEdit(l)} aria-label={`Rename ${l.name}`}>
+                <button
+                  className="btn-ghost px-2"
+                  onClick={() => { setEditId(l.id); setEditName(l.name) }}
+                  aria-label={`Rename ${l.name}`}
+                  title="Rename"
+                >
                   <Pencil className="h-4 w-4 text-gray-400" />
                 </button>
                 <button
-                  className="btn-ghost"
+                  className="btn-ghost px-2"
                   onClick={() => toggleActive(l)}
                   aria-label={l.is_active ? `Deactivate ${l.name}` : `Reactivate ${l.name}`}
+                  title={l.is_active ? 'Deactivate — hides it but keeps the record' : 'Reactivate'}
                 >
                   {l.is_active
                     ? <Eye className="h-4 w-4 text-gray-400" />

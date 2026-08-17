@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "smoke": "node e2e/smoke-surveyor-flow.mjs",
     "smoke-inventory": "node e2e/smoke-inventory.mjs",
+    "smoke-inventory-admin": "node e2e/smoke-inventory-admin.mjs",
     "analytics-parity": "node e2e/analytics-parity.mjs",
     "checklist-audit": "node e2e/checklist-audit.mjs"
   },

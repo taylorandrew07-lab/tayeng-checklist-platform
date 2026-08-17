@@ -15,17 +15,20 @@ import PageHeader from '@/components/ui/PageHeader'
 import Tabs from '@/components/ui/Tabs'
 import { createClient } from '@/lib/supabase/client'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
-import StockList from '@/components/inventory/StockList'
+import ConsumablesList from '@/components/inventory/ConsumablesList'
 import EquipmentList from '@/components/inventory/EquipmentList'
 import MyActivity from '@/components/inventory/MyActivity'
 import HistoryTable from '@/components/inventory/HistoryTable'
-import ItemsManager from '@/components/inventory/ItemsManager'
 import LocationsManager from '@/components/inventory/LocationsManager'
 
-type TabKey = 'stock' | 'equipment' | 'mine' | 'history' | 'manage'
+// The two stock tabs ARE the catalogue: each owns adding, editing, archiving and
+// deleting its own kind of item. There is deliberately no separate "Items" list —
+// that showed the same rows a second time, and made "Consumables" look like a
+// button you could click into when it was only an Add action.
+type TabKey = 'consumables' | 'equipment' | 'mine' | 'history' | 'locations'
 
 export default function InventoryPage() {
-  const [tab, setTab] = useState<TabKey>('stock')
+  const [tab, setTab] = useState<TabKey>('consumables')
   const [isAdmin, setIsAdmin] = useState(false)
   const [isStaff, setIsStaff] = useState(false)
   const [canSeeHistory, setCanSeeHistory] = useState(false)
@@ -59,11 +62,11 @@ export default function InventoryPage() {
   }, [])
 
   const tabs = [
-    { key: 'stock', label: 'Stock' },
+    { key: 'consumables', label: 'Consumables' },
     { key: 'equipment', label: 'Equipment' },
     ...(isStaff ? [{ key: 'mine', label: 'My activity' }] : []),
     ...(canSeeHistory ? [{ key: 'history', label: 'History' }] : []),
-    ...(isAdmin ? [{ key: 'manage', label: 'Manage' }] : []),
+    ...(isAdmin ? [{ key: 'locations', label: 'Locations' }] : []),
   ]
 
   return (
@@ -84,16 +87,11 @@ export default function InventoryPage() {
         </div>
       ) : (
         <>
-          {tab === 'stock' && <StockList key={refresh} canEdit={isStaff} isAdmin={isAdmin} />}
+          {tab === 'consumables' && <ConsumablesList key={refresh} canEdit={isStaff} isAdmin={isAdmin} />}
           {tab === 'equipment' && <EquipmentList key={refresh} canEdit={isStaff} isAdmin={isAdmin} />}
           {tab === 'mine' && isStaff && <MyActivity onChanged={() => setRefresh(n => n + 1)} />}
           {tab === 'history' && canSeeHistory && <HistoryTable />}
-          {tab === 'manage' && isAdmin && (
-            <div className="space-y-6">
-              <ItemsManager />
-              <LocationsManager />
-            </div>
-          )}
+          {tab === 'locations' && isAdmin && <LocationsManager />}
         </>
       )}
     </div>
