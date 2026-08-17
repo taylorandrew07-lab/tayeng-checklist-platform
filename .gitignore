@@ -44,3 +44,6 @@ graphify-out/
 
 # Local codex dev logs
 .codex-next-dev.*.log
+
+# Contact sheets pulled from the competition (npm run comp-photos sheet)
+.competition-sheet/
