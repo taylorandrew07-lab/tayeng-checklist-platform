@@ -58,6 +58,27 @@ export function movementSentence(m: MovementDetail): string {
   }
 }
 
+/**
+ * The compact form for the consumables list: "Neil took 1 box".
+ *
+ * Name first, because the question this answers is "who has been going through
+ * these" — not "what happened". No location: at a glance you want the person and
+ * the amount, and the full sentence is one tab away in History.
+ */
+export function movementBrief(m: MovementDetail): string {
+  const who = m.actor_name ?? 'Someone'
+  const qty = movementQty(m)
+  switch (m.kind) {
+    case 'take': return `${who} took ${qty}`
+    case 'receive': return `${who} added ${qty}`
+    case 'move': return `${who} moved ${qty}`
+    case 'adjust': return qty ? `${who} recounted (${qty} out)` : `${who} counted it — matched`
+    case 'check_out': return `${who} checked it out`
+    case 'check_in': return `${who} checked it in`
+    case 'correction': return `${who} corrected an entry`
+  }
+}
+
 export function MovementLine({ m }: { m: MovementDetail }) {
   return (
     <span className={m.reversed ? 'text-gray-400 line-through' : ''}>

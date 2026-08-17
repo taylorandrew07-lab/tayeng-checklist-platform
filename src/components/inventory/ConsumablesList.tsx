@@ -11,12 +11,12 @@
 // actions are never stranded off-screen behind a horizontal scroll.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, ArchiveRestore, Boxes, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Boxes, Loader2, Pencil, Plus, Search, Trash2, Users } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Toggle } from '@/components/ui/Toggle'
 import { ResponsiveTable, type Column } from '@/components/ui/ResponsiveTable'
-import { listAllItems, listItems, listLocations, listStaffDirectory } from '@/lib/inventory/api'
+import { listAllItems, listItems, listLocations, listRecentByItem, listStaffDirectory } from '@/lib/inventory/api'
 import { archiveItemWithPrompt, removeItemWithPrompt } from '@/lib/inventory/removeItem'
 import { formatQty, formatQtyShort } from '@/lib/inventory/packs'
 import { stockLevel, unitsAt, byUrgency } from '@/lib/inventory/stock'
@@ -25,7 +25,8 @@ import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
 import MovementDialog from './MovementDialog'
 import ItemFormModal from './ItemFormModal'
-import type { InventoryLocation, ItemWithStock, StaffMember } from '@/lib/inventory/types'
+import { movementBrief } from './movementText'
+import type { InventoryLocation, ItemWithStock, MovementDetail, StaffMember } from '@/lib/inventory/types'
 
 const LEVEL_BADGE = {
   negative: { tone: 'danger' as const, label: 'Needs recount' },
@@ -34,7 +35,9 @@ const LEVEL_BADGE = {
   ok: null,
 }
 
-export default function ConsumablesList({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
+export default function ConsumablesList(
+  { canEdit, isAdmin, canSeeHistory }: { canEdit: boolean; isAdmin: boolean; canSeeHistory: boolean },
+) {
   const [items, setItems] = useState<ItemWithStock[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
   const [people, setPeople] = useState<StaffMember[]>([])
@@ -45,6 +48,7 @@ export default function ConsumablesList({ canEdit, isAdmin }: { canEdit: boolean
   const [moving, setMoving] = useState<ItemWithStock | null>(null)
   const [editing, setEditing] = useState<ItemWithStock | null>(null)
   const [formOpen, setFormOpen] = useState(false)
+  const [recent, setRecent] = useState<Map<string, MovementDetail[]>>(new Map())
 
   // Two people at the same shelf see each other's takes without a refresh.
   const tick = useRealtimeRefresh('inventory_stock')
@@ -56,6 +60,11 @@ export default function ConsumablesList({ canEdit, isAdmin }: { canEdit: boolean
       listStaffDirectory(),
     ])
     setItems(i); setLocations(l); setPeople(p); setLoading(false)
+
+    // Gated: a surveyor's RLS returns only their OWN ledger rows, so this line
+    // would show them their own takes and nobody else's — a half-list wearing
+    // the clothes of a full one.
+    setRecent(canSeeHistory ? await listRecentByItem(i.map(x => x.id)) : new Map())
   }
   useEffect(() => { void load() }, [tick, showArchived, isAdmin])
 
@@ -105,6 +114,23 @@ export default function ConsumablesList({ canEdit, isAdmin }: { canEdit: boolean
             {[i.category, i.units_per_pack > 1 && `${i.units_per_pack} ${i.unit_label} per ${i.pack_label}`]
               .filter(Boolean).join(' · ')}
           </p>
+          {/* Who has been going through these. A consumable has no holder — taking
+              one uses it up — so the honest answer to "who has it?" is the last
+              few people who took it. Only shown to someone who can read the whole
+              ledger; a surveyor sees only their own rows, which would look like
+              a full list and be a partial one. */}
+          {recent.get(i.id)?.length ? (
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-500">
+              <Users className="h-3 w-3 shrink-0 text-gray-400" />
+              {recent.get(i.id)!.map((m, n) => (
+                <span key={m.id}>
+                  {n > 0 && <span className="text-gray-300">· </span>}
+                  {movementBrief(m)}
+                  <span className="text-gray-400"> ({formatDate(m.created_at)})</span>
+                </span>
+              ))}
+            </p>
+          ) : null}
         </div>
       ),
     },

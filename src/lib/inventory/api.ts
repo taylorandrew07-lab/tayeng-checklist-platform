@@ -321,6 +321,31 @@ export async function listMovements(filter: HistoryFilter = {}): Promise<Movemen
   })
 }
 
+/**
+ * The last few movements per item, for the "who's been going through these"
+ * line on the consumables list.
+ *
+ * ONLY call this for someone who can read the whole ledger. A surveyor's RLS
+ * returns just their OWN rows, so the line would silently read "Neil took 1 box"
+ * to Neil and show nothing to everyone else — a half-list that looks like a
+ * full one. ConsumablesList gates on canSeeHistory for exactly that reason.
+ */
+export async function listRecentByItem(itemIds: string[], perItem = 2): Promise<Map<string, MovementDetail[]>> {
+  const out = new Map<string, MovementDetail[]>()
+  if (!itemIds.length) return out
+
+  // One query for every item on screen, then trimmed per item in JS — far cheaper
+  // than a round trip each, and the lists are small.
+  const rows = await listMovements({ limit: 400 })
+  for (const m of rows) {
+    if (!itemIds.includes(m.item_id)) continue
+    const list = out.get(m.item_id)
+    if (!list) out.set(m.item_id, [m])
+    else if (list.length < perItem) list.push(m)
+  }
+  return out
+}
+
 /** "My activity" — the surveyor's own rows, which is all RLS will return anyway. */
 export async function listMyMovements(limit = 20): Promise<MovementDetail[]> {
   const { data: { user } } = await createClient().auth.getUser()
