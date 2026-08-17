@@ -12,7 +12,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Toggle } from '@/components/ui/Toggle'
 import { ResponsiveTable, type Column } from '@/components/ui/ResponsiveTable'
-import { listAllItems, listItems, listLocations, listCustodyCandidates } from '@/lib/inventory/api'
+import { listAllItems, listItems, listLocations, listStaffDirectory } from '@/lib/inventory/api'
 import { archiveItemWithPrompt, removeItemWithPrompt } from '@/lib/inventory/removeItem'
 import { calibrationStatus, dueLabel } from '@/lib/inventory/calibration'
 import { unitsAt } from '@/lib/inventory/stock'
@@ -20,7 +20,7 @@ import { useRealtimeRefresh } from '@/lib/realtime'
 import { formatDate } from '@/lib/utils'
 import MovementDialog from './MovementDialog'
 import ItemFormModal from './ItemFormModal'
-import type { InventoryLocation, ItemWithStock } from '@/lib/inventory/types'
+import type { InventoryLocation, ItemWithStock, StaffMember } from '@/lib/inventory/types'
 
 const SERVICE_LABEL: Record<string, { label: string; tone: 'neutral' | 'warn' | 'danger' }> = {
   in_service: { label: 'In service', tone: 'neutral' },
@@ -32,7 +32,7 @@ const SERVICE_LABEL: Record<string, { label: string; tone: 'neutral' | 'warn' | 
 export default function EquipmentList({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const [items, setItems] = useState<ItemWithStock[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
-  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([])
+  const [people, setPeople] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -46,7 +46,7 @@ export default function EquipmentList({ canEdit, isAdmin }: { canEdit: boolean; 
     const [i, l, p] = await Promise.all([
       showArchived && isAdmin ? listAllItems('asset') : listItems('asset'),
       listLocations(),
-      listCustodyCandidates(),
+      listStaffDirectory(),
     ])
     setItems(i); setLocations(l); setPeople(p); setLoading(false)
   }
@@ -62,6 +62,13 @@ export default function EquipmentList({ canEdit, isAdmin }: { canEdit: boolean; 
       // Whatever is due soonest first; undated equipment sinks to the bottom.
       .sort((a, b) => (a.calibration_due ?? '9999').localeCompare(b.calibration_due ?? '9999'))
   }, [items, query])
+
+  // Whatever has actually been used, so the picker reflects this company rather
+  // than a hard-coded guess.
+  const categories = useMemo(
+    () => [...new Set(items.map(i => i.category).filter(Boolean) as string[])].sort(),
+    [items],
+  )
 
   function openAdd() { setEditing(null); setFormOpen(true) }
   function openEdit(i: ItemWithStock) { setEditing(i); setFormOpen(true) }
@@ -222,6 +229,8 @@ export default function EquipmentList({ canEdit, isAdmin }: { canEdit: boolean; 
         open={formOpen}
         kind="asset"
         item={editing}
+        locations={locations}
+        categories={categories}
         onClose={() => setFormOpen(false)}
         onSaved={load}
       />

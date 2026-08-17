@@ -13,12 +13,12 @@ import { Badge } from '@/components/ui/Badge'
 import { ResponsiveTable, type Column } from '@/components/ui/ResponsiveTable'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
-import { listAllItems, listAllLocations, listMovements, listCustodyCandidates } from '@/lib/inventory/api'
+import { listAllItems, listAllLocations, listMovements, listStaffDirectory } from '@/lib/inventory/api'
 import { reverseMovement } from '@/lib/inventory/movements'
 import { CSV_MIME, deliverFile } from '@/lib/pdf/deliver'
 import { formatDateTime } from '@/lib/utils'
 import { MOVEMENT_VERB, MovementLine, movementQty, movementSentence } from './movementText'
-import type { InventoryLocation, ItemWithStock, MovementDetail } from '@/lib/inventory/types'
+import type { InventoryLocation, ItemWithStock, MovementDetail, StaffMember } from '@/lib/inventory/types'
 
 const KINDS = ['receive', 'take', 'move', 'adjust', 'check_out', 'check_in', 'correction'] as const
 
@@ -26,7 +26,7 @@ export default function HistoryTable() {
   const [rows, setRows] = useState<MovementDetail[]>([])
   const [items, setItems] = useState<ItemWithStock[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
-  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([])
+  const [people, setPeople] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -56,7 +56,7 @@ export default function HistoryTable() {
 
   useEffect(() => {
     void (async () => {
-      const [i, l, p] = await Promise.all([listAllItems(), listAllLocations(), listCustodyCandidates()])
+      const [i, l, p] = await Promise.all([listAllItems(), listAllLocations(), listStaffDirectory()])
       setItems(i); setLocations(l); setPeople(p)
     })()
   }, [])

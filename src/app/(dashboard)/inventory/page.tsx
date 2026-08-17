@@ -10,7 +10,7 @@
 // ledger's SELECT policy only returns their own rows.
 
 import { useEffect, useState } from 'react'
-import { Boxes } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
 import Tabs from '@/components/ui/Tabs'
 import { createClient } from '@/lib/supabase/client'
@@ -72,7 +72,7 @@ export default function InventoryPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 animate-rise">
       <PageHeader
-        icon={Boxes}
+        icon={ClipboardList}
         title="Inventory"
         subtitle="What we have, where it is, and when the equipment is due back for calibration."
       />

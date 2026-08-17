@@ -24,14 +24,21 @@ import { toast } from '@/components/ui/toast'
 import { formatQty, hasPacks, toBaseUnits, pluralise } from '@/lib/inventory/packs'
 import { unitsAt } from '@/lib/inventory/stock'
 import { newMovementRef, recordMovement } from '@/lib/inventory/movements'
-import type { InventoryLocation, ItemWithStock } from '@/lib/inventory/types'
+import type { InventoryLocation, ItemWithStock, StaffMember } from '@/lib/inventory/types'
 
 type Mode = 'take' | 'receive' | 'move' | 'adjust'
+
+/** Order matters: surveyors first, because they take equipment out most. */
+const ROLE_GROUPS: { role: string; label: string }[] = [
+  { role: 'surveyor', label: 'Surveyors' },
+  { role: 'admin', label: 'Admins' },
+  { role: 'office', label: 'Office' },
+]
 
 interface Props {
   item: ItemWithStock | null
   locations: InventoryLocation[]
-  people: { id: string; full_name: string }[]
+  people: StaffMember[]
   onClose: () => void
   onDone: () => void
 }
@@ -212,13 +219,29 @@ export default function MovementDialog({ item, locations, people, onClose, onDon
             {!item.held_by && (
               <div className="space-y-1">
                 <label className="label-base" htmlFor="mv-holder">Who is taking it?</label>
+                {/* Grouped by role so it is obvious who you are picking — the list
+                    mixes surveyors, admins and office staff, and two people can
+                    easily share a first name. */}
                 <select
                   id="mv-holder" className="input-base min-h-11"
                   value={holderId} onChange={e => setHolderId(e.target.value)}
                 >
                   <option value="">Choose a person…</option>
-                  {people.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                  {ROLE_GROUPS.map(g => {
+                    const members = people.filter(p => p.role === g.role)
+                    if (!members.length) return null
+                    return (
+                      <optgroup key={g.role} label={g.label}>
+                        {members.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                      </optgroup>
+                    )
+                  })}
                 </select>
+                {people.length === 0 && (
+                  <p className="text-xs text-amber-700">
+                    No active staff to pick from — check the Team page.
+                  </p>
+                )}
               </div>
             )}
             {item.held_by && (

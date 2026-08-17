@@ -40,6 +40,17 @@ export interface InventoryLocation {
   created_at: string
 }
 
+/**
+ * One person who can hold equipment. NAMES ONLY — this comes from
+ * inventory_staff_directory() (migration 194), not from profiles, so it carries
+ * no email, phone or employee number.
+ */
+export interface StaffMember {
+  id: string
+  full_name: string
+  role: string
+}
+
 export interface InventoryItem {
   id: string
   /** Drives which fields below are meaningful — migration 190 CHECKs enforce it. */

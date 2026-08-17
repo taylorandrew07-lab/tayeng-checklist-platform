@@ -164,6 +164,36 @@ try {
   check(await sb.from('inventory_locations').select('id').eq('id', locA), 'read locations')
   check(await sb.from('inventory_stock').select('qty_units').eq('item_id', itemId), 'read stock levels')
 
+  // --- the custody picker ---
+  //
+  // THE CASE THIS EXISTS FOR: profiles RLS lets a surveyor read admin and
+  // surveyor rows but NOT office rows (mig 002). The check-out dropdown used to
+  // read profiles directly, so it silently omitted office staff — no error, just
+  // a shorter list — and an office holder's name rendered as "Someone".
+  // Migration 194 routes it through a names-only SECURITY DEFINER directory.
+  const { data: officeStaff } = await admin.from('profiles')
+    .select('id, full_name').eq('role', 'office').eq('is_active', true).limit(1)
+
+  const dir = await sb.rpc('inventory_staff_directory')
+  if (dir.error) bad(`staff directory: ${dir.error.message}`)
+  else {
+    const ids = new Set((dir.data ?? []).map(p => p.id))
+    if (!ids.has(userId)) bad('staff directory omitted the caller')
+    else if (officeStaff?.length && !ids.has(officeStaff[0].id)) {
+      bad('a surveyor cannot see OFFICE staff in the custody picker (the mig-194 case)')
+    } else ok(`a surveyor sees all ${ids.size} active staff in the custody picker`)
+
+    const cols = dir.data?.length ? Object.keys(dir.data[0]).sort().join(',') : ''
+    if (!cols || cols === 'full_name,id,role') ok('the directory exposes names only — no email or phone')
+    else bad(`the directory exposes more than names: ${cols}`)
+  }
+
+  // Reading profiles directly must STILL be as restricted as it was — the
+  // directory is an addition, not a widening.
+  const { data: rawProfiles } = await sb.from('profiles').select('id, role').eq('role', 'office')
+  if (!rawProfiles?.length) ok('office profiles remain unreadable through the profiles table')
+  else bad(`profiles RLS was widened — a surveyor read ${rawProfiles.length} office row(s)`)
+
   // --- take 1 box, through the RPC ---
   const takeRef = uuid()
   const take = await sb.rpc('inventory_record_movement', {

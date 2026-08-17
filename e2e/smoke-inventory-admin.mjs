@@ -99,6 +99,19 @@ try {
   if (badShape.error) ok('a consumable cannot be given a calibration date')
   else { madeItems.push(badShape.data[0].id); bad('a consumable WAS given a calibration date') }
 
+  // The staff picker behind "who is taking it" and every holder name shown.
+  // It must NOT read profiles directly: profiles RLS returns a different list to
+  // each role (a surveyor cannot see office rows at all), so the dropdown was
+  // silently short. See migration 194.
+  const dir = await db.rpc('inventory_staff_directory')
+  if (dir.error) bad(`staff directory: ${dir.error.message}`)
+  else if (!dir.data?.some(p => p.id === userId)) bad('staff directory did not include the caller')
+  else {
+    const cols = Object.keys(dir.data[0]).sort().join(',')
+    if (cols === 'full_name,id,role') ok(`staff directory returns ${dir.data.length} name(s), and only names`)
+    else bad(`staff directory exposes more than names: ${cols}`)
+  }
+
   // ---------- STOCK MOVEMENTS ----------
   const receive = await db.rpc('inventory_record_movement', {
     p_item_id: item.id, p_kind: 'receive', p_qty_units: 72,

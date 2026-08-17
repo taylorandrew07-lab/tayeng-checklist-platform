@@ -14,7 +14,7 @@ import { num } from './packs'
 import { soonestExpiry, totalUnits } from './stock'
 import type {
   InventoryItem, InventoryKind, InventoryLocation, ItemWithStock,
-  MovementDetail, StockRow,
+  MovementDetail, StaffMember, StockRow,
 } from './types'
 
 // Omitting a column here silently leaves the field `undefined` on every consumer
@@ -122,39 +122,35 @@ async function fetchItems(kind: InventoryKind | undefined, activeOnly: boolean):
   // Three flat reads rather than a nested embed: inventory_stock has no FK back
   // to profiles, and holder names come from a table with its own RLS. Batched,
   // so this is still one round trip's worth of latency.
-  const [{ data: items }, { data: stock }, { data: people }] = await Promise.all([
+  const [{ data: items }, { data: stock }, people] = await Promise.all([
     q,
     supabase.from('inventory_stock').select(STOCK_COLS),
-    supabase.from('profiles').select('id, full_name'),
+    listStaffDirectory(),
   ])
 
   return decorate(
     (items ?? []) as unknown as InventoryItem[],
     (stock ?? []) as unknown as StockRow[],
-    (people ?? []) as { id: string; full_name: string }[],
+    people,
   )
 }
 
 export async function getItem(id: string): Promise<ItemWithStock | null> {
   const supabase = createClient()
-  const [{ data: item }, { data: stock }, { data: people }] = await Promise.all([
+  const [{ data: item }, { data: stock }, people] = await Promise.all([
     supabase.from('inventory_items').select(ITEM_COLS).eq('id', id).maybeSingle(),
     supabase.from('inventory_stock').select(STOCK_COLS).eq('item_id', id),
-    supabase.from('profiles').select('id, full_name'),
+    listStaffDirectory(),
   ])
   if (!item) return null
-  return decorate(
-    [item as unknown as InventoryItem],
-    (stock ?? []) as unknown as StockRow[],
-    (people ?? []) as { id: string; full_name: string }[],
-  )[0]
+  return decorate([item as unknown as InventoryItem], (stock ?? []) as unknown as StockRow[], people)[0]
 }
 
 /** Roll stock onto each item and resolve the holder's name. */
 function decorate(
   items: InventoryItem[],
   stock: StockRow[],
-  people: { id: string; full_name: string }[],
+  people: StaffMember[],
 ): ItemWithStock[] {
   const names = new Map(people.map(p => [p.id, p.full_name]))
   const byItem = new Map<string, StockRow[]>()
@@ -290,18 +286,18 @@ export async function listMovements(filter: HistoryFilter = {}): Promise<Movemen
     q = q.or(`from_location_id.eq.${filter.locationId},to_location_id.eq.${filter.locationId}`)
   }
 
-  const [{ data: moves }, { data: items }, { data: locs }, { data: people }] = await Promise.all([
+  const [{ data: moves }, { data: items }, { data: locs }, people] = await Promise.all([
     q,
     supabase.from('inventory_items').select('id, name, unit_label, pack_label'),
     supabase.from('inventory_locations').select('id, name'),
-    supabase.from('profiles').select('id, full_name'),
+    listStaffDirectory(),
   ])
 
   const itemById = new Map((items ?? []).map((i: { id: string }) => [i.id, i as {
     id: string; name: string; unit_label: string; pack_label: string
   }]))
   const locById = new Map((locs ?? []).map((l: { id: string; name: string }) => [l.id, l.name]))
-  const nameById = new Map((people ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]))
+  const nameById = new Map(people.map(p => [p.id, p.full_name]))
 
   const rows = (moves ?? []) as unknown as MovementDetail[]
   // A row is "reversed" when some correction in this result set points at it.
@@ -386,11 +382,20 @@ export async function listHeldAssets(): Promise<ItemWithStock[]> {
   return items.filter(i => i.held_by !== null)
 }
 
-/** Active staff who can take custody of equipment — the check-out picker. */
-export async function listCustodyCandidates(): Promise<{ id: string; full_name: string }[]> {
-  const { data } = await createClient()
-    .from('profiles').select('id, full_name')
-    .eq('is_active', true).in('role', ['admin', 'surveyor', 'office'])
-    .order('full_name')
-  return (data ?? []) as { id: string; full_name: string }[]
+/**
+ * Everyone who can take custody of equipment — the check-out picker, and the
+ * source of every holder name shown anywhere in inventory.
+ *
+ * Goes through inventory_staff_directory() (migration 194) rather than reading
+ * profiles, because profiles RLS returns a DIFFERENT LIST to each role: a
+ * surveyor sees admins and surveyors but not office staff, and an office user
+ * sees only themselves unless granted personal_docs.view. Reading profiles here
+ * meant the dropdown was silently short for surveyors and holder names rendered
+ * as "Someone" for office. Widening the policy instead would have exposed email,
+ * phone and employee numbers, because RLS cannot hide columns.
+ */
+export async function listStaffDirectory(): Promise<StaffMember[]> {
+  const { data } = await createClient().rpc('inventory_staff_directory')
+  return (data ?? []) as StaffMember[]
 }
+

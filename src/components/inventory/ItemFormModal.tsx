@@ -14,9 +14,10 @@ import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import { createItem, updateItem, type ItemInput } from '@/lib/inventory/api'
+import { newMovementRef, recordMovement } from '@/lib/inventory/movements'
 import { nextDueDate } from '@/lib/inventory/calibration'
-import { formatQtyShort } from '@/lib/inventory/packs'
-import type { InventoryKind, ItemWithStock, ServiceStatus } from '@/lib/inventory/types'
+import { formatQty, formatQtyShort, toBaseUnits } from '@/lib/inventory/packs'
+import type { InventoryKind, InventoryLocation, ItemWithStock, ServiceStatus } from '@/lib/inventory/types'
 
 const SERVICE: { value: ServiceStatus; label: string }[] = [
   { value: 'in_service', label: 'In service' },
@@ -74,16 +75,29 @@ const fromItem = (i: ItemWithStock): Form => ({
   service_status: i.service_status,
 })
 
+/**
+ * Offered when nothing has been categorised yet. Not enforced anywhere — the
+ * field stays free text, so a new category is one keystroke away. These just stop
+ * the first person facing an empty box with no idea what belongs in it.
+ */
+const CATEGORY_SUGGESTIONS = [
+  'Sampling', 'Safety', 'Test equipment', 'PPE', 'Cleaning', 'Stationery',
+]
+
 interface Props {
   open: boolean
   /** Which kind to create. Ignored when `item` is set — kind is never editable. */
   kind: InventoryKind
   item: ItemWithStock | null
+  /** Active locations, for the opening-stock picker on a NEW item. */
+  locations: InventoryLocation[]
+  /** Categories already in use, offered as suggestions. */
+  categories: string[]
   onClose: () => void
   onSaved: () => void
 }
 
-export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Props) {
+export default function ItemFormModal({ open, kind, item, locations, categories, onClose, onSaved }: Props) {
   const effectiveKind = item?.kind ?? kind
   const isAsset = effectiveKind === 'asset'
 
@@ -91,13 +105,28 @@ export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Pr
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Opening stock, on a NEW item only. Adding an item and then having to hunt it
+  // down and click Update just to say where it is misses the whole point — the
+  // question "where is it?" belongs on the form that creates the thing.
+  const [locationId, setLocationId] = useState('')
+  const [openPacks, setOpenPacks] = useState(0)
+  const [openLoose, setOpenLoose] = useState(0)
+  const [openExpiry, setOpenExpiry] = useState('')
+
   useEffect(() => {
     if (!open) return
     setForm(item ? fromItem(item) : blank(effectiveKind))
     setError(null)
     setSaving(false)
+    // One location? Then there is nothing to choose — preselect it.
+    setLocationId(locations.length === 1 ? locations[0].id : '')
+    setOpenPacks(0)
+    setOpenLoose(effectiveKind === 'asset' ? 1 : 0)
+    setOpenExpiry('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, item?.id, effectiveKind])
+
+  const suggestions = categories.length ? categories : CATEGORY_SUGGESTIONS
 
   const numOrNull = (s: string) => (s.trim() === '' ? null : Number(s))
 
@@ -107,11 +136,11 @@ export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Pr
     ? nextDueDate(form.calibrated_at || null, numOrNull(form.calibration_interval_months))
     : null
 
+  const perPack = isAsset ? 1 : Math.max(1, Math.trunc(Number(form.units_per_pack) || 1))
+
   async function save() {
     const name = form.name.trim()
     if (!name) { setError('Give it a name.'); return }
-
-    const perPack = isAsset ? 1 : Math.max(1, Math.trunc(Number(form.units_per_pack) || 1))
 
     // Changing a pack size after stock exists keeps every base-unit count correct
     // but shifts how they READ ("3 boxes of 24" becomes "6 boxes of 12"). Past
@@ -147,8 +176,37 @@ export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Pr
 
     setSaving(true)
     const res = item ? await updateItem(item.id, payload) : await createItem(payload)
-    setSaving(false)
-    if (res.error) { setError(res.error); return }
+
+    if (res.error) { setSaving(false); setError(res.error); return }
+
+    // Opening stock, if they gave one. Two steps rather than one because stock is
+    // DERIVED — it only ever moves through the ledger, so a new item's first
+    // count has to be a real `receive` movement, attributed and dated like any
+    // other. It shows up in the history as "Added 3 boxes", which is the truth.
+    const newId = !item ? (res as { id?: string }).id : null
+    const openingUnits = isAsset ? 1 : toBaseUnits(openPacks, openLoose, perPack)
+    if (newId && locationId && openingUnits > 0) {
+      const stocked = await recordMovement({
+        itemId: newId,
+        kind: 'receive',
+        qtyUnits: openingUnits,
+        packs: isAsset ? null : openPacks,
+        toLocationId: locationId,
+        expiryDate: !isAsset && openExpiry ? openExpiry : null,
+        note: 'Opening stock',
+        clientRef: newMovementRef(),
+      })
+      setSaving(false)
+      if (stocked.outcome !== 'ok') {
+        // The item exists; only its opening count failed. Say exactly that, so
+        // nobody adds it a second time thinking nothing saved.
+        toast.error(`${name} was added, but its opening stock did not save. Use Update to set it.`)
+        onSaved(); onClose(); return
+      }
+    } else {
+      setSaving(false)
+    }
+
     toast.success(item ? 'Saved' : `${name} added`)
     onSaved()
     onClose()
@@ -179,9 +237,19 @@ export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Pr
             <input className="input-base" value={form.name} autoFocus
               onChange={e => setForm({ ...form, name: e.target.value })} />
           </Field>
-          <Field label="Category" hint="Free text — Sampling, Safety, Test equipment…">
-            <input className="input-base" value={form.category}
-              onChange={e => setForm({ ...form, category: e.target.value })} />
+          {/* A datalist rather than a select: pick one that already exists, or
+              just type a new one. No separate "add a category" step to find. */}
+          <Field label="Category" hint="Pick one or type your own.">
+            <input
+              className="input-base"
+              list="inventory-categories"
+              placeholder={suggestions[0]}
+              value={form.category}
+              onChange={e => setForm({ ...form, category: e.target.value })}
+            />
+            <datalist id="inventory-categories">
+              {suggestions.map(c => <option key={c} value={c} />)}
+            </datalist>
           </Field>
         </div>
 
@@ -288,6 +356,76 @@ export default function ItemFormModal({ open, kind, item, onClose, onSaved }: Pr
               </Field>
             </div>
           </>
+        )}
+
+        {/* Opening stock — creation only. Editing an item never touches counts:
+            those move through the ledger, via Update. */}
+        {!item && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">
+                {isAsset ? 'Where is it kept?' : 'Opening stock'}
+              </h3>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {isAsset
+                  ? 'Its home location. You can move it or check it out later.'
+                  : 'How much you have right now, and where. Skip it and add stock later if you prefer.'}
+              </p>
+            </div>
+
+            <div className={isAsset ? '' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'}>
+              <Field label="Location">
+                <select className="input-base" value={locationId} onChange={e => setLocationId(e.target.value)}>
+                  <option value="">{isAsset ? 'Not in stores yet' : 'Skip for now'}</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+                {locations.length === 0 && (
+                  <p className="text-xs text-amber-700">
+                    No locations yet — add one on the Locations tab first.
+                  </p>
+                )}
+              </Field>
+
+              {!isAsset && (
+                <Field label={`How many (${form.unit_label.trim() || 'units'})`}>
+                  <div className={Number(form.units_per_pack) > 1 ? 'grid grid-cols-2 gap-2' : ''}>
+                    {Number(form.units_per_pack) > 1 && (
+                      <input
+                        type="number" min={0} className="input-base"
+                        placeholder={form.pack_label.trim() || 'packs'}
+                        value={openPacks || ''}
+                        onChange={e => setOpenPacks(Number(e.target.value) || 0)}
+                      />
+                    )}
+                    <input
+                      type="number" min={0} className="input-base"
+                      placeholder={Number(form.units_per_pack) > 1 ? 'loose' : form.unit_label.trim() || 'units'}
+                      value={openLoose || ''}
+                      onChange={e => setOpenLoose(Number(e.target.value) || 0)}
+                    />
+                  </div>
+                </Field>
+              )}
+            </div>
+
+            {!isAsset && locationId && toBaseUnits(openPacks, openLoose, perPack) > 0 && (
+              <>
+                <Field label="Expiry date (optional)">
+                  <input type="date" className="input-base sm:w-52" value={openExpiry}
+                    onChange={e => setOpenExpiry(e.target.value)} />
+                </Field>
+                <p className="text-sm text-gray-600">
+                  Starts with{' '}
+                  {formatQty(toBaseUnits(openPacks, openLoose, perPack), {
+                    units_per_pack: perPack,
+                    unit_label: form.unit_label.trim() || 'unit',
+                    pack_label: form.pack_label.trim() || 'pack',
+                  })}{' '}
+                  at {locations.find(l => l.id === locationId)?.name}.
+                </p>
+              </>
+            )}
+          </div>
         )}
 
         <Field label="Notes">
