@@ -54,6 +54,20 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
 - **`listInvoiceableJobs` is a POOL, not a source of truth.** It filters by client,
   month (on the *start* date), status and `invoice_id IS NULL`. Any completeness
   question must be re-asked unfiltered — see `fetchVoyageContext`.
+- **Retry is only safe on an idempotent write.** `submitJobWithRetry` works because
+  `SET submitted_at = now()` twice is the same as once. **A stock movement is not** —
+  a blind retry double-decrements, and on flaky mobile a lost *response* is the normal
+  case. Any new non-idempotent write needs a client-generated key with a unique index
+  (`inventory_movements.client_ref`, mig 190): one key per user *tap*, replayed on
+  every attempt, so the database settles the race.
+- **`RETURNS TABLE` output names are plpgsql variables for the whole body.** A bare
+  column matching one is `42702 column reference "x" is ambiguous`, and it only fires
+  on the branches that touch that table — mig 191 shipped with every stock path broken
+  and every custody path working. Put `#variable_conflict use_column` at the top and
+  alias your tables (mig 192).
+- **A service-role client has no `auth.uid()`.** Any `SECURITY DEFINER` RPC gated on
+  `is_active_staff()` correctly refuses it, so `/api/*` routes cannot seed through one.
+  Write the row directly and let the trigger do its work.
 
 ## Security model
 
@@ -94,6 +108,8 @@ Each exists because the logic had already drifted across surfaces once.
 | Pricing a voyage as one line | `lib/jobs/voyageBilling.ts` · completeness: `lib/jobs/voyageContext.ts` |
 | Pricing ONE job | `lib/jobs/invoicing.ts` — `seedCharge()` |
 | Which jobs an invoice bills | `lib/jobs/invoicing.ts` — `invoiceJobSets()` + `releaseSets()` |
+| Changing inventory stock (every role) | `lib/inventory/movements.ts` — `recordMovement()`; the RPC is the only door |
+| Pack ↔ unit display and entry | `lib/inventory/packs.ts` — `formatQty()` / `toBaseUnits()` |
 | Feature flags | `lib/features.ts` — client portal and competition video are both OFF |
 
 **Report numbers** are one global running series (`next_report_number()` = `max + 1` +
@@ -138,9 +154,11 @@ e2e/                     smoke + audit scripts
   — `gh run list --workflow=db-migrate.yml`. Green CI ≠ migration applied, and the runner
   silently skips a duplicate version number.
 - **Gates:** `npx tsc --noEmit` (0 errors) · `npm run lint` (0 errors; some advisory
-  React-Compiler warnings are expected) · `npm test` (46 vitest files) · `npm run build`.
+  React-Compiler warnings are expected) · `npm test` (50 vitest files) · `npm run build`.
   `npm run smoke` after anything touching RLS, the checklist editor, the submit path, or
-  migrations.
+  migrations; `npm run smoke-inventory` after anything touching inventory. **vitest is
+  pure-function only — no RLS policy anywhere is covered by `npm test`.** The e2e scripts
+  are the only proof the database behaves.
 - **On audit findings: triage first.** Flag security-vs-functionality tradeoffs and get
   approval before changing anything.
 - Risky auth/RLS changes → branch + Vercel preview before merging.
