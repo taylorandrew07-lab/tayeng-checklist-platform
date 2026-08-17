@@ -1,0 +1,58 @@
+name: Inventory reminders
+
+# Pings /api/cron/inventory-reminders, which posts a digest to every active
+# admin's inbox for equipment whose calibration is coming due and for stock that
+# is about to expire. See supabase/migrations/190_inventory_tracker.sql.
+#
+# WHY A GITHUB ACTION AND NOT vercel.json:
+#   vercel.json already carries one cron (document-reminders) and the Hobby plan
+#   allows two, so adding this there would sit exactly at the ceiling with no
+#   headroom — and a vercel.json listing a schedule the plan cannot honour fails
+#   the DEPLOY, not just the cron. This runs on any plan and costs nothing. If
+#   this project moves to Vercel Pro, delete this file and add a crons[] entry
+#   using the same daily schedule.
+#
+# Once a day is enough: these are 60/30/7-day warnings, not minute-to-minute.
+# An extra or delayed run is harmless — the (item, reason, due_date, days_out)
+# primary key on inventory_reminders is the latch, so a repeat reports 0 due.
+#
+# REQUIRED REPO SECRETS (Settings -> Secrets and variables -> Actions):
+#   CRON_SECRET  - must match the CRON_SECRET env var set in Vercel
+#   APP_URL      - e.g. https://tayeng-checklist-platform.vercel.app
+# Until both exist the job skips with a clear message rather than failing daily.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 12:00 UTC = 08:00 Trinidad (UTC-4, no DST), every day.
+    - cron: '0 12 * * *'
+
+concurrency:
+  group: inventory-reminders
+  cancel-in-progress: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger calibration and expiry reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$APP_URL" ]; then
+            echo "::warning::CRON_SECRET and/or APP_URL repo secret is not set — skipping."
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 0
+          fi
+          echo "POST ${APP_URL}/api/cron/inventory-reminders"
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 60 --retry 2 --retry-delay 5 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/inventory-reminders")
+          echo "HTTP ${code}"
+          cat response.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Inventory reminder endpoint returned HTTP ${code}"
+            exit 1
+          fi

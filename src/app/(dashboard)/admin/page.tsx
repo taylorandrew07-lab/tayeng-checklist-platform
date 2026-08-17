@@ -16,6 +16,7 @@ import { formatDate } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import ReportsDuePanel from '@/components/job/ReportsDuePanel'
+import InventoryAlertsPanel from '@/components/inventory/InventoryAlertsPanel'
 import { useJobsView, rowColor } from '@/lib/jobs/view'
 
 export default function AdminDashboard() {
@@ -51,6 +52,8 @@ export default function AdminDashboard() {
       {/* Reports whose incubation/lag window has elapsed and can now be written up.
           Renders nothing unless you're the super-admin and something is actually due. */}
       <ReportsDuePanel />
+      {/* Self-gating: renders nothing for non-admins and nothing when clear. */}
+      <InventoryAlertsPanel />
 
       {/* Recent Jobs — the one thing you rely on here, with the Jobs-page colour toggle */}
       <div className="card">

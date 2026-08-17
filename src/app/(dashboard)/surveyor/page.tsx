@@ -17,6 +17,7 @@ import { loadNewJobData } from '@/lib/offline/newJobData'
 import { toast } from '@/components/ui/toast'
 import AttentionCard from '@/components/dashboard/AttentionCard'
 import { useDocumentAttention } from '@/components/dashboard/useDocumentAttention'
+import { useInventoryAttention } from '@/components/dashboard/useInventoryAttention'
 
 export default function SurveyorDashboard() {
   const [profile, setProfile] = useState<any>(null)
@@ -43,6 +44,9 @@ export default function SurveyorDashboard() {
   const tick = useRealtimeRefresh('jobs')
   // Your own documents expired or expiring soon.
   const docAttention = useDocumentAttention({ context: 'self', profileId: profile?.id, enabled: !!profile?.id })
+  // Equipment this surveyor is holding — one card, not two, so the dashboard
+  // keeps a single "needs your attention" spot rather than growing a second.
+  const kitAttention = useInventoryAttention({ enabled: !!profile?.id })
 
   useEffect(() => {
     let active = true
@@ -481,7 +485,7 @@ export default function SurveyorDashboard() {
             </div>
           )}
 
-          <AttentionCard items={docAttention} />
+          <AttentionCard items={[...docAttention, ...kitAttention]} />
 
           {/* My work summary — the surveyor's own record: totals, a per-vessel
               breakdown for the chosen period, and a printable statement. Open by

@@ -1,12 +1,19 @@
-# End-to-end smoke test
+# End-to-end smoke tests
 
-A guard for the one workflow that must never silently break: an **admin creates a
-job, assigns it to a surveyor, and the surveyor completes and submits it**.
+Guards for the workflows that must never silently break. vitest in this repo is
+pure-function only — **no RLS policy is covered by `npm test`**, so these scripts
+are the only thing that proves the database actually behaves.
+
+| Script | Guards |
+|---|---|
+| `npm run smoke` | An **admin creates a job, assigns it to a surveyor, and the surveyor completes and submits it** |
+| `npm run smoke-inventory` | **Inventory permissions and the movement RPC** (migrations 190/191) |
 
 ## Run it
 
 ```bash
 npm run smoke
+npm run smoke-inventory
 ```
 
 It reads Supabase credentials from `.env.local` automatically (or from real
@@ -31,6 +38,30 @@ Against the live database, it:
 
 **Exit code 0** = the surveyor flow works end-to-end. **Non-zero** = a step was
 blocked; the core flow is broken — investigate before shipping.
+
+## What `smoke-inventory` does
+
+Same shape, aimed at migrations 190/191. It provisions a throwaway surveyor, two
+locations and two items (a boxed consumable and a piece of equipment), then signs
+in **as the surveyor** and asserts both halves of the permission model:
+
+**Can** — read items, locations and stock; take, move and recount through
+`inventory_record_movement`; check equipment out and back in; read their own
+ledger rows; undo their own entry.
+
+**Cannot** — insert into `inventory_movements` directly, update the derived
+`inventory_stock` table, create or rename an item, create a location, delete a
+ledger row, see anyone else's movements, or read the reminder latch.
+
+It also pins the three things most likely to break in silence:
+
+- **Idempotency** — replaying the same `client_ref` must not double-decrement.
+  This is what makes retrying safe on flaky dockside wifi, where a take is *not*
+  naturally idempotent the way `submitted_at` is.
+- **The negative guard** — taking more than recorded is refused with `23514`,
+  and confirming through with `p_allow_negative` records reality and flags it.
+- **The rollup** — `inventory_stock` must equal the sum of the ledger at the end.
+  Any drift here means something bypassed the trigger.
 
 ## When to run it
 

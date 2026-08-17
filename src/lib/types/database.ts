@@ -16,6 +16,10 @@ export type OfficePermissionKey =
   | 'personal_docs.expiry.notify'
   | 'calendar.view'
   | 'cargo.view'
+  // Migration 190. Two keys, deliberately: stock levels are operational, the
+  // movement ledger is not — office may be given one without the other.
+  | 'inventory.view'
+  | 'inventory.history.view'
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 export type FieldType =
   | 'text'

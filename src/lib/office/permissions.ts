@@ -17,6 +17,8 @@ export const OFFICE_PERMISSIONS = {
   PERSONAL_DOCS_EXPIRY_NOTIFY: 'personal_docs.expiry.notify',
   CALENDAR_VIEW: 'calendar.view',
   CARGO_VIEW: 'cargo.view',
+  INVENTORY_VIEW: 'inventory.view',
+  INVENTORY_HISTORY_VIEW: 'inventory.history.view',
 } as const satisfies Record<string, OfficePermissionKey>
 
 /**
