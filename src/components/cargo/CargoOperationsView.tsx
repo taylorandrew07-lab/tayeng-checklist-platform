@@ -105,7 +105,9 @@ export default function CargoOperationsView() {
                         <Ship className="h-4 w-4 text-brand-600" />
                       </span>
                       <span className="min-w-0">
-                        <span className="font-medium text-gray-900 group-hover:text-brand-700 block truncate">{r.vessel_name ? withVesselPrefix(r.vessel_name, r.vessel_type) : '—'}</span>
+                        {/* Bare name, as the jobs register shows it. The M.V./M.T. prefix stays on
+                            the voyage workspace and on the reports, where it is the convention. */}
+                        <span className="font-medium text-gray-900 group-hover:text-brand-700 block truncate">{r.vessel_name || '—'}</span>
                         <span className="text-xs text-gray-500 block truncate">{displayVoyageNumber(r.voyage_number) || 'No voyage no.'}</span>
                       </span>
                     </Link>

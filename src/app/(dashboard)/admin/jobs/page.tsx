@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { getUiPrefs, setUiPref } from '@/lib/preferences'
-import { formatDate, parseVesselName, splitVoyageFromVesselName, withVesselPrefix } from '@/lib/utils'
+import { formatDate, parseVesselName, splitVoyageFromVesselName } from '@/lib/utils'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { createClient } from '@/lib/supabase/client'
 import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from '@/lib/jobs/view'
@@ -350,7 +350,12 @@ const COLUMNS: ColumnDef[] = [
     ),
     voyageCell: v => (
       <div className="px-3 truncate">
-        {withVesselPrefix(v.vessel_name, v.vessel_type)}
+        {/* The bare name, matching the job rows beside it — those render
+            vessel_name with no prefix, and a register where one line says
+            "M.V. Trinidad Pearl" and the next says "Trinidad Pearl" reads as two
+            different ships. The M.V./M.T. prefix still belongs on the cargo
+            module's own screens and on the reports, where it is the convention. */}
+        {v.vessel_name || '—'}
         {v.voyage_number && <span className="block text-[11px] text-gray-500 leading-tight truncate">Voyage {displayVoyageNumber(v.voyage_number)}</span>}
       </div>
     ) },

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { listReportRegister, type RegisterEntry } from '@/lib/cargo/register'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 /** Register of issued DRI Production Reports (admin + office). Read-only list. */
 export default function ReportRegister({ backHref, voyageHrefBase }: { backHref: string; voyageHrefBase: string }) {
@@ -58,7 +59,7 @@ export default function ReportRegister({ backHref, voyageHrefBase }: { backHref:
                       <Link href={`${voyageHrefBase}/${r.voyage_id}`} className="hover:underline">{r.vessel_name || '—'}</Link>
                     ) : (r.vessel_name || '—')}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-600">{r.voyage_number || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{displayVoyageNumber(r.voyage_number) || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600 tnum">{r.issued_at?.slice(0, 10)}</td>
                   <td className="px-4 py-2.5 text-gray-600">{r.issued_by_name || '—'}</td>
                 </tr>
