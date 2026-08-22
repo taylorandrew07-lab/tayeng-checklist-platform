@@ -75,9 +75,21 @@ export async function restoreVoyage(
   }
 
   const { data: row, error } = await supabase
-    .from('cargo_voyages').select('id, status, doc').eq('id', voyageId).maybeSingle()
+    .from('cargo_voyages').select('id, status, doc, owner_id').eq('id', voyageId).maybeSingle()
   if (error) throw error
   if (!row?.doc) throw new Error('That voyage could not be found in the cloud.')
+
+  // Ownership is re-checked HERE, not just in the listing that offered it.
+  //
+  // A restore rewrites doc.userId to the restoring user, and pushVoyage() then
+  // writes owner_id from it — so restoring somebody else's voyage silently
+  // reassigns it. Their own upsert would start failing the "Owners manage own
+  // cargo_voyages" policy, and syncAllCargo swallows that error: their laptop
+  // would look like it was syncing while nothing landed. An admin can read every
+  // voyage (mig 027 grants admin FOR ALL), so RLS alone does not stop this.
+  if (row.owner_id && row.owner_id !== userId) {
+    throw new Error('That voyage belongs to another surveyor. Restoring it here would take it off their device — ask them to sync it instead.')
+  }
 
   const { data: photoRows, error: pErr } = await supabase
     .from('cargo_voyage_photos').select('*').eq('voyage_id', voyageId).order('ordinal')

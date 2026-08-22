@@ -18,7 +18,7 @@ const DOC = {
   createdAt: 1, updatedAt: 5_000, lastSyncedAt: 4_000,
 }
 
-function stub({ row = { id: 'v1', status: 'in_progress', doc: DOC }, photos = [] as any[], listRows = [] as any[] } = {}) {
+function stub({ row = { id: 'v1', status: 'in_progress', doc: DOC } as any, photos = [] as any[], listRows = [] as any[] } = {}) {
   return {
     from(table: string) {
       const rows = table === 'cargo_voyages' ? listRows : photos
@@ -124,5 +124,24 @@ describe('restoreVoyage', () => {
     Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true, writable: true })
     await expect(restoreVoyage(stub(), 'nary', 'v1')).rejects.toThrow(/offline/i)
     expect(mockPutVoyage).not.toHaveBeenCalled()
+  })
+})
+
+describe('restoreVoyage ownership', () => {
+  it('refuses a voyage owned by another surveyor', async () => {
+    // The listing only ever offers your own, but the function must not rely on
+    // that: a restore rewrites doc.userId and pushVoyage then writes owner_id
+    // from it, silently reassigning the voyage and breaking the real owner's
+    // sync — an error syncAllCargo swallows, so their device looks fine.
+    mockGetVoyage.mockResolvedValue(undefined)
+    const sb = stub({ row: { id: 'v1', status: 'in_progress', doc: DOC, owner_id: 'someone-else' } })
+    await expect(restoreVoyage(sb, 'nary', 'v1')).rejects.toThrow(/another surveyor/i)
+    expect(mockPutVoyage).not.toHaveBeenCalled()
+  })
+
+  it('allows a voyage that is genuinely yours', async () => {
+    mockGetVoyage.mockResolvedValue(undefined)
+    const sb = stub({ row: { id: 'v1', status: 'in_progress', doc: DOC, owner_id: 'nary' } })
+    await expect(restoreVoyage(sb, 'nary', 'v1')).resolves.toBeTruthy()
   })
 })
