@@ -28,6 +28,7 @@ import MarkJobCompleteButton from '@/components/job/MarkJobCompleteButton'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import JobPdfButton from '@/components/job/JobPdfButton'
 import { parseVesselName, withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 // shortLabel is what a phone shows — see the tab strip below.
 const TABS = [
@@ -524,7 +525,7 @@ export default function AdminChecklistDetailPage() {
                 {job.voyage_number && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Voyage</dt>
-                    <dd className="mt-1 text-sm text-gray-900">{job.voyage_number}</dd>
+                    <dd className="mt-1 text-sm text-gray-900">{displayVoyageNumber(job.voyage_number)}</dd>
                   </div>
                 )}
                 {job.port_location && (

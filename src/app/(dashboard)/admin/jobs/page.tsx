@@ -42,6 +42,7 @@ import { listVoyageListRows, type VoyageListRow } from '@/lib/cargo/remote'
 import { voyageIsOngoing, voyageLastDate, voyageSpansDays } from '@/lib/cargo/voyageDate'
 import { voyageHref } from '@/lib/cargo/links'
 import { byListRowDesc, splitVoyagesByJob, type JobsListRow } from '@/lib/jobs/listRow'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 /** What a cargo voyage shows in the Job Type column. */
 const CARGO_TYPE_LABEL = 'Cargo Monitoring'
@@ -340,7 +341,7 @@ const COLUMNS: ColumnDef[] = [
             under an EditableText button, so px-3 would indent the voyage 4px past the
             vessel name it belongs to. The V lines up under the vessel's first letter. */}
         {r.voyage_number && (
-          <span className="block px-2 text-[11px] text-gray-500 leading-tight truncate">Voyage {r.voyage_number}</span>
+          <span className="block px-2 text-[11px] text-gray-500 leading-tight truncate">Voyage {displayVoyageNumber(r.voyage_number)}</span>
         )}
         {r.billed_under_job_id && (
           <span className="block px-2 text-[11px] text-gray-400 leading-tight truncate italic">Billed under the final</span>
@@ -350,7 +351,7 @@ const COLUMNS: ColumnDef[] = [
     voyageCell: v => (
       <div className="px-3 truncate">
         {withVesselPrefix(v.vessel_name, v.vessel_type)}
-        {v.voyage_number && <span className="block text-[11px] text-gray-500 leading-tight truncate">Voyage {v.voyage_number}</span>}
+        {v.voyage_number && <span className="block text-[11px] text-gray-500 leading-tight truncate">Voyage {displayVoyageNumber(v.voyage_number)}</span>}
       </div>
     ) },
   { key: 'client', label: 'Client', sortKey: 'client', defaultVisible: true, width: 150, min: 90,
