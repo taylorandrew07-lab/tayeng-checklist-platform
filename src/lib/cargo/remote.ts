@@ -4,6 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Voyage, CargoPhoto, Period, Camera } from './types'
 import type { VesselPrefix } from '@/lib/utils'
+import { applyCorrections, type CorrectionPatch, type CorrectionLogEntry } from './corrections'
 
 export interface RemoteVoyageRow {
   id: string
@@ -189,11 +190,20 @@ export async function listClientVoyages(supabase: SupabaseClient): Promise<Remot
 }
 
 /** Full voyage document + signed photo URLs for the client view. */
-export async function getRemoteVoyage(supabase: SupabaseClient, id: string): Promise<{ voyage: Voyage; photos: RemotePhoto[] } | null> {
+export async function getRemoteVoyage(supabase: SupabaseClient, id: string): Promise<{ voyage: Voyage; photos: RemotePhoto[]; patch: CorrectionPatch | null } | null> {
   const { data: row, error } = await supabase.from('cargo_voyages').select('*').eq('id', id).single()
   if (error || !row) return null
 
-  const voyage = { ...(row.doc as Voyage), id: row.id, status: row.status } as Voyage
+  // THE single cloud reader of a voyage document — so applying the super admin's
+  // corrections here fixes the admin view, the office view, the client view, both
+  // PDF paths, the DRI builder and the report register in one place.
+  // Best-effort: a corrections read that fails must never hide the voyage.
+  const { data: cor } = await supabase
+    .from('cargo_voyage_corrections').select('patch').eq('voyage_id', id).maybeSingle()
+  const patch = (cor?.patch as CorrectionPatch | undefined) ?? null
+
+  const base = { ...(row.doc as Voyage), id: row.id, status: row.status } as Voyage
+  const voyage = applyCorrections(base, patch)
 
   const { data: prows } = await supabase
     .from('cargo_voyage_photos').select('*').eq('voyage_id', id).order('ordinal')
@@ -211,7 +221,7 @@ export async function getRemoteVoyage(supabase: SupabaseClient, id: string): Pro
     camera: p.camera as Camera, actualTime: p.actual_time, filename: p.filename,
     url: urlMap.get(p.storage_path) ?? '',
   }))
-  return { voyage, photos }
+  return { voyage, photos, patch }
 }
 
 /** Fetch the signed photos as blobs and shape them as CargoPhoto[] for the PDF. */
@@ -234,4 +244,38 @@ export async function remotePhotosToCargoPhotos(photos: RemotePhoto[], voyageId:
     } catch { /* skip unreadable */ }
   }
   return out
+}
+
+// ── super-admin corrections (mig 195) ───────────────────────────────────────
+
+/** The correction patch for a voyage, or null. Readable by anyone who can read
+ *  the voyage; only a super admin may write (enforced in the database). */
+export async function getCorrections(supabase: SupabaseClient, voyageId: string): Promise<CorrectionPatch | null> {
+  const { data, error } = await supabase
+    .from('cargo_voyage_corrections').select('patch').eq('voyage_id', voyageId).maybeSingle()
+  if (error) return null
+  return (data?.patch as CorrectionPatch | undefined) ?? null
+}
+
+/**
+ * Write the patch, appending to the audit log.
+ *
+ * The log matters more here than it would elsewhere: the client is shown the
+ * corrected value with no marker, by decision, so this is the only record of what
+ * was changed and by whom. Read-modify-write of the log is safe because there is
+ * exactly one writer — the super admin.
+ */
+export async function saveCorrections(
+  supabase: SupabaseClient, voyageId: string, patch: CorrectionPatch, entries: CorrectionLogEntry[]
+): Promise<void> {
+  const { data: existing } = await supabase
+    .from('cargo_voyage_corrections').select('log').eq('voyage_id', voyageId).maybeSingle()
+  const log = [...((existing?.log as CorrectionLogEntry[] | undefined) ?? []), ...entries]
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from('cargo_voyage_corrections')
+    .upsert({ voyage_id: voyageId, patch, log, corrected_by: user?.id ?? null }, { onConflict: 'voyage_id' })
+  // Surfaced, not swallowed: a correction that silently failed to save is the
+  // same class of bug as one silently overwritten.
+  if (error) throw error
 }

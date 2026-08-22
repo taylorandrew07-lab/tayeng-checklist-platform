@@ -27,6 +27,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { renderVoyageAnnex } from '@/lib/cargo/share/annex'
 import type { Voyage } from '@/lib/cargo/types'
+import { applyCorrections, type CorrectionPatch } from '@/lib/cargo/corrections'
 import { getLetterheadDataUrl } from '@/lib/cargo/share/letterhead'
 
 export const dynamic = 'force-dynamic'
@@ -79,7 +80,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
 
   if (!row?.doc) return notFound()
 
-  const voyage = { ...(row.doc as Voyage), id: row.id, status: row.status } as Voyage
+  // The super admin's corrections are laid over the record here too. This route
+  // reads the row directly with the service role rather than going through
+  // getRemoteVoyage(), so it does NOT inherit the merge — easy to miss, and this
+  // is the client-facing surface, so a corrected vessel name has to land here.
+  const { data: cor } = await supabase
+    .from('cargo_voyage_corrections').select('patch').eq('voyage_id', row.id).maybeSingle()
+
+  const voyage = applyCorrections(
+    { ...(row.doc as Voyage), id: row.id, status: row.status } as Voyage,
+    (cor?.patch as CorrectionPatch | undefined) ?? null
+  )
 
   // Best-effort view accounting — never block serving the document on it.
   supabase.from('cargo_voyage_shares')
