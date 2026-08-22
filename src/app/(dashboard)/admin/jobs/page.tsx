@@ -314,7 +314,9 @@ const COLUMNS: ColumnDef[] = [
       </>
     ),
     voyageCell: () => (
-      <div className="px-3">
+      // px-2, matching the EditableCombo in this column's job cell — a plain
+      // div at px-3 sits 4px further right than the job rows around it.
+      <div className="px-2">
         <span className="inline-flex items-center gap-1.5 text-gray-700"><Ship className="h-3.5 w-3.5 text-brand-600" />Cargo Monitoring</span>
       </div>
     ) },
@@ -336,10 +338,9 @@ const COLUMNS: ColumnDef[] = [
           if (split.voyage) patch.voyage_number = normaliseVoyage(split.voyage)
           return patchRow(r.id, patch, patch)
         }} />
-        {/* The voyage as its own muted sub-line. px-2 matches cellBtn's padding, NOT the
-            px-3 the cargo voyageCell uses — that one sits in a plain div, while this sits
-            under an EditableText button, so px-3 would indent the voyage 4px past the
-            vessel name it belongs to. The V lines up under the vessel's first letter. */}
+        {/* The voyage as its own muted sub-line, at px-2 to match cellBtn — so the
+            V lines up under the vessel's first letter, and a cargo row and a job
+            row in this column start on exactly the same x. */}
         {r.voyage_number && (
           <span className="block px-2 text-[11px] text-gray-500 leading-tight truncate">Voyage {displayVoyageNumber(r.voyage_number)}</span>
         )}
@@ -349,7 +350,8 @@ const COLUMNS: ColumnDef[] = [
       </div>
     ),
     voyageCell: v => (
-      <div className="px-3 truncate">
+      // px-2, matching the EditableText in this column's job cell.
+      <div className="px-2 truncate">
         {/* The bare name, matching the job rows beside it — those render
             vessel_name with no prefix, and a register where one line says
             "M.V. Trinidad Pearl" and the next says "Trinidad Pearl" reads as two
@@ -459,7 +461,8 @@ const COLUMNS: ColumnDef[] = [
     // Read-only, and the last day of a still-running voyage is TODAY rather than
     // a date it has not reached — voyageLastDate() owns that rule.
     voyageCell: v => (
-      <div className="px-3">
+      // px-2, matching the EditableDate in this column's job cell.
+      <div className="px-2">
         <span className="text-gray-700">{v.end_date ? formatDate(v.end_date) : 'Ongoing'}</span>
         {voyageSpansDays(v) && v.start_date && (
           <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(v.start_date)}</span>
