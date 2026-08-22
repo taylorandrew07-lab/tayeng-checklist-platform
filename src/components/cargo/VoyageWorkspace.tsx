@@ -23,6 +23,7 @@ import ReportBuilder from '@/components/cargo/ReportBuilder'
 import { PrepTab, LoadingTab, VoyageLogTab, DischargeTab } from '@/components/cargo/DriWizard'
 import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 import { withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 type Tab = 'setup' | 'prep' | 'loading' | 'voyage' | 'discharge' | 'readings' | 'photos' | 'charts' | 'report' | 'dri_report'
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
@@ -207,7 +208,7 @@ export default function VoyageWorkspace() {
       <div className="flex items-center gap-4">
         <Link href={base} className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0">
-          <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {voyage.voyageNumber}</h1>
+          <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {displayVoyageNumber(voyage.voyageNumber)}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">
             {voyage.cargoType || 'Cargo'} · {voyage.holdCount} holds
             {savedAt && <span className="text-green-600"> · saved</span>}

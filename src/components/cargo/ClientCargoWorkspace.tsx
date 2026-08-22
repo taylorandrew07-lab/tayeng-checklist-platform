@@ -17,6 +17,7 @@ import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 import ShareLinkPanel from '@/components/cargo/ShareLinkPanel'
 import Tabs from '@/components/ui/Tabs'
 import { withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 type Tab = 'readings' | 'charts' | 'photos' | 'dri'
 const BASE_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -85,7 +86,7 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
       <div className="flex items-center gap-4">
         <Link href={backHref} className="btn-ghost py-2 px-3"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0 flex-1">
-          <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {voyage.voyageNumber}</h1>
+          <h1 className="page-title truncate">{withVesselPrefix(voyage.vesselName, voyage.vesselType)} — {displayVoyageNumber(voyage.voyageNumber)}</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{voyage.cargoType || 'Cargo'} · {voyage.holdCount} holds</p>
         </div>
         {/* Secondary, not primary: the PDF is the photo/record report, while the

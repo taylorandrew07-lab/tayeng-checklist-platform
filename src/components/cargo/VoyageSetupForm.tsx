@@ -5,6 +5,7 @@ import { Loader2, Save, Check } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
 import { parseVesselName } from '@/lib/utils'
+import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import {
   type Voyage, type CargoTemplate,
@@ -71,7 +72,7 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       ...base,
       vesselName: parseVesselName(vesselName).name,
       vesselType: parseVesselName(vesselName).prefix ?? voyage?.vesselType ?? 'M.V.',
-      voyageNumber: voyageNumber.trim(),
+      voyageNumber: normaliseVoyage(voyageNumber) ?? voyageNumber.trim(),
       cargoType: cargoType.trim(),
       loadingPort: loadingPort.trim(),
       dischargePort: dischargePort.trim(),
@@ -139,7 +140,7 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       const parsedVessel = parseVesselName(vesselName)
       next.vesselName = parsedVessel.name
       next.vesselType = parsedVessel.prefix ?? next.vesselType ?? 'M.V.'
-      next.voyageNumber = voyageNumber.trim()
+      next.voyageNumber = normaliseVoyage(voyageNumber) ?? voyageNumber.trim()
       next.cargoType = cargoType.trim()
       next.loadingPort = loadingPort.trim()
       next.dischargePort = dischargePort.trim()
@@ -170,7 +171,16 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
           </div>
           <div>
             <label className="label-base">Voyage Number *</label>
-            <input className="input-base" value={voyageNumber} onChange={e => setVoyageNumber(e.target.value)} placeholder="V-2026-014" />
+            {/* Normalised on blur so the surveyor sees the canonical form
+                immediately: typing 13 shows V-013. Lenient — anything that
+                doesn't read as a plain number is kept exactly as typed. */}
+            <input
+              className="input-base"
+              value={voyageNumber}
+              onChange={e => setVoyageNumber(e.target.value)}
+              onBlur={e => setVoyageNumber(normaliseVoyage(e.target.value) ?? e.target.value.trim())}
+              placeholder="V-013"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="label-base">Cargo Type / Description</label>

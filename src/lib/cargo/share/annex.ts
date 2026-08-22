@@ -32,6 +32,7 @@ import {
 import { buildHoldSeries, buildPointSeries, seriesColor, type ChartModel } from '../charts'
 import { withVesselPrefix } from '@/lib/utils'
 import { COMPANY } from '@/lib/company'
+import { displayVoyageNumber } from '../voyageNumber'
 
 export interface AnnexOptions {
   /** Company letterhead as a data URI. Absent → the text wordmark fallback. */
@@ -687,7 +688,7 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
 
   const meta: [string, string][] = [
     ['Vessel', vessel],
-    ['Voyage number', voyage.voyageNumber || '—'],
+    ['Voyage number', displayVoyageNumber(voyage.voyageNumber) || '—'],
     ['Cargo', voyage.cargoType || '—'],
     ['Loading port', voyage.loadingPort || '—'],
     ['Discharge port', voyage.dischargePort || '—'],

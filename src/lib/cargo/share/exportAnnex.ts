@@ -28,6 +28,7 @@ import type { Voyage } from '../types'
 import { renderVoyageAnnex } from './annex'
 import { deliverFile } from '@/lib/pdf/deliver'
 import { withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '../voyageNumber'
 
 /** The letterhead, from the service worker's cache when there is no signal.
  *  Deliberately a local copy of the same few lines in lib/cargo/pdf/render.ts
@@ -67,7 +68,7 @@ const safe = (s: string) => (s || '').replace(/[^a-z0-9-]+/gi, '_').replace(/^[_
  */
 export function annexFilename(voyage: Voyage, on: Date = new Date()): string {
   const vessel = safe(withVesselPrefix(voyage.vesselName, voyage.vesselType)) || 'Voyage'
-  const number = voyage.voyageNumber ? `_${safe(voyage.voyageNumber)}` : ''
+  const number = voyage.voyageNumber ? `_${safe(displayVoyageNumber(voyage.voyageNumber))}` : ''
   const day = `${on.getFullYear()}-${String(on.getMonth() + 1).padStart(2, '0')}-${String(on.getDate()).padStart(2, '0')}`
   return `${vessel}${number}_${day}.html`
 }

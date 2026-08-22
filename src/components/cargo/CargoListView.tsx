@@ -15,6 +15,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { deleteRemoteVoyage, syncAllCargo, voyageDirty } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 /** Cargo voyage list. Works under both /surveyor/cargo and /admin/cargo. When
  *  `embedded`, it renders as a subsection (under the admin Cargo Operations
@@ -237,7 +238,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
                   <Ship className="h-5 w-5 text-brand-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vesselName, v.vesselType)} — {v.voyageNumber}</p>
+                  <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vesselName, v.vesselType)} — {displayVoyageNumber(v.voyageNumber)}</p>
                   <p className="text-sm text-gray-500 truncate">
                     {v.cargoType || 'Cargo'} · {v.holdCount} holds · {formatVoyageRange(v)}
                   </p>
@@ -274,7 +275,7 @@ export default function CargoListView({ embedded = false }: { embedded?: boolean
               <div key={r.id} className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
                 <Ship className="h-4 w-4 text-gray-400 flex-shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm text-gray-900 truncate">{r.vesselName || 'Voyage'}{r.voyageNumber ? ` — ${r.voyageNumber}` : ''}</p>
+                  <p className="font-medium text-sm text-gray-900 truncate">{r.vesselName || 'Voyage'}{r.voyageNumber ? ` — ${displayVoyageNumber(r.voyageNumber)}` : ''}</p>
                   <p className="text-xs text-gray-500">
                     Last synced {new Date(r.syncedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                     {r.photoCount > 0 ? ` · ${r.photoCount} photo${r.photoCount === 1 ? '' : 's'}` : ''}

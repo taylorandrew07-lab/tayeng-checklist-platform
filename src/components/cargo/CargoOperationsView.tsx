@@ -12,6 +12,7 @@ import { deleteRemoteVoyage } from '@/lib/cargo/sync'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import { withTimeout, withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 /** Company-wide, cloud-backed view of every voyage surveyors have SYNCED.
  *  Distinct from the device-local list below it: this is the real operational
@@ -44,7 +45,7 @@ export default function CargoOperationsView() {
   // removes the CLOUD copy — the owning surveyor's device copy is untouched and
   // would re-publish on their next sync, so the confirm says so.
   async function handleDelete(r: OpsVoyageRow) {
-    const name = `${r.vessel_name ? withVesselPrefix(r.vessel_name, r.vessel_type) : '—'}${r.voyage_number ? ` — ${r.voyage_number}` : ''}`
+    const name = `${r.vessel_name ? withVesselPrefix(r.vessel_name, r.vessel_type) : '—'}${r.voyage_number ? ` — ${displayVoyageNumber(r.voyage_number)}` : ''}`
     const jobNote = r.job_id ? ' It will also be unlinked from its job (the job and its billing are not deleted).' : ''
     const ok = await confirmDialog({
       title: 'Delete voyage',
@@ -105,7 +106,7 @@ export default function CargoOperationsView() {
                       </span>
                       <span className="min-w-0">
                         <span className="font-medium text-gray-900 group-hover:text-brand-700 block truncate">{r.vessel_name ? withVesselPrefix(r.vessel_name, r.vessel_type) : '—'}</span>
-                        <span className="text-xs text-gray-500 block truncate">{r.voyage_number || 'No voyage no.'}</span>
+                        <span className="text-xs text-gray-500 block truncate">{displayVoyageNumber(r.voyage_number) || 'No voyage no.'}</span>
                       </span>
                     </Link>
                   </td>

@@ -14,13 +14,14 @@ import { CargoStatusPill } from '@/components/job/StatusPill'
 import type { VoyageStatus } from '@/lib/cargo/types'
 import { listVoyagesForJob, listUnlinkedVoyages, setVoyageJob, type LinkedVoyageRow } from '@/lib/cargo/remote'
 import { withVesselPrefix } from '@/lib/utils'
+import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
 function StatusPill({ status }: { status: string }) {
   return <CargoStatusPill status={status as VoyageStatus} />
 }
 
 function voyageLabel(v: LinkedVoyageRow): string {
-  return `${v.vessel_name ? withVesselPrefix(v.vessel_name, v.vessel_type) : '—'}${v.voyage_number ? ` · ${v.voyage_number}` : ''}${v.owner_name ? ` — ${v.owner_name}` : ''}`
+  return `${v.vessel_name ? withVesselPrefix(v.vessel_name, v.vessel_type) : '—'}${v.voyage_number ? ` · ${displayVoyageNumber(v.voyage_number)}` : ''}${v.owner_name ? ` — ${v.owner_name}` : ''}`
 }
 
 export default function JobCargoVoyages({ jobId, vesselName, isCargoJob = false }: { jobId: string; vesselName?: string | null; isCargoJob?: boolean }) {
@@ -138,7 +139,7 @@ export default function JobCargoVoyages({ jobId, vesselName, isCargoJob = false 
                 <span className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0"><Ship className="h-4 w-4 text-brand-600" /></span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-gray-900 group-hover:text-brand-700 truncate">{v.vessel_name ? withVesselPrefix(v.vessel_name, v.vessel_type) : '—'}</span>
-                  <span className="block text-xs text-gray-500 truncate">{v.voyage_number || 'No voyage no.'}{v.owner_name ? ` · ${v.owner_name}` : ''}</span>
+                  <span className="block text-xs text-gray-500 truncate">{displayVoyageNumber(v.voyage_number) || 'No voyage no.'}{v.owner_name ? ` · ${v.owner_name}` : ''}</span>
                 </span>
               </Link>
               <StatusPill status={v.status} />
