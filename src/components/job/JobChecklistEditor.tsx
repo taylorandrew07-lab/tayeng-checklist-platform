@@ -408,7 +408,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
 
     // Persists the local draft. Throws on failure so explicit Save/Submit can
     // surface the error instead of falsely reporting success.
-    async function persistDraft(pendingSubmit: boolean): Promise<void> {
+    async function persistDraft(pendingSubmit: boolean, opts?: { forceSync?: boolean }): Promise<void> {
       if (!offlineEditable() || !currentUserId) throw new Error('Offline saving is not available here.')
       const existing = await getDraft(currentUserId, jobId).catch(() => undefined)
       const offlineNow = typeof navigator !== 'undefined' && !navigator.onLine
@@ -428,7 +428,11 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         // Only mark for server sync when the change was made offline (or queued
         // submit). Online autosaves are a local safety cache, not a push — except
         // a job that only exists locally, which must always sync to create itself.
-        needsSync: offlineNow || pendingSubmit || existing?.pendingCreate || existing?.needsSync || false,
+        // forceSync exists for queued photos: an ONLINE upload that fails queues them
+        // too, and without this the draft stays out of getPendingDrafts and syncDraft
+        // bails at its own needsSync guard — the photo sat badged "Pending" forever and
+        // "Sync now" did nothing.
+        needsSync: offlineNow || pendingSubmit || opts?.forceSync || existing?.pendingCreate || existing?.needsSync || false,
         updatedAt: Date.now(),
         lastSyncedAt: existing?.lastSyncedAt ?? null, syncError: existing?.syncError ?? null,
       })
@@ -1180,6 +1184,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       const pending = rows.filter(p => !p.uploaded)
       setQueuedPhotos(pending)
+      // An un-uploaded photo IS work to push, so say so on the draft. This also heals
+      // queues stranded by the bug above (photos queued online, needsSync left false):
+      // without it those drafts can only be cleared by "Discard local copy", which
+      // deletes the photos.
+      if (pending.length) {
+        const draft = await getDraft(currentUserId, jobId).catch(() => undefined)
+        if (draft && !draft.needsSync) await putDraft({ ...draft, needsSync: true }).catch(() => {})
+        setSyncStatus(prev => (prev === 'syncing' ? prev : 'pending'))
+      }
       setPhotoUrls(prev => {
         const next = { ...prev }
         for (const p of pending) {
@@ -1213,7 +1226,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       // ever drains the queue. Loud on failure: a silently un-draining queue means the
       // photos never reach the report.
       try {
-        await persistDraft(false)
+        await persistDraft(false, { forceSync: true })
         setSyncStatus('pending')
       } catch {
         setSaveError('Photos are saved on this device, but the draft could not be marked for upload. Use "Save" once you have a connection.')

@@ -24,6 +24,33 @@ function canon(
 }
 
 /**
+ * Push a job's queued (on-device) photos. Idempotent via client_local_id: a retry
+ * re-uploads to the same path and upserts the same row rather than duplicating it.
+ * The path mirrors the online one (`jobId/fieldId/instance/…`) so both routes are
+ * greppable in the bucket. Throws on the first failure, leaving the message on the
+ * photo row so the queue can be diagnosed on the device.
+ */
+async function drainQueuedPhotos(supabase: SupabaseClient, jobId: string, userId: string): Promise<void> {
+  for (const p of await getPhotosForJob(userId, jobId)) {
+    if (p.uploaded) continue
+    const instance = p.instance ?? 0
+    const path = p.storagePath ?? (p.fieldId
+      ? `${jobId}/${p.fieldId}/${instance}/${p.localId}_${p.filename}`
+      : `${jobId}/general/${p.localId}_${p.filename}`)
+    const { error: upErr } = await supabase.storage.from('job-photos')
+      .upload(path, p.blob, { contentType: p.blob.type || 'image/jpeg', upsert: true })
+    if (upErr) { await putPhoto({ ...p, storagePath: path, error: upErr.message }); throw upErr }
+    const { error: rowErr } = await supabase.from('job_photos').upsert({
+      job_id: jobId, field_id: p.fieldId, instance, storage_path: path, filename: p.filename,
+      uploaded_by: userId, client_local_id: p.localId, captured_at: p.capturedAt,
+      gps_lat: p.gpsLat, gps_lng: p.gpsLng, gps_accuracy_m: p.gpsAccuracyM, uploaded_offline: true,
+    }, { onConflict: 'client_local_id' })
+    if (rowErr) { await putPhoto({ ...p, storagePath: path, error: rowErr.message }); throw rowErr }
+    await putPhoto({ ...p, storagePath: path, uploaded: true, error: null })
+  }
+}
+
+/**
  * Push a job's local draft to Supabase using the normal logged-in user client.
  * Idempotent and retry-safe. Refuses to overwrite if the job locked OR its
  * server-side answers changed since we cached them (concurrent edit), and never
@@ -188,6 +215,9 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     if (serverJob.submitted_at && (draft.needsSync || draft.pendingSubmit)) {
       const message = 'This job was already submitted on the server — your local changes were kept and not sent.'
       await putDraft({ ...draft, syncError: message })
+      // Photos are evidence, not edits — they carry no conflict with anyone else's
+      // answers, so send them anyway rather than stranding them behind this refusal.
+      await drainQueuedPhotos(supabase, jobId, user.id).catch(() => {})
       return { ok: false, reason: 'conflict', message }
     }
 
@@ -216,6 +246,8 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       if (canon(nowVals, nowArr, nowSigs) !== canon(draft.serverValues, draft.serverArrayValues, draft.serverSignatures)) {
         const message = 'This checklist was changed on the server since you went offline. Your local changes were kept and not sent — reload to merge.'
         await putDraft({ ...draft, syncError: message })
+        // Same as above: the queued photos are not in conflict with anything.
+        await drainQueuedPhotos(supabase, jobId, user.id).catch(() => {})
         return { ok: false, reason: 'conflict', message }
       }
     }
@@ -256,27 +288,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       try { await supabase.from('jobs').update({ repeatable_order: order }).eq('id', jobId) } catch { /* re-syncs next time */ }
     }
 
-    // Queued photos (captured with no signal). Idempotent via client_local_id: a retry
-    // re-uploads to the same path and upserts the same row rather than duplicating it.
-    // The path mirrors the online one (`jobId/fieldId/instance/…`) so both routes are
-    // greppable in the bucket.
-    for (const p of await getPhotosForJob(user.id, jobId)) {
-      if (p.uploaded) continue
-      const instance = p.instance ?? 0
-      const path = p.storagePath ?? (p.fieldId
-        ? `${jobId}/${p.fieldId}/${instance}/${p.localId}_${p.filename}`
-        : `${jobId}/general/${p.localId}_${p.filename}`)
-      const { error: upErr } = await supabase.storage.from('job-photos')
-        .upload(path, p.blob, { contentType: p.blob.type || 'image/jpeg', upsert: true })
-      if (upErr) { await putPhoto({ ...p, storagePath: path, error: upErr.message }); throw upErr }
-      const { error: rowErr } = await supabase.from('job_photos').upsert({
-        job_id: jobId, field_id: p.fieldId, instance, storage_path: path, filename: p.filename,
-        uploaded_by: user.id, client_local_id: p.localId, captured_at: p.capturedAt,
-        gps_lat: p.gpsLat, gps_lng: p.gpsLng, gps_accuracy_m: p.gpsAccuracyM, uploaded_offline: true,
-      }, { onConflict: 'client_local_id' })
-      if (rowErr) { await putPhoto({ ...p, storagePath: path, error: rowErr.message }); throw rowErr }
-      await putPhoto({ ...p, storagePath: path, uploaded: true, error: null })
-    }
+    await drainQueuedPhotos(supabase, jobId, user.id)
 
     let submitted = false
     if (draft.pendingSubmit) {
