@@ -44,6 +44,30 @@ const fieldAnchorId = (key: string) => `field-${key}`
 const isImageAttachment = (name: string | null | undefined, path: string | null | undefined) =>
   /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(name || path || '')
 
+/** Some upload failures can never succeed on a retry: the bucket refuses this file's
+ *  type or its size. Those must NOT go on the offline queue — a queued file is badged
+ *  "Pending", which tells the surveyor it is safe and will go up later, and it would
+ *  instead retry the same rejection forever. (The ship's particulars PDF sat like that
+ *  until migration 196 let the bucket take a PDF at all.) Returns the reason to show,
+ *  or null when the failure is the ordinary flaky-signal kind that IS worth queueing. */
+function permanentUploadRejection(err: unknown): string | null {
+  const e = err as { statusCode?: string | number; status?: number; message?: string } | null
+  const status = String(e?.statusCode ?? e?.status ?? '')
+  const message = String(e?.message ?? '')
+  if (status === '415' || /mime type/i.test(message)) return 'that file type is not accepted'
+  if (status === '413' || /maximum allowed size|payload too large/i.test(message)) return 'it is over the 25 MB limit'
+  return null
+}
+
+/** One line covering both ways an attachment can fail to land, so a batch that hit
+ *  each kind doesn't report only the last one. Null when everything went up. */
+function uploadOutcomeMessage(queued: number, rejected: string[]): string | null {
+  const parts: string[] = []
+  if (rejected.length) parts.push(`Not attached: ${rejected.join('; ')}.`)
+  if (queued) parts.push(`${queued} file${queued > 1 ? 's are' : ' is'} saved on this device and will upload when the connection returns.`)
+  return parts.length ? parts.join(' ') : null
+}
+
 /** Stand-in "storage path" for a photo still queued on the device. It is never sent to
  *  the server — it only keys the object URL in photoUrls and marks the row as local. */
 const queuedPath = (localId: string) => `local:${localId}`
@@ -1265,15 +1289,23 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
         const rows: any[] = []
-        // Anything that doesn't make it to the server is queued rather than dropped.
+        // Anything that doesn't make it to the server is queued rather than dropped —
+        // unless the server will never take it, which is reported instead (see
+        // permanentUploadRejection).
         const failed: { blob: Blob; filename: string }[] = []
+        const rejected: string[] = []
         for (let i = 0; i < prepared.length; i++) {
           const { blob, filename } = prepared[i]
           const path = `${jobId}/${fieldId}/${instance}/${Date.now()}_${i}_${filename}`
           let upErr: any = null
           try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg' }), 60_000, 'Uploading photo')) }
           catch { failed.push(prepared[i]); continue }
-          if (upErr) { failed.push(prepared[i]); continue }
+          if (upErr) {
+            const why = permanentUploadRejection(upErr)
+            if (why) rejected.push(`${filename} — ${why}`)
+            else failed.push(prepared[i])
+            continue
+          }
           rows.push({ job_id: jobId, field_id: fieldId, instance, storage_path: path, filename, uploaded_by: user.id })
         }
         if (rows.length) {
@@ -1282,10 +1314,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // sync writes the rows; the upsert is idempotent on client_local_id.
           if (dbErr) { await queuePhotos(fieldId, instance, prepared); return }
         }
-        if (failed.length) {
-          await queuePhotos(fieldId, instance, failed)
-          setSaveError(`${failed.length} photo${failed.length > 1 ? 's are' : ' is'} saved on this device and will upload when the connection returns.`)
-        }
+        if (failed.length) await queuePhotos(fieldId, instance, failed)
+        setSaveError(uploadOutcomeMessage(failed.length, rejected))
         const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).eq('field_id', fieldId).eq('instance', instance)
         const nextFp = { ...fieldPhotos, [key]: fresh ?? [] }
         setFieldPhotos(nextFp)
@@ -1312,23 +1342,27 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         if (!user) { setSaveError('Your session expired — sign in again to add photos.'); return }
         const rows: any[] = []
         const failed: { blob: Blob; filename: string }[] = []
+        const rejected: string[] = []
         for (let i = 0; i < prepared.length; i++) {
           const { blob, filename } = prepared[i]
           const path = `${jobId}/general/${Date.now()}_${i}_${filename}`
           let upErr: any = null
           try { ({ error: upErr } = await withTimeout(supabase.storage.from('job-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg' }), 60_000, 'Uploading photo')) }
           catch { failed.push(prepared[i]); continue }
-          if (upErr) { failed.push(prepared[i]); continue }
+          if (upErr) {
+            const why = permanentUploadRejection(upErr)
+            if (why) rejected.push(`${filename} — ${why}`)
+            else failed.push(prepared[i])
+            continue
+          }
           rows.push({ job_id: jobId, field_id: null, storage_path: path, filename, uploaded_by: user.id })
         }
         if (rows.length) {
           const { error: dbErr } = await supabase.from('job_photos').insert(rows)
           if (dbErr) { await queuePhotos(null, 0, prepared); return }
         }
-        if (failed.length) {
-          await queuePhotos(null, 0, failed)
-          setSaveError(`${failed.length} photo${failed.length > 1 ? 's are' : ' is'} saved on this device and will upload when the connection returns.`)
-        }
+        if (failed.length) await queuePhotos(null, 0, failed)
+        setSaveError(uploadOutcomeMessage(failed.length, rejected))
         const { data: fresh } = await supabase.from('job_photos').select('*').eq('job_id', jobId).is('field_id', null)
         const nextGp = fresh ?? []
         setGeneralPhotos(nextGp)
