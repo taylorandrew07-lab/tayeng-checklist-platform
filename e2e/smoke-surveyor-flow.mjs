@@ -5,7 +5,8 @@
  * (silent RLS denials, etc.). It provisions a throwaway surveyor + an
  * admin-created job ASSIGNED to that surveyor, then signs in AS the surveyor and
  * performs every action a surveyor takes to finish a job: open it, answer fields,
- * sign, attach a photo, submit, and advance the workflow. It verifies each step
+ * sign, upload a photo AND a PDF to storage, attach them, submit, and advance the
+ * workflow. It verifies each step
  * actually persisted (not a silent 0-row denial), then deletes all the test data.
  *
  * Run:  npm run smoke
@@ -73,6 +74,17 @@ try {
   if (je) throw new Error('admin insert job: ' + je.message)
   jobId = job.id
   cleanup.push(async () => {
+    // Storage objects first: deleting the rows would lose the paths to clean up.
+    // Recursive, because the real key is jobId/fieldId/instance/file — three levels
+    // down. A two-level sweep silently left SMOKE files sitting in the live bucket.
+    const sweep = async (prefix) => {
+      const { data: entries } = await admin.storage.from('job-photos').list(prefix, { limit: 1000 })
+      for (const e of entries ?? []) {
+        if (e.id) await admin.storage.from('job-photos').remove([`${prefix}/${e.name}`])
+        else await sweep(`${prefix}/${e.name}`)
+      }
+    }
+    await sweep(jobId)
     await admin.from('job_field_values').delete().eq('job_id', jobId)
     await admin.from('job_signatures').delete().eq('job_id', jobId)
     await admin.from('job_photos').delete().eq('job_id', jobId)
@@ -97,6 +109,22 @@ try {
   if (sigF) check(await sb.from('job_signatures').upsert({ job_id: jobId, field_id: sigF.id, signature_data: 'data:image/png;base64,iVBORw0KGgo=', signed_at: new Date().toISOString() }, { onConflict: 'job_id,field_id,instance' }).select('id'), 'capture a signature')
 
   check(await sb.from('job_photos').insert({ job_id: jobId, field_id: photoF?.id ?? null, storage_path: `${jobId}/smoke.jpg`, filename: 'smoke.jpg', uploaded_by: userId }).select('id'), 'attach a photo')
+
+  // Bytes, not just the row. Until now nothing here ever touched storage, so neither
+  // the surveyor's storage RLS nor the bucket's allowed_mime_types was covered — and
+  // the bucket silently refused every PDF for as long as the pre-hire checklist has
+  // asked for one (415 invalid_mime_type, migration 196). The path shape matches what
+  // the app and the offline sync both write: jobId/fieldId/instance/file.
+  const uploadAs = async (label, name, body, contentType) => {
+    const p = `${jobId}/${photoF?.id ?? 'general'}/0/smoke_${name}`
+    const { error } = await sb.storage.from('job-photos').upload(p, body, { contentType, upsert: true })
+    if (error) bad(`${label}: ${error.message}`)
+    else ok(label)
+  }
+  await uploadAs('upload a JPEG to storage', 'shot.jpg',
+    Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64'), 'image/jpeg')
+  await uploadAs("upload a PDF to storage (ship's particulars)", 'particulars.pdf',
+    Buffer.from('%PDF-1.4 1 0 obj<</Type/Catalog>>endobj trailer<</Root 1 0 R>> %%EOF'), 'application/pdf')
 
   check(await sb.from('jobs').update({ submitted_at: new Date().toISOString() }).eq('id', jobId).select('id'), 'SUBMIT (set submitted_at)')
 
