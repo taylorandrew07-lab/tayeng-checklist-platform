@@ -254,15 +254,29 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
   }
 
   try {
+    // A draft can sit on a device for days, and a question can be deleted from the
+    // template in the meantime (migration 197 removed five). job_field_values'
+    // foreign key rejects the WHOLE batch for one dead field id, so without this a
+    // single removed question would strand every answer on that device forever.
+    // Checked against the SERVER's template, never draft.sections — the cached copy
+    // is precisely the stale one. If the check can't be made, save as before.
+    let liveFieldIds: Set<string> | null = null
+    const templateId = (draft.job as { template_id?: string } | null)?.template_id
+    if (templateId) {
+      const { data: tf } = await supabase.from('template_fields').select('id').eq('template_id', templateId)
+      if (tf) liveFieldIds = new Set(tf.map(r => r.id as string))
+    }
+    const stillExists = (r: { field_id: string }) => !liveFieldIds || liveFieldIds.has(r.field_id)
+
     // Keys carry the repeatable-section instance — split it back out for persistence.
     const valueRows = Object.entries(draft.values).map(([key, value]) => {
       const { fieldId, instance } = parseInstanceKey(key)
       return { job_id: jobId, field_id: fieldId, instance, value, value_array: null }
-    })
+    }).filter(stillExists)
     const arrayRows = Object.entries(draft.arrayValues).map(([key, value_array]) => {
       const { fieldId, instance } = parseInstanceKey(key)
       return { job_id: jobId, field_id: fieldId, instance, value: null, value_array }
-    })
+    }).filter(stillExists)
     if (valueRows.length) {
       const { error } = await supabase.from('job_field_values').upsert(valueRows, { onConflict: 'job_id,field_id,instance' })
       if (error) throw error
@@ -274,6 +288,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     for (const [key, signature_data] of Object.entries(draft.signatures)) {
       if (!signature_data) continue
       const { fieldId, instance } = parseInstanceKey(key)
+      if (!stillExists({ field_id: fieldId })) continue   // same reason as the answers above
       const { error } = await supabase.from('job_signatures').upsert(
         { job_id: jobId, field_id: fieldId, instance, signature_data, signed_at: new Date().toISOString() },
         { onConflict: 'job_id,field_id,instance' }

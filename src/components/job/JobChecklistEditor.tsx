@@ -993,16 +993,24 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           setValues(valuesToSave)
         }
 
+        // A question can be deleted from the template while a survey is open on
+        // someone's phone — migration 197 removed five. The answers to it are still in
+        // this page's state, and job_field_values_field_id_fkey rejects the WHOLE batch
+        // for one dead id, so a single removed question stops every answer on the job
+        // from saving. Write only what the template we loaded still has.
+        const liveFieldIds = new Set(sections.flatMap(sec => sec.fields.map(f => f.id)))
+        const stillExists = (r: { field_id: string }) => liveFieldIds.has(r.field_id)
+
         // Keys carry the repeatable-section instance (fieldId@@n); split it back out
         // so each entry persists against (job_id, field_id, instance).
         const upserts = Object.entries(valuesToSave).map(([key, value]) => {
           const { fieldId, instance } = parseInstanceKey(key)
           return { job_id: jobId, field_id: fieldId, instance, value, value_array: null }
-        })
+        }).filter(stillExists)
         const arrayUpserts = Object.entries(arrayValues).map(([key, value_array]) => {
           const { fieldId, instance } = parseInstanceKey(key)
           return { job_id: jobId, field_id: fieldId, instance, value: null, value_array }
-        })
+        }).filter(stillExists)
 
         if (upserts.length > 0) {
           const { error } = await withTimeout(
@@ -1027,6 +1035,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         for (const [key, signature_data] of Object.entries(signatures)) {
           if (!signature_data) continue
           const { fieldId, instance } = parseInstanceKey(key)
+          if (!liveFieldIds.has(fieldId)) continue   // same reason as the answers above
           const { error } = await withTimeout(
             supabase.from('job_signatures').upsert(
               { job_id: jobId, field_id: fieldId, instance, signature_data, signed_at: new Date().toISOString() },
