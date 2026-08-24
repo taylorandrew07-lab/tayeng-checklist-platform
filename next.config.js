@@ -29,6 +29,11 @@ const csp = [
   "img-src 'self' data: blob: https://*.supabase.co",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
   "worker-src 'self' blob:",
+  // The in-app document viewer frames a PDF attachment (the pre-hire ship's particulars
+  // and crew list arrive as PDFs). blob: ONLY: the app downloads the bytes itself over
+  // connect-src and frames the blob, so this never permits framing a remote URL. There
+  // is no object-src counterpart on purpose — <object>/<embed> stay 'none'.
+  "frame-src 'self' blob:",
   "manifest-src 'self'",
   "frame-ancestors 'self'",
   "object-src 'none'",

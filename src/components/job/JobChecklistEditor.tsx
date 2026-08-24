@@ -73,6 +73,45 @@ function uploadOutcomeMessage(queued: number, rejected: string[]): string | null
 const queuedPath = (localId: string) => `local:${localId}`
 const isQueuedPath = (path: string | null | undefined) => !!path?.startsWith('local:')
 
+/** One attachment tile, for every grid that shows one. An attachment is not always a
+ *  picture: the pre-hire checklist asks for the ship's particulars (2.11) and the crew
+ *  list (6.9), which a vessel hands over as a PDF, and both sit on `photo`-TYPE fields.
+ *  Three of the four grids rendered every attachment as an <img>, so a PDF came out as
+ *  a blank tile that opened a blank viewer — on desktop as well as on the phone. Only
+ *  the per-question attach strip ever knew the difference. */
+function AttachmentThumb({ filename, storagePath, url, onOpen }: {
+  filename: string | null | undefined
+  storagePath: string
+  url: string | undefined
+  onOpen: () => void
+}) {
+  if (!isImageAttachment(filename, storagePath)) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title={filename ?? 'Open document'}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1 text-center bg-gray-50 hover:bg-gray-100 cursor-zoom-in"
+      >
+        <FileText className="h-5 w-5 text-gray-400" />
+        <span className="text-[9px] text-gray-600 break-all line-clamp-2">{filename}</span>
+      </button>
+    )
+  }
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt={filename ?? 'photo'}
+        loading="lazy"
+        onClick={onOpen}
+        className="absolute inset-0 w-full h-full object-cover cursor-zoom-in"
+      />
+    )
+  }
+  return <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 p-1 text-center break-all">{filename}</span>
+}
+
 /** Corner marker on a thumbnail whose bytes are still only on this device. Without it a
  *  surveyor has no way to tell a saved photo from one that has actually reached the
  *  server — which is exactly the reassurance needed before leaving the vessel. */
@@ -234,11 +273,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhoto[]>([])
     // Clicking a thumbnail opens it full-size in an on-screen lightbox (no download,
     // no navigation). null = closed.
-    const [lightbox, setLightbox] = useState<{ url: string; filename?: string | null } | null>(null)
+    const [lightbox, setLightbox] = useState<{
+      path: string
+      url: string | null
+      filename?: string | null
+      /** A PDF cannot go in an <img>; it is framed instead. */
+      kind: 'image' | 'doc'
+      /** True when url is an object URL this viewer minted and must revoke on close. */
+      owned?: boolean
+      /** Signed URL for the "open in a new tab" escape hatch (never for the frame). */
+      href?: string | null
+      error?: string | null
+    } | null>(null)
     // Close the lightbox with Escape, for desktop keyboard users.
     useEffect(() => {
       if (!lightbox) return
-      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeViewer() }
       window.addEventListener('keydown', onKey)
       return () => window.removeEventListener('keydown', onKey)
     }, [lightbox])
@@ -1193,6 +1243,64 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       })
     }
 
+    /** Close the viewer, releasing any object URL it minted. */
+    function closeViewer() {
+      setLightbox(prev => {
+        if (prev?.owned && prev.url) URL.revokeObjectURL(prev.url)
+        return null
+      })
+    }
+
+    /**
+     * Open an attachment over the checklist. Deliberately not a link out:
+     *  - a PDF handed to an <img> is a blank tile and a blank viewer, which is what
+     *    the ship's particulars did on every device;
+     *  - an installed iOS PWA has no new tab to open into, so target="_blank" there
+     *    opens an empty view.
+     * The URL is re-minted at open time. The ones from page load last an hour and a
+     * survey stays open far longer; an expired link renders blank too, and a blank
+     * viewer is indistinguishable from a corrupt file.
+     * A document is downloaded and framed as a blob rather than framed by URL: the CSP
+     * allows frame-src blob: only, so the bytes come over connect-src like all our
+     * other reads and no remote origin becomes frameable.
+     */
+    async function openAttachment(pRow: { storage_path: string; filename?: string | null }) {
+      const path = pRow.storage_path
+      const kind: 'image' | 'doc' = isImageAttachment(pRow.filename, path) ? 'image' : 'doc'
+      // Still on the device: the object URL already in photoUrls is all there is.
+      if (isQueuedPath(path)) {
+        const local = photoUrls[path]
+        setLightbox({
+          path, url: local ?? null, filename: pRow.filename, kind, owned: false, href: null,
+          error: local ? null : 'This file has not uploaded yet and cannot be previewed.',
+        })
+        return
+      }
+      setLightbox({ path, url: null, filename: pRow.filename, kind, owned: false, href: null, error: null })
+      const supabase = createClient()
+      try {
+        const { data: signed } = await supabase.storage.from('job-photos').createSignedUrl(path, 3600)
+        const href = signed?.signedUrl ?? null
+        if (href) setPhotoUrls(prev => ({ ...prev, [path]: href }))
+        if (kind === 'image') {
+          if (!href) throw new Error('Could not open this photo.')
+          setLightbox(prev => (prev && prev.path === path ? { ...prev, url: href, href } : prev))
+          return
+        }
+        const { data: blob, error } = await supabase.storage.from('job-photos').download(path)
+        if (error || !blob) throw new Error(error?.message ?? 'Could not open this document.')
+        const objectUrl = URL.createObjectURL(blob.type ? blob : new Blob([blob], { type: 'application/pdf' }))
+        setLightbox(prev => {
+          // Closed, or moved on to another attachment, while the bytes were in flight.
+          if (!prev || prev.path !== path) { URL.revokeObjectURL(objectUrl); return prev }
+          return { ...prev, url: objectUrl, owned: true, href }
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Could not open this file.'
+        setLightbox(prev => (prev && prev.path === path ? { ...prev, error: message } : prev))
+      }
+    }
+
     // --- Queued (offline) photos ---
     // IndexedDB is the source of truth. This reloads it, drops anything the sync has
     // since uploaded (the server rows now cover those), and mints object URLs so the
@@ -1797,11 +1905,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                             {photos.map(p => (
                               <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center group overflow-hidden">
-                                {photoUrls[p.storage_path] ? (
-                                  <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
-                                ) : (
-                                  <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
-                                )}
+                                <AttachmentThumb filename={p.filename} storagePath={p.storage_path} url={photoUrls[p.storage_path]} onOpen={() => void openAttachment(p)} />
                                 {p.pending && <PendingPhotoBadge />}
                                 <button
                                   onClick={() => deletePhoto(p.id, p.storage_path, key)}
@@ -1836,11 +1940,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         {photos.map(p => (
                           <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
-                            {photoUrls[p.storage_path] ? (
-                              <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
-                            ) : (
-                              <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
-                            )}
+                            <AttachmentThumb filename={p.filename} storagePath={p.storage_path} url={photoUrls[p.storage_path]} onOpen={() => void openAttachment(p)} />
                             {p.pending && <PendingPhotoBadge />}
                           </div>
                         ))}
@@ -1906,28 +2006,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
                     {attachPhotos.map(p => (
                       <div key={p.id} className="relative aspect-square rounded-lg bg-gray-100 overflow-hidden group">
-                        {!isImageAttachment(p.filename, p.storage_path) ? (
-                          // A document, not a picture: name it and open it in a new tab.
-                          <a
-                            href={photoUrls[p.storage_path] || undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1 text-center bg-gray-50 hover:bg-gray-100"
-                          >
-                            <FileText className="h-5 w-5 text-gray-400" />
-                            <span className="text-[9px] text-gray-600 break-all line-clamp-2">{p.filename}</span>
-                          </a>
-                        ) : photoUrls[p.storage_path] ? (
-                          <img
-                            src={photoUrls[p.storage_path]}
-                            alt={p.filename ?? 'photo'}
-                            loading="lazy"
-                            onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })}
-                            className="absolute inset-0 w-full h-full object-cover cursor-zoom-in"
-                          />
-                        ) : (
-                          <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-500 p-1 text-center break-all">{p.filename}</span>
-                        )}
+                        <AttachmentThumb filename={p.filename} storagePath={p.storage_path} url={photoUrls[p.storage_path]} onOpen={() => void openAttachment(p)} />
                         {p.pending && <PendingPhotoBadge />}
                         {!readOnly && (
                           <button
@@ -2119,11 +2198,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
                     {allGeneralPhotos.map(p => (
                       <div key={p.id} className="rounded-lg border border-gray-200 overflow-hidden group">
                         <div className="relative aspect-square bg-gray-100 flex items-center justify-center">
-                          {photoUrls[p.storage_path] ? (
-                            <img src={photoUrls[p.storage_path]} alt={p.filename ?? 'photo'} loading="lazy" onClick={() => setLightbox({ url: photoUrls[p.storage_path], filename: p.filename })} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" />
-                          ) : (
-                            <span className="text-xs text-gray-500 p-1 text-center break-all">{p.filename}</span>
-                          )}
+                          <AttachmentThumb filename={p.filename} storagePath={p.storage_path} url={photoUrls[p.storage_path]} onOpen={() => void openAttachment(p)} />
                           {p.pending && <PendingPhotoBadge />}
                           <button
                             onClick={() => deletePhoto(p.id, p.storage_path, null)}
@@ -2212,19 +2287,43 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           </div>
         )}
 
-        {/* Full-size photo lightbox — opens on-screen over everything (portaled to
-            body so no transformed ancestor can clip it), closes on click / ✕ / Esc. */}
+        {/* Full-size attachment viewer — opens on-screen over everything (portaled to
+            body so no transformed ancestor can clip it), closes on click / ✕ / Esc.
+            Photos show as an image; a document is framed so the surveyor can actually
+            read what was attached without leaving the app. */}
         {lightbox && typeof document !== 'undefined' && createPortal(
           <div
             className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4"
-            onClick={() => setLightbox(null)}
+            onClick={closeViewer}
           >
-            <button aria-label="Close" onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/90 hover:text-white">
+            <button aria-label="Close" onClick={closeViewer} className="absolute top-4 right-4 text-white/90 hover:text-white">
               <X className="h-7 w-7" />
             </button>
-            <div className="max-w-6xl max-h-[92vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
-              <img src={lightbox.url} alt={lightbox.filename ?? 'photo'} className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+            <div className="w-full max-w-6xl max-h-[92vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+              {lightbox.error ? (
+                <div className="bg-white rounded-lg px-5 py-4 max-w-md text-center">
+                  <p className="text-sm text-gray-700">{lightbox.error}</p>
+                </div>
+              ) : !lightbox.url ? (
+                <Loader2 className="h-8 w-8 animate-spin text-white/80" />
+              ) : lightbox.kind === 'doc' ? (
+                <iframe
+                  src={lightbox.url}
+                  title={lightbox.filename ?? 'Document'}
+                  className="w-full h-[80vh] bg-white rounded shadow-2xl"
+                />
+              ) : (
+                <img src={lightbox.url} alt={lightbox.filename ?? 'photo'} className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+              )}
               {lightbox.filename && <p className="text-white/80 text-center text-sm mt-3 break-all">{lightbox.filename}</p>}
+              {/* Escape hatch for a browser that will not render a framed PDF. Not
+                  labelled "Download": in an installed iOS PWA this opens a viewer, and
+                  calling it a download promises something that platform cannot do. */}
+              {lightbox.kind === 'doc' && lightbox.href && (
+                <a href={lightbox.href} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:text-white text-xs underline mt-1">
+                  Open in a new tab
+                </a>
+              )}
             </div>
           </div>,
           document.body
