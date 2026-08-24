@@ -763,7 +763,14 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       if (offlineAvailable()) {
         try {
           const draft = await getDraft(userId, jobId)
-          if (draft && draft.userId === userId && (draft.needsSync || draft.pendingSubmit)) {
+          // `dirty` matters as much as `needsSync` here. needsSync marks work done
+          // OFFLINE; an ONLINE autosave leaves it false and relies on the server write
+          // having landed. When that write fails — a dead field id after a template
+          // edit, an expired session, a request that never lands — the answers live
+          // only in this draft, and without `dirty` the branch below would overwrite
+          // it with the server snapshot and destroy them. dirty is cleared by
+          // markDraftSynced, so it is true only while edits are genuinely unconfirmed.
+          if (draft && draft.userId === userId && (draft.needsSync || draft.pendingSubmit || draft.dirty)) {
             hydrateFromDraft(draft)
           } else if (!jobData.submitted_at) {
             await putDraft({
