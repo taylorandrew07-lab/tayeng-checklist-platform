@@ -11,6 +11,7 @@ import {
 import { formatDiffPercentage, isSurveyedVesselNameField, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
 import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
+import { reviewChecklist } from '@/lib/checklist/review'
 import { answerColor, answerBadgeText, isAnswerFamily } from '@/lib/checklist/answerOptions'
 import { COMPANY } from '@/lib/company'
 
@@ -598,38 +599,29 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
   // Every answer that reads as a finding, in checklist order.
   //
-  // The rule is the ANSWER COLOUR, not the word "No". Some questions are deliberately
-  // reversed — outstanding conditions of class, overdue maintenance, PSC deficiencies,
-  // breakdowns — where YES is the problem and No is green. Listing every "No" would
-  // report those backwards AND miss the real finding. The colour already encodes the
-  // judgement: red or amber is a finding, green is not, grey is N/A. N/I lands in amber
-  // by design, so an item nobody could inspect appears here too, which is right — it is
-  // an open question, not a pass.
-  const findings: Array<{ num: string; label: string; answer: string; remark: string; amber: boolean }> = []
-  if (deficiencySummary) {
-    for (const section of sections as any[]) {
-      const instances = section.is_repeatable
-        ? orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos)
-        : [0]
-      for (const inst of instances) {
-        for (const field of (section.fields ?? []) as any[]) {
-          if (!isAnswerFamily(field.field_type)) continue
-          const raw = fieldValues[instanceKey(field.id, inst)] ?? ''
-          const value = raw.includes('|||') ? raw.split('|||')[0] : raw
-          if (!value) continue
-          const colour = answerColor(value, field.options)
-          if (colour !== 'red' && colour !== 'amber') continue
-          findings.push({
-            num: field.item_number || '',
-            label: resolvePdfLabel(field.label, fieldValues, allFieldsFlat),
-            answer: answerBadgeText(value, field.options),
-            remark: raw.includes('|||') ? raw.split('|||')[1] : '',
-            amber: colour === 'amber',
-          })
-        }
-      }
-    }
-  }
+  // The walk lives in lib/checklist/review — the surveyor now sees this same list on
+  // screen before leaving the vessel, and the report and the screen must never disagree
+  // about what counts as a defect. The rule it applies (colour, not the word "No") is
+  // documented there.
+  const findings = deficiencySummary
+    ? reviewChecklist({
+        sections: sections as any,
+        values: fieldValues,
+        arrayValues,
+        signatures,
+        instancesFor: (section: any) =>
+          orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos),
+        hasPhoto: (fieldId, instance) =>
+          photos.some(p => p.field_id === fieldId && (p.instance ?? 0) === instance),
+        resolveLabel: (label) => resolvePdfLabel(label, fieldValues, allFieldsFlat),
+      }).findings.map(f => ({
+        num: f.itemNumber || '',
+        label: f.label,
+        answer: f.answer ?? '',
+        remark: f.remark ?? '',
+        amber: f.severity === 'amber',
+      }))
+    : []
 
   /** Documents attached to a question, named beneath it. The file itself lives in the
    *  job record — the report states that it was taken and what it was called. */

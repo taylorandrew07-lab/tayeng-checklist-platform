@@ -180,6 +180,8 @@ import {
   putPhoto, getPhotosForJob, deletePhoto as deleteQueuedPhoto,
 } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
+import { reviewChecklist } from '@/lib/checklist/review'
+import { ChecklistReviewPanel } from '@/components/job/ChecklistReviewPanel'
 import { instanceKey, parseInstanceKey } from '@/lib/offline/instanceKeys'
 import type { OfflineDraft, QueuedPhoto } from '@/lib/offline/types'
 import { downscaleImages } from '@/lib/files/downscaleImage'
@@ -822,6 +824,29 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       }
       return units
     }, [sections, entryOrder])
+
+    // What the surveyor still owes, and what reads as a finding — the same walk that
+    // prints the report's deficiency summary (lib/checklist/review), fed this surface's
+    // own notions of instances, photos and visibility.
+    const review = useMemo(() => {
+      const visible = new Set(
+        visibilityUnits
+          .filter(u => checkConditionalLogic(u.sectionLogic ?? null, values) && checkConditionalLogic(u.logic ?? null, values))
+          .map(u => u.key),
+      )
+      return reviewChecklist({
+        sections,
+        values,
+        arrayValues,
+        signatures,
+        instancesFor: (section) => orderFor(section.id),
+        // allFieldPhotos folds the queued ones in: a photo taken with no signal has
+        // been taken, and must not be reported as a missing answer on the deck.
+        hasPhoto: (fieldId, instance) => (allFieldPhotos[instanceKey(fieldId, instance)]?.length ?? 0) > 0,
+        isVisible: (_section, field, instance) => visible.has(instanceKey(field.id, instance)),
+      })
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sections, values, arrayValues, signatures, allFieldPhotos, visibilityUnits, entryOrder])
 
     // --- Value setters that mark dirty ---
     // Changing an answer can hide other fields. Their stored answers are cleared here, because a
@@ -2271,6 +2296,15 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
             </button>
           </div>
         )}
+
+        {/* The end-of-survey review: what is still blank, and what reads as a finding.
+            Sits above the finish button because that is the order the work happens in
+            — check, then finish. */}
+        <ChecklistReviewPanel
+          unanswered={review.unanswered}
+          findings={review.findings}
+          onJump={jumpToField}
+        />
 
         {/* Sticky bottom action bar */}
         {!readOnly && (
