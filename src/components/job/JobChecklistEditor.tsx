@@ -449,9 +449,22 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
         !job?.submitted_at
     }
 
-    function hydrateFromDraft(draft: OfflineDraft) {
+    /**
+     * Restore a draft into the editor.
+     *
+     * `authoritativeSections` MUST be passed whenever the server has just been read.
+     * The draft caches a copy of the template for offline reopen, and that copy is
+     * frozen at whenever the draft was written — it can still hold questions the
+     * template has since dropped. Restoring it would put the old form back on screen
+     * AND make every "does this field still exist?" check consult the stale copy,
+     * which is how a deleted question kept poisoning the save after migration 197.
+     * Only the offline paths, which have no server template to consult, fall back to
+     * the cached one; the sync then re-checks against the server before writing.
+     */
+    function hydrateFromDraft(draft: OfflineDraft, authoritativeSections?: typeof sections) {
+      const secs = authoritativeSections ?? draft.sections
       setJob(draft.job)
-      setSections(draft.sections)
+      setSections(secs)
       setValues(draft.values)
       setArrayValues(draft.arrayValues)
       setSignatures(draft.signatures)
@@ -465,7 +478,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
       const maps = [draft.values, draft.arrayValues, draft.signatures, draft.fieldPhotos ?? {}] as Record<string, any>[]
       const savedOrder = (draft.job?.repeatable_order ?? {}) as Record<string, number[]>
       const order: Record<string, number[]> = {}
-      for (const s of (draft.sections ?? []) as any[]) {
+      for (const s of (secs ?? []) as any[]) {
         if (!s.is_repeatable) continue
         const present = presentInstances((s.fields ?? []).map((f: any) => f.id), maps)
         order[s.id] = resolveEntryOrder(present, savedOrder[s.id])
@@ -771,7 +784,7 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
           // it with the server snapshot and destroy them. dirty is cleared by
           // markDraftSynced, so it is true only while edits are genuinely unconfirmed.
           if (draft && draft.userId === userId && (draft.needsSync || draft.pendingSubmit || draft.dirty)) {
-            hydrateFromDraft(draft)
+            hydrateFromDraft(draft, processedSections)
           } else if (!jobData.submitted_at) {
             await putDraft({
               key: '', jobId, userId, job: jobData, sections: processedSections,
