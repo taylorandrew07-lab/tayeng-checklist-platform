@@ -76,6 +76,13 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
   admin-gated and says out loud how much history it will destroy.
 - **A PostgREST *bulk* insert sends an explicit NULL for every key a row omits** — it
   does not fall back to the column DEFAULT. Mixed-shape batches fail on `NOT NULL`.
+- **Deleting a template field can destroy captured data through an FK, silently.**
+  `job_signatures.field_id` is `ON DELETE CASCADE` (mig 001), so dropping a *signature*
+  field takes every signature ever drawn on it — submitted, report-numbered jobs
+  included — with no error. The house guarded-delete pattern (migs 182/184/197/200)
+  checks `job_field_values` and `job_photos` only and does not catch this; mig 201 adds
+  `job_signatures`. **Guard the delete, run it, and if the guard fires, query the live
+  DB to find out whose data it is before you write a clause that deletes it anyway.**
 
 ## Security model
 
