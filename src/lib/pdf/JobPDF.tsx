@@ -28,6 +28,14 @@ const styles = StyleSheet.create({
     paddingLeft: 30,
     paddingRight: 30,
   },
+  // pdf_tight_page_bottom (migration 203). Six points of extra content height per
+  // page — enough to keep a short closing disclaimer off a page of its own, while
+  // still clearing the fixed footer (bottom 14 + 4 padding) by ~18pt. Applied as an
+  // OVERRIDE on top of `page`, never by editing it: `page` is the geometry every
+  // other template's report is pinned to in JobPDF.unchanged.test.ts.
+  pageTightBottom: {
+    paddingBottom: 38,
+  },
   // Report title
   reportTitleBlock: {
     marginBottom: 6,
@@ -709,6 +717,10 @@ interface PDFProps {
   hideEmptyRepeatables?: boolean
   /** Never break a word across lines. */
   noHyphenation?: boolean
+  /** Trim the page's bottom margin 44pt -> 38pt. Re-flows the WHOLE report, so every
+   *  page break can move; it exists because the closing disclaimer was landing 14pt
+   *  short of fitting under the sign-off and taking a page to itself. */
+  tightPageBottom?: boolean
   /** Print a LONG yes/no remark full width beneath its row rather than in the narrow
    *  strip beside the answer badge. */
   remarkBelow?: boolean
@@ -782,7 +794,7 @@ function renderInfoRow(
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false, documents = [], uniformLabelWidth = false, showReportNumber = false, hideEmptyRepeatables = false, noHyphenation = false, remarkBelow = false, sortChoices = false, formatDates = false, sortByItemNumber = false, findingDetail = false }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false, documents = [], uniformLabelWidth = false, showReportNumber = false, hideEmptyRepeatables = false, noHyphenation = false, tightPageBottom = false, remarkBelow = false, sortChoices = false, formatDates = false, sortByItemNumber = false, findingDetail = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
 
   // Migration 202 presentation options, resolved ONCE. `hyph` is `{}` unless the
@@ -1037,7 +1049,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
       author={COMPANY.name}
       subject="Survey Checklist Report"
     >
-      <Page size="LETTER" style={styles.page}>
+      <Page size="LETTER" style={tightPageBottom ? [styles.page, styles.pageTightBottom] : styles.page}>
 
         {hideLogo ? (
           /* Logo toggled off → NO letterhead at all (no logo, no company name, no

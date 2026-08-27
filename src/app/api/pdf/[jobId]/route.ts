@@ -83,7 +83,7 @@ export async function GET(
   // keyed off it — avoids a second jobs round-trip just to get template_id.
   const { data: job } = await db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos, pdf_photos_inline, pdf_deficiency_summary, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_uniform_label_width, pdf_embed_attachments, pdf_show_report_number, pdf_hide_empty_repeatables, pdf_no_hyphenation, pdf_remark_below, pdf_sort_choices, pdf_format_dates, pdf_sort_by_item_number, pdf_finding_detail, pdf_disclaimer, pdf_preamble),
+      template:checklist_templates(name, pdf_include_photos, pdf_photos_inline, pdf_deficiency_summary, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_uniform_label_width, pdf_embed_attachments, pdf_show_report_number, pdf_hide_empty_repeatables, pdf_no_hyphenation, pdf_tight_page_bottom, pdf_remark_below, pdf_sort_choices, pdf_format_dates, pdf_sort_by_item_number, pdf_finding_detail, pdf_disclaimer, pdf_preamble),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single()
@@ -311,6 +311,7 @@ export async function GET(
         showReportNumber: job.template?.pdf_show_report_number === true,
         hideEmptyRepeatables: job.template?.pdf_hide_empty_repeatables === true,
         noHyphenation: job.template?.pdf_no_hyphenation === true,
+        tightPageBottom: job.template?.pdf_tight_page_bottom === true,
         remarkBelow: job.template?.pdf_remark_below === true,
         sortChoices: job.template?.pdf_sort_choices === true,
         formatDates: job.template?.pdf_format_dates === true,

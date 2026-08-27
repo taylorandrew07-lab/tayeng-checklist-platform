@@ -320,6 +320,11 @@ export interface ChecklistTemplate {
    *  guesses are not real syllable breaks and read as typos in a signed report).
    *  Default false. See migration 202. */
   pdf_no_hyphenation: boolean
+  /** When true the page's bottom margin is 38pt instead of 44pt — six points of extra
+   *  content height per page, enough to keep a short closing disclaimer off a page of
+   *  its own, still clearing the fixed footer by ~18pt. Re-flows the WHOLE report, so
+   *  every page break can move. Default false. See migration 203. */
+  pdf_tight_page_bottom: boolean
   /** When true a LONG yes/no remark prints full-width beneath its row instead of in
    *  the narrow strip beside the answer badge. Short remarks are unaffected.
    *  Default false. See migration 202. */
