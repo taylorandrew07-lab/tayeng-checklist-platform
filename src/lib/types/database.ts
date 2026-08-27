@@ -292,6 +292,57 @@ export interface ChecklistTemplate {
   /** Spread the report header rows evenly across both columns instead of the default
    *  job-rows-left / checklist-rows-right split. See migration 141. */
   pdf_balanced_header: boolean
+  // --- Pre-Hire report presentation, migration 202 ------------------------------
+  // All ten default FALSE and are on for the Pre-Hire Inspection template only, so
+  // every other report renders byte-for-byte as it does today. Each is also a prop
+  // on JobPDF that defaults to false. REMEMBER: a flag added here does nothing until
+  // it is ALSO named in the template select list in src/app/api/pdf/[jobId]/route.ts
+  // — an unselected column arrives `undefined`, which silently reads as off.
+  /** When true every question row uses the SAME question/value split (60/40) instead
+   *  of one chosen from the field type, so the value column never moves down the
+   *  page. Default false. See migration 202. */
+  pdf_uniform_label_width: boolean
+  /** When true every non-image attachment is appended to the END of the report IN
+   *  FULL, behind a separator page naming it and the item it belongs to, and the
+   *  in-body line becomes "see Attachment N". Default false. See migration 202. */
+  pdf_embed_attachments: boolean
+  /** When true the report prints jobs.report_number (the client-facing 26-08-NNN
+   *  series) in the header, footer, PDF title and filename in preference to
+   *  jobs.job_number (the internal "TEAL C/L #" ledger reference).
+   *  Default false. See migration 202. */
+  pdf_show_report_number: boolean
+  /** When true a repeatable section with no data at all is left out of the report
+   *  entirely, instead of printing a forced page break and one "Entry 1" of em
+   *  dashes. The editor's blank-first-entry floor is unaffected.
+   *  Default false. See migration 202. */
+  pdf_hide_empty_repeatables: boolean
+  /** When true no word is broken across lines (@react-pdf's default hyphenation
+   *  guesses are not real syllable breaks and read as typos in a signed report).
+   *  Default false. See migration 202. */
+  pdf_no_hyphenation: boolean
+  /** When true a LONG yes/no remark prints full-width beneath its row instead of in
+   *  the narrow strip beside the answer badge. Short remarks are unaffected.
+   *  Default false. See migration 202. */
+  pdf_remark_below: boolean
+  /** When true a multiple-choice answer prints in the template's own option order
+   *  (the deliberate statutory order), not the order the surveyor tapped.
+   *  Default false. See migration 202. */
+  pdf_sort_choices: boolean
+  /** When true date-field values and the header Date print as DD.MM.YYYY instead of
+   *  the raw ISO the database stores. Hand-typed dates are left alone.
+   *  Default false. See migration 202. */
+  pdf_format_dates: boolean
+  /** When true each section's rows are ordered by ITEM NUMBER rather than the
+   *  builder's order_index, so a conditional detail (7.1A) sits with its question
+   *  instead of after the next tick-list. No template data changes.
+   *  Default false. See migration 202. */
+  pdf_sort_by_item_number: boolean
+  /** When true the Summary of Findings borrows the answer to a finding's conditional
+   *  DETAIL field (7.1A) when the finding's own remark box is empty, so an explained
+   *  defect is not printed bare. Requires pdf_deficiency_summary — it changes only what
+   *  that summary prints. Default false, so a template that turns the summary on later
+   *  decides about this separately instead of inheriting it. See migration 202. */
+  pdf_finding_detail: boolean
   /** Fixed legal boilerplate printed at the end of every generated PDF for this
    *  template (NOT an editable survey field). null prints nothing. */
   pdf_disclaimer: string | null

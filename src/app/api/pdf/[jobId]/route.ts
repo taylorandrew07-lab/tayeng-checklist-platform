@@ -8,10 +8,21 @@ import sharp from 'sharp'
 import exifr from 'exifr'
 import { checkConditionalLogic, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
+import { mergeAttachments, ATTACHMENT_REASONS, type AttachmentPlan } from '@/lib/pdf/mergeAttachments'
+import { loadAttachments, withDeadline } from '@/lib/pdf/fetchAttachments'
 
 // Reports with many full-resolution photos take a while to render — give the function
 // headroom so it completes instead of being cut off (which the client sees as a hang).
 export const maxDuration = 60
+
+// --- Attachment fetching budget (migration 202) ------------------------------------
+// The report itself is the deliverable; the appended documents are a bonus. Neither
+// number may be raised to the point where a Storage problem can cost Andrew a report
+// that has already rendered: maxDuration is 60s and fetchJobPdfFile aborts the client
+// at 70s, so anything the fetch does not finish inside its own budget must degrade to a
+// separator page rather than keep the response waiting.
+const ATTACHMENT_BUDGET_MS = 20_000   // wall clock for signing + ALL downloads
+const ATTACHMENT_FETCH_MS = 10_000    // per file
 
 export async function GET(
   request: Request,
@@ -72,7 +83,7 @@ export async function GET(
   // keyed off it — avoids a second jobs round-trip just to get template_id.
   const { data: job } = await db.from('jobs').select(`
       *,
-      template:checklist_templates(name, pdf_include_photos, pdf_photos_inline, pdf_deficiency_summary, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_disclaimer, pdf_preamble),
+      template:checklist_templates(name, pdf_include_photos, pdf_photos_inline, pdf_deficiency_summary, pdf_hide_logo, pdf_hide_client, pdf_hide_surveyor, pdf_balanced_header, pdf_uniform_label_width, pdf_embed_attachments, pdf_show_report_number, pdf_hide_empty_repeatables, pdf_no_hyphenation, pdf_remark_below, pdf_sort_choices, pdf_format_dates, pdf_sort_by_item_number, pdf_finding_detail, pdf_disclaimer, pdf_preamble),
       client:clients(name),
       assignee:profiles!jobs_assigned_to_fkey(full_name)
     `).eq('id', jobId).single()
@@ -126,9 +137,11 @@ export async function GET(
   const isImageFile = (name: string | null, path: string) =>
     /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(name || path)
   const photoRows = allRows.filter(p => isImageFile(p.filename, p.storage_path))
-  const documents = allRows
-    .filter(p => !isImageFile(p.filename, p.storage_path))
-    .map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, filename: p.filename || 'attachment' }))
+  const documentRows = allRows.filter(p => !isImageFile(p.filename, p.storage_path))
+  // UNCHANGED shape and UNCHANGED created_at order — this is what every other template
+  // renders from, and it must stay exactly as it is.
+  let documents: Array<{ field_id: string | null; instance: number; filename: string; number?: number }> =
+    documentRows.map(p => ({ field_id: p.field_id, instance: p.instance ?? 0, filename: p.filename || 'attachment' }))
 
   const photoCount = photoRows.length
   let photos: Array<{ field_id: string | null; instance: number; url: string; caption: string | null; filename: string | null }> = []
@@ -201,6 +214,66 @@ export async function GET(
     return checkConditionalLogic(s.conditional_logic, vals)
   })
 
+  // Attached DOCUMENTS, appended to the back of the report in full when the template opts
+  // in (checklist_templates.pdf_embed_attachments, migration 202). Off ⇒ none of this
+  // runs, `documents` keeps the exact shape and order every other template renders from,
+  // and the bytes renderToBuffer produced are returned untouched.
+  const embedAttachments = job.template?.pdf_embed_attachments === true
+  let attachmentPlan: AttachmentPlan[] = []
+  let attachmentsPromise: Promise<AttachmentPlan[]> | null = null
+  // One wall clock for signing + every download, started BEFORE renderToBuffer so the
+  // fetching cannot outlive the render it was meant to overlap with.
+  const attachmentDeadline = Date.now() + ATTACHMENT_BUDGET_MS
+  if (embedAttachments && documentRows.length > 0) {
+    // Numbered in CHECKLIST order, not upload order, so "Attachment 1" is the first one a
+    // reader meets in the body. Built from the RAW `sections` list, not processedSections,
+    // so a conditionally-hidden field's attachment is still numbered and still appears.
+    const fieldMeta = new Map<string, { item: string | null; label: string; sort: number }>()
+    for (const sec of ((sections ?? []) as any[])) {
+      ;[...(sec.fields ?? [])]
+        .sort((a: any, b: any) => a.order_index - b.order_index)
+        .forEach((f: any, fi: number) => fieldMeta.set(f.id, {
+          item: f.item_number ?? null,
+          label: f.label ?? '',
+          sort: (sec.order_index ?? 0) * 1000 + fi,
+        }))
+    }
+    const sortKey = (id: string | null) => fieldMeta.get(id ?? '')?.sort ?? Number.MAX_SAFE_INTEGER
+    const ordered = [...documentRows].sort((a, b) =>
+      sortKey(a.field_id) - sortKey(b.field_id) || (a.instance ?? 0) - (b.instance ?? 0))
+
+    attachmentPlan = ordered.map((p, i) => {
+      const m = fieldMeta.get(p.field_id ?? '')
+      return {
+        number: i + 1,
+        filename: p.filename || 'attachment',
+        itemNumber: m?.item ?? null,
+        // "Ship's particulars — attach" → "Ship's particulars"
+        title: (m?.label ?? 'Attachment').replace(/\s*[—–-]\s*attach(ed)?\s*$/i, '').trim() || 'Attachment',
+        storagePath: p.storage_path,
+        bytes: null,
+        reason: null,
+      }
+    })
+
+    // The in-body line must quote the SAME number the separator page uses, so both come
+    // from this one sorted array.
+    const numberByRow = new Map(ordered.map((p, i) => [`${p.field_id}|${p.instance ?? 0}|${p.filename}`, i + 1]))
+    documents = documents.map(d => ({ ...d, number: numberByRow.get(`${d.field_id}|${d.instance}|${d.filename}`) }))
+
+    // Fetch the documents NOW so the network overlaps renderToBuffer below. The rules
+    // that keep a Storage problem from costing Andrew a report he already has — one at a
+    // time, under a wall clock, with the size caps checked before the bytes land — and
+    // the reasons each exists are in lib/pdf/fetchAttachments.ts. It never throws and it
+    // always settles: every entry comes back with bytes or with a printable reason.
+    attachmentsPromise = loadAttachments(attachmentPlan, {
+      signUrls: (paths) =>
+        db.storage.from('job-photos').createSignedUrls(paths, 900).then(r => r.data ?? []),
+      deadline: attachmentDeadline,
+      perFetchMs: ATTACHMENT_FETCH_MS,
+    })
+  }
+
   // Render PDF. Wrap so a render failure returns a clean JSON 500 (which the client
   // helper turns into a friendly "Could not generate the report") instead of an
   // unhandled crash that the browser might render as a broken page.
@@ -231,11 +304,54 @@ export async function GET(
         photosInline: job.template?.pdf_photos_inline === true,
         deficiencySummary: job.template?.pdf_deficiency_summary === true,
         documents,
+        // Migration 202 — Pre-Hire report presentation. `=== true` matches every existing
+        // flag: it coerces both `undefined` (column not selected, or NO template row at
+        // all — 75 jobs carry none) and `null` to false.
+        uniformLabelWidth: job.template?.pdf_uniform_label_width === true,
+        showReportNumber: job.template?.pdf_show_report_number === true,
+        hideEmptyRepeatables: job.template?.pdf_hide_empty_repeatables === true,
+        noHyphenation: job.template?.pdf_no_hyphenation === true,
+        remarkBelow: job.template?.pdf_remark_below === true,
+        sortChoices: job.template?.pdf_sort_choices === true,
+        formatDates: job.template?.pdf_format_dates === true,
+        sortByItemNumber: job.template?.pdf_sort_by_item_number === true,
+        findingDetail: job.template?.pdf_finding_detail === true,
       }) as any
     )
   } catch (e) {
     console.error('[pdf:render]', jobId, e)
     return NextResponse.json({ error: 'Failed to render the report.' }, { status: 500 })
+  }
+
+  // Append the attached documents in full (migration 202). mergeAttachments NEVER throws:
+  // a bad attachment becomes a separator page that says why, and a failure of the merge
+  // itself returns the report unchanged. The report always delivers.
+  if (embedAttachments && attachmentsPromise) {
+    // Belt AND braces. The loop above respects the deadline itself, but this await is
+    // the one place where an unforeseen non-settlement anywhere in that pipeline could
+    // hold a FINISHED report until Vercel kills the function — which is the difference
+    // between a report with a "could not be retrieved" separator page and no report at
+    // all. renderToBuffer has already run, so what is left of the budget is usually
+    // nothing: the downloads were overlapped with it and are long since done.
+    // The grace is the loop's own worst case: it re-checks the clock before each file,
+    // so it can start one last fetch with 1ms left and that fetch runs to its own
+    // ATTACHMENT_FETCH_MS signal. Racing any tighter would throw away attachments that
+    // had already downloaded successfully. Worst case here is therefore 30s, against
+    // maxDuration = 60 and the client's 70s abort — and it only elapses if something
+    // never settles, because an already-settled promise wins this race outright.
+    const loaded = await withDeadline(
+      attachmentsPromise,
+      attachmentDeadline + ATTACHMENT_FETCH_MS - Date.now(),
+      attachmentPlan.map(a => ({ ...a, reason: ATTACHMENT_REASONS.unretrievable })),
+    )
+    pdfBuffer = Buffer.from(
+      await mergeAttachments(
+        new Uint8Array(pdfBuffer),
+        loaded,
+        (job.template?.pdf_show_report_number === true ? job.report_number : null) ?? job.job_number ?? 'Draft',
+        jobId,
+      )
+    )
   }
 
   // Saved report filename, e.g.
@@ -259,7 +375,11 @@ export async function GET(
     job.vessel_name ? withVesselPrefix(job.vessel_name, job.vessel_type) : null,
     job.template?.name ?? job.title ?? null,
     ddmmyyyy(checklistDate || job.scheduled_date || job.created_at) || null,
-    job.job_number ?? job.report_number ?? null,
+    // pdf_show_report_number (migration 202): the client-facing 26-08-NNN, not the
+    // internal "TEAL C/L #" ledger reference. Flag off ⇒ the historic precedence.
+    (job.template?.pdf_show_report_number === true
+      ? (job.report_number ?? job.job_number)
+      : (job.job_number ?? job.report_number)) ?? null,
   ].filter(Boolean).join(' - ')
   const filename = `${displayName
     .replace(/[\\/:*?"<>|]+/g, '-')  // characters not allowed in filenames → dash

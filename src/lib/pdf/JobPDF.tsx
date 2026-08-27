@@ -10,7 +10,7 @@ import {
 } from '@react-pdf/renderer'
 import { formatDiffPercentage, isSurveyedVesselNameField, withVesselPrefix } from '@/lib/utils'
 import { instanceKey } from '@/lib/offline/instanceKeys'
-import { resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
+import { presentInstances, resolveEntryOrderFromData } from '@/lib/checklist/entryOrder'
 import { reviewChecklist } from '@/lib/checklist/review'
 import { answerColor, answerBadgeText, isAnswerFamily } from '@/lib/checklist/answerOptions'
 import { COMPANY } from '@/lib/company'
@@ -108,6 +108,36 @@ const styles = StyleSheet.create({
   fieldLabelWide: {
     width: '64%',
     paddingRight: 6,
+  },
+  // ONE split for every row, so the value column starts at the same x the whole way
+  // down the report. The per-type split above is right on a 12-field checklist and
+  // wrong on a 164-question one: 110 yes/no rows at 64% interleaved with 21 long-answer
+  // rows at 38% makes the table's own columns appear to move. 60/40 is measured against
+  // the Pre-Hire content — 552pt of content width leaves 290pt of question text after
+  // the item-number cell and the 6pt gutter (no question in that template needs a third
+  // line) and 220.8pt of value (its widest one-line answer is 208pt).
+  // Opt-in per template: checklist_templates.pdf_uniform_label_width, migration 202.
+  fieldLabelUniform: {
+    width: '60%',
+    paddingRight: 6,
+  },
+  // pdf_remark_below (migration 202): when a long remark moves out from beside the
+  // answer badge to full width beneath it, the ROW loses its bottom rule and the
+  // remark block below carries it instead, so one rule still closes the question.
+  fieldRowRemarkAbove: {
+    flexDirection: 'row',
+    paddingVertical: 3,
+    minHeight: 14,
+  },
+  remarkBelowBlock: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e2e8f0',
+    paddingBottom: 3,
+  },
+  remarkBelowText: {
+    fontSize: 7.5,
+    color: '#64748b',
+    lineHeight: 1.35,
   },
   fieldLabelText: {
     fontSize: 8,
@@ -382,6 +412,134 @@ const styles = StyleSheet.create({
   },
 })
 
+// ─── Pre-Hire report presentation helpers (migration 202) ────────────────────────
+// Every one of these is inert unless its flag is on. They are pure functions kept at
+// module scope so the flag-off path is a single ternary at each call site.
+
+/** A hyphenation callback that never splits a word.
+ *
+ *  @react-pdf hyphenates by default, and its guesses are not real syllable breaks:
+ *  "Safe Man-/ning Document", "individually sight-/ed", "emer-/gency". On a signed
+ *  survey report those read as typos.
+ *
+ *  THE TRAP: the documented lever is `Font.registerHyphenationCallback`, which is
+ *  PROCESS-GLOBAL. A serverless instance can render two reports at once, so a global
+ *  set for the Pre-Hire render would be read by a concurrent Fuel Transfer render and
+ *  silently change a report that must be byte-identical. @react-pdf also accepts
+ *  `hyphenationCallback` as a prop on each Text (verified in @react-pdf/layout:
+ *  `node.props.hyphenationCallback || fontStore?.getHyphenationCallback()`), which is
+ *  scoped to the one element. Use the prop; never the global.
+ *  (checklist_templates.pdf_no_hyphenation, migration 202.) */
+const KEEP_WORDS_WHOLE = (word: string): string[] => [word]
+
+type HyphenProps = { hyphenationCallback?: (word: string) => string[] }
+
+/** Props to spread onto every Text that can wrap. `{}` when the flag is off, so NO
+ *  prop is emitted and the element is identical to the one rendered today. */
+function hyphenProps(noHyphenation: boolean): HyphenProps {
+  return noHyphenation ? { hyphenationCallback: KEEP_WORDS_WHOLE } : {}
+}
+
+/** ISO date → DD.MM.YYYY, the convention the saved report filename already uses.
+ *  ONLY an exact ISO date is touched, so a hand-typed "Wk 35 - Aug 2026" or
+ *  "OVIQ2 - 14/05/2026" survives verbatim.
+ *  (checklist_templates.pdf_format_dates, migration 202.) */
+export function formatReportDate(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : value
+}
+
+/** Split an item number into comparable runs: "13.15A" → [13, 15, 'A']. */
+function itemNumberKey(n: string): Array<number | string> {
+  return (n.match(/\d+|[A-Za-z]+/g) ?? []).map(t => (/^\d+$/.test(t) ? Number(t) : t.toUpperCase()))
+}
+
+/** Natural order for item numbers: a bare number sorts immediately BEFORE its lettered
+ *  detail, and numbers sort before letters at the same position — 7.1 < 7.1A < 7.2,
+ *  13.15A < 13.16. Total and consistent, so it is safe to hand to Array.sort. */
+export function compareItemNumbers(a: string, b: string): number {
+  const ka = itemNumberKey(a)
+  const kb = itemNumberKey(b)
+  const len = Math.max(ka.length, kb.length)
+  for (let i = 0; i < len; i++) {
+    const x = ka[i]
+    const y = kb[i]
+    if (x === undefined) return -1   // "7.1" before "7.1A"
+    if (y === undefined) return 1
+    if (typeof x === 'number' && typeof y === 'number') {
+      if (x !== y) return x - y
+      continue
+    }
+    if (typeof x === 'number') return -1
+    if (typeof y === 'number') return 1
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
+/** Reorder a section's rows by item number.
+ *
+ *  A conditional detail field is stored AFTER the tick-list it follows, so the report
+ *  prints 7.1, 7.2, 7.1A, 7.3 — which reads as a numbering error and separates a
+ *  finding from its own explanation. This fixes the PRINT order only; no template row
+ *  is touched.
+ *
+ *  Rows with no item number (headings, dividers) must not be shuffled into an order
+ *  they have no key for, so only the NUMBERED rows are permuted, and each is placed
+ *  back into a position that a numbered row already occupied. The index tiebreak keeps
+ *  the sort stable for duplicate numbers.
+ *  (checklist_templates.pdf_sort_by_item_number, migration 202.) */
+function sortFieldsByItemNumber(fields: any[]): any[] {
+  const numbered = fields
+    .map((f, i) => ({ f, i }))
+    .filter(x => String(x.f?.item_number ?? '').trim().length > 0)
+  if (numbered.length < 2) return fields
+  const sorted = [...numbered].sort((a, b) =>
+    compareItemNumbers(String(a.f.item_number), String(b.f.item_number)) || a.i - b.i)
+  const out = fields.slice()
+  numbered.forEach((slot, k) => { out[slot.i] = sorted[k].f })
+  return out
+}
+
+/** Does a repeatable section carry ANY data, on any entry?
+ *
+ *  resolveEntryOrder deliberately floors its result at [0] so the EDITOR always has a
+ *  first blank entry to type into — that floor must stay. On the report it means an
+ *  untouched repeatable section still prints a forced page break and one "Entry 1"
+ *  whose every field is an em dash. This is the same presence test WITHOUT the floor.
+ *  (checklist_templates.pdf_hide_empty_repeatables, migration 202.) */
+function repeatableHasData(
+  section: any,
+  fieldValues: Record<string, string>,
+  arrayValues: Record<string, string[]>,
+  signatures: Record<string, string>,
+  attachments: Array<{ field_id: string | null }>,
+): boolean {
+  const fieldIds = (section.fields ?? []).map((f: any) => f.id)
+  if (presentInstances(fieldIds, [fieldValues, arrayValues, signatures]).size > 0) return true
+  const ids = new Set<string>(fieldIds)
+  return attachments.some(a => a.field_id && ids.has(a.field_id))
+}
+
+/** Options a template can switch on for the rows it prints. Every member defaults to
+ *  off/absent, so `renderField(..., {})` is exactly today's row. */
+type RowOptions = {
+  /** One question/value split for every row (60/40) instead of a per-type one. */
+  uniformLabelWidth?: boolean
+  /** Long yes/no remarks print full width beneath the row, not beside the badge. */
+  remarkBelow?: boolean
+  /** Multiple-choice answers print in the template's option order. */
+  sortChoices?: boolean
+  /** ISO date values print as DD.MM.YYYY. */
+  formatDates?: boolean
+  /** Text props (the no-hyphenation callback) spread onto every wrapping Text. */
+  hyph?: HyphenProps
+}
+
+/** A remark shorter than this still reads fine in the strip beside the badge, and
+ *  moving it below would waste a line. Only genuinely long ones move. */
+const REMARK_BELOW_MIN_CHARS = 60
+
 // Resolve {uuid} tokens in labels to the selected option label (human-readable)
 function resolvePdfLabel(label: string, fieldValues: Record<string, string>, allFields: any[]): string {
   return label.replace(/\{([0-9a-f-]{36})\}/gi, (_, fieldId) => {
@@ -409,7 +567,7 @@ function resolveDropdownValue(field: any, rawValue: string): string {
   return opt?.label ?? rawValue
 }
 
-function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | null | undefined }) {
+function YesNoCell({ rawValue, options, hyph = {} }: { rawValue: string; options: any[] | null | undefined; hyph?: HyphenProps }) {
   const answerKey = rawValue.includes('|||') ? rawValue.split('|||')[0] : rawValue
   const remarks = rawValue.includes('|||') ? rawValue.split('|||')[1] : ''
   // Colour and badge text both come from the shared answer-option seam, so a template
@@ -425,7 +583,7 @@ function YesNoCell({ rawValue, options }: { rawValue: string; options: any[] | n
           {answerBadgeText(answerKey, options)}
         </Text>
       </View>
-      {remarks ? <Text style={{ flex: 1, fontSize: 7.5, color: '#64748b', marginLeft: 4 }}>{remarks}</Text> : null}
+      {remarks ? <Text {...hyph} style={{ flex: 1, fontSize: 7.5, color: '#64748b', marginLeft: 4 }}>{remarks}</Text> : null}
     </View>
   )
 }
@@ -525,9 +683,45 @@ interface PDFProps {
    *  (checklist_templates.pdf_deficiency_summary, migration 182.) */
   deficiencySummary?: boolean
   /** Non-image attachments (a crew list or particulars sheet handed over as a PDF).
-   *  They cannot be embedded — passing one to <Image> fails the whole render — so they
-   *  are named under the question they belong to instead. */
-  documents?: Array<{ field_id: string | null; instance: number; filename: string }>
+   *  They cannot be embedded IN THE RENDER — passing one to <Image> fails the whole
+   *  render — so they are named under the question they belong to instead.
+   *
+   *  `number` is set ONLY when the template opted into pdf_embed_attachments and the
+   *  file is being appended to the back of the report by the route (migration 202). It
+   *  is what turns the in-body line into a cross-reference. Absent ⇒ the line is the
+   *  character-identical "Attached: <filename>" every other template prints today, so
+   *  this optional field IS the gate — no extra prop is needed. */
+  documents?: Array<{ field_id: string | null; instance: number; filename: string; number?: number }>
+  // --- Pre-Hire report presentation, migration 202 ------------------------------
+  // Every one defaults to FALSE in the destructure below and every changed line sits
+  // inside an `if (flag)` / ternary, so a template that does not opt in renders
+  // byte-for-byte what it renders today. Set from checklist_templates columns of the
+  // same name in src/app/api/pdf/[jobId]/route.ts.
+  /** Print every field row with the SAME question/value split (60/40) instead of one
+   *  chosen from the field type, so the value column never moves. */
+  uniformLabelWidth?: boolean
+  /** Print jobs.report_number — the client-facing 26-08-NNN series — in the header,
+   *  the footer and the PDF title, in preference to jobs.job_number (the internal
+   *  "TEAL C/L #" ledger reference). The route uses the same flag for the filename. */
+  showReportNumber?: boolean
+  /** Leave a repeatable section out entirely when no entry carries data, instead of
+   *  printing a forced page break and one "Entry 1" of em dashes. */
+  hideEmptyRepeatables?: boolean
+  /** Never break a word across lines. */
+  noHyphenation?: boolean
+  /** Print a LONG yes/no remark full width beneath its row rather than in the narrow
+   *  strip beside the answer badge. */
+  remarkBelow?: boolean
+  /** Print multiple-choice answers in the template's own option order. */
+  sortChoices?: boolean
+  /** Print ISO date values as DD.MM.YYYY. */
+  formatDates?: boolean
+  /** Order each section's rows by item number rather than by order_index. */
+  sortByItemNumber?: boolean
+  /** In the Summary of Findings, borrow a finding's conditional DETAIL field when the
+   *  finding's own remark box is empty. Only reachable when `deficiencySummary` is on
+   *  as well — it changes nothing but what that summary prints. */
+  findingDetail?: boolean
 }
 
 export interface HeaderRow { label: string; value: string }
@@ -554,31 +748,55 @@ export function splitHeaderRows(rows: HeaderRow[], balanced: boolean): [HeaderRo
   return [rows.slice(0, cut), rows.slice(cut)]
 }
 
-function DetailRow({ label, value, labelWidth }: { label: string; value: string; labelWidth?: number }) {
+function DetailRow({ label, value, labelWidth, hyph = {} }: { label: string; value: string; labelWidth?: number; hyph?: HyphenProps }) {
   return (
     <View style={styles.jobDetailRow}>
       {/* Fixed-width, right-aligned label so every colon in the column lines up and the
           values all start at the same x (e.g. "Vessel:" / "Date:" colons align). */}
       <Text style={[styles.jobDetailLabel, labelWidth ? { width: labelWidth, textAlign: 'right' as const } : {}]}>{label}:</Text>
-      <Text style={[styles.jobDetailValue, { flex: 1 }]}>{value}</Text>
+      <Text {...hyph} style={[styles.jobDetailValue, { flex: 1 }]}>{value}</Text>
     </View>
   )
 }
 
 // A field-row-styled row for injected job-record values (Vessel/Client/Surveyors), so
 // they sit consistently among the real fields in a details section.
-function renderInfoRow(key: string, label: string, value: string): React.ReactElement {
+//
+// The label style is a PARAMETER, not the hard-coded 38%, because this is the one place
+// a uniform-column template could silently misalign: these rows would keep the narrow
+// label while every real question moved to 60%. It defaults to styles.fieldLabel, so a
+// caller that passes nothing renders byte-for-byte what it renders today.
+// (checklist_templates.pdf_uniform_label_width, migration 202.)
+function renderInfoRow(
+  key: string,
+  label: string,
+  value: string,
+  labelStyle: any = styles.fieldLabel,
+  hyph: HyphenProps = {},
+): React.ReactElement {
   return (
     <View key={key} style={styles.fieldRow}>
-      <View style={styles.fieldLabel}><Text style={styles.fieldLabelText}>{label}</Text></View>
-      <View style={styles.fieldValue}><Text style={styles.fieldValueText}>{value}</Text></View>
+      <View style={labelStyle}><Text {...hyph} style={styles.fieldLabelText}>{label}</Text></View>
+      <View style={styles.fieldValue}><Text {...hyph} style={styles.fieldValueText}>{value}</Text></View>
     </View>
   )
 }
 
-export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false, documents = [] }: PDFProps) {
+export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, photoCount, photos = [], disclaimer = null, preamble = null, logoSrc, hideLogo = false, surveyors = [], hideClient = false, hideSurveyor = false, balancedHeader = false, photosInline = false, deficiencySummary = false, documents = [], uniformLabelWidth = false, showReportNumber = false, hideEmptyRepeatables = false, noHyphenation = false, remarkBelow = false, sortChoices = false, formatDates = false, sortByItemNumber = false, findingDetail = false }: PDFProps) {
   const allFieldsFlat = sections.flatMap((s: any) => s.fields ?? [])
-  const preambleNode = preamble ? <Text style={styles.preamble}>{preamble}</Text> : null
+
+  // Migration 202 presentation options, resolved ONCE. `hyph` is `{}` unless the
+  // template opted out of hyphenation, so spreading it emits no prop at all and every
+  // other template's Text elements are identical to today's.
+  const hyph = hyphenProps(noHyphenation)
+  const rowOptions: RowOptions = { uniformLabelWidth, remarkBelow, sortChoices, formatDates, hyph }
+  const uniformLabelStyle = uniformLabelWidth ? styles.fieldLabelUniform : styles.fieldLabel
+  /** One call site for the row renderer, so the eight flag-bearing options are threaded
+   *  in exactly one place rather than at five separate calls. */
+  const renderRow = (field: any, inst = 0) =>
+    renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst, rowOptions)
+
+  const preambleNode = preamble ? <Text {...hyph} style={styles.preamble}>{preamble}</Text> : null
 
   // Photos that render INLINE are kept out of the end-of-report grid so they never
   // appear twice. Two ways a photo goes inline:
@@ -603,6 +821,41 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // screen before leaving the vessel, and the report and the screen must never disagree
   // about what counts as a defect. The rule it applies (colour, not the word "No") is
   // documented there.
+  /** The explanation a finding's own remark box does not hold.
+   *
+   *  The CMID pattern is a yes/no question (7.1) followed by a conditional DETAIL field
+   *  (7.1A, "Which item(s) of navigational equipment, and what was found?") that only
+   *  appears when the answer is adverse. reviewChecklist walks answer-family types only,
+   *  so that textarea can never become a finding's remark — and the summary printed
+   *  "7.1 … [NO]" with nothing beside it while the very next finding carried a full
+   *  explanation. The reader concludes the surveyor did not look. The information was
+   *  there all along, printed three pages later under a different item number.
+   *
+   *  So: find the field whose conditional logic is keyed on THIS question and borrow its
+   *  answer. That is exactly the relationship the template already encodes — no template
+   *  edit, no new question. A finding whose detail field is ALSO blank stays bare, which
+   *  is right: nothing was written anywhere.
+   *
+   *  Gated by its OWN default-false flag, `findingDetail`
+   *  (checklist_templates.pdf_finding_detail, migration 202) — NOT by `deficiencySummary`.
+   *  That distinction is the whole point. pdf_deficiency_summary is a migration-182 flag
+   *  that today only Pre-Hire has on, so riding it would LOOK safe; but then the property
+   *  "every migration-202 flag off ⇒ this template renders byte-for-byte what it renders
+   *  today" would be guaranteed by a value in the database rather than by the code, and
+   *  the day another template turned the summary on it would inherit this borrowing too
+   *  — a second change to its report that nobody chose. */
+  const conditionalDetailFor = (fieldId: string, instance: number): string => {
+    for (const f of allFieldsFlat as any[]) {
+      const conds = f?.conditional_logic?.conditions
+      if (!Array.isArray(conds) || !conds.some((c: any) => c?.field_id === fieldId)) continue
+      const raw = fieldValues[instanceKey(f.id, instance)] ?? ''
+      // A detail field is normally a textarea, but read the answer|||remark shape too.
+      const text = (raw.includes('|||') ? raw.split('|||')[1] ?? '' : raw).trim()
+      if (text) return text
+    }
+    return ''
+  }
+
   const findings = deficiencySummary
     ? reviewChecklist({
         sections: sections as any,
@@ -618,21 +871,33 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         num: f.itemNumber || '',
         label: f.label,
         answer: f.answer ?? '',
-        remark: f.remark ?? '',
+        remark: (f.remark ?? '') || (findingDetail ? conditionalDetailFor(f.fieldId, f.instance) : ''),
         amber: f.severity === 'amber',
       }))
     : []
 
-  /** Documents attached to a question, named beneath it. The file itself lives in the
-   *  job record — the report states that it was taken and what it was called. */
+  /** Documents attached to a question, named beneath it.
+   *
+   *  Without pdf_embed_attachments the file itself lives only in the job record and the
+   *  report states that it was taken and what it was called. With it (migration 202) the
+   *  document is appended IN FULL at the back by the route, and `d.number` is set — so
+   *  the line becomes a cross-reference to that attachment. Keep the line either way:
+   *  once the file is forty pages away it is the only thing tying it to the question it
+   *  answers, and it is the audit trail that the surveyor attached something.
+   *
+   *  `number` absent ⇒ the identical string every other template prints today. */
   const inlineDocsFor = (field: any, inst: number): React.ReactElement | null => {
     const mine = documents.filter(d => d.field_id === field.id && d.instance === inst)
     if (mine.length === 0) return null
     return (
       <View key={`doc-${field.id}-${inst}`} style={{ paddingLeft: 34, paddingBottom: 2 }}>
-        {mine.map((d, i) => (
-          <Text key={i} style={styles.findingRemark}>Attached: {d.filename}</Text>
-        ))}
+        {/* Two whole elements rather than one with a conditional string: the flag-off
+            branch is then LITERALLY the line that ships today, visibly unchanged. */}
+        {mine.map((d, i) => (d.number ? (
+          <Text key={i} {...hyph} style={styles.findingRemark}>Attached: {d.filename} — see Attachment {d.number} at the end of this report.</Text>
+        ) : (
+          <Text key={i} {...hyph} style={styles.findingRemark}>Attached: {d.filename}</Text>
+        )))}
       </View>
     )
   }
@@ -649,7 +914,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           <View key={i} style={styles.reportPhotoItem} wrap={false}>
             {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <Image src={p.url} style={styles.reportPhotoImage} />
-            <Text style={styles.photoCaption}>{p.caption || `${caption} — Photo ${i + 1}`}</Text>
+            <Text {...hyph} style={styles.photoCaption}>{p.caption || `${caption} — Photo ${i + 1}`}</Text>
           </View>
         ))}
       </View>
@@ -721,12 +986,23 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
   // the surveyor typed it twice — the checklist audit has always flagged that as
   // DOUBLE-ENTRY. Templates with their own Date/Port field are unaffected: the field
   // still wins, and is still suppressed from the body.
-  const headerDate = (dateField && fieldValues[dateField.id]) || job.scheduled_date || ''
+  const headerDateRaw = (dateField && fieldValues[dateField.id]) || job.scheduled_date || ''
+  // pdf_format_dates (migration 202): the header Date is the fourth line a client reads
+  // and printing it as raw ISO is the one thing on the letterhead that looks
+  // machine-generated. Only an exact ISO date is reformatted.
+  const headerDate = formatDates ? formatReportDate(headerDateRaw) : headerDateRaw
   const headerPort = (portField && fieldValues[portField.id]) || job.port_location || ''
 
   // The header rows that actually have a value, in print order.
   const headerRows: Array<{ label: string; value: string }> = [
     job.vessel_name ? { label: 'Vessel', value: withVesselPrefix(job.vessel_name, job.vessel_type) } : null,
+    // pdf_show_report_number (migration 202). jobs.job_number is Taylor Engineering's
+    // internal client-ledger reference ("TEAL C/L #1280"); jobs.report_number is the
+    // 26-08-NNN the client will quote, that the invoice carries and that identifies the
+    // survey. Until this flag existed the ledger reference was stamped on every page and
+    // in the filename while the report number appeared NOWHERE on the document — a
+    // survey report without its report number on it is not issuable.
+    showReportNumber && job.report_number ? { label: 'Report No.', value: job.report_number } : null,
     // The voyage used to reach this page for free, because surveyors typed it INTO the
     // vessel name and it printed as "M.V. Chaconia (V086)". Migration 186 moved it to
     // its own column, so without this row the delivered report would silently LOSE
@@ -750,9 +1026,14 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
   const reportTitle = job.template?.name ?? job.title
 
+  // The reference stamped on every page, in the PDF metadata title and (via the same
+  // flag in the route) on the saved filename. Flag off ⇒ `(null) ?? job.job_number ??
+  // 'Draft'` — character-for-character what every other report prints today.
+  const pageReference = (showReportNumber ? job.report_number : null) ?? job.job_number ?? 'Draft'
+
   return (
     <Document
-      title={`${job.title} — ${job.job_number ?? 'Draft'}`}
+      title={`${job.title} — ${pageReference}`}
       author={COMPANY.name}
       subject="Survey Checklist Report"
     >
@@ -792,10 +1073,10 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {!useFlagHeader && (
           <View style={styles.jobDetailsBlock}>
             <View style={styles.jobDetailCol}>
-              {leftRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={leftLabelW} />)}
+              {leftRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={leftLabelW} hyph={hyph} />)}
             </View>
             <View style={styles.jobDetailCol}>
-              {rightRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={rightLabelW} />)}
+              {rightRows.map(r => <DetailRow key={r.label} label={r.label} value={r.value} labelWidth={rightLabelW} hyph={hyph} />)}
             </View>
           </View>
         )}
@@ -808,10 +1089,10 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           <View style={styles.sectionContainer}>
             <View wrap={false}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Summary of Findings</Text>
+                <Text {...hyph} style={styles.sectionTitle}>Summary of Findings</Text>
               </View>
               {findings.length === 0 && (
-                <Text style={styles.findingNone}>
+                <Text {...hyph} style={styles.findingNone}>
                   No item on this checklist was answered adversely.
                 </Text>
               )}
@@ -820,8 +1101,8 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               <View key={i} style={styles.findingRow} wrap={false}>
                 <Text style={styles.findingNum}>{f.num}</Text>
                 <View style={styles.findingText}>
-                  <Text style={styles.findingLabel}>{f.label}</Text>
-                  {f.remark ? <Text style={styles.findingRemark}>{f.remark}</Text> : null}
+                  <Text {...hyph} style={styles.findingLabel}>{f.label}</Text>
+                  {f.remark ? <Text {...hyph} style={styles.findingRemark}>{f.remark}</Text> : null}
                 </View>
                 <View style={{ width: 40 }}>
                   <Text style={[styles.yesNoValue, {
@@ -837,7 +1118,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
 
         {/* Checklist sections. Section descriptions are builder guidance, NOT printed. */}
         {sections.map(section => {
-          const visibleFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
+          const bodyFields = (section.fields as any[]).filter((f: any) => !suppressedIds.has(f.id) && f.field_type !== 'photo')
+          // pdf_sort_by_item_number (migration 202): print order follows the ITEM NUMBER,
+          // not the builder's order_index. A conditional detail field is stored after the
+          // tick-list it follows, so the report ran 7.1, 7.2, 7.1A, 7.3 — a numbering error
+          // to anyone auditing it, and it separated a finding from its own explanation.
+          // Off ⇒ the identical array, by identity.
+          const visibleFields = sortByItemNumber ? sortFieldsByItemNumber(bodyFields) : bodyFields
           const photoFields = (section.fields as any[]).filter((f: any) => f.field_type === 'photo')
 
           // Details section (flagged template): render the whole job/vessel block here —
@@ -850,14 +1137,20 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               <View key={section.id} style={styles.sectionContainer}>
                 <View wrap={false}>
                   <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    <Text {...hyph} style={styles.sectionTitle}>{section.title}</Text>
                   </View>
-                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name, job.vessel_type)) : null}
+                  {/* The injected job rows take the SAME label width as the real question
+                      rows — otherwise a uniform-column template would keep these three at
+                      38% while everything else moved to 60%, which is the one silent
+                      misalignment this change could introduce. Pre-Hire has no
+                      show_in_header field so this branch never runs for it today; it is
+                      threaded so whatever opts in next is not broken by an invisible 38%. */}
+                  {job.vessel_name ? renderInfoRow('vessel', 'Vessel', withVesselPrefix(job.vessel_name, job.vessel_type), uniformLabelStyle, hyph) : null}
                 </View>
-                {specFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
-                {job.client?.name && !hideClient ? renderInfoRow('client', 'Client', job.client.name) : null}
-                {surveyors.length > 0 && !hideSurveyor ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', ')) : null}
-                {restFields.map((f: any) => renderField(f, fieldValues, arrayValues, signatures, allFieldsFlat))}
+                {specFields.map((f: any) => renderRow(f))}
+                {job.client?.name && !hideClient ? renderInfoRow('client', 'Client', job.client.name, uniformLabelStyle, hyph) : null}
+                {surveyors.length > 0 && !hideSurveyor ? renderInfoRow('surveyors', `Surveyor${surveyors.length > 1 ? 's' : ''}`, surveyors.join(', '), uniformLabelStyle, hyph) : null}
+                {restFields.map((f: any) => renderRow(f))}
                 {preambleNode}
               </View>
             )
@@ -866,6 +1159,18 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           // Repeatable section: each entry is its own block; that entry's photos follow
           // on a fresh page (6 per page, 2×3), labelled by line — never an anonymous dump.
           if (section.is_repeatable) {
+            // pdf_hide_empty_repeatables (migration 202). resolveEntryOrder floors its
+            // result at [0] so the EDITOR always has a first blank entry to type into —
+            // that floor is load-bearing and stays. On the REPORT it printed a forced page
+            // break and one "Entry 1" whose every field was an em dash, on a section
+            // titled "Findings" while the Summary of Findings at the front listed nine.
+            // It read as broken software and cost a whole page. Ask whether any entry
+            // actually carries data; if none does, print nothing at all (which also drops
+            // the forced break).
+            if (hideEmptyRepeatables
+                && !repeatableHasData(section, fieldValues, arrayValues, signatures, [...photos, ...documents])) {
+              return null
+            }
             const ids = orderedInstancesFor(section, job, fieldValues, arrayValues, signatures, photos)
             return (
               // Inspections normally start on a fresh page (Borescoping prints a page of
@@ -875,7 +1180,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               <View key={section.id} style={styles.sectionContainer} break={(section as any).pdf_page_break !== false}>
                 <View wrap={false}>
                   <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    <Text {...hyph} style={styles.sectionTitle}>{section.title}</Text>
                   </View>
                 </View>
                 {ids.map((inst, pos) => {
@@ -884,11 +1189,11 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                   return (
                     <React.Fragment key={inst}>
                       <View style={styles.entryBlock} wrap={false}>
-                        <Text style={styles.entryHeading}>Entry {pos + 1}{lineName ? ` — ${lineName}` : ''}</Text>
+                        <Text {...hyph} style={styles.entryHeading}>Entry {pos + 1}{lineName ? ` — ${lineName}` : ''}</Text>
                         <View style={styles.entryBody}>
                           {visibleFields.map((field: any) => (
                             <React.Fragment key={field.id}>
-                              {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat, inst)}
+                              {renderRow(field, inst)}
                               {/* A question inside an entry can carry its own photos too. */}
                               {inlineDocsFor(field, inst)}
                               {inlinePhotosFor(field, inst)}
@@ -902,13 +1207,13 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                         <>
                           {/* minPresenceAhead keeps the heading with at least the first
                               photo row, so it never sits alone at the bottom of a page. */}
-                          <Text style={styles.photoGroupHeading} minPresenceAhead={230}>{lineName || `Entry ${pos + 1}`} — Photographs</Text>
+                          <Text {...hyph} style={styles.photoGroupHeading} minPresenceAhead={230}>{lineName || `Entry ${pos + 1}`} — Photographs</Text>
                           <View style={styles.reportPhotoGrid}>
                             {entryPhotos.map((p, i) => (
                               <View key={i} style={styles.reportPhotoItem} wrap={false}>
                                 {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                 <Image src={p.url} style={styles.reportPhotoImage} />
-                                <Text style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${pos + 1}`} — Photo ${i + 1}`}</Text>
+                                <Text {...hyph} style={styles.photoCaption}>{p.caption || `${lineName || `Entry ${pos + 1}`} — Photo ${i + 1}`}</Text>
                               </View>
                             ))}
                           </View>
@@ -942,16 +1247,16 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
               {/* Section header + first field locked together to prevent orphan headers */}
               <View wrap={false}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                  <Text {...hyph} style={styles.sectionTitle}>{section.title}</Text>
                 </View>
-                {visibleFields.length > 0 && renderField(visibleFields[0], fieldValues, arrayValues, signatures, allFieldsFlat)}
+                {visibleFields.length > 0 && renderRow(visibleFields[0])}
               </View>
               {visibleFields.length > 0 && inlineDocsFor(visibleFields[0], 0)}
               {visibleFields.length > 0 && inlinePhotosFor(visibleFields[0], 0)}
 
               {visibleFields.slice(1).map((field: any) => (
                 <React.Fragment key={field.id}>
-                  {renderField(field, fieldValues, arrayValues, signatures, allFieldsFlat)}
+                  {renderRow(field)}
                   {inlineDocsFor(field, 0)}
                   {inlinePhotosFor(field, 0)}
                 </React.Fragment>
@@ -963,7 +1268,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
                 <React.Fragment key={pf.id}>
                   {/* minPresenceAhead keeps the heading with at least the first photo
                       row, so it never sits alone at the bottom of a page. */}
-                  <Text style={styles.photoGroupHeading} minPresenceAhead={230}>
+                  <Text {...hyph} style={styles.photoGroupHeading} minPresenceAhead={230}>
                     {[pf.item_number, pf.label].filter(Boolean).join(' ')}
                   </Text>
                   {inlineDocsFor(pf, 0)}
@@ -982,14 +1287,14 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
           return chunks.map((chunk, ci) => (
             <View key={ci} break>
               <View style={styles.photosSectionHeader}>
-                <Text style={styles.sectionTitle}>Additional Photographs{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ''}</Text>
+                <Text {...hyph} style={styles.sectionTitle}>Additional Photographs{chunks.length > 1 ? ` (${ci + 1}/${chunks.length})` : ''}</Text>
               </View>
               <View style={styles.reportPhotoGrid}>
                 {chunk.map((p, i) => (
                   <View key={i} style={styles.reportPhotoItem} wrap={false}>
                     {/* eslint-disable-next-line jsx-a11y/alt-text */}
                     <Image src={p.url} style={styles.reportPhotoImage} />
-                    <Text style={styles.photoCaption}>{p.caption || `Additional — Photo ${ci * 6 + i + 1}`}</Text>
+                    <Text {...hyph} style={styles.photoCaption}>{p.caption || `Additional — Photo ${ci * 6 + i + 1}`}</Text>
                   </View>
                 ))}
               </View>
@@ -1009,7 +1314,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         {/* Fixed disclaimer boilerplate (template.pdf_disclaimer) */}
         {disclaimer && (
           <View style={styles.disclaimer} wrap={false}>
-            <Text style={styles.disclaimerText}>{disclaimer}</Text>
+            <Text {...hyph} style={styles.disclaimerText}>{disclaimer}</Text>
           </View>
         )}
 
@@ -1017,7 +1322,7 @@ export function JobPDF({ job, sections, fieldValues, arrayValues, signatures, ph
         <View style={styles.footer} fixed>
           <Text style={[styles.footerText, { flex: 1, textAlign: 'left' }]}>{COMPANY.name} — {COMPANY.confidential}</Text>
           <Text style={[styles.footerText, { flex: 1, textAlign: 'center' }]} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-          <Text style={[styles.footerText, { flex: 1, textAlign: 'right' }]}>{job.job_number ?? 'Draft'}</Text>
+          <Text style={[styles.footerText, { flex: 1, textAlign: 'right' }]}>{pageReference}</Text>
         </View>
       </Page>
     </Document>
@@ -1056,9 +1361,14 @@ function renderField(
   arrayValues: Record<string, string[]>,
   signatures: Record<string, string>,
   allFieldsFlat: any[],
-  inst = 0
+  inst = 0,
+  // Per-template presentation options (migration 202). Defaults to `{}` so a caller
+  // that passes nothing renders exactly the row that ships today.
+  opts: RowOptions = {}
 ): React.ReactElement | null {
   if (!field) return null
+
+  const hyph = opts.hyph ?? {}
 
   // Repeatable-section instance: read this entry's value (instance 0 = bare id).
   const key = instanceKey(field.id, inst)
@@ -1068,13 +1378,29 @@ function renderField(
   }
 
   if (field.field_type === 'heading') {
-    return <Text key={key} style={styles.inlineHeading}>{field.label}</Text>
+    return <Text key={key} {...hyph} style={styles.inlineHeading}>{field.label}</Text>
   }
 
   // multiple_choice prints ONLY the chosen answers, as their labels (custom "Other"
   // entries don't match an option, so they print as their own text).
+  // pdf_sort_choices (migration 202): a tick-list is stored in the order the surveyor
+  // TAPPED it, so a statutory certificate list printed in a scrambled order and a client
+  // cross-checking it had to hunt each entry. Off => the stored order, untouched.
+  // A free-text "Other" entry matches no option (index -1) and is pushed to the END in
+  // its own stored order, rather than sorted to the front.
+  const chosenValues: string[] = arrayValues[key] ?? []
+  const orderedChoices: string[] = opts.sortChoices
+    ? chosenValues
+        .map((v: string, i: number) => {
+          const idx = (field.options ?? []).findIndex((o: any) => o.value === v)
+          return { v, rank: idx < 0 ? Number.MAX_SAFE_INTEGER : idx, i }
+        })
+        .sort((a, b) => a.rank - b.rank || a.i - b.i)
+        .map(x => x.v)
+    : chosenValues
+
   const rawValue = field.field_type === 'multiple_choice'
-    ? (arrayValues[key] ?? []).map((v: string) => (field.options ?? []).find((o: any) => o.value === v)?.label ?? v).join(', ')
+    ? orderedChoices.map((v: string) => (field.options ?? []).find((o: any) => o.value === v)?.label ?? v).join(', ')
     : fieldValues[key] ?? ''
 
   const hasValue = !!rawValue
@@ -1094,7 +1420,12 @@ function renderField(
   // the value column keeps just enough for the answer + a short remark). Long-answer
   // types keep the narrow label so their value has room to wrap onto multiple lines.
   const NARROW_LABEL_TYPES = new Set(['textarea', 'video_link', 'multiple_choice'])
-  const labelStyle = NARROW_LABEL_TYPES.has(field.field_type) ? styles.fieldLabel : styles.fieldLabelWide
+  // A template can opt out of the per-type split entirely: ONE width for every row, so
+  // the value column never moves down the page. See styles.fieldLabelUniform and
+  // checklist_templates.pdf_uniform_label_width, migration 202.
+  const labelStyle = opts.uniformLabelWidth
+    ? styles.fieldLabelUniform
+    : (NARROW_LABEL_TYPES.has(field.field_type) ? styles.fieldLabel : styles.fieldLabelWide)
 
   // Fixed-width number cell sized to the WIDEST item number in the report, so every
   // question's wording starts at the same x regardless of 1- vs 2-digit numbers. 0 when
@@ -1107,15 +1438,35 @@ function renderField(
   // together, instead of stranding the number/answer on the previous page while the
   // wrapped question jumps down. Long-value types (textarea/multiple-choice/video) can
   // legitimately be taller than the remaining space, so they keep default wrapping.
-  const rowWrap = NARROW_LABEL_TYPES.has(field.field_type)
+  //
+  // This and the label width above used to be the SAME predicate. They are two unrelated
+  // concerns — "how wide is the question column" and "may this row split across a page
+  // break" — and uniformLabelWidth takes the first one away. The membership below is a
+  // DELIBERATE copy of the historic set, not an accident of the refactor: page breaks are
+  // therefore unchanged in BOTH modes. Keep them as literal duplicates so they are free
+  // to diverge later.
+  const ROW_MAY_SPLIT_TYPES = new Set(['textarea', 'video_link', 'multiple_choice'])
+  const rowWrap = ROW_MAY_SPLIT_TYPES.has(field.field_type)
 
-  return (
-    <View key={key} style={styles.fieldRow} wrap={rowWrap}>
+  // pdf_remark_below (migration 202). The answer badge and its remark sit side by side so
+  // a short comment never pushes the row onto a second line — right at five words, wrong
+  // at three hundred characters, where it becomes a tall ragged ribbon in a ~155pt strip
+  // beside a question column that is mostly white space. Only genuinely long remarks
+  // move; the resulting block is allowed to split across a page, because it can
+  // legitimately be tall, while the row itself still stays intact.
+  const isAnswerRow = field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail'
+  const rowRemark = isAnswerRow && rawValue.includes('|||') ? rawValue.split('|||')[1] ?? '' : ''
+  const moveRemarkBelow = opts.remarkBelow === true && rowRemark.trim().length > REMARK_BELOW_MIN_CHARS
+  // With the remark moved out, the value cell renders the answer badge alone.
+  const cellValue = moveRemarkBelow ? rawValue.split('|||')[0] : rawValue
+
+  const row = (
+    <View key={key} style={moveRemarkBelow ? styles.fieldRowRemarkAbove : styles.fieldRow} wrap={moveRemarkBelow ? false : rowWrap}>
       <View style={[labelStyle, { flexDirection: 'row' }]}>
         {numColWidth > 0 ? (
           <Text style={[styles.itemNumberText, { width: numColWidth }]}>{field.item_number ?? ''}</Text>
         ) : null}
-        <Text style={[styles.fieldLabelText, { flex: 1 }]}>
+        <Text {...hyph} style={[styles.fieldLabelText, { flex: 1 }]}>
           {resolvePdfLabel(field.label, fieldValues, allFieldsFlat)}
           {/* No required-asterisk in the report — that marker is only for the survey form. */}
         </Text>
@@ -1129,12 +1480,12 @@ function renderField(
             // eslint-disable-next-line jsx-a11y/alt-text
             <Image src={signatures[key]} style={styles.signatureImage} />
           ) : (
-            <Text style={styles.fieldValueEmpty}>No signature</Text>
+            <Text {...hyph} style={styles.fieldValueEmpty}>No signature</Text>
           )
-        ) : field.field_type === 'yes_no' || field.field_type === 'yes_no_na' || field.field_type === 'pass_fail' ? (
-          <YesNoCell rawValue={rawValue} options={field.options} />
+        ) : isAnswerRow ? (
+          <YesNoCell rawValue={cellValue} options={field.options} hyph={hyph} />
         ) : field.field_type === 'textarea' ? (
-          <Text style={styles.textareaValue}>{rawValue || '—'}</Text>
+          <Text {...hyph} style={styles.textareaValue}>{rawValue || '—'}</Text>
         ) : field.field_type === 'calculated' ? (
           <CalcDiffCell
             rawValue={rawValue}
@@ -1145,7 +1496,7 @@ function renderField(
             unit={field.unit}
           />
         ) : field.field_type === 'dropdown' ? (
-          <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
+          <Text {...hyph} style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
             {hasValue ? resolveDropdownValue(field, rawValue) : '—'}
           </Text>
         ) : field.field_type === 'video_link' ? (
@@ -1164,8 +1515,8 @@ function renderField(
           })()
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
-              {hasValue ? (field.field_type === 'number' && !isNaN(Number(rawValue)) ? Number(rawValue).toLocaleString('en-US') : rawValue) : '—'}
+            <Text {...hyph} style={hasValue ? styles.fieldValueText : styles.fieldValueEmpty}>
+              {hasValue ? (field.field_type === 'number' && !isNaN(Number(rawValue)) ? Number(rawValue).toLocaleString('en-US') : plainDisplayValue(field, rawValue, opts)) : '—'}
             </Text>
             {field.unit && hasValue && <Text style={styles.fieldUnit}>{field.unit}</Text>}
           </View>
@@ -1173,4 +1524,26 @@ function renderField(
       </View>
     </View>
   )
+
+  if (!moveRemarkBelow) return row
+
+  // The row proper carries no bottom rule in this mode — the remark block beneath it
+  // does, so one rule still closes the question. Indented to the question's own text
+  // column so it reads as a continuation of the row above, not as a new item.
+  return (
+    <View key={key} wrap>
+      {row}
+      <View style={styles.remarkBelowBlock}>
+        <Text {...hyph} style={[styles.remarkBelowText, { paddingLeft: numColWidth }]}>{rowRemark}</Text>
+      </View>
+    </View>
+  )
+}
+
+/** The plain-value branch's text. Only pdf_format_dates changes it, and only for a date
+ *  field holding an exact ISO date — a hand-typed "Wk 35 - Aug 2026" is left alone.
+ *  (Migration 202.) */
+function plainDisplayValue(field: any, rawValue: string, opts: RowOptions): string {
+  if (opts.formatDates && field.field_type === 'date') return formatReportDate(rawValue)
+  return rawValue
 }
