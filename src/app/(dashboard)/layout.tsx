@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient, hasAuthCookie } from '@/lib/supabase/client'
+import { isDefiniteDbError } from '@/lib/auth/errors'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister'
@@ -85,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         router.push('/login'); return
       }
 
-      const { data } = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
@@ -94,7 +95,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!data) {
         // Offline fallback: reuse the last cached profile so a previously-loaded
         // checklist can reopen without connectivity.
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        //
+        // The trigger is deliberately NOT navigator.onLine alone. It reported true
+        // during tower handovers and for the first seconds after the PWA wakes (the
+        // same lie documented in JobChecklistEditor), so a surveyor reconnecting
+        // dockside fell straight past this fallback into the signOut() below and was
+        // logged out by a network blip. Now anything that isn't a definite answer
+        // FROM the database counts as "we don't know yet".
+        const answered = isDefiniteDbError(profileError)
+        const maybeOffline = !answered || (typeof navigator !== 'undefined' && !navigator.onLine)
+        if (maybeOffline) {
           const cached = localStorage.getItem('te_profile')
           if (cached) {
             try {
@@ -104,10 +114,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               if (parsed?.id === session.user.id && staffPath) {
                 setProfile(parsed); setLoading(false); return
               }
-            } catch { /* fall through to login */ }
+            } catch { /* no usable cache — fall through */ }
           }
         }
-        // The session is VALID but the profile row is unreadable (deleted, or an RLS
+
+        // Never destroy a valid session over an unanswered request. Mirrors the
+        // retry the session check above already does: give the radio a chance, and
+        // if it still hasn't answered, stop and leave the user signed in rather than
+        // signing them out. Being stuck on a bare shell is recoverable; being signed
+        // out at sea is not.
+        if (!answered) {
+          if (attempt < 3) { setTimeout(() => loadProfile(attempt + 1), 800); return }
+          setLoading(false); return
+        }
+
+        // The database ANSWERED and the profile row is unreadable (deleted, or an RLS
         // denial). Bouncing to /login alone caused an infinite loop: /login sees a
         // live session and sends the user straight back here. Sign out first so the
         // loop is broken, and say what actually happened instead of showing a login

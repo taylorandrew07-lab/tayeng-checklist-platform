@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AuthError } from '@supabase/supabase-js'
-import { signInErrorMessage, readAuthErrorFromUrl } from './errors'
+import { signInErrorMessage, readAuthErrorFromUrl, isDefiniteDbError, isNetworkAuthError } from './errors'
 
 function authError(partial: Partial<AuthError>): AuthError {
   return { name: 'AuthApiError', message: '', ...partial } as AuthError
@@ -73,5 +73,36 @@ describe('readAuthErrorFromUrl', () => {
   it('falls back to the human description for an unmapped code', () => {
     const msg = readAuthErrorFromUrl('', '#error_code=weird_thing&error_description=Something+specific+broke')
     expect(msg).toBe('Something specific broke')
+  })
+})
+
+describe('isDefiniteDbError', () => {
+  it('accepts PostgREST and Postgres codes as a real answer', () => {
+    expect(isDefiniteDbError({ code: 'PGRST116' })).toBe(true)
+    expect(isDefiniteDbError({ code: '42501' })).toBe(true)
+  })
+
+  it('treats an unanswered request as NOT definite, so the caller never signs out', () => {
+    // Every shape a rejected fetch reaches us as. Getting any of these wrong logs a
+    // surveyor out over a tower handover.
+    expect(isDefiniteDbError(null)).toBe(false)
+    expect(isDefiniteDbError(undefined)).toBe(false)
+    expect(isDefiniteDbError(new TypeError('Failed to fetch'))).toBe(false)
+    expect(isDefiniteDbError({ message: 'NetworkError when attempting to fetch resource.' })).toBe(false)
+    expect(isDefiniteDbError({ message: 'Load failed' })).toBe(false)
+    expect(isDefiniteDbError({ code: '' })).toBe(false)
+    expect(isDefiniteDbError({ code: 500 })).toBe(false)
+  })
+})
+
+describe('isNetworkAuthError', () => {
+  const err = (o: Record<string, unknown>) => o as unknown as Parameters<typeof isNetworkAuthError>[0]
+
+  it('matches the retryable-fetch failure by name', () => {
+    expect(isNetworkAuthError(err({ name: 'AuthRetryableFetchError', message: 'Failed to fetch' }))).toBe(true)
+  })
+
+  it('does not claim a credential failure is a network problem', () => {
+    expect(isNetworkAuthError(err({ name: 'AuthApiError', message: 'Invalid login credentials', code: 'invalid_credentials' }))).toBe(false)
   })
 })

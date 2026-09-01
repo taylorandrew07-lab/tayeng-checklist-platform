@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
-import { signInErrorMessage, readAuthErrorFromUrl } from '@/lib/auth/errors'
+import { signInErrorMessage, readAuthErrorFromUrl, isNetworkAuthError, isDefiniteDbError } from '@/lib/auth/errors'
+import { probeConnectivity, explainConnectivity, type ConnectivityVerdict } from '@/lib/auth/connectivity'
+import { resetDeviceAppState } from '@/lib/auth/resetDevice'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import logoFull from '../../../../public/logo-full.png'
@@ -23,6 +25,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set only when a sign-in failed at the transport layer and the follow-up probe
+  // has told us WHICH hop broke. Replaces the useless "check your connection".
+  const [verdict, setVerdict] = useState<ConnectivityVerdict | null>(null)
+  const [resetting, setResetting] = useState(false)
 
   // Show errors passed via URL. Two channels: ?error=… from our own callback
   // redirect, and Supabase's #error_code=… fragment, which rides along when the
@@ -44,11 +50,17 @@ export default function LoginPage() {
     const supabase = createClient()
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       // No readable profile: do NOT bounce into the app. The dashboard would fail the
       // same lookup and send the user back here — an endless flicker between the two.
       // Stay put and explain it.
       if (!profile?.role) {
+        // ...but ONLY when the database actually answered. A lookup that never
+        // reached PostgREST (waking on a dead radio, dockside wifi) used to land here
+        // and sign the user out, reporting a network failure as a broken account —
+        // and the dashboard did exactly the same thing, so the two bounced the user
+        // between them. Say nothing and leave the session alone; the form still works.
+        if (!isDefiniteDbError(profileError)) return
         await supabase.auth.signOut().catch(() => {})
         setError('Your sign-in worked but your account profile could not be loaded. Please contact your administrator.')
         return
@@ -57,10 +69,38 @@ export default function LoginPage() {
     }).catch(() => { /* stay on login */ })
   }, [])
 
+  // Probe the two hops separately and turn the result into instructions. Failure
+  // here must never mask the original error, so it is fully guarded.
+  async function diagnose() {
+    try {
+      const probe = await probeConnectivity(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      )
+      const v = explainConnectivity(probe)
+      setVerdict(v)
+      setError(v.message)
+    } catch { /* keep whatever message we already showed */ }
+  }
+
+  // Clear the service worker, our caches and any stranded Supabase cookies, then
+  // hard-reload. Deliberately leaves IndexedDB alone — unsynced checklist drafts,
+  // queued photos and cargo readings live there, and a login problem is no reason
+  // to destroy a week of fieldwork.
+  async function handleReset() {
+    setResetting(true)
+    try {
+      await resetDeviceAppState()
+    } catch { /* best effort */ }
+    // Bypass any bfcache/SW copy of this page.
+    window.location.replace('/login?reset=1')
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setVerdict(null)
 
     const supabase = createClient()
     // Supabase stores addresses lower-cased, and an iOS keyboard readily adds a
@@ -77,7 +117,10 @@ export default function LoginPage() {
         'Signing in'
       ))
     } catch {
-      setError('Sign-in timed out — check your connection and try again.')
+      // A stall rather than a rejection. Same question for the user either way —
+      // which hop is broken — so run the same probe.
+      setError('Sign-in timed out.')
+      await diagnose()
       setLoading(false)
       return
     }
@@ -87,6 +130,10 @@ export default function LoginPage() {
       // accounts and network failures into "invalid password" made users retype a
       // password that was already correct.
       setError(signInErrorMessage(authError))
+      // "Could not reach the server" is where users got stranded: the login PAGE
+      // had plainly loaded, so "check your connection" read as nonsense and there
+      // was nothing else to try. Find out which hop actually failed and say so.
+      if (isNetworkAuthError(authError)) await diagnose()
       setLoading(false)
       return
     }
@@ -228,8 +275,38 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 animate-rise">
-              {error}
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 animate-rise space-y-2">
+              <p>{error}</p>
+
+              {/* The probe result. Numbered because these are meant to be DONE in
+                  order — the first one (mobile data) settles the question on its own
+                  in most cases, and a user who does it can fix themselves rather
+                  than waiting on an admin. */}
+              {verdict && verdict.steps.length > 0 && (
+                <ol className="list-decimal ml-4 space-y-1 text-red-800/90">
+                  {verdict.steps.map((s) => <li key={s}>{s}</li>)}
+                </ol>
+              )}
+
+              {verdict && (
+                <>
+                  {verdict.offerReset && (
+                    <button
+                      type="button"
+                      onClick={handleReset}
+                      disabled={resetting}
+                      className="mt-1 inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {resetting && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Reset the app on this device
+                    </button>
+                  )}
+                  {/* Shown so a screenshot is enough for an admin to tell a blocked
+                      network from a genuinely offline device — the distinction that
+                      previously took a round of questions to establish. */}
+                  <p className="pt-1 font-mono text-[11px] text-red-400">{verdict.detail}</p>
+                </>
+              )}
             </div>
           )}
 

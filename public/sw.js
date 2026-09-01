@@ -1,7 +1,7 @@
 /* Minimal service worker for offline app-shell + previously-visited pages.
    Never caches Supabase (cross-origin) or same-origin /api responses, so
    private API/auth/storage data is never stored. */
-const VERSION = 'v8'
+const VERSION = 'v9'
 const STATIC_CACHE = `tayeng-static-${VERSION}`
 const PAGE_CACHE = `tayeng-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
@@ -117,7 +117,16 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          if (res.ok) {
+          // `res.redirected` is the whole guard. proxy.ts sends any cookie-less
+          // /surveyor or /admin request to /login, fetch() FOLLOWS that redirect, and
+          // the result is a perfectly ok:true login page. Storing it under the
+          // /surveyor key poisoned the cache: from then on, going offline served a
+          // login form instead of the surveyor's own page — and on a voyage URL it
+          // was written to SHELL_KEY too, so it stood in for EVERY voyage. The user
+          // could not sign in to clear it either, because they were already offline.
+          // primeShell() has always guarded exactly this (see its comment); this
+          // handler did not.
+          if (res.ok && !res.redirected) {
             const forPage = res.clone()
             // Every successful voyage page also refreshes the shell, so the
             // fallback stays in step with the deployed build.
