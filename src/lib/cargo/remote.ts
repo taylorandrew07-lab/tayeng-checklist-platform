@@ -152,13 +152,14 @@ export async function listVoyageListRows(supabase: SupabaseClient): Promise<Voya
     .select(
       'id, vessel_name, vessel_type, voyage_number, status, created_at, updated_at, job_id,' +
       ' start_date:doc->>startDate, end_date:doc->>endDate, surveyor_name:doc->>surveyorName,' +
+      ' doc_client_name:doc->>clientName,' +
       ' owner:profiles!owner_id(full_name), client:clients(name, color),' +
       ' job:jobs!cargo_voyages_job_id_fkey(job_number)'
     )
     .order('synced_at', { ascending: false })
   if (error) throw error
 
-  return ((data ?? []) as any[]).map(r => ({
+  const rows = ((data ?? []) as any[]).map(r => ({
     id: r.id,
     vessel_name: r.vessel_name,
     vessel_type: r.vessel_type ?? null,
@@ -171,13 +172,38 @@ export async function listVoyageListRows(supabase: SupabaseClient): Promise<Voya
     // The document's own surveyor name is what the report shows; the profile is
     // the fallback for a voyage saved before that field was filled in.
     surveyor_name: r.surveyor_name || r.owner?.full_name?.trim() || null,
-    client_name: r.client?.name ?? null,
+    // The linked client (cargo_voyages.client_id) is the real answer, but a voyage
+    // opened dockside with no signal has an EMPTY client pick list, so setup stores
+    // the client as free text with clientId null (VoyageSetupForm) — and the FK embed
+    // then returns nothing. Falling back to the document's own name stops the jobs
+    // register printing "—" for a voyage that plainly knows who the client is.
+    client_name: r.client?.name ?? ((typeof r.doc_client_name === 'string' && r.doc_client_name.trim()) || null),
     client_color: r.client?.color ?? null,
     job_id: r.job_id ?? null,
     job_number: r.job?.job_number ?? null,
     created_at: r.created_at,
     updated_at: r.updated_at,
   }))
+
+  // Colour lives on the client RECORD, so an unlinked voyage has none and its row
+  // drops out of colour-by-client. Match the free-text name back to a client to
+  // recover it. Best-effort and name-exact: a miss (or a client list this reader
+  // cannot see under RLS) just leaves the row uncoloured, as before.
+  const unlinked = Array.from(new Set(
+    rows.filter(v => !v.client_color && v.client_name).map(v => v.client_name as string)
+  ))
+  if (unlinked.length > 0) {
+    const { data: cls } = await supabase.from('clients').select('name, color').in('name', unlinked)
+    if (cls?.length) {
+      const byName = new Map((cls as any[]).map(c => [String(c.name).trim().toLowerCase(), c.color as string | null]))
+      for (const v of rows) {
+        if (v.client_color || !v.client_name) continue
+        v.client_color = byName.get(v.client_name.trim().toLowerCase()) ?? null
+      }
+    }
+  }
+
+  return rows
 }
 
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {

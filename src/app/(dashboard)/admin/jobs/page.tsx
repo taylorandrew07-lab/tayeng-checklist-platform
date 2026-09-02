@@ -458,17 +458,28 @@ const COLUMNS: ColumnDef[] = [
         )}
       </>
     ),
-    // Read-only, and the last day of a still-running voyage is TODAY rather than
-    // a date it has not reached — voyageLastDate() owns that rule.
-    voyageCell: v => (
-      // px-2, matching the EditableDate in this column's job cell.
-      <div className="px-2">
-        <span className="text-gray-700">{v.end_date ? formatDate(v.end_date) : 'Ongoing'}</span>
-        {voyageSpansDays(v) && v.start_date && (
-          <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(v.start_date)}</span>
-        )}
-      </div>
-    ) },
+    // Read-only, and keyed on the SAME rule as the Status pill — voyageIsOngoing(),
+    // i.e. status, not the end date. Setup lets a surveyor type an intended end date
+    // long before the voyage is signed off, and printing it here read as a finished
+    // voyage sitting next to an "In progress" pill. Until it is finalised the honest
+    // answer is Ongoing; the intended end stays in the tooltip.
+    voyageCell: v => {
+      const ongoing = voyageIsOngoing(v)
+      return (
+        // px-2, matching the EditableDate in this column's job cell.
+        <div className="px-2">
+          <span
+            className="text-gray-700"
+            title={ongoing && v.end_date ? `Ends ${formatDate(v.end_date)} — still ongoing until the surveyor finalises it` : undefined}
+          >
+            {ongoing ? 'Ongoing' : v.end_date ? formatDate(v.end_date) : formatDate(voyageLastDate(v) ?? v.created_at)}
+          </span>
+          {voyageSpansDays(v) && v.start_date && (
+            <span className="block text-[11px] text-gray-400 leading-tight">from {formatDate(v.start_date)}</span>
+          )}
+        </div>
+      )
+    } },
   { key: 'notes', label: 'Notes', defaultVisible: false, width: 220, min: 120,
     cell: r => <div className="px-3 text-gray-600 truncate" title={r.notes ?? ''}>{r.notes || <span className="text-gray-300">—</span>}</div> },
 ]
