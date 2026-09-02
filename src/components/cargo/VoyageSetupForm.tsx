@@ -7,6 +7,7 @@ import { currentUserId } from '@/lib/cargo/user'
 import { parseVesselName } from '@/lib/utils'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
+import { resolveClientLink } from '@/lib/cargo/clientLink'
 import {
   type Voyage, type CargoTemplate,
   defaultReadingTypes, cloneReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
@@ -65,9 +66,7 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
     if (!base) return // create mode: nothing to auto-save yet
     if (firstRun.current) { firstRun.current = false; return }
     if (!dirtyRef.current) return // only persist real user edits, not settling state
-    const resolvedClientName = lists.clients.length
-      ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
-      : clientName.trim()
+    const client = resolveClientLink({ options: lists.clients, clientId, clientName, stored: base })
     const next: Voyage = {
       ...base,
       vesselName: parseVesselName(vesselName).name,
@@ -78,10 +77,10 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       dischargePort: dischargePort.trim(),
       startDate, endDate, holdCount,
       surveyorName: surveyorName.trim(),
-      clientId: lists.clients.length ? (clientId || null) : null,
-      // Never wipe an already-stored client name we can't represent in the dropdown
-      // (e.g. a voyage created offline in text mode, now opened online).
-      clientName: resolvedClientName || base.clientName || undefined,
+      // Both fields via the seam: an empty pick list means the form could not
+      // REPRESENT the link, never that the voyage lost its client. See clientLink.ts.
+      clientId: client.clientId,
+      clientName: client.clientName,
       remarks: remarks.trim() || undefined,
     }
     pendingRef.current = next
@@ -130,10 +129,8 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
             updatedAt: now,
           } as Voyage
 
-      // Resolve the client: dropdown mode stores id + name snapshot; offline text mode stores name only.
-      const resolvedClientName = haveClients
-        ? (clientId ? (lists.clients.find(c => c.id === clientId)?.name ?? '') : '')
-        : clientName.trim()
+      // Same seam as the auto-save above — these two had already drifted apart.
+      const client = resolveClientLink({ options: lists.clients, clientId, clientName, stored: voyage ?? null })
 
       // Capture a typed M.T./MT/M/T here too — without this the widened stripper
       // would eat the token on the only cargo typing site and record nothing.
@@ -148,8 +145,8 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
       next.endDate = endDate
       next.holdCount = holdCount
       next.surveyorName = surveyorName.trim()
-      next.clientId = haveClients ? (clientId || null) : null
-      next.clientName = resolvedClientName || undefined
+      next.clientId = client.clientId
+      next.clientName = client.clientName
       next.remarks = remarks.trim() || undefined
 
       await putVoyage(next)
