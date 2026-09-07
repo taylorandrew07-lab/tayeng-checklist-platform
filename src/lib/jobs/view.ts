@@ -5,6 +5,7 @@
 // the colour legend, shared by the admin / surveyor / office job lists.
 
 import { useEffect, useState } from 'react'
+import { dayKey } from '@/lib/utils'
 import { resolveColor, type JobColor } from './colors'
 
 export type JobColorMode = 'none' | 'client' | 'type'
@@ -68,14 +69,35 @@ export function useJobsView(): JobsView {
   return { colorMode, setColorMode, year, setYear, month, setMonth, ready }
 }
 
+/** The local calendar year + month (0–11) of a job or voyage date, or null if it isn't one.
+ *
+ *  Everything these lists filter on is a Postgres DATE — `jobs.scheduled_date` /
+ *  `jobs.end_date` arrive as a bare '2026-09-01', a wall-calendar day with no instant
+ *  attached. `new Date('2026-09-01')` parses that as UTC *midnight*, which in Trinidad
+ *  (UTC-4) is 31 Aug 20:00 local, so `getMonth()` answers August for a September job.
+ *  That is exactly how the month filter used to hide every 1st-of-the-month job in the
+ *  previous month (and every 1 Jan job in the previous year) while the Date column beside
+ *  it still read 01 Sep — the column goes through dayKey/parseISO, which treats a
+ *  date-only string as LOCAL midnight. Same string, two parsers.
+ *
+ *  So route through dayKey here too and read the parts straight off the string: no Date
+ *  object, no timezone, and the filter agrees with the displayed date by construction. A
+ *  timestamptz `created_at` fallback still resolves to its local day, matching formatDate.
+ *  Migration 107 fixed this same UTC-parse bug server-side for Analytics; this is the
+ *  client-side twin. */
+function yearMonthOf(date: string | null | undefined): { year: number; month: number } | null {
+  const k = dayKey(date)
+  // dayKey echoes back anything it can't parse, so insist on the yyyy-MM-dd shape.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(k)) return null
+  return { year: Number(k.slice(0, 4)), month: Number(k.slice(5, 7)) - 1 }
+}
+
 /** Distinct calendar years present in the rows (newest first), from a date field. */
 export function availableYears<T>(rows: T[], getDate: (r: T) => string | null | undefined): number[] {
   const set = new Set<number>()
   for (const r of rows) {
-    const d = getDate(r)
-    if (!d) continue
-    const y = new Date(d).getFullYear()
-    if (!Number.isNaN(y)) set.add(y)
+    const ym = yearMonthOf(getDate(r))
+    if (ym) set.add(ym.year)
   }
   return [...set].sort((a, b) => b - a)
 }
@@ -87,11 +109,10 @@ export function availableYears<T>(rows: T[], getDate: (r: T) => string | null | 
  *  silently hide every other month even though the UI reads "All time". */
 export function inYearMonth(date: string | null | undefined, year: YearSel, month: MonthSel): boolean {
   if (year === 'all') return true
-  if (!date) return false
-  const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return false
-  if (d.getFullYear() !== year) return false
-  if (month !== 'all' && d.getMonth() !== month) return false
+  const ym = yearMonthOf(date)
+  if (!ym) return false
+  if (ym.year !== year) return false
+  if (month !== 'all' && ym.month !== month) return false
   return true
 }
 

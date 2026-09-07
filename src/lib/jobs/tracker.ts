@@ -3,7 +3,7 @@
 // report/VOS attachments, and an activity trail on top of the jobs table.
 
 import { createClient } from '@/lib/supabase/client'
-import { formatBytes, sanitizeStorageName } from '@/lib/utils'
+import { dayKey, formatBytes, sanitizeStorageName } from '@/lib/utils'
 import type { WorkflowStatus, JobType, JobAttachment, JobAttachmentKind, ActivityLogRow } from '@/lib/types/database'
 
 // Re-exported so existing consumers (e.g. JobOpsPanel) keep importing formatBytes
@@ -706,11 +706,17 @@ export async function setJobReportRequirement(
   return { reportNumber: (data as string | null) ?? null }
 }
 
-/** Report number `YY-MM-NNN` from a date + running sequence (matches the real docs). */
+/** Report number `YY-MM-NNN` from a date + running sequence (matches the real docs).
+ *
+ *  The YY-MM must be the month the work was scheduled for as a person reads it off a
+ *  calendar. `scheduled_date` is a Postgres DATE, so `new Date('2026-09-01')` would parse
+ *  it as UTC midnight and, in Trinidad, report August — stamping a 1 Sep job `26-08-NNN`
+ *  and writing that to the row. dayKey is the local-day seam (see yearMonthOf in
+ *  lib/jobs/view.ts for the full story); read the parts off its string. */
 export function formatReportNumber(dateISO: string, seq: number): string {
-  const d = new Date(dateISO)
-  const yy = String(d.getFullYear()).slice(-2)
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const k = dayKey(dateISO)
+  const yy = k.slice(2, 4)
+  const mm = k.slice(5, 7)
   return `${yy}-${mm}-${String(seq).padStart(3, '0')}`
 }
 

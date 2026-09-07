@@ -44,7 +44,10 @@ export default function HistoryTable() {
       actorId: actorId || undefined,
       locationId: locationId || undefined,
       kind: kind || undefined,
-      from: from ? new Date(from).toISOString() : undefined,
+      // Both bounds are local wall-clock days from a date input. Spelling out the time
+      // keeps them local; a bare new Date('2026-09-01') is UTC midnight, which in
+      // Trinidad starts the window at 8pm the evening before.
+      from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
       // Inclusive of the whole end day, which is what a person means by "to".
       to: to ? new Date(`${to}T23:59:59`).toISOString() : undefined,
       limit: 500,
