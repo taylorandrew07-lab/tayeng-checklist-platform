@@ -5,11 +5,10 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Anchor, Pencil, Save, Ship, FolderOpen, Briefcase } from 'lucide-react'
 import { getVesselDetail, updateVessel, type VesselDetail } from '@/lib/vessels/api'
-import { WorkflowPill, CargoStatusPill } from '@/components/job/StatusPill'
+import { WorkflowPill, VoyagePill } from '@/components/job/StatusPill'
 import { formatDate, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobSpansDays } from '@/lib/jobs/jobDate'
 import type { WorkflowStatus } from '@/lib/types/database'
-import type { VoyageStatus } from '@/lib/cargo/types'
 import { toast } from '@/components/ui/toast'
 import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
 
@@ -131,7 +130,7 @@ export default function VesselDetailPage() {
               <Link key={v.id} href={`/admin/cargo/cloud/${v.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
                 <Ship className="h-4 w-4 text-gray-300 flex-shrink-0" />
                 <span className="flex-1 text-sm text-gray-800">{displayVoyageNumber(v.voyage_number) || 'Voyage'}</span>
-                <CargoStatusPill status={v.status as VoyageStatus} />
+                <VoyagePill voyage={v} />
               </Link>
             ))}
           </div>

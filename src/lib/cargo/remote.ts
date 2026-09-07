@@ -4,7 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Voyage, CargoPhoto, Period, Camera } from './types'
 import type { VesselPrefix } from '@/lib/utils'
-import { applyCorrections, type CorrectionPatch, type CorrectionLogEntry } from './corrections'
+import { applyCorrections, correctRow, type CorrectionPatch, type CorrectionLogEntry } from './corrections'
 
 export interface RemoteVoyageRow {
   id: string
@@ -12,6 +12,9 @@ export interface RemoteVoyageRow {
   vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
+  /** From doc.endDate, '' normalised to null. Carried so staff lists can ask
+   *  voyagePhase() whether monitoring is over — see lib/cargo/voyageDate.ts. */
+  end_date: string | null
   updated_at: string
 }
 
@@ -33,6 +36,9 @@ export interface OpsVoyageRow {
   vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
+  /** From doc.endDate, '' normalised to null — so the ops list can read the
+   *  same voyagePhase() as the jobs register instead of the stored status. */
+  end_date: string | null
   updated_at: string
   synced_at: string
   owner_name: string | null
@@ -48,22 +54,25 @@ export async function listAllVoyages(supabase: SupabaseClient): Promise<OpsVoyag
   // (long applied), so the earlier separate best-effort query is no longer needed.
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at, synced_at, job_id, owner:profiles!owner_id(full_name, display_title), job:jobs!cargo_voyages_job_id_fkey(job_number)')
+    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at, synced_at, job_id,' +
+      ' end_date:doc->>endDate, owner:profiles!owner_id(full_name, display_title),' +
+      ' job:jobs!cargo_voyages_job_id_fkey(job_number), corrections:cargo_voyage_corrections(patch)')
     .order('synced_at', { ascending: false })
   if (error) throw error
 
-  return ((data ?? []) as any[]).map(r => ({
+  return ((data ?? []) as any[]).map(r => correctRow({
     id: r.id,
     vessel_name: r.vessel_name,
     vessel_type: r.vessel_type ?? null,
     voyage_number: r.voyage_number,
     status: r.status,
+    end_date: r.end_date || null,
     updated_at: r.updated_at,
     synced_at: r.synced_at,
     owner_name: r.owner?.full_name ?? null,
     job_id: r.job_id ?? null,
     job_number: r.job?.job_number ?? null,
-  }))
+  }, r.corrections?.patch as CorrectionPatch | null))
 }
 
 /** A synced voyage as shown in the job-page "Cargo voyages" picker/list. */
@@ -73,25 +82,33 @@ export interface LinkedVoyageRow {
   vessel_type: VesselPrefix | null
   voyage_number: string | null
   status: string
+  /** From doc.endDate, '' normalised to null — the job page's voyage card reads
+   *  voyagePhase() from it so it agrees with the jobs register. */
+  end_date: string | null
   owner_name: string | null
 }
 
+const LINKED_SELECT =
+  'id, vessel_name, vessel_type, voyage_number, status, end_date:doc->>endDate,' +
+  ' owner:profiles!owner_id(full_name), corrections:cargo_voyage_corrections(patch)'
+
 function toLinkedRow(r: any): LinkedVoyageRow {
-  return {
+  return correctRow({
     id: r.id,
     vessel_name: r.vessel_name,
     vessel_type: r.vessel_type ?? null,
     voyage_number: r.voyage_number,
     status: r.status,
+    end_date: r.end_date || null,
     owner_name: r.owner?.full_name ?? null,
-  }
+  }, r.corrections?.patch as CorrectionPatch | null)
 }
 
 /** Synced voyages attached to a given job (its billable cargo work). */
 export async function listVoyagesForJob(supabase: SupabaseClient, jobId: string): Promise<LinkedVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, vessel_type, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .select(LINKED_SELECT)
     .eq('job_id', jobId)
     .order('synced_at', { ascending: false })
   if (error) throw error
@@ -102,7 +119,7 @@ export async function listVoyagesForJob(supabase: SupabaseClient, jobId: string)
 export async function listUnlinkedVoyages(supabase: SupabaseClient): Promise<LinkedVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, vessel_type, voyage_number, status, owner:profiles!owner_id(full_name)')
+    .select(LINKED_SELECT)
     .is('job_id', null)
     .order('synced_at', { ascending: false })
   if (error) throw error
@@ -154,12 +171,18 @@ export async function listVoyageListRows(supabase: SupabaseClient): Promise<Voya
       ' start_date:doc->>startDate, end_date:doc->>endDate, surveyor_name:doc->>surveyorName,' +
       ' doc_client_name:doc->>clientName,' +
       ' owner:profiles!owner_id(full_name), client:clients(name, color),' +
-      ' job:jobs!cargo_voyages_job_id_fkey(job_number)'
+      ' job:jobs!cargo_voyages_job_id_fkey(job_number),' +
+      // A super admin can correct the Monitoring End (and the identity fields)
+      // in cargo_voyage_corrections; without this the register keys voyagePhase(),
+      // its Open/Closed filter and its ordering on the uncorrected value while
+      // the voyage's own page shows the corrected one. To-one embed by mig 195's
+      // PK; readable by exactly whoever can read the voyage.
+      ' corrections:cargo_voyage_corrections(patch)'
     )
     .order('synced_at', { ascending: false })
   if (error) throw error
 
-  const rows = ((data ?? []) as any[]).map(r => ({
+  const rows = ((data ?? []) as any[]).map(r => correctRow({
     id: r.id,
     vessel_name: r.vessel_name,
     vessel_type: r.vessel_type ?? null,
@@ -183,7 +206,7 @@ export async function listVoyageListRows(supabase: SupabaseClient): Promise<Voya
     job_number: r.job?.job_number ?? null,
     created_at: r.created_at,
     updated_at: r.updated_at,
-  }))
+  }, r.corrections?.patch as CorrectionPatch | null))
 
   // Colour lives on the client RECORD, so an unlinked voyage has none and its row
   // drops out of colour-by-client. Match the free-text name back to a client to
@@ -209,10 +232,19 @@ export async function listVoyageListRows(supabase: SupabaseClient): Promise<Voya
 export async function listClientVoyages(supabase: SupabaseClient): Promise<RemoteVoyageRow[]> {
   const { data, error } = await supabase
     .from('cargo_voyages')
-    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at')
+    .select('id, vessel_name, vessel_type, voyage_number, status, updated_at,' +
+      ' end_date:doc->>endDate, corrections:cargo_voyage_corrections(patch)')
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return (data ?? []) as RemoteVoyageRow[]
+  return ((data ?? []) as any[]).map(r => correctRow({
+    id: r.id,
+    vessel_name: r.vessel_name,
+    vessel_type: r.vessel_type ?? null,
+    voyage_number: r.voyage_number,
+    status: r.status,
+    end_date: r.end_date || null,
+    updated_at: r.updated_at,
+  }, r.corrections?.patch as CorrectionPatch | null))
 }
 
 /** Full voyage document + signed photo URLs for the client view. */

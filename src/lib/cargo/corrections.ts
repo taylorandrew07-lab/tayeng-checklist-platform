@@ -147,16 +147,36 @@ export function staleCorrections(voyage: Voyage, patch: CorrectionPatch | null |
     .filter(f => CORRECTABLE_FIELDS.includes(f) && fields[f]!.from !== docValue(voyage, f))
 }
 
-/** Overlay corrected identity onto a LIST row, which reads columns rather than
- *  the document. Without this a corrected vessel name would be right on the
- *  voyage page and wrong in every list that links to it. */
-export function correctRow<T extends { vessel_name?: string | null; voyage_number?: string | null }>(
-  row: T, patch: CorrectionPatch | null | undefined
-): T {
+/** Overlay corrections onto a LIST row, which reads columns and doc arrow-paths
+ *  rather than the whole document. Without this a corrected value would be right
+ *  on the voyage page and wrong in every list that links to it.
+ *
+ *  The dates matter as much as the names: the Monitoring End is what
+ *  voyagePhase() reads (lib/cargo/voyageDate.ts), so an uncorrected end date
+ *  leaves a voyage sitting under Open, pinned to the top of the register and
+ *  labelled In progress, while its own page says monitoring ended weeks ago.
+ *
+ *  Every field is optional in the constraint and guarded with `in`, so a row
+ *  shape that doesn't carry one is passed through untouched rather than growing
+ *  a stray property. */
+export function correctRow<T extends {
+  vessel_name?: string | null
+  voyage_number?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  surveyor_name?: string | null
+  client_name?: string | null
+}>(row: T, patch: CorrectionPatch | null | undefined): T {
   const f = patch?.fields
   if (!f) return row
   const out = { ...row }
   if (f.vesselName) out.vessel_name = f.vesselName.value
   if (f.voyageNumber) out.voyage_number = f.voyageNumber.value
+  // '' is how the document spells "not set yet" — normalise it to null here so
+  // no list has to know that (lib/cargo/voyageDate.ts reads these).
+  if (f.startDate && 'start_date' in row) out.start_date = f.startDate.value || null
+  if (f.endDate && 'end_date' in row) out.end_date = f.endDate.value || null
+  if (f.surveyorName && 'surveyor_name' in row) out.surveyor_name = f.surveyorName.value
+  if (f.clientName && 'client_name' in row) out.client_name = f.clientName.value
   return out
 }

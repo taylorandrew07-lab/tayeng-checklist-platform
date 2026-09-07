@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Ship, Loader2, Cloud, ListOrdered, Trash2 } from 'lucide-react'
-import { CargoStatusPill } from '@/components/job/StatusPill'
+import { VoyagePill } from '@/components/job/StatusPill'
 import EmptyState from '@/components/ui/EmptyState'
-import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listAllVoyages, type OpsVoyageRow } from '@/lib/cargo/remote'
 import { deleteRemoteVoyage } from '@/lib/cargo/sync'
@@ -114,7 +113,7 @@ export default function CargoOperationsView() {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{r.owner_name ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <CargoStatusPill status={r.status as VoyageStatus} />
+                    <VoyagePill voyage={r} />
                   </td>
                   <td className="px-4 py-3">
                     {r.job_id

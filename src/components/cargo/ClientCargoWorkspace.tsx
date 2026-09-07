@@ -17,6 +17,8 @@ import DriReportBuilder from '@/components/cargo/DriReportBuilder'
 import ShareLinkPanel from '@/components/cargo/ShareLinkPanel'
 import VoyageCorrectionsPanel from '@/components/cargo/VoyageCorrectionsPanel'
 import { applyCorrections, type CorrectionPatch } from '@/lib/cargo/corrections'
+import { voyagePhase } from '@/lib/cargo/voyageDate'
+import { formatVoyageDate } from '@/lib/cargo/periods'
 import Tabs from '@/components/ui/Tabs'
 import { withVesselPrefix } from '@/lib/utils'
 import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
@@ -107,7 +109,11 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
     )
   }
 
-  const finalized = voyage.status === 'finalized'
+  // Three states, not two. Saying "monitoring is ongoing" about a voyage the
+  // surveyor dated as ended weeks ago is simply false, and this is the page the
+  // office reads when deciding whether the DRI report can go out. Finalising is
+  // still what removes the NOT FINALISED marking — that part is unchanged.
+  const phase = voyagePhase({ status: voyage.status, end_date: voyage.endDate })
   const tabs = [...BASE_TABS, ...(allowDri ? [DRI_TAB] : []), ...(allowCorrect ? [CORRECT_TAB] : [])]
 
   return (
@@ -126,9 +132,13 @@ export default function ClientCargoWorkspace({ id, backHref = '/client/cargo', a
         </button>
       </div>
 
-      {finalized ? (
+      {phase === 'finalized' ? (
         <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4" />This report has been finalised.
+        </div>
+      ) : phase === 'completed' ? (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />Monitoring ended {formatVoyageDate(voyage.endDate)}. The surveyor has not finalised the report yet, so figures may still change and downloads are marked NOT FINALISED.
         </div>
       ) : (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">

@@ -3,10 +3,12 @@
 // per domain — never re-declare a status/role colour map inline at a call site.
 
 import type { ReactNode } from 'react'
-import { CheckCircle2, CircleDot } from 'lucide-react'
+import { Check, CheckCircle2, CircleDot } from 'lucide-react'
 import { WORKFLOW, normalizeWorkflowStatus } from '@/lib/jobs/tracker'
 import type { WorkflowStatus, Invoice, UserRole, TemplateStatus } from '@/lib/types/database'
 import type { VoyageStatus } from '@/lib/cargo/types'
+import { voyagePhase } from '@/lib/cargo/voyageDate'
+import { formatDate } from '@/lib/utils'
 
 export function WorkflowPill({ status, className }: { status: WorkflowStatus; className?: string }) {
   // normalize so a pre-145 value still on a cached row renders as its collapsed
@@ -68,12 +70,47 @@ export function TemplateStatusPill({ status, className }: { status: TemplateStat
 
 // Cargo voyage state — one colour + spelling ("Finalised") app-wide. Previously
 // inlined with disagreeing colours (amber vs sky) and two spellings.
-export function CargoStatusPill({ status, className }: { status: VoyageStatus | null | undefined; className?: string }) {
+//
+// 'completed' is not a stored status: it is the register's reading of a voyage
+// whose Monitoring End has arrived but which nobody has finalised yet — see
+// voyagePhase() in lib/cargo/voyageDate.ts. Green like Finalised (the work is
+// done) but with the plain tick, so the two stay tellable apart.
+export function CargoStatusPill({ status, className, title }: {
+  status: VoyageStatus | 'completed' | null | undefined; className?: string; title?: string
+}) {
   const finalized = status === 'finalized'
+  const completed = status === 'completed'
+  const done = finalized || completed
   return (
-    <span className={`${PILL_BASE} ${finalized ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} ${className ?? ''}`}>
-      {finalized ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-      {finalized ? 'Finalised' : 'In progress'}
+    <span title={title} className={`${PILL_BASE} ${done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} ${className ?? ''}`}>
+      {finalized ? <CheckCircle2 className="h-3.5 w-3.5" /> : completed ? <Check className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+      {finalized ? 'Finalised' : completed ? 'Completed' : 'In progress'}
     </span>
+  )
+}
+
+/**
+ * A cargo voyage's state as STAFF should read it — the pill above, keyed on
+ * voyagePhase() rather than the stored status, so a voyage whose Monitoring End
+ * has passed says Completed everywhere instead of only on the jobs register.
+ *
+ * Use this on every staff surface. The client's own list deliberately does NOT:
+ * there "In progress" means the REPORT is not final, which is what the NOT
+ * FINALISED marking on their download says, and a green Completed would read as
+ * "your report is ready" when it isn't.
+ */
+export function VoyagePill({ voyage, className }: {
+  voyage: { status?: string | null; end_date?: string | null }
+  className?: string
+}) {
+  const phase = voyagePhase(voyage)
+  return (
+    <CargoStatusPill
+      className={className}
+      status={phase === 'ongoing' ? 'in_progress' : phase}
+      title={phase === 'completed'
+        ? `Monitoring ended ${formatDate(voyage.end_date)} — not yet finalised by the surveyor`
+        : undefined}
+    />
   )
 }

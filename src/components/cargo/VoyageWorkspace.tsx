@@ -13,6 +13,7 @@ import { voyageIdFromPath } from '@/lib/cargo/voyageIdFromPath'
 import { createClient } from '@/lib/supabase/client'
 import { syncVoyage, voyageDirty } from '@/lib/cargo/sync'
 import { effectiveEndDate, formatVoyageDate } from '@/lib/cargo/periods'
+import { voyagePhase } from '@/lib/cargo/voyageDate'
 import { confirmDialog } from '@/components/ui/confirm'
 import VoyageSetupForm from '@/components/cargo/VoyageSetupForm'
 import ReadingTypeManager from '@/components/cargo/ReadingTypeManager'
@@ -247,6 +248,15 @@ export default function VoyageWorkspace() {
         })()}
         {syncMsg && (
           <p className={`w-full text-xs ${syncMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{syncMsg.text}</p>
+        )}
+        {/* Dating the Monitoring End is how a surveyor ends a voyage in practice
+            (Channel Pearl, 02 Sep 2026) — but only Finalise locks the document
+            and takes NOT FINALISED off the client's copy. Say so, right where the
+            button is, instead of leaving the voyage half-closed for a week. */}
+        {voyagePhase({ status: voyage.status, end_date: voyage.endDate }) === 'completed' && (
+          <p className="w-full text-xs text-amber-700">
+            Monitoring ended {formatVoyageDate(voyage.endDate)}. The report is still marked not finalised — press <strong>Finalise report</strong> when the readings are complete.
+          </p>
         )}
       </div>
 

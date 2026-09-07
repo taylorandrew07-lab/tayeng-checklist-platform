@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Save, Check } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
 import { currentUserId } from '@/lib/cargo/user'
@@ -8,6 +8,7 @@ import { parseVesselName } from '@/lib/utils'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import { resolveClientLink } from '@/lib/cargo/clientLink'
+import { formatVoyageDate } from '@/lib/cargo/periods'
 import {
   type Voyage, type CargoTemplate,
   defaultReadingTypes, cloneReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
@@ -35,6 +36,19 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   const [clientId, setClientId] = useState(voyage?.clientId ?? '')
   const [clientName, setClientName] = useState(voyage?.clientName ?? '')
   const [remarks, setRemarks] = useState(voyage?.remarks ?? '')
+
+  // The last day this voyage actually has data for. Every renderer bounds its
+  // calendar with monitoringDates(start, effectiveEndDate) — the grid, the charts,
+  // the photo manager, the PDF and the client's annex — so a day AFTER the end
+  // date exists in the document but appears in none of them. Setting the end date
+  // now also marks the voyage Completed on the jobs register (voyagePhase), which
+  // makes getting it wrong cost more than it used to. Warn, never block: this
+  // form auto-saves in edit mode and has no error channel there.
+  const lastDataDay = useMemo(() => {
+    const days = [...Object.keys(voyage?.readings ?? {}), ...Object.keys(voyage?.periodMeta ?? {})].sort()
+    return days[days.length - 1] ?? null
+  }, [voyage])
+  const hiddenDays = endDate && lastDataDay && lastDataDay > endDate ? lastDataDay : null
 
   const [lists, setLists] = useState<PickLists>({ clients: [], surveyors: [] })
   const [saving, setSaving] = useState(false)
@@ -201,6 +215,11 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
             <p className="mt-1 text-xs text-gray-500">
               Optional — leave blank if you don&apos;t know yet. The voyage stays open and days are added as you go; set it here when monitoring finishes.
             </p>
+            {hiddenDays && (
+              <p className="mt-1 text-xs text-amber-700">
+                Readings are recorded up to {formatVoyageDate(hiddenDays)}. Days after the end date are left out of the readings table, the charts, the report and the client&apos;s copy.
+              </p>
+            )}
           </div>
           <div>
             <label className="label-base">Number of Cargo Holds</label>

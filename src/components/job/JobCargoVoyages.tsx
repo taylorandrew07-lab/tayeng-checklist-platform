@@ -10,15 +10,10 @@ import Link from 'next/link'
 import { Ship, Loader2, Plus, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from '@/components/ui/toast'
-import { CargoStatusPill } from '@/components/job/StatusPill'
-import type { VoyageStatus } from '@/lib/cargo/types'
+import { VoyagePill } from '@/components/job/StatusPill'
 import { listVoyagesForJob, listUnlinkedVoyages, setVoyageJob, type LinkedVoyageRow } from '@/lib/cargo/remote'
 import { withVesselPrefix } from '@/lib/utils'
 import { displayVoyageNumber } from '@/lib/cargo/voyageNumber'
-
-function StatusPill({ status }: { status: string }) {
-  return <CargoStatusPill status={status as VoyageStatus} />
-}
 
 function voyageLabel(v: LinkedVoyageRow): string {
   return `${v.vessel_name ? withVesselPrefix(v.vessel_name, v.vessel_type) : '—'}${v.voyage_number ? ` · ${displayVoyageNumber(v.voyage_number)}` : ''}${v.owner_name ? ` — ${v.owner_name}` : ''}`
@@ -142,7 +137,7 @@ export default function JobCargoVoyages({ jobId, vesselName, isCargoJob = false 
                   <span className="block text-xs text-gray-500 truncate">{displayVoyageNumber(v.voyage_number) || 'No voyage no.'}{v.owner_name ? ` · ${v.owner_name}` : ''}</span>
                 </span>
               </Link>
-              <StatusPill status={v.status} />
+              <VoyagePill voyage={v} />
               <button onClick={() => detach(v)} disabled={busy} title="Unlink from this job" className="btn-ghost py-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"><X className="h-3.5 w-3.5" /></button>
             </div>
           ))}

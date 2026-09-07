@@ -105,7 +105,10 @@ export interface VesselJob {
   id: string; report_number: string | null; title: string
   workflow_status: string; scheduled_date: string | null; end_date: string | null; created_at: string
 }
-export interface VesselVoyage { id: string; voyage_number: string | null; status: string; updated_at: string }
+/** end_date comes from doc.endDate ('' normalised to null) so the vessel page
+ *  can ask voyagePhase() instead of reading the stored status — see
+ *  lib/cargo/voyageDate.ts. */
+export interface VesselVoyage { id: string; voyage_number: string | null; status: string; end_date: string | null; updated_at: string }
 export interface VesselDetail { vessel: Vessel; jobs: VesselJob[]; voyages: VesselVoyage[] }
 
 export async function getVesselDetail(id: string): Promise<VesselDetail | null> {
@@ -113,7 +116,7 @@ export async function getVesselDetail(id: string): Promise<VesselDetail | null> 
   const [{ data: vessel }, { data: jobs }, { data: voyages }] = await Promise.all([
     supabase.from('vessels').select(COLS).eq('id', id).single(),
     supabase.from('jobs').select('id, report_number, title, workflow_status, scheduled_date, end_date, created_at').eq('vessel_id', id).order('created_at', { ascending: false }),
-    supabase.from('cargo_voyages').select('id, voyage_number, status, updated_at').eq('vessel_id', id).order('updated_at', { ascending: false }),
+    supabase.from('cargo_voyages').select('id, voyage_number, status, updated_at, end_date:doc->>endDate').eq('vessel_id', id).order('updated_at', { ascending: false }),
   ])
   if (!vessel) return null
   // Re-sorted by the job's LAST day (PostgREST can't ORDER BY a COALESCE), matching
@@ -121,6 +124,6 @@ export async function getVesselDetail(id: string): Promise<VesselDetail | null> 
   return {
     vessel: vessel as Vessel,
     jobs: ((jobs ?? []) as VesselJob[]).sort(byLastDateDesc),
-    voyages: (voyages ?? []) as VesselVoyage[],
+    voyages: ((voyages ?? []) as any[]).map(v => ({ ...v, end_date: v.end_date || null })) as VesselVoyage[],
   }
 }

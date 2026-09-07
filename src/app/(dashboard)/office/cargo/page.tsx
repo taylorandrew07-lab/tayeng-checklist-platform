@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Ship, ChevronRight, ListOrdered } from 'lucide-react'
-import { CargoStatusPill } from '@/components/job/StatusPill'
+import { VoyagePill } from '@/components/job/StatusPill'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
-import type { VoyageStatus } from '@/lib/cargo/types'
 import { createClient } from '@/lib/supabase/client'
 import { listClientVoyages, type RemoteVoyageRow } from '@/lib/cargo/remote'
 import { withVesselPrefix } from '@/lib/utils'
@@ -53,7 +52,9 @@ export default function OfficeCargoListPage() {
                   <p className="font-medium text-gray-900 truncate">{withVesselPrefix(v.vessel_name, v.vessel_type)} — {displayVoyageNumber(v.voyage_number)}</p>
                   <p className="text-sm text-gray-500">Updated {v.updated_at?.slice(0, 10)}</p>
                 </div>
-                <CargoStatusPill status={v.status as VoyageStatus} />
+                {/* Office is staff: it reads the phase, not the stored status.
+                    The CLIENT list next door deliberately keeps the status. */}
+                <VoyagePill voyage={v} />
                 <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
               </Link>
             )

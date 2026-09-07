@@ -156,6 +156,26 @@ describe('renderVoyageAnnex', () => {
     expect(renderVoyageAnnex(voyage({ status: 'finalized' }))).toContain('finalised')
   })
 
+  // Three states, not two — the meta block prints "Monitoring completed: <date>",
+  // so the banner may not claim monitoring "continues at sea" above it.
+  it('says monitoring CONTINUES only while the voyage is genuinely open-ended', () => {
+    const open = renderVoyageAnnex(voyage({ endDate: '' }), { receivedAt: '2026-08-10T14:08:15Z' })
+    expect(open).toContain('monitoring is ongoing')
+    expect(open).toContain('has not yet reached us')
+
+    // Same voyage, dated as ended and never finalised: still preliminary, but it
+    // must not tell the client that readings are still coming in.
+    const ended = renderVoyageAnnex(voyage({ endDate: '2026-06-02' }), { receivedAt: '2026-08-10T14:08:15Z' })
+    expect(ended).toContain('Preliminary')
+    expect(ended).toContain('monitoring ended 02 June 2026')
+    expect(ended).toContain('not yet been finalised by the surveyor')
+    expect(ended).not.toContain('has not yet reached us')
+    expect(ended).not.toContain('monitoring is ongoing')
+
+    // Finalising still wins over both.
+    expect(renderVoyageAnnex(voyage({ status: 'finalized' }))).toContain('has been finalised')
+  })
+
   it('dates the READINGS, not just the page render', () => {
     const html = renderVoyageAnnex(voyage({ updatedAt: Date.parse('2026-08-10T14:07:24Z') }), {
       generatedAt: new Date('2026-08-11T19:30:00Z'),
@@ -164,7 +184,6 @@ describe('renderVoyageAnnex', () => {
     // The figures are from the 10th; the page was opened on the 11th. A reader
     // must be able to tell those apart — offline readings can be a day behind.
     expect(html).toMatch(/These readings are as at <strong>10 Aug 2026, 10:07 AST<\/strong>/)
-    expect(html).toContain('has not yet reached us')
     expect(html).toContain('Readings as at 10 Aug 2026, 10:07 AST')
     expect(html).toContain('received 10 Aug 2026, 10:08 AST')
     expect(html).toContain('page opened 11 Aug 2026, 15:30 AST')

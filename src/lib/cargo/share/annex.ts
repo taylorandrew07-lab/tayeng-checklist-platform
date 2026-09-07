@@ -33,6 +33,7 @@ import { buildHoldSeries, buildPointSeries, seriesColor, type ChartModel } from 
 import { withVesselPrefix } from '@/lib/utils'
 import { COMPANY } from '@/lib/company'
 import { displayVoyageNumber } from '../voyageNumber'
+import { voyagePhase } from '../voyageDate'
 
 export interface AnnexOptions {
   /** Company letterhead as a data URI. Absent → the text wordmark fallback. */
@@ -682,7 +683,11 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
   const chartTypes = (voyage.readingTypes ?? []).filter(rt => rt.includeInCharts)
   const omitted = (voyage.readingTypes ?? []).filter(rt => !rt.includeInTables && !rt.includeInCharts)
   const tps = voyageTimepoints(voyage)
-  const finalized = voyage.status === 'finalized'
+  // Three states. The meta block below already prints "Monitoring completed:
+  // <endDate>", so keying the banner on status alone made the same page say
+  // monitoring "continues at sea" two rows above the date it ended.
+  const phase = voyagePhase({ status: voyage.status, end_date: voyage.endDate })
+  const finalized = phase === 'finalized'
   const vessel = withVesselPrefix(voyage.vesselName, voyage.vesselType)
   const charts = buildCharts(voyage, chartTypes, colorsOn, interactive)
 
@@ -731,6 +736,10 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
   <span>${finalized ? '&#10003;' : '&#9888;'}</span>
   <div>${finalized
     ? `This report has been finalised.${asAt ? ` Readings are complete to <strong>${esc(asAt)}</strong>.` : ''}`
+    : phase === 'completed'
+    ? `<b>Preliminary &mdash; monitoring ended ${esc(formatVoyageDate(voyage.endDate))}.</b> ${asAt
+        ? `These readings are as at <strong>${esc(asAt)}</strong>. `
+        : ''}The report has not yet been finalised by the surveyor, so figures may still change.`
     : `<b>Preliminary &mdash; monitoring is ongoing.</b> ${asAt
         ? `These readings are as at <strong>${esc(asAt)}</strong>.${opts.selfContained
             ? ' Monitoring continues, so later rounds will appear on a subsequent report.'

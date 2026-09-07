@@ -37,7 +37,7 @@ import {
 import { confirmDialog } from '@/components/ui/confirm'
 import type { WorkflowStatus, Invoice } from '@/lib/types/database'
 import { useStickyState } from '@/lib/hooks/useStickyState'
-import { InvoiceStatusPill, CargoStatusPill, WorkflowPill } from '@/components/job/StatusPill'
+import { InvoiceStatusPill, VoyagePill, WorkflowPill } from '@/components/job/StatusPill'
 import { listVoyageListRows, type VoyageListRow } from '@/lib/cargo/remote'
 import { voyageIsOngoing, voyageLastDate, voyageSpansDays } from '@/lib/cargo/voyageDate'
 import { voyageHref } from '@/lib/cargo/links'
@@ -426,11 +426,15 @@ const COLUMNS: ColumnDef[] = [
         />
       </div>
     ),
-    // CargoStatusPill, never WorkflowPill: the latter runs its input through
+    // VoyagePill, never WorkflowPill: the latter runs its input through
     // normalizeWorkflowStatus, which returns 'in_progress' for anything it does
     // not recognise — so a FINALISED voyage would render as "In progress". A
     // wrong answer with no error.
-    voyageCell: v => <div className="px-3"><CargoStatusPill status={v.status === 'finalized' ? 'finalized' : 'in_progress'} /></div> },
+    //
+    // VoyagePill keys on voyagePhase(), the same rule as the Date cell, the
+    // Open/Closed filter and the ongoing-first ordering: a voyage whose Monitoring
+    // End has arrived reads Completed even before the surveyor finalises it.
+    voyageCell: v => <div className="px-3"><VoyagePill voyage={v} /></div> },
   // A job is shown (and sorted) by its LAST day — jobLastDate() — with the start
   // date underneath in fine print, but only when the job really spans days: an
   // end_date equal to the start would otherwise print "12 Jul / from 12 Jul".
@@ -458,11 +462,10 @@ const COLUMNS: ColumnDef[] = [
         )}
       </>
     ),
-    // Read-only, and keyed on the SAME rule as the Status pill — voyageIsOngoing(),
-    // i.e. status, not the end date. Setup lets a surveyor type an intended end date
-    // long before the voyage is signed off, and printing it here read as a finished
-    // voyage sitting next to an "In progress" pill. Until it is finalised the honest
-    // answer is Ongoing; the intended end stays in the tooltip.
+    // Read-only, and keyed on the SAME rule as the Status pill — voyageIsOngoing().
+    // An end date still in the future is a plan, so the voyage reads Ongoing with
+    // the planned end in the tooltip; once that day arrives the date is printed and
+    // the pill turns Completed, together.
     voyageCell: v => {
       const ongoing = voyageIsOngoing(v)
       return (
@@ -470,7 +473,7 @@ const COLUMNS: ColumnDef[] = [
         <div className="px-2">
           <span
             className="text-gray-700"
-            title={ongoing && v.end_date ? `Ends ${formatDate(v.end_date)} — still ongoing until the surveyor finalises it` : undefined}
+            title={ongoing && v.end_date ? `Monitoring planned to end ${formatDate(v.end_date)}` : undefined}
           >
             {ongoing ? 'Ongoing' : v.end_date ? formatDate(v.end_date) : formatDate(voyageLastDate(v) ?? v.created_at)}
           </span>
