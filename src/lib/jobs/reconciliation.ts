@@ -126,9 +126,10 @@ export interface CategorizeContext {
   /** True when an invoice line names this job directly. */
   hasLine?: boolean
   /** True when the invoice this job is stamped on has at least one job-linked line.
-   *  Distinguishes a genuine no-line fault from the standalone report-only job that
-   *  createConsolidatedInvoice creates, which is stamped but never line-linked by
-   *  design and sits on an invoice whose only lines are manual. */
+   *  Distinguishes a genuine no-line fault from a LEGACY standalone report-only job,
+   *  which is stamped but never line-linked and sits on an invoice whose only lines
+   *  are manual. Invoice creation stopped minting those on 2026-09-07; the carve-out
+   *  stays because the rows it created are still on the register. */
   invoiceHasJobLines?: boolean
 }
 

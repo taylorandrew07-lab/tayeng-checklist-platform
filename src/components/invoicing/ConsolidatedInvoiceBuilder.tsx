@@ -20,9 +20,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Receipt, Users, CheckSquare, Square, Paperclip, ArrowUpDown, Plus, X } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { formatDate, parseVesselName, withVesselPrefix } from '@/lib/utils'
+import { formatDate, withVesselPrefix } from '@/lib/utils'
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
-import { money, CURRENCIES, listJobTypes } from '@/lib/jobs/tracker'
+import { money, CURRENCIES } from '@/lib/jobs/tracker'
 import {
   listBillingClients, listInvoiceableJobs, listClientRates, getAppSettings, listBankAccounts,
   createConsolidatedInvoice, getLatestInvoiceNumber, computeTotals, markJobInvoiceReady, pickRate, billedDays, seedCharge, setJobsVoyageNumber,
@@ -127,22 +127,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
   const [notes, setNotes] = useState('')
   const [taxes, setTaxes] = useState<TaxDraft[]>([])
   const [saving, setSaving] = useState(false)
-  // Standalone (no jobs ticked): OPTIONALLY create a job for the invoice on the job
-  // sheet. Off by default — this used to be unconditional, so billing a launch fee
-  // silently minted a report-only job with no type and no report number, and the job
-  // sheet filled up with rows nobody had worked.
-  const [addJobToSheet, setAddJobToSheet] = useState(false)
-  const [jobTypes, setJobTypes] = useState<string[]>([])
-  const [newJobVessel, setNewJobVessel] = useState('')
-  const newJobParsed = parseVesselName(newJobVessel)
-  const newJobPrefix = newJobParsed.prefix ?? 'M.V.'
-  const [newJobType, setNewJobType] = useState('')
+  // Creating an invoice never creates a job — see the note in createConsolidatedInvoice.
 
   // Clients + billing defaults + the last invoice number + bank accounts, once.
   useEffect(() => {
     listBillingClients().then(setClients)
     getLatestInvoiceNumber().then(setLastInvNumber)
-    listJobTypes().then(ts => setJobTypes(ts.map(t => t.name)))
     getAppSettings().then(s => { if (s) setTaxes([{ name: s.default_tax_name, rate: Number(s.default_tax_rate) }]) })
     listBankAccounts(true).then(setBankAccounts)
     listClientBilling().then(map => {
@@ -557,26 +547,12 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
       ],
       taxes: taxes.filter(t => t.name.trim()),
       absorbed: absorbedForInvoice,
-      // No vessels ticked AND you asked for one → create a job for this invoice on
-      // the job sheet. Opt-in: an invoice stands on its own everywhere it's read.
-      // A typed "M.T."/"MT"/"M/T" here is captured too, and the name is stored bare —
-      // matching every other creation path. (This route still writes the job row
-      // directly rather than via createDraftJob; that seam bypass is out of scope.)
-      new_job: selectedJobs.length === 0 && addJobToSheet ? {
-        title: newJobParsed.name
-          ? `${newJobPrefix} ${newJobParsed.name}`
-          : `${clientName || 'Client'} — invoice`,
-        vessel_name: newJobParsed.name || null,
-        vessel_type: newJobPrefix,
-        job_type: newJobType || null,
-      } : null,
     })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
     const v = selectedJobs.length
-    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}`
-      : addJobToSheet ? 'Invoice created — a job was added to the job sheet' : 'Invoice created')
-    setDescription(''); setReference(''); setAttention(''); setNotes(''); setIssueDate(''); setDueDate(''); setInvNumber(''); setExtra([]); setNewJobVessel(''); setNewJobType(''); setAddJobToSheet(false)
+    toast.success(v > 0 ? `Invoice created for ${v} vessel${v === 1 ? '' : 's'}` : 'Invoice created')
+    setDescription(''); setReference(''); setAttention(''); setNotes(''); setIssueDate(''); setDueDate(''); setInvNumber(''); setExtra([])
     getLatestInvoiceNumber().then(setLastInvNumber)
     await loadJobs() // billed jobs drop out of the list
     onCreated?.()
@@ -881,36 +857,6 @@ export default function ConsolidatedInvoiceBuilder({ onCreated }: { onCreated?: 
         <div className="card p-5 space-y-3">
           <h3 className="font-medium text-gray-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-brand-500" /> Invoice details</h3>
 
-          {/* Opt-in, and only worth offering when no real job is being billed. Ticking
-              it adds a closed report-only job to the job sheet for this invoice —
-              useful when the work did happen on a vessel and you want it on the
-              sheet; pointless for a launch fee or a reimbursed expense. */}
-          {selectedJobs.length === 0 && (
-            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
-              <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={addJobToSheet} onChange={e => setAddJobToSheet(e.target.checked)} className="mt-0.5" />
-                <span>
-                  Also add this invoice to the job sheet
-                  <span className="block text-[11px] text-gray-400">Creates one closed job for it. Leave off for an expense or a one-off charge.</span>
-                </span>
-              </label>
-              {addJobToSheet && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] text-gray-400">Vessel name (optional)</label>
-                    <input value={newJobVessel} onChange={e => setNewJobVessel(e.target.value)} placeholder="e.g. Channel Pearl" className={cell} />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-gray-400">Job type (optional)</label>
-                    <select value={newJobType} onChange={e => setNewJobType(e.target.value)} className={cell}>
-                      <option value="">—</option>
-                      {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="text-[11px] text-gray-400">Invoice no.</label>

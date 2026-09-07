@@ -638,9 +638,6 @@ export async function createConsolidatedInvoice(input: {
    *  it. Those jobs get closed and stamped alongside the line jobs, but own no line and
    *  no amount — the whole voyage's price is on the Final's single line. */
   absorbed?: Record<string, string>
-  // For a standalone invoice (no job-linked lines): create a report-only job so it
-  // still appears on the job sheet, linked to this invoice.
-  new_job?: { title: string; vessel_name: string | null; vessel_type?: VesselPrefix | null; job_type: string | null } | null
 }): Promise<{ error?: string; invoiceId?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -701,29 +698,16 @@ export async function createConsolidatedInvoice(input: {
       p_invoice_id: invoiceId, p_line_job_ids: jobIds, p_absorbed: absorbed,
     })
     if (jErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: jErr.message } }
-  } else if (input.new_job) {
-    // Standalone invoice: create a report-only job (no checklist template) so the
-    // invoice still shows on the job sheet, linked to it.
-    //
-    // Deliberately born 'closed', NOT 'invoiced' (mig 188): this job has no surveyor,
-    // no checklist and no hours. There is nothing anyone would do to it between being
-    // billed and being closed, so putting it in the awaiting-close worklist would be
-    // pure noise in the one list that exists to be actionable.
-    const { error: njErr } = await supabase.from('jobs').insert({
-      title: input.new_job.title || 'Invoice',
-      client_id: input.client_id,
-      vessel_name: input.new_job.vessel_name ?? null,
-      vessel_type: input.new_job.vessel_type ?? 'M.V.',
-      job_type: input.new_job.job_type ?? null,
-      template_id: null,
-      workflow_status: 'closed',
-      closed_at: new Date().toISOString(),
-      closed_by: user?.id ?? null,
-      invoice_id: invoiceId,
-      created_by: user?.id ?? null,
-    })
-    if (njErr) { await supabase.from('invoices').delete().eq('id', invoiceId); return { error: njErr.message } }
   }
+  // CREATING AN INVOICE NEVER CREATES A JOB.
+  // It used to: a standalone invoice (no vessel ticked) minted a closed, type-less,
+  // date-less report-only job so the invoice would show on the job sheet. That was
+  // narrowed to an opt-in checkbox on 2026-08-10 and removed outright on 2026-09-07,
+  // because all 8 of its production uses were unwanted. The office bills launch fees,
+  // scrap steel and reimbursed expenses through this builder, and each one minted a
+  // row nobody had worked, which then sat on the register beside the REAL job somebody
+  // later entered for the same vessel. An invoice is not a job. To get a job onto the
+  // sheet, create the job and then bill it.
 
   // Per-JOB audit rows. listJobActivity filters entity='job', so an invoice-level row
   // alone means a job's own Activity card says nothing about being closed, by whom, or
@@ -733,8 +717,7 @@ export async function createConsolidatedInvoice(input: {
   const absorbedIds = Object.keys(absorbed)
   await Promise.all([
     logActivity('invoice', invoiceId, 'invoice:create_consolidated', {
-      jobs: jobIds.length, job_ids: jobIds, absorbed_ids: absorbedIds,
-      standalone_job: jobIds.length === 0 && !!input.new_job, total,
+      jobs: jobIds.length, job_ids: jobIds, absorbed_ids: absorbedIds, total,
     }),
     ...jobIds.map(id => logActivity('job', id, 'invoice:billed', { invoice_id: invoiceId, invoice_number: input.invoice_number ?? null })),
     ...absorbedIds.map(id => logActivity('job', id, 'invoice:absorbed', {

@@ -86,8 +86,8 @@ describe('billed but not charged', () => {
   })
 
   it('does NOT flag the standalone report-only job, which is stamped by design', () => {
-    // createConsolidatedInvoice's new_job path: stamped, never line-linked, on an
-    // invoice whose only lines are typed by hand.
+    // A legacy standalone job (invoice creation minted these until 2026-09-07):
+    // stamped, never line-linked, on an invoice whose only lines are typed by hand.
     const j = job({ invoice_id: 'inv-1', workflow_status: 'closed' })
     expect(categorize(j, { inv: liveInvoice, hasLine: false, invoiceHasJobLines: false })).toBeNull()
   })

@@ -51,8 +51,8 @@ describe('releaseSets — ordinary single-job invoices', () => {
 
 describe('releaseSets — the standalone report-only job carve-out', () => {
   it('does NOT release a stamped job that was never on a line', () => {
-    // createConsolidatedInvoice's `new_job` path stamps a report-only job onto the
-    // invoice without giving it a line. "Not on a line" must not read as "removed".
+    // A legacy standalone job (invoice creation minted these until 2026-09-07) is
+    // stamped onto the invoice with no line. "Not on a line" is not "removed".
     const r = releaseSets({
       priorLineJobIds: [],
       stamped: [link('standalone')],
