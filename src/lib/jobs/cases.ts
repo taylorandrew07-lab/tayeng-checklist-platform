@@ -72,6 +72,7 @@ export interface CaseRow {
   title: string | null
   vessel_name: string | null
   vessel_type: string | null
+  client_id: string | null
   client_name: string | null
   case_status: CaseStatus
   case_opened_on: string | null
@@ -85,11 +86,16 @@ export interface CaseRow {
   surveyor_names: string[]
   /** The most recent attendance date across both time logs, 'YYYY-MM-DD'. */
   last_attendance: string | null
+  /** Attendance already paid for, and attendance not yet billed (migs 205/206).
+   *  A case is billed by entry, so these are the two numbers that actually matter
+   *  when deciding whether to close off a billing period. */
+  billed_hours: number
+  outstanding_hours: number
 }
 
 const CASE_COLUMNS =
   'id, title, vessel_name, vessel_type, notes, labour_unit, is_case, case_status, ' +
-  'case_opened_on, case_closed_on, client:clients(name)'
+  'case_opened_on, case_closed_on, client_id, client:clients(name)'
 
 /**
  * Every case, newest first. Deliberately unpaginated: a firm has a handful of P&I
@@ -121,18 +127,26 @@ export async function listCases(): Promise<CaseRow[]> {
   for (const r of jsRows) jsToJob.set(r.id, r.job_id)
 
   const lastByJob = new Map<string, string>()
+  const billByJob = new Map<string, { billed: number; outstanding: number }>()
   const jsIds = jsRows.map(r => r.id)
   if (jsIds.length) {
     const [reg, ot] = await Promise.all([
-      supabase.from('job_surveyor_regular').select('job_surveyor_id, entry_date').in('job_surveyor_id', jsIds),
-      supabase.from('job_surveyor_overtime').select('job_surveyor_id, entry_date').in('job_surveyor_id', jsIds),
+      supabase.from('job_surveyor_regular').select('job_surveyor_id, entry_date, hours, billed_invoice_id').in('job_surveyor_id', jsIds),
+      supabase.from('job_surveyor_overtime').select('job_surveyor_id, entry_date, hours, billed_invoice_id').in('job_surveyor_id', jsIds),
     ])
     for (const r of [...((reg.data ?? []) as any[]), ...((ot.data ?? []) as any[])]) {
       const jobId = jsToJob.get(r.job_surveyor_id)
+      if (!jobId) continue
       const d = (r.entry_date ?? '').slice(0, 10)
-      if (!jobId || !d) continue
-      const seen = lastByJob.get(jobId)
-      if (!seen || d > seen) lastByJob.set(jobId, d)   // plain string compare: both are YYYY-MM-DD
+      if (d) {
+        const seen = lastByJob.get(jobId)
+        if (!seen || d > seen) lastByJob.set(jobId, d)   // plain string compare: both are YYYY-MM-DD
+      }
+      const b = billByJob.get(jobId) ?? { billed: 0, outstanding: 0 }
+      // NULL billed_invoice_id is the whole model: it means "not paid for yet".
+      if (r.billed_invoice_id) b.billed += Number(r.hours ?? 0)
+      else b.outstanding += Number(r.hours ?? 0)
+      billByJob.set(jobId, b)
     }
   }
 
@@ -153,6 +167,7 @@ export async function listCases(): Promise<CaseRow[]> {
       title: j.title ?? null,
       vessel_name: j.vessel_name ?? null,
       vessel_type: j.vessel_type ?? null,
+      client_id: j.client_id ?? null,
       client_name: j.client?.name ?? null,
       case_status: caseStatusOf(j),
       case_opened_on: j.case_opened_on ?? null,
@@ -163,6 +178,8 @@ export async function listCases(): Promise<CaseRow[]> {
       overtime_hours: a?.ot ?? 0,
       surveyor_names: a?.names ?? [],
       last_attendance: lastByJob.get(j.id) ?? null,
+      billed_hours: billByJob.get(j.id)?.billed ?? 0,
+      outstanding_hours: billByJob.get(j.id)?.outstanding ?? 0,
     }
   })
 }

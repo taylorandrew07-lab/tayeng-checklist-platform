@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import { Scale, Plus } from 'lucide-react'
+import { Scale, Plus, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, withVesselPrefix } from '@/lib/utils'
 import { qtyWithUnit } from '@/lib/jobs/labourUnit'
@@ -23,6 +23,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
+import BillCaseModal from '@/components/job/BillCaseModal'
 import {
   listCases, createCase, caseDaysOpen,
   CASE_STATUS, CASE_STATUS_ORDER, type CaseRow, type CaseStatus,
@@ -41,6 +42,7 @@ export default function PandICasesPage() {
   const [cases, setCases] = useState<CaseRow[] | null>(null)
   const [filter, setFilter] = useState<Filter>('open')
   const [newOpen, setNewOpen] = useState(false)
+  const [billing, setBilling] = useState<CaseRow | null>(null)
 
   const load = useCallback(async () => {
     setCases(await listCases())
@@ -112,29 +114,32 @@ export default function PandICasesPage() {
             <EmptyState icon={Scale} title={`No ${FILTERS.find(f => f.key === filter)?.label.toLowerCase()} cases`} />
           ) : (
             <div className="card divide-y divide-gray-100">
-              {visible.map(c => <CaseRowItem key={c.id} c={c} />)}
+              {visible.map(c => <CaseRowItem key={c.id} c={c} onBill={() => setBilling(c)} />)}
             </div>
           )}
         </>
       )}
 
       <NewCaseModal open={newOpen} onClose={() => setNewOpen(false)} onCreated={load} />
+      <BillCaseModal
+        open={billing !== null}
+        row={billing}
+        onClose={() => setBilling(null)}
+        onBilled={load}
+      />
     </div>
   )
 }
 
-function CaseRowItem({ c }: { c: CaseRow }) {
+function CaseRowItem({ c, onBill }: { c: CaseRow; onBill: () => void }) {
   const meta = CASE_STATUS[c.case_status]
   const days = caseDaysOpen(c)
-  // Hours and days are never added together — labour_unit says which this job counts in.
-  const attended = c.regular_hours + c.overtime_hours
 
   return (
-    <Link
-      href={`/admin/jobs/${c.id}`}
-      className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
-    >
-      <div className="flex-1 min-w-0">
+    // A div, not a Link: the Bill button must not be nested inside an anchor. The
+    // link covers the identity of the case; the button is its own control.
+    <div className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
+      <Link href={`/admin/jobs/${c.id}`} className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">
           {c.vessel_name ? withVesselPrefix(c.vessel_name, c.vessel_type as any) : c.title || 'Untitled case'}
         </p>
@@ -144,25 +149,42 @@ function CaseRowItem({ c }: { c: CaseRow }) {
             c.surveyor_names.length ? c.surveyor_names.join(', ') : 'No surveyor',
           ].join(' · ')}
         </p>
+      </Link>
+
+      {/* Outstanding is the number that decides whether to bill, so it leads.
+          Billed-to-date sits under it as context. */}
+      <div className="hidden sm:block text-right flex-shrink-0 w-28">
+        <p className="text-xs text-gray-500">Outstanding</p>
+        <p className="text-sm font-medium text-gray-900 tnum">
+          {c.outstanding_hours > 0 ? qtyWithUnit(c.outstanding_hours, c.labour_unit) : '—'}
+        </p>
+        {c.billed_hours > 0 && (
+          <p className="text-xs text-gray-400 tnum">{qtyWithUnit(c.billed_hours, c.labour_unit)} billed</p>
+        )}
       </div>
 
-      <div className="hidden sm:block text-right flex-shrink-0">
-        <p className="text-xs text-gray-500">Attended</p>
-        <p className="text-sm text-gray-900 tnum">{attended > 0 ? qtyWithUnit(attended, c.labour_unit) : '—'}</p>
-      </div>
-
-      <div className="hidden md:block text-right flex-shrink-0 w-28">
+      <div className="hidden lg:block text-right flex-shrink-0 w-28">
         <p className="text-xs text-gray-500">Last attended</p>
         <p className="text-sm text-gray-900 tnum">{c.last_attendance ? formatDate(c.last_attendance) : '—'}</p>
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
+        {c.outstanding_hours > 0 && (
+          <button
+            type="button"
+            onClick={onBill}
+            className="btn-secondary text-xs"
+            title="Close off billing up to a date you choose. The case stays open."
+          >
+            <Receipt className="h-4 w-4" /><span className="hidden sm:inline">Bill</span>
+          </button>
+        )}
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.pill}`}>{meta.label}</span>
-        <span className="text-xs text-gray-400 tnum w-20 text-right">
+        <span className="hidden md:inline text-xs text-gray-400 tnum w-20 text-right">
           {days === null ? '—' : `${days} day${days === 1 ? '' : 's'}`}
         </span>
       </div>
-    </Link>
+    </div>
   )
 }
 
