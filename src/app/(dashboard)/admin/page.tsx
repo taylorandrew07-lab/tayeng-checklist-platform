@@ -139,7 +139,10 @@ function CaseRowItem({ c, onBill }: { c: CaseRow; onBill: () => void }) {
     // A div, not a Link: the Bill button must not be nested inside an anchor. The
     // link covers the identity of the case; the button is its own control.
     <div className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
-      <Link href={`/admin/jobs/${c.id}`} className="flex-1 min-w-0">
+      {/* The CASE page, not the job page: a case's fees, currencies and billing
+          position have nowhere to live on the ordinary job page, and opening a case at
+          /admin/jobs/{id} also lit up Jobs in the sidebar instead of P&I Cases. */}
+      <Link href={`/admin/cases/${c.id}`} className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">
           {c.vessel_name ? withVesselPrefix(c.vessel_name, c.vessel_type as any) : c.title || 'Untitled case'}
         </p>

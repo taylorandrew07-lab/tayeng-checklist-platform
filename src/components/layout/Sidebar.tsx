@@ -18,13 +18,21 @@ export interface NavItem {
   label: string
   href: string
   icon: React.ElementType
+  /** Extra path prefixes that should light this item up.
+   *
+   *  For P&I Cases, whose href is the role home '/admin' and therefore matches only
+   *  EXACTLY: an open case lives at /admin/cases/{id}, which would otherwise light up
+   *  nothing — or worse, Jobs, back when a case opened at /admin/jobs/{id}. The href
+   *  itself must not move: saved menu order (ui_prefs.nav_order) is keyed by href, so
+   *  repointing it silently drops the item to the bottom for anyone who reordered. */
+  activePrefixes?: string[]
 }
 
 const adminNav: NavItem[] = [
   // href stays '/admin'. Saved sidebar order (ui_prefs.nav_order) is keyed BY HREF,
   // so repointing this would silently drop the item to the bottom of the menu for
   // every admin who has customised theirs. The label is free to change.
-  { label: 'P&I Cases', href: '/admin', icon: Scale },
+  { label: 'P&I Cases', href: '/admin', icon: Scale, activePrefixes: ['/admin/cases'] },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },
@@ -207,10 +215,14 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {[...order, ...settingsItem].map((item) => {
+            // activePrefixes is tested FIRST so a more specific claim wins: /admin/cases/x
+            // belongs to P&I Cases, and without this the generic startsWith below would
+            // let a broader item claim it.
             const isActive =
-              item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
+              item.activePrefixes?.some(pre => pathname.startsWith(pre)) ||
+              (item.href === '/admin' || item.href === '/surveyor' || item.href === '/client' || item.href === '/office'
                 ? pathname === item.href
-                : pathname.startsWith(item.href)
+                : pathname.startsWith(item.href))
             return (
               <button
                 key={item.href}
