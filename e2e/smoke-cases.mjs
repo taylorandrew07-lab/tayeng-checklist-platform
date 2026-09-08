@@ -188,6 +188,16 @@ try {
   const peek = await surveyor.from('job_surveyor_billing').select('charge_rate').eq('job_surveyor_id', jsId)
   eq((peek.data ?? []).length, 0, 'a surveyor cannot read what the client is charged for their hour')
 
+  // ── VOIDING an invoice must release its attendances too ───────────────────
+  // Deleting an invoice releases them via ON DELETE SET NULL. Voiding leaves the row in
+  // place, so it needs unbill_case_attendances — without that call the hours stay
+  // stamped as paid for ever, invisible to every later billing run.
+  const voidRes = await boss.rpc('unbill_case_attendances', { p_invoice: invoiceId })
+  if (voidRes.error) bad('unbill_case_attendances: ' + voidRes.error.message)
+  else eq(await outstanding(), 17, 'voiding releases the attendances an invoice covered')
+  // Put them back so the delete check below still means something.
+  await boss.rpc('bill_case_attendances', { p_case: caseId, p_invoice: invoiceId, p_cutoff: '2026-01-31' })
+
   // ── Deleting the invoice releases exactly its entries ─────────────────────
   await admin.from('invoice_line_items').delete().eq('invoice_id', invoiceId)
   const del = await admin.from('invoices').delete().eq('id', invoiceId)
