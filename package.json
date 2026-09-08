@@ -14,7 +14,8 @@
     "smoke-inventory-admin": "node e2e/smoke-inventory-admin.mjs",
     "analytics-parity": "node e2e/analytics-parity.mjs",
     "checklist-audit": "node e2e/checklist-audit.mjs",
-    "comp-photos": "node e2e/competition-photos.mjs"
+    "comp-photos": "node e2e/competition-photos.mjs",
+    "smoke-cases": "node e2e/smoke-cases.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
