@@ -464,6 +464,37 @@ export async function deleteSurveyorOvertime(id: string): Promise<{ error?: stri
   return error ? { error: error.message } : {}
 }
 
+/** Fields an existing time-log entry may be corrected to. Same shape the add takes,
+ *  minus the parent — an entry never moves between surveyors; delete and re-add for
+ *  that, so the hours roll off one person and onto the other honestly. */
+export interface TimeEntryPatch {
+  entry_date: string | null
+  start_time: string | null
+  end_date: string | null
+  end_time: string | null
+  hours: number
+  location: string | null
+  note: string | null
+}
+
+/** Correct a mistyped overtime entry.
+ *
+ *  No migration was needed for this: both RLS policies on the log tables are FOR ALL
+ *  (migs 111/157), which already covers UPDATE, and the sync triggers are
+ *  AFTER INSERT OR UPDATE OR DELETE — so the corrected hours re-roll into
+ *  job_surveyors.overtime_hours by themselves. What was missing was only the function
+ *  and the UI: until now a typo could only be deleted and retyped.
+ *
+ *  A 0-row result is an RLS refusal, which PostgREST reports as success — most often
+ *  the mig-117 job_is_open() guard on a job that has since been billed. Report it. */
+export async function updateSurveyorOvertime(id: string, e: TimeEntryPatch): Promise<{ error?: string }> {
+  const { data, error } = await createClient().from('job_surveyor_overtime')
+    .update(e).eq('id', id).select('id')
+  if (error) return { error: error.message }
+  if (!data?.length) return { error: 'That entry could not be changed — the job may have been billed.' }
+  return {}
+}
+
 // ── Per-surveyor REGULAR time-log (migration 157) ────────────────────────────
 // The regular-hours twin of the overtime log above: for multi-day regular jobs a
 // surveyor logs each shift (start date/time → stop date/time) and mig-157's
@@ -491,6 +522,16 @@ export async function addSurveyorRegular(jobSurveyorId: string, e: { entry_date:
 export async function deleteSurveyorRegular(id: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('job_surveyor_regular').delete().eq('id', id)
   return error ? { error: error.message } : {}
+}
+
+/** Correct a mistyped regular entry. See updateSurveyorOvertime for why this needs no
+ *  migration, and why a 0-row result is a refusal rather than a success. */
+export async function updateSurveyorRegular(id: string, e: TimeEntryPatch): Promise<{ error?: string }> {
+  const { data, error } = await createClient().from('job_surveyor_regular')
+    .update(e).eq('id', id).select('id')
+  if (error) return { error: error.message }
+  if (!data?.length) return { error: 'That entry could not be changed — the job may have been billed.' }
+  return {}
 }
 
 // ── Per-surveyor kilometre log (migration 116) ───────────────────────────────
@@ -530,6 +571,17 @@ export async function addSurveyorKm(jobSurveyorId: string, e: { trip_date: strin
 export async function deleteSurveyorKm(id: string): Promise<{ error?: string }> {
   const { error } = await createClient().from('job_surveyor_km').delete().eq('id', id)
   return error ? { error: error.message } : {}
+}
+
+/** Correct a mistyped trip. Same reasoning as the two time logs: the RLS policy is
+ *  FOR ALL so UPDATE is already permitted, and the km CHECK (10-140, whole numbers,
+ *  mig 116) re-validates on the way in. */
+export async function updateSurveyorKm(id: string, e: { trip_date: string | null; km: number; note: string | null }): Promise<{ error?: string }> {
+  const { data, error } = await createClient().from('job_surveyor_km')
+    .update(e).eq('id', id).select('id')
+  if (error) return { error: error.message }
+  if (!data?.length) return { error: 'That trip could not be changed — the job may have been billed.' }
+  return {}
 }
 
 /** Admin only (trigger-enforced): set a surveyor's pay rates on a job. */
