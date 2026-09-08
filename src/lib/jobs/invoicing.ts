@@ -277,7 +277,10 @@ export async function voidInvoice(invoiceId: string): Promise<{ error?: string }
   // pick them up, and deleting the invoice is the only escape. Same invariant as the
   // comment above — a voided invoice bills nothing, so its work must be billable again.
   // Harmless on an ordinary invoice: it stamps no attendances, so this releases none.
-  const { error: unbillErr } = await supabase.rpc('unbill_case_attendances', { p_invoice: invoiceId })
+  // unbill_case_ITEMS (mig 208), not attendances: it releases the case's fixed fees and
+  // contractor costs too. The 206 version knew only about hours, so voiding would have
+  // stranded a correspondency fee as billed for ever.
+  const { error: unbillErr } = await supabase.rpc('unbill_case_items', { p_invoice: invoiceId })
   if (unbillErr) return { error: unbillErr.message }
 
   const res = await setInvoiceStatus(invoiceId, 'void')

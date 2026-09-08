@@ -95,8 +95,8 @@ try {
     for (const r of js ?? []) {
       await admin.from('job_surveyor_regular').delete().eq('job_surveyor_id', r.id)
       await admin.from('job_surveyor_overtime').delete().eq('job_surveyor_id', r.id)
-      await admin.from('job_surveyor_billing').delete().eq('job_surveyor_id', r.id)
     }
+    await admin.from('case_charges').delete().eq('job_id', caseId)
     if (invoiceId) {
       await admin.from('invoice_line_items').delete().eq('invoice_id', invoiceId)
       await admin.from('invoices').delete().eq('id', invoiceId)
@@ -154,26 +154,57 @@ try {
   const asLine = await boss.rpc('bill_jobs_onto_invoice', { p_invoice_id: invoiceId, p_line_job_ids: [caseId], p_absorbed: {} })
   asLine.error ? ok('bill_jobs_onto_invoice REFUSES a live case') : bad('bill_jobs_onto_invoice billed a live case as a job line')
 
-  // ── Billing by attendance, with a cutoff (mig 206 §4) ─────────────────────
+  // ── Billing by attendance, with a cutoff (mig 208) ───────────────────────
   const outstanding = async () => {
     const { data } = await admin.from('job_surveyor_regular').select('hours, billed_invoice_id').eq('job_surveyor_id', jsId)
     return (data ?? []).filter(r => !r.billed_invoice_id).reduce((s, r) => s + Number(r.hours), 0)
   }
   eq(await outstanding(), 15, 'all 15 hours start outstanding')
 
-  const { data: stamped, error: be } = await boss.rpc('bill_case_attendances', {
+  // An hour NOBODY HAS PRICED must not be billed. Billing it would charge the client
+  // zero and mark the hours paid, which is unrecoverable without noticing.
+  const nothingYet = await boss.rpc('bill_case_items', { p_case: caseId, p_invoice: invoiceId, p_cutoff: '2026-01-31' })
+  if (nothingYet.error) bad('bill_case_items: ' + nothingYet.error.message)
+  else eq(nothingYet.data?.total, 0, 'an unpriced attendance is never billed')
+
+  // Price the two January entries: one in the invoice's currency (TTD), one in USD, to
+  // prove a single invoice cannot pick up both.
+  const { data: janRows } = await admin.from('job_surveyor_regular')
+    .select('id, entry_date').eq('job_surveyor_id', jsId).lte('entry_date', '2026-01-31').order('entry_date')
+  const [jan10, jan20] = janRows ?? []
+  wrote(await boss.from('job_attendance_billing')
+    .insert({ regular_entry_id: jan10.id, description: 'Call-out attendance', charge_rate: 100, charge_currency: 'TTD' })
+    .select('id'), 'admin prices one attendance in TTD')
+  wrote(await boss.from('job_attendance_billing')
+    .insert({ regular_entry_id: jan20.id, description: 'Expert witness testimony', charge_rate: 150, charge_currency: 'USD' })
+    .select('id'), 'admin prices another, on the SAME surveyor, at a different rate in USD')
+
+  // A correspondency fee rides on the same invoice, in the same currency.
+  const { error: ccErr } = await boss.from('case_charges').insert({
+    job_id: caseId, kind: 'correspondency', description: 'SMOKE correspondency fee',
+    incurred_on: '2026-01-05', qty: 1, unit_amount: 750, currency: 'TTD',
+  })
+  if (ccErr) bad('insert case charge: ' + ccErr.message)
+  else ok('admin adds a one-time correspondency fee')
+
+  const { data: billed, error: be2 } = await boss.rpc('bill_case_items', {
     p_case: caseId, p_invoice: invoiceId, p_cutoff: '2026-01-31',
   })
-  if (be) bad('bill_case_attendances: ' + be.message)
+  if (be2) bad('bill_case_items: ' + be2.message)
   else {
-    eq(stamped?.total, 2, 'the cutoff bills exactly the two January attendances')
-    eq(await outstanding(), 5, 'February stays outstanding for the next invoice')
+    eq(billed?.currency, 'TTD', 'the run takes its currency from the invoice')
+    eq(billed?.regular, 1, 'only the TTD attendance is billed — the USD one is left alone')
+    eq(billed?.charges, 1, 'the correspondency fee is billed alongside the hours')
   }
+
+  const { data: usdLeft } = await admin.from('job_surveyor_regular').select('billed_invoice_id').eq('id', jan20.id).single()
+  eq(usdLeft.billed_invoice_id, null, 'USD work stays outstanding for its own invoice — currencies never mix')
+  eq(await outstanding(), 11, 'February and the USD entry remain outstanding')
 
   // A late entry DATED inside the billed period is still outstanding — not lost.
   await admin.from('job_surveyor_regular')
     .insert({ job_surveyor_id: jsId, entry_date: '2026-01-15', hours: 2, location: 'SMOKE', note: 'SMOKE late entry' })
-  eq(await outstanding(), 7, 'an attendance added late but dated inside the billed period stays outstanding')
+  eq(await outstanding(), 13, 'an attendance added late but dated inside the billed period stays outstanding')
 
   // ── The surveyor cannot rewrite what has been billed (mig 206 §2) ─────────
   const { data: billedRow } = await admin.from('job_surveyor_regular')
@@ -182,21 +213,20 @@ try {
   const { data: afterClear } = await admin.from('job_surveyor_regular').select('billed_invoice_id').eq('id', billedRow.id).single()
   eq(afterClear.billed_invoice_id, invoiceId, 'a surveyor cannot clear the billed stamp and have paid hours re-billed')
 
-  // ── Charge rates are invisible to the surveyor (mig 206 §3) ───────────────
-  const rate = await boss.from('job_surveyor_billing').upsert({ job_surveyor_id: jsId, charge_rate: 500, charge_currency: 'TTD' }).select('job_surveyor_id')
-  wrote(rate, 'admin sets a charge rate for the surveyor on this case')
-  const peek = await surveyor.from('job_surveyor_billing').select('charge_rate').eq('job_surveyor_id', jsId)
+  // ── Rates are invisible to the surveyor (mig 208) ─────────────────────────
+  const peek = await surveyor.from('job_attendance_billing').select('charge_rate')
   eq((peek.data ?? []).length, 0, 'a surveyor cannot read what the client is charged for their hour')
+  const peekCharges = await surveyor.from('case_charges').select('unit_amount').eq('job_id', caseId)
+  eq((peekCharges.data ?? []).length, 0, 'a surveyor cannot read the case fees either')
 
-  // ── VOIDING an invoice must release its attendances too ───────────────────
-  // Deleting an invoice releases them via ON DELETE SET NULL. Voiding leaves the row in
-  // place, so it needs unbill_case_attendances — without that call the hours stay
-  // stamped as paid for ever, invisible to every later billing run.
-  const voidRes = await boss.rpc('unbill_case_attendances', { p_invoice: invoiceId })
-  if (voidRes.error) bad('unbill_case_attendances: ' + voidRes.error.message)
-  else eq(await outstanding(), 17, 'voiding releases the attendances an invoice covered')
-  // Put them back so the delete check below still means something.
-  await boss.rpc('bill_case_attendances', { p_case: caseId, p_invoice: invoiceId, p_cutoff: '2026-01-31' })
+  // ── VOIDING releases hours AND fees ───────────────────────────────────────
+  const voidRes = await boss.rpc('unbill_case_items', { p_invoice: invoiceId })
+  if (voidRes.error) bad('unbill_case_items: ' + voidRes.error.message)
+  else {
+    eq(voidRes.data?.charges, 1, 'voiding releases the correspondency fee, not just the hours')
+    eq(await outstanding(), 17, 'voiding returns the billed hours to outstanding')
+  }
+  await boss.rpc('bill_case_items', { p_case: caseId, p_invoice: invoiceId, p_cutoff: '2026-01-31' })
 
   // ── Deleting the invoice releases exactly its entries ─────────────────────
   await admin.from('invoice_line_items').delete().eq('invoice_id', invoiceId)

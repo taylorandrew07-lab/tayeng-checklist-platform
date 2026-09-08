@@ -2,25 +2,36 @@
 
 // "Close off billing" on a P&I case.
 //
-// You pick a cutoff date; every attendance dated on or before it that has not already
-// been paid for goes on one invoice, one line per surveyor at the rate you set for
-// them. The case stays open and keeps accruing — the next run picks up from where
-// this one stopped, however many months later that is.
+// You pick a cutoff date, price each outstanding attendance — the rate belongs to the
+// WORK, so the same surveyor can bill a call-out and expert-witness testimony at
+// different rates in different currencies — and bill one currency at a time.
 //
-// The rate here is what the CLIENT is charged, not what the surveyor is paid. It
-// lives in an admin-only table (mig 206) precisely so it is never visible to the
-// person whose hour it prices.
+// ONE INVOICE, ONE CURRENCY, never converted. There is no FX anywhere in this app by
+// policy. So a case with TTD hours and USD testimony bills as two invoices: you bill
+// one group now and the other stays outstanding for its own run. There is deliberately
+// no control here that could produce a mixed invoice, and bill_case_items re-checks it
+// in the database anyway.
+//
+// Rates are typed here, at billing time, and are admin-only — a surveyor must never see
+// the margin on their own hour.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
-import { caseSurveyorTotals, setCaseChargeRate, billCase, type CaseSurveyorTotals } from '@/lib/jobs/caseBilling'
+import {
+  listCaseAttendances, listCaseCharges, setAttendancePrice, billCaseRun, billingPosition,
+  CURRENCIES, CASE_CHARGE_KIND,
+  type CaseAttendance, type CaseCharge,
+} from '@/lib/jobs/caseBilling'
 import type { CaseRow } from '@/lib/jobs/cases'
 
-const CURRENCIES = ['TTD', 'USD', 'EUR', 'GBP']
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** Local, unsaved price edits. Persisted only when you bill, so the totals update as
+ *  you type without a write per keystroke. */
+type PriceEdit = { description: string; rate: string; currency: string }
 
 export default function BillCaseModal({ open, onClose, row, onBilled }: {
   open: boolean
@@ -28,156 +39,221 @@ export default function BillCaseModal({ open, onClose, row, onBilled }: {
   row: CaseRow | null
   onBilled: () => void
 }) {
-  // Trinidad's today, never the host's — Vercel runs in UTC and would offer a cutoff
-  // of "tomorrow" for four hours every evening.
+  // Trinidad's today, never the host's — Vercel runs in UTC and would offer a cutoff of
+  // "tomorrow" for four hours every evening.
   const [cutoff, setCutoff] = useState(todayKey())
-  const [totals, setTotals] = useState<CaseSurveyorTotals[] | null>(null)
-  const [rates, setRates] = useState<Record<string, string>>({})
-  const [currency, setCurrency] = useState('TTD')
+  const [attendances, setAttendances] = useState<CaseAttendance[] | null>(null)
+  const [charges, setCharges] = useState<CaseCharge[]>([])
+  const [edits, setEdits] = useState<Record<string, PriceEdit>>({})
+  const [picked, setPicked] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const load = useCallback(async (upTo: string) => {
+  const load = useCallback(async () => {
     if (!row) return
-    setTotals(null)
-    const t = await caseSurveyorTotals(row.id, upTo)
-    setTotals(t)
-    setRates(Object.fromEntries(t.map(s => [s.job_surveyor_id, s.charge_rate == null ? '' : String(s.charge_rate)])))
-    const withCcy = t.find(s => s.charge_rate != null)
-    if (withCcy) setCurrency(withCcy.charge_currency)
+    setAttendances(null)
+    const [a, c] = await Promise.all([listCaseAttendances(row.id), listCaseCharges(row.id)])
+    setAttendances(a)
+    setCharges(c)
+    setEdits(Object.fromEntries(a.map(x => [x.id, {
+      description: x.description ?? '',
+      rate: x.charge_rate == null ? '' : String(x.charge_rate),
+      currency: x.charge_currency,
+    }])))
+    setPicked(null)
   }, [row])
 
   useEffect(() => {
     if (!open || !row) return
     setCutoff(todayKey())
-    load(todayKey())
+    load()
   }, [open, row, load])
 
-  const lines = (totals ?? []).map(s => ({
-    job_surveyor_id: s.job_surveyor_id,
-    surveyor_name: s.surveyor_name,
-    qty: s.outstanding,
-    unit_price: Number(rates[s.job_surveyor_id] ?? '') || 0,
-  }))
-  const billable = lines.filter(l => l.qty > 0)
-  const total = billable.reduce((sum, l) => sum + l.qty * l.unit_price, 0)
-  const missingRate = billable.some(l => l.unit_price <= 0)
+  /** The attendances as they'd be with the current unsaved edits applied. */
+  const edited = useMemo<CaseAttendance[]>(() => (attendances ?? []).map(a => {
+    const e = edits[a.id]
+    if (!e) return a
+    const rate = e.rate.trim() === '' ? null : Number(e.rate)
+    return {
+      ...a,
+      description: e.description.trim() || null,
+      charge_rate: rate == null || Number.isNaN(rate) ? null : rate,
+      charge_currency: e.currency,
+    }
+  }), [attendances, edits])
+
+  const position = useMemo(() => billingPosition(edited, charges, cutoff), [edited, charges, cutoff])
+  const group = position.groups.find(g => g.currency === picked) ?? position.groups[0] ?? null
+
+  const setEdit = (id: string, patch: Partial<PriceEdit>) =>
+    setEdits(p => ({ ...p, [id]: { ...(p[id] ?? { description: '', rate: '', currency: 'TTD' }), ...patch } }))
 
   async function submit() {
-    if (!row) return
-    if (!billable.length) { toast.error('Nothing is outstanding up to that date.'); return }
+    if (!row || !group) return
     setSaving(true)
 
-    // Remember the rates so the next billing run defaults to them.
-    for (const l of billable) {
-      await setCaseChargeRate(l.job_surveyor_id, l.unit_price, currency)
+    // Persist every price first: the invoice lines are built from these, and
+    // bill_case_items will only stamp entries that actually carry a rate.
+    for (const a of group.attendances) {
+      const e = edits[a.id]
+      if (!e) continue
+      const res = await setAttendancePrice(a.id, a.kind, {
+        description: e.description.trim() || null,
+        charge_rate: Number(e.rate) || 0,
+        charge_currency: e.currency,
+      })
+      if (res.error) { setSaving(false); toast.error(res.error); return }
     }
 
-    const res = await billCase({
+    const res = await billCaseRun({
       caseId: row.id,
       clientId: row.client_id,
-      currency,
+      currency: group.currency,
       cutoff,
-      lines: billable,
+      group,
       caseLabel: row.vessel_name || row.title || 'P&I case',
     })
     setSaving(false)
     if (res.error) { toast.error(res.error); return }
-    toast.success(
-      `Invoice ${res.invoiceNumber ?? 'created'} — ${res.stamped} attendance${res.stamped === 1 ? '' : 's'} billed`,
-    )
+    toast.success(`Invoice ${res.invoiceNumber ?? 'created'} — ${res.stamped} item${res.stamped === 1 ? '' : 's'} billed`)
     onBilled()
     onClose()
   }
+
+  const others = position.groups.filter(g => g.currency !== group?.currency)
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={`Close off billing — ${row?.vessel_name || row?.title || 'case'}`}
-      size="lg"
+      size="xl"
       footer={
         <>
           <button type="button" onClick={onClose} className="btn-secondary text-sm">Cancel</button>
-          <button type="button" onClick={submit} disabled={saving || !billable.length} className="btn-primary text-sm">
-            {saving ? 'Billing…' : `Bill ${money(total)} ${currency}`}
+          <button type="button" onClick={submit} disabled={saving || !group || group.total <= 0} className="btn-primary text-sm">
+            {saving ? 'Billing…' : group ? `Bill ${money(group.total)} ${group.currency}` : 'Nothing to bill'}
           </button>
         </>
       }
     >
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="label-base" htmlFor="bill-cutoff">Bill everything up to</label>
-            <input
-              id="bill-cutoff" type="date" className="input-base" value={cutoff}
-              onChange={e => { setCutoff(e.target.value); load(e.target.value) }}
-            />
-          </div>
-          <div>
-            <label className="label-base" htmlFor="bill-ccy">Currency</label>
-            <select id="bill-ccy" className="input-base" value={currency} onChange={e => setCurrency(e.target.value)}>
-              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+        <div>
+          <label className="label-base" htmlFor="bill-cutoff">Bill everything up to</label>
+          <input
+            id="bill-cutoff" type="date" className="input-base w-auto" value={cutoff}
+            onChange={e => setCutoff(e.target.value)}
+          />
         </div>
 
-        {totals === null ? (
-          <div className="space-y-2">
-            {[0, 1].map(i => <div key={i} className="skeleton h-10 w-full rounded-lg" />)}
-          </div>
-        ) : billable.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            Nothing is outstanding on or before {formatDate(cutoff)}. Anything logged after that date
-            stays outstanding for the next invoice.
-          </p>
+        {attendances === null ? (
+          <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-10 w-full rounded-lg" />)}</div>
         ) : (
-          <div className="card divide-y divide-gray-100">
-            {billable.map(l => {
-              const t = totals.find(x => x.job_surveyor_id === l.job_surveyor_id)!
-              return (
-                <div key={l.job_surveyor_id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">{l.surveyor_name}</p>
-                    <p className="text-xs text-gray-500 tnum">
-                      {l.qty} outstanding
-                      {t.billed > 0 && <span className="text-gray-400"> · {t.billed} already billed</span>}
-                    </p>
-                  </div>
-                  <div className="w-28">
-                    <label className="sr-only" htmlFor={`rate-${l.job_surveyor_id}`}>
-                      Rate for {l.surveyor_name}
-                    </label>
-                    <input
-                      id={`rate-${l.job_surveyor_id}`}
-                      type="number" min="0" step="0.01" inputMode="decimal"
-                      className="input-base text-right tnum" placeholder="Rate"
-                      value={rates[l.job_surveyor_id] ?? ''}
-                      onChange={e => setRates(p => ({ ...p, [l.job_surveyor_id]: e.target.value }))}
-                    />
-                  </div>
-                  <div className="w-24 text-right text-sm text-gray-900 tnum">
-                    {money(l.qty * l.unit_price)}
-                  </div>
+          <>
+            {/* Every outstanding attendance, priced individually. The rate belongs to the
+                work, so two rows for the same person can differ. */}
+            {position.groups.length === 0 && position.unpriced.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                Nothing is outstanding on or before {formatDate(cutoff)}. Anything logged after that date
+                stays outstanding for the next invoice.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <h3 className="section-title text-sm">Outstanding work</h3>
+                <div className="card divide-y divide-gray-100">
+                  {edited
+                    .filter(a => !a.billed_invoice_id && (!a.entry_date || a.entry_date.slice(0, 10) <= cutoff))
+                    .map(a => {
+                      const e = edits[a.id] ?? { description: '', rate: '', currency: 'TTD' }
+                      const amount = a.hours * (a.charge_rate ?? 0)
+                      const inGroup = a.charge_rate != null && a.charge_currency === group?.currency
+                      return (
+                        <div key={a.id} className={`flex flex-wrap items-end gap-2 px-3 py-2 ${a.charge_rate == null ? 'bg-amber-50/60' : inGroup ? '' : 'opacity-60'}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {a.surveyor_name} <span className="text-gray-400 font-normal tnum">· {a.hours}h{a.kind === 'overtime' ? ' OT' : ''}</span>
+                            </p>
+                            <p className="text-xs text-gray-500 tnum">{a.entry_date ? formatDate(a.entry_date) : 'no date'}{a.location ? ` · ${a.location}` : ''}</p>
+                          </div>
+                          <input
+                            aria-label="What this work was" placeholder="e.g. Expert witness testimony"
+                            className="input-base py-1 px-2 text-xs w-full sm:w-52"
+                            value={e.description} onChange={ev => setEdit(a.id, { description: ev.target.value })}
+                          />
+                          <input
+                            aria-label="Rate per hour" type="number" min="0" step="0.01" inputMode="decimal"
+                            placeholder="Rate" className="input-base py-1 px-2 text-xs text-right tnum w-24"
+                            value={e.rate} onChange={ev => setEdit(a.id, { rate: ev.target.value })}
+                          />
+                          <select
+                            aria-label="Currency" className="input-base py-1 px-2 text-xs w-20"
+                            value={e.currency} onChange={ev => setEdit(a.id, { currency: ev.target.value })}
+                          >
+                            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <span className="w-24 text-right text-sm text-gray-900 tnum">{money(amount)}</span>
+                        </div>
+                      )
+                    })}
                 </div>
-              )
-            })}
-            <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-              <span className="text-sm font-medium text-gray-700">Total</span>
-              <span className="text-sm font-semibold text-gray-900 tnum">{money(total)} {currency}</span>
-            </div>
-          </div>
-        )}
+                {position.unpriced.length > 0 && (
+                  <p className="text-xs text-amber-700">
+                    {position.unpriced.length} attendance{position.unpriced.length === 1 ? '' : 's'} still need a rate.
+                    Those stay outstanding — an hour with no rate is never billed at zero.
+                  </p>
+                )}
+              </div>
+            )}
 
-        {missingRate && (
-          <p className="text-sm text-amber-700">
-            One or more surveyors have no rate set — those lines would bill at zero.
-          </p>
-        )}
+            {/* Fixed fees and contractor costs ride on the same invoice. */}
+            {group && group.charges.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="section-title text-sm">Fees and costs</h3>
+                <div className="card divide-y divide-gray-100">
+                  {group.charges.map(c => (
+                    <div key={c.id} className="flex items-center gap-3 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-gray-900 truncate">{c.description}{c.payee ? ` — ${c.payee}` : ''}</p>
+                        <p className="text-xs text-gray-500">{CASE_CHARGE_KIND[c.kind]} · {formatDate(c.incurred_on)}</p>
+                      </div>
+                      <span className="text-sm text-gray-900 tnum">{money(c.qty * c.unit_amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-        <p className="text-xs text-gray-500">
-          The case stays open. Anything logged after {formatDate(cutoff)} — and anything added later
-          but dated on or before it — stays outstanding and goes on the next invoice.
-        </p>
+            {/* One currency at a time. Anything else stays outstanding for its own run. */}
+            {position.groups.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {position.groups.map(g => (
+                  <button
+                    key={g.currency} type="button" onClick={() => setPicked(g.currency)}
+                    aria-pressed={g.currency === group?.currency}
+                    className={`text-sm px-3 py-1 rounded-full border transition-colors tnum ${
+                      g.currency === group?.currency
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    {g.currency} {money(g.total)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {others.length > 0 && (
+              <p className="text-xs text-gray-500">
+                {others.map(g => `${g.currency} ${money(g.total)}`).join(' and ')} stays outstanding —
+                bill {others.length === 1 ? 'it' : 'them'} separately. One invoice can only carry one currency,
+                and nothing here is ever converted.
+              </p>
+            )}
+
+            <p className="text-xs text-gray-500">
+              The case stays open. Anything logged after {formatDate(cutoff)} — and anything added later
+              but dated on or before it — stays outstanding and goes on the next invoice.
+            </p>
+          </>
+        )}
       </div>
     </Modal>
   )
