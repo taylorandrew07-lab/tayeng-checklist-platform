@@ -8,7 +8,7 @@ import { formatDate, vesselWithVoyage, withTimeout } from '@/lib/utils'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import EmptyState from '@/components/ui/EmptyState'
 import { deliverFile, PDF_MIME, CSV_MIME } from '@/lib/pdf/deliver'
-import { WORKFLOW, isJobLocked, LOCKED_STATUSES } from '@/lib/jobs/tracker'
+import { WORKFLOW, isJobEditable, LOCKED_STATUSES } from '@/lib/jobs/tracker'
 import { jobLastDate, jobSpansDays, byLastDateDesc } from '@/lib/jobs/jobDate'
 import { asLabourUnit, labourLabels, qtyWithUnit, splitQty } from '@/lib/jobs/labourUnit'
 import { useRealtimeRefresh } from '@/lib/realtime'
@@ -92,7 +92,7 @@ export default function SurveyorDashboard() {
         const jRes = await withTimeout(
           supabase.from('jobs')
             .select(`
-              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, vessel_type, voyage_number, surveyor_name, port_location,
+              id, title, job_number, report_number, job_type, workflow_status, created_at, scheduled_date, end_date, labour_unit, vessel_name, vessel_type, voyage_number, surveyor_name, port_location, is_case, case_status,
               template:checklist_templates(name),
               client:clients(name)
             `)
@@ -184,8 +184,10 @@ export default function SurveyorDashboard() {
   // outside the current pay period. Billed jobs (invoiced/closed) are history and get
   // period-scoped — a surveyor can do nothing on either, so listing an invoiced one as
   // "active" would be a to-do they are not allowed to act on.
-  const active = jobs.filter(j => !isJobLocked(j.workflow_status))
-  const submittedAll = jobs.filter(j => isJobLocked(j.workflow_status))
+  // By ROW, not status: a live case stays in the surveyor's open list however it has
+  // been billed, instead of dropping into the completed pile (mig 204).
+  const active = jobs.filter(j => isJobEditable(j))
+  const submittedAll = jobs.filter(j => !isJobEditable(j))
   const submitted = submittedAll.filter(inRange)
 
   // Split the open board by "have I finished this?". Both halves stay open and

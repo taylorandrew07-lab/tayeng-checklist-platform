@@ -37,11 +37,12 @@ export function caseStatusOf(c: { case_status?: string | null } | null | undefin
   return s === 'on_hold' || s === 'concluded' ? s : 'open'
 }
 
-/** A case that is still running. This is the predicate that exempts a case from
- *  the invoicing write-lock and from reconciliation's stale-job flag. */
-export function isLiveCase(c: { is_case?: boolean | null; case_status?: string | null } | null | undefined): boolean {
-  return !!c?.is_case && caseStatusOf(c) !== 'concluded'
-}
+/** A case that is still running — the predicate that exempts a case from the
+ *  invoicing write-lock and from reconciliation's stale-job flag.
+ *
+ *  Defined in tracker.ts, beside job_is_open()'s mirror, because that is where it is
+ *  load-bearing; re-exported here so case code has one obvious import. */
+export { isLiveCase } from './tracker'
 
 /** Whole days between two 'YYYY-MM-DD' keys, or null if the start is missing.
  *

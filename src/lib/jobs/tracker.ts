@@ -31,13 +31,50 @@ export const WORKFLOW: Record<WorkflowStatus, { label: string; pill: string; dot
   closed:        { label: 'Closed',        pill: 'bg-slate-200 text-slate-600',   dot: 'bg-slate-500' },
 }
 
-/** Statuses that FREEZE surveyor writes. Mirrors job_is_open() (mig 188 §3) — if
- *  these two ever disagree, the UI shows an editable job the database will refuse.
- *  Always ask through isJobLocked(); a bare `=== 'closed'` is now a bug. */
+/** Statuses that FREEZE surveyor writes. A bare `=== 'closed'` is a bug.
+ *
+ *  This is only HALF the question since migration 204 — see isJobEditable below,
+ *  which is the real mirror of job_is_open(). Reach for that one when you have the
+ *  job row; reach for this only when all you have is a status string. */
 export const LOCKED_STATUSES: WorkflowStatus[] = ['invoiced', 'closed']
 
 export const isJobLocked = (s: WorkflowStatus | string | null | undefined): boolean =>
   LOCKED_STATUSES.includes(normalizeWorkflowStatus(s))
+
+/** The shape isJobEditable needs. Deliberately loose so any job-ish row satisfies it —
+ *  but the two case fields MUST be in whatever select produced it, or the row reads as
+ *  a non-case and a live case is wrongly treated as frozen. */
+export interface JobLockShape {
+  workflow_status?: WorkflowStatus | string | null
+  is_case?: boolean | null
+  case_status?: string | null
+}
+
+/** A P&I case that is still running. NULL case_status reads as 'open', matching the
+ *  SQL in job_is_open() — keep the two in step. */
+export function isLiveCase(j: JobLockShape | null | undefined): boolean {
+  return !!j?.is_case && (j.case_status ?? 'open') !== 'concluded'
+}
+
+/**
+ * THE app-side mirror of job_is_open() (mig 188 §3 as amended by mig 204 §5).
+ * If this and the SQL ever disagree, one side silently refuses work the other allows.
+ *
+ * They disagreed once already, and it cost data. Migration 204 exempted a live case
+ * from the freeze in the DATABASE, but isJobLocked() takes a bare status string and
+ * structurally cannot see is_case — so on an invoiced live case Postgres accepted a
+ * surveyor's write while every UI refused it. Worst of all, offline sync (sync.ts)
+ * read that as "billed and locked", DISCARDED the queued attendance and returned
+ * ok:true. The surveyor's work vanished and the app said it had saved.
+ *
+ * So: prefer this everywhere you have the row. A live case is never frozen, however
+ * it is billed; the moment it is concluded it locks like any other job.
+ */
+export function isJobEditable(job: JobLockShape | null | undefined): boolean {
+  if (!job) return true                 // unknown job — never wrongly block a write
+  if (isLiveCase(job)) return true      // a live case never freezes, at any status
+  return !isJobLocked(job.workflow_status)
+}
 
 /** The stage a one-step advance moves to, or null at the end of the line.
  *
@@ -610,6 +647,20 @@ export interface TrackerRow {
   invoice_status: string | null
   invoice_total: number | null
   invoice_currency: string | null
+}
+
+/** The highest NNN in the WHOLE table.
+ *
+ *  highestReportSeq() scans the rows it is handed, and listJobTrackerRows now excludes
+ *  cases — so the moment a case holds the series maximum, deriving "next number" from
+ *  that row set proposes an NNN that is already taken. fillReportNumbers then collides
+ *  on uq_jobs_report_number and stops PART WAY, having numbered some jobs and not
+ *  others, surfacing only as a toast. The series is global (mig 158 = max + 1 over the
+ *  whole table), so it must be read from the whole table. */
+export async function highestReportSeqLive(): Promise<number> {
+  const { data } = await createClient()
+    .from('jobs').select('report_number').not('report_number', 'is', null)
+  return highestReportSeq((data ?? []) as { report_number: string | null }[])
 }
 
 /** One row per job with surveyor names + hours and any invoice, joined in JS. */

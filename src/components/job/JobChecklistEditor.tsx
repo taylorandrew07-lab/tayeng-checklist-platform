@@ -171,7 +171,7 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import JobPdfButton from '@/components/job/JobPdfButton'
 import type { TemplateField, TemplateSection, JobFieldValue, JobSignature, WorkflowStatus } from '@/lib/types/database'
-import { advanceWorkflowTo, WORKFLOW, isJobLocked } from '@/lib/jobs/tracker'
+import { advanceWorkflowTo, WORKFLOW, isJobEditable } from '@/lib/jobs/tracker'
 import { completeJob, COMPLETE_LABEL } from '@/lib/jobs/complete'
 import { WorkflowPill } from '@/components/job/StatusPill'
 import { SaveStatus } from '@/components/ui/SaveStatus'
@@ -1628,7 +1628,8 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // as well as 'closed', because the freeze starts when the invoice is raised, not
     // when someone gets round to closing it. Behaves like a submitted job: read-only
     // for everyone except a privileged re-open.
-    const isClosed = isJobLocked(job.workflow_status)
+    // By ROW: a live P&I case is never frozen by billing (mig 204).
+    const isClosed = !isJobEditable(job)
     const isLocked = isSubmitted || isClosed
 
     // --- Profile-based edit rights ---

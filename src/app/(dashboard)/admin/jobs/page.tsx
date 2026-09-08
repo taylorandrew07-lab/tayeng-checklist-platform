@@ -31,6 +31,7 @@ import { toast } from '@/components/ui/toast'
 import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
 import {
   WORKFLOW, WORKFLOW_ORDER, money, setWorkflowStatus, nextStatusFor, isJobLocked,
+  highestReportSeqLive,
   listJobTrackerRows, updateJobField, listJobTypes, fillReportNumbers, highestReportSeq, formatReportNumber,
   setJobReportRequirement,
   type TrackerRow,
@@ -1367,7 +1368,17 @@ function NumberReportsModal({ open, onClose, rows, onDone }: { open: boolean; on
     .sort((a, b) => { const da = a.scheduled_date ?? a.created_at, db = b.scheduled_date ?? b.created_at; return da < db ? -1 : da > db ? 1 : 0 })
   const [start, setStart] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) setStart(String(highestReportSeq(rows) + 1)) }, [open, rows])
+  // From the WHOLE table, not `rows`: the register excludes cases (mig 204), and a
+  // numbered case holding the series maximum would make this propose an NNN that is
+  // already taken — fillReportNumbers then collides part way through.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    highestReportSeqLive()
+      .then(n => { if (!cancelled) setStart(String(n + 1)) })
+      .catch(() => { if (!cancelled) setStart(String(highestReportSeq(rows) + 1)) })
+    return () => { cancelled = true }
+  }, [open, rows])
 
   const startSeq = parseInt(start, 10) || 1
   const preview = missing.slice(0, 3).map((r, i) => formatReportNumber(r.scheduled_date ?? r.created_at, startSeq + i))

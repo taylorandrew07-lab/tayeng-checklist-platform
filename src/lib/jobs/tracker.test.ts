@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   shiftHours, WORKFLOW, WORKFLOW_ORDER, LOCKED_STATUSES,
-  isJobLocked, nextStatusFor, normalizeWorkflowStatus, clientStatusFor,
+  isJobLocked, isJobEditable, isLiveCase, nextStatusFor, normalizeWorkflowStatus, clientStatusFor,
 } from './tracker'
 import type { WorkflowStatus } from '@/lib/types/database'
 
@@ -108,6 +108,61 @@ describe('isJobLocked — mirrors job_is_open() (mig 188)', () => {
     expect(isJobLocked('paid')).toBe(true)        // → closed
     expect(isJobLocked('approved')).toBe(false)   // → invoice_ready
     expect(isJobLocked(null)).toBe(false)
+  })
+})
+
+// The DATABASE half of this (job_is_open, mig 188 §3 + mig 204 §5) cannot be tested by
+// vitest at all. These pin the app half, which is what actually decides whether a
+// control renders and whether offline sync keeps or discards a queued attendance.
+// When the two disagreed, a surveyor's work was thrown away and reported as saved.
+describe('isJobEditable — the real mirror, and why a status string is not enough', () => {
+  const billed = { workflow_status: 'invoiced' as const }
+
+  it('agrees with isJobLocked on every ordinary job', () => {
+    expect(isJobEditable({ workflow_status: 'in_progress' })).toBe(true)
+    expect(isJobEditable({ workflow_status: 'invoice_ready' })).toBe(true)
+    expect(isJobEditable({ workflow_status: 'invoiced' })).toBe(false)
+    expect(isJobEditable({ workflow_status: 'closed' })).toBe(false)
+  })
+
+  it('a LIVE case stays editable even when billed — the whole point', () => {
+    expect(isJobEditable({ ...billed, is_case: true, case_status: 'open' })).toBe(true)
+    expect(isJobEditable({ ...billed, is_case: true, case_status: 'on_hold' })).toBe(true)
+    expect(isJobEditable({ workflow_status: 'closed', is_case: true, case_status: 'open' })).toBe(true)
+  })
+
+  it('a null case_status reads as open, matching the SQL COALESCE', () => {
+    expect(isJobEditable({ ...billed, is_case: true, case_status: null })).toBe(true)
+  })
+
+  it('a CONCLUDED case locks again immediately', () => {
+    expect(isJobEditable({ ...billed, is_case: true, case_status: 'concluded' })).toBe(false)
+  })
+
+  it('is_case false is an ordinary job, not a case', () => {
+    expect(isJobEditable({ ...billed, is_case: false, case_status: null })).toBe(false)
+  })
+
+  // The trap that caused the bug: a select that omits the case columns makes every
+  // row look like a non-case, so the exemption silently never fires.
+  it('a row MISSING the case columns falls back to the status alone', () => {
+    expect(isJobEditable({ workflow_status: 'invoiced' })).toBe(false)
+  })
+
+  it('never blocks a write on an unknown job', () => {
+    expect(isJobEditable(null)).toBe(true)
+    expect(isJobEditable(undefined)).toBe(true)
+  })
+})
+
+describe('isLiveCase', () => {
+  it('is true only for a case that has not concluded', () => {
+    expect(isLiveCase({ is_case: true, case_status: 'open' })).toBe(true)
+    expect(isLiveCase({ is_case: true, case_status: 'on_hold' })).toBe(true)
+    expect(isLiveCase({ is_case: true, case_status: null })).toBe(true)
+    expect(isLiveCase({ is_case: true, case_status: 'concluded' })).toBe(false)
+    expect(isLiveCase({ is_case: false, case_status: 'open' })).toBe(false)
+    expect(isLiveCase(null)).toBe(false)
   })
 })
 

@@ -221,6 +221,19 @@ describe('P&I cases are exempt while they are live, and only while they are live
     const j = job({ ...ancient, is_case: false })
     expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('not_completed')
   })
+
+  // The exemption suppresses the STALE rule and nothing else. A blanket bail-out at the
+  // top of categorize() would hide every other fault on the class of job most likely to
+  // have its billing forgotten — which is the opposite of what this page is for.
+  it('a live case with no client is STILL flagged — the exemption is stale-only', () => {
+    const j = job({ is_case: true, case_status: 'open', workflow_status: 'invoice_ready', client_id: null })
+    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('missing_client')
+  })
+
+  it('a live case marked invoice-ready with a client is still told to bill', () => {
+    const j = job({ is_case: true, case_status: 'open', workflow_status: 'invoice_ready' })
+    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('ready_to_invoice')
+  })
 })
 
 describe('a draught survey with no recognisable stage falls back to normal rules', () => {

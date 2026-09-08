@@ -140,13 +140,6 @@ export function categorize(job: ReconJob, ctx: CategorizeContext = {}): ReconCat
   const { inv, hoursChanged = false, staleBefore, group, parent, hasLine, invoiceHasJobLines } = ctx
   const live = inv && inv.status !== 'void' ? inv : undefined
 
-  // A P&I case runs for years BY DESIGN and sits at 'in_progress' the whole time,
-  // so STALE_IN_PROGRESS_DAYS would flag every one from week four and never stop —
-  // drowning the one tool that catches forgotten billing in permanent noise.
-  // A CONCLUDED case falls through and is graded normally: that is exactly when it
-  // does need invoicing and closing like anything else. (mig 204)
-  if (isLiveCase(job)) return null
-
   // ── Absorbed legs ─────────────────────────────────────────────────────────
   // A leg billed under a Final is correctly billed: closed, stamped, no line of its
   // own. The one thing that can go wrong is the two drifting apart.
@@ -201,10 +194,22 @@ export function categorize(job: ReconJob, ctx: CategorizeContext = {}): ReconCat
   // the reconcile page, the one tool built to catch forgotten billing, stayed
   // silent on the single most common way billing is forgotten.
   if (job.workflow_status === 'in_progress') {
-    // Submitted checklist + still in_progress = the status write never landed.
-    if (job.submitted_at) return 'not_completed'
-    const worked = job.end_date || job.scheduled_date || (job.created_at ?? '').slice(0, 10)
-    if (staleBefore && worked && worked < staleBefore) return 'not_completed'
+    // A LIVE P&I case sits at 'in_progress' for years by design, so the stale rule
+    // would flag every one from week four and never stop — drowning the one tool that
+    // catches forgotten billing in permanent noise.
+    //
+    // NARROW on purpose. This suppresses ONLY 'not_completed'. A blanket
+    // `if (isLiveCase(job)) return null` at the top of categorize() — which is what
+    // shipped in 0f7fd4d — also hid 'missing_client' and every other fault from the
+    // class of job MOST likely to have its billing forgotten, for years. A case with
+    // no client is trivially creatable, and that must still be flagged.
+    // A CONCLUDED case falls through here too and is graded exactly like any other job.
+    if (!isLiveCase(job)) {
+      // Submitted checklist + still in_progress = the status write never landed.
+      if (job.submitted_at) return 'not_completed'
+      const worked = job.end_date || job.scheduled_date || (job.created_at ?? '').slice(0, 10)
+      if (staleBefore && worked && worked < staleBefore) return 'not_completed'
+    }
   }
   return null
 }

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/components/ui/confirm'
 import { toast } from '@/components/ui/toast'
 import {
-  WORKFLOW, WORKFLOW_ORDER, normalizeWorkflowStatus, nextStatusFor, isJobLocked,
+  WORKFLOW, WORKFLOW_ORDER, normalizeWorkflowStatus, nextStatusFor, isJobLocked, isJobEditable,
   ATTACHMENT_KINDS, attachmentLabel, formatBytes, money, CURRENCIES,
   setWorkflowStatus, updateJobField, clearJobLabourForFixed, listJobSurveyors, listSurveyorAccounts, addJobSurveyor, removeJobSurveyor,
   updateJobSurveyorHours, updateJobSurveyorRates,
@@ -613,7 +613,9 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   // Once a job is BILLED, surveyors can no longer edit it (RLS enforces this; this just
   // makes the UI read-only so they see the lock instead of hitting errors). Since mig
   // 188 that starts at 'invoiced' — the invoice is what freezes the job, not the close.
-  const surveyorLocked = !isAdmin && isJobLocked(current)
+  // By ROW, not status: a live P&I case is exempt in the database (mig 204), and asking
+  // by status alone would show a read-only panel on a job Postgres would let them write.
+  const surveyorLocked = !isAdmin && !isJobEditable(job)
   const idx = WORKFLOW_ORDER.indexOf(current)
   // nextStatusFor, NOT WORKFLOW_ORDER[idx + 1]: stepping through the raw order would
   // offer "Advance to Invoiced" on an invoice_ready job, and that status is a claim
@@ -707,7 +709,7 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   // A non-admin's job_surveyors read is scoped to their own row (RLS), so an empty
   // list means they're not on this job. They may self-join any OPEN job (mig 152).
   const isMember = selfId ? surveyors.some(s => s.surveyor_id === selfId) : false
-  const canSelfJoin = !isAdmin && !isMember && !!selfId && !isJobLocked(current)
+  const canSelfJoin = !isAdmin && !isMember && !!selfId && isJobEditable(job)
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">

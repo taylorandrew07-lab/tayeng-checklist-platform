@@ -19,10 +19,20 @@
  *  "No report required" per job for the occasional report-only cargo survey. */
 const NO_REPORT_JOB_TYPES = new Set<string>([
   'Ultrasonic Hatch Testing',
-  // A P&I case links to the report that OPENED it; it does not carry one itself,
-  // and it would otherwise burn a number off the single global series (mig 158) for
-  // a job that never produces a report. Mirrored by the mig-204 insert trigger,
-  // which sets report_not_required on any job whose type is a case type.
+])
+
+/** Types that DEFAULT to "no report required" at creation but may still be given a
+ *  number later. The distinction matters: typeSkipsReportNumber() drives
+ *  `reportFixedByType` on the job page, which DISABLES the "No report required"
+ *  checkbox — the only control that can repair a mis-flagged job. Putting a type in
+ *  the set above says "never, whatever anyone ticks"; putting it here says "usually
+ *  not, but it's your call".
+ *
+ *  A P&I case belongs here. Most carry no number of their own, but a case often DOES
+ *  have a report at the point it opens — and the database has always allowed it
+ *  (type_skips_report_number, mig 189, never listed cases). Migration 205 removed the
+ *  hard override that made this unreachable. */
+const REPORT_OPTIONAL_JOB_TYPES = new Set<string>([
   'P&I Case',
 ])
 
@@ -56,5 +66,9 @@ export function autoReportNotRequired(args: {
   template?: { requires_report_number?: boolean | null } | null
 }): boolean {
   const templateOptsOut = args.template != null && args.template.requires_report_number === false
-  return templateOptsOut || typeSkipsReportNumber(args.jobType, args.jobStage)
+  // Reads BOTH sets: the never-set and the defaults-to-N/A set. typeSkipsReportNumber
+  // deliberately reads only the first, because it is the mirror of the mig-189 SQL and
+  // must stay byte-equal to it.
+  const optional = args.jobType != null && REPORT_OPTIONAL_JOB_TYPES.has(args.jobType)
+  return templateOptsOut || optional || typeSkipsReportNumber(args.jobType, args.jobStage)
 }

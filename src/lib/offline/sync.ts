@@ -3,7 +3,7 @@ import { getDraft, putDraft, deleteDraft, getPhotosForJob, putPhoto, deletePhoto
 import { instanceKey, parseInstanceKey } from './instanceKeys'
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { createDraftJob } from '@/lib/jobs/drafts'
-import { advanceWorkflowTo, isJobLocked } from '@/lib/jobs/tracker'
+import { advanceWorkflowTo, isJobEditable } from '@/lib/jobs/tracker'
 
 export type SyncResult =
   /** billedLocked: the server job has been invoiced, so this device's later edits to
@@ -94,7 +94,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
     const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
-      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, voyage_number, job_stage, cargo_type, notes, workflow_status, billed_under_job_id').eq('id', jobId).maybeSingle()
+      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, voyage_number, job_stage, cargo_type, notes, workflow_status, billed_under_job_id, is_case, case_status').eq('id', jobId).maybeSingle()
     // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
     // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
     // a fresh report number off the counter even though the row already exists (the
@@ -111,10 +111,13 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
       // absorbed Interim into a Final after the invoice was raised. The mig-186 trigger
       // refuses this anyway — skipping here turns a hard RLS error into a clean no-op
       // and tells the surveyor rather than failing the whole sync silently.
-      // isJobLocked, not === 'closed': since mig 188 an invoice stamps 'invoiced', and
-      // that is where the freeze now starts. A device that was offline through the
-      // billing would otherwise sail past this check and try to patch a locked job.
-      const frozen = isJobLocked(alreadyCreated.workflow_status) || alreadyCreated.billed_under_job_id != null
+      // isJobEditable(ROW), not isJobLocked(status): since mig 188 an invoice stamps
+      // 'invoiced' and that is where the freeze starts — but since mig 204 a LIVE P&I
+      // case is exempt in the database. Asking by status alone got that backwards and
+      // threw the surveyor's queued attendance away on a job Postgres would have
+      // accepted, returning ok:true. Hence the two case columns in the select above:
+      // without them every row reads as a non-case and the exemption never fires.
+      const frozen = !isJobEditable(alreadyCreated) || alreadyCreated.billed_under_job_id != null
       if (frozen) {
         draft = { ...draft, pendingCreate: false, syncError: null }
         await putDraft(draft)

@@ -471,6 +471,14 @@ export async function listInvoiceableJobs(opts: { clientId?: string; month?: str
     // never re-enter the pool — that is the same set bill_jobs_onto_invoice enforces as
     // a precondition, and together they are what makes "billed exactly once" true.
     .in('workflow_status', ['report_ready', 'invoice_ready'])
+    // A P&I case is billed through its ATTENDANCES, never as a job line — its money
+    // accrues for years and is closed off periodically (mig 206). Without this filter
+    // a case was kept out of the pool only by the accident of sitting at 'in_progress',
+    // and the ordinary status dropdown on the job page put it in with two clicks.
+    // bill_jobs_onto_invoice refuses it outright (mig 205); this keeps it off-screen so
+    // nobody tries. Note is_case is NOT in the select — PostgREST filters on columns it
+    // does not return, and adding it would change the InvoiceableJob shape for no gain.
+    .eq('is_case', false)
     .order('scheduled_date', { ascending: true, nullsFirst: false })
   if (opts.clientId) q = q.eq('client_id', opts.clientId)
   const { data } = await q
