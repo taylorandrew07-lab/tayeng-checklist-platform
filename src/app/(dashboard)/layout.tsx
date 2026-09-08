@@ -11,18 +11,17 @@ import OfflineSyncManager from '@/components/offline/OfflineSyncManager'
 import CargoSyncManager from '@/components/cargo/CargoSyncManager'
 import BackGuard from '@/components/auth/BackGuard'
 import { fetchMyOfficePermissions } from '@/lib/office/permissions'
+import { ROLE_PREFIX, resolveRoleHome } from '@/lib/auth/roleHome'
 import { useRealtimeRefresh } from '@/lib/realtime'
 import { unreadCount } from '@/lib/messages/api'
 import { listReconciliation } from '@/lib/jobs/reconciliation'
 import { CLIENT_PORTAL_ENABLED } from '@/lib/features'
 import type { Profile } from '@/lib/types/database'
 
-const ROLE_HOME: Record<string, string> = {
-  admin: '/admin',
-  surveyor: '/surveyor',
-  client: '/client',
-  office: '/office',
-}
+// ROLE_PREFIX (the area a role may browse) and the role HOME (the one page it
+// lands on) are two different things and live in lib/auth/roleHome. This guard
+// wants the PREFIX: admins own all of /admin but open on /admin/jobs, and testing
+// membership against the home would bounce them off every other admin page.
 
 // Inactivity auto-logout window applied only when the user did NOT choose to stay
 // signed in. Long enough that normal mobile app-switching never triggers it.
@@ -50,6 +49,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [pendingCount, setPendingCount] = useState(0)
   const [reconcileCount, setReconcileCount] = useState(0)
   const [officePermissions, setOfficePermissions] = useState<string[]>([])
+  // Resolved once alongside the profile, not per navigation: for office it costs
+  // a permissions query, and the guard below runs on every route change.
+  const [home, setHome] = useState<string | null>(null)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -155,6 +157,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const granted = await fetchMyOfficePermissions(supabase)
         setOfficePermissions(Array.from(granted))
       }
+      setHome(await resolveRoleHome(supabase, data.role))
     }
     loadProfile()
   }, [router])
@@ -164,12 +167,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!profile) return
     const SHARED_ROUTES = ['/profile', '/inbox', '/calendar', '/personnel', '/competition', '/inventory']
-    const expectedPrefix = ROLE_HOME[profile.role]
+    const expectedPrefix = ROLE_PREFIX[profile.role]
     const isShared = SHARED_ROUTES.some(r => pathname.startsWith(r))
     if (expectedPrefix && !isShared && !pathname.startsWith(expectedPrefix)) {
-      router.replace(expectedPrefix)
+      // Land them on their actual home, falling back to the area root until it
+      // resolves — both are inside the prefix, so neither can loop.
+      router.replace(home ?? expectedPrefix)
     }
-  }, [profile, pathname, router])
+  }, [profile, pathname, router, home])
 
   // Live unread-message count for the Inbox nav badge. Safe before migration 037
   // (unreadCount returns 0 on error).

@@ -11,6 +11,7 @@ import {
   LayoutDashboard, FileText, Briefcase, Users, ClipboardList,
   LogOut, ChevronRight, X, Settings, Calculator,
   Receipt, Ship, FolderOpen, Mail, CalendarDays, IdCard, Building2, Camera,
+  Scale,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -20,7 +21,10 @@ export interface NavItem {
 }
 
 const adminNav: NavItem[] = [
-  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  // href stays '/admin'. Saved sidebar order (ui_prefs.nav_order) is keyed BY HREF,
+  // so repointing this would silently drop the item to the bottom of the menu for
+  // every admin who has customised theirs. The label is free to change.
+  { label: 'P&I Cases', href: '/admin', icon: Scale },
   { label: 'Jobs', href: '/admin/jobs', icon: Briefcase },
   { label: 'Finance', href: '/admin/invoicing', icon: Receipt },
   { label: 'Clients', href: '/admin/clients', icon: Building2 },

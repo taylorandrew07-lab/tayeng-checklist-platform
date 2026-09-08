@@ -490,6 +490,17 @@ export interface Job {
   report_number: string | null
   // When true the job does not require a report — no report number, shown as "N/A" (migration 119).
   report_not_required: boolean
+  // ── P&I cases (migration 204) ────────────────────────────────────────────────
+  // A case is a job that never ends: opened once, attended for months or years, and
+  // tracked by its attendance logs. is_case is derived at creation from a job type an
+  // admin has marked, and is admin-only thereafter — it is what exempts the job from
+  // the invoicing write-lock (job_is_open), so a surveyor must never be able to set it.
+  // The life-cycle lives in case_status, NOT in workflow_status (a sixth status would
+  // be silently rewritten — see the migration header).
+  is_case: boolean
+  case_status: 'open' | 'on_hold' | 'concluded' | null
+  case_opened_on: string | null
+  case_closed_on: string | null
   workflow_status: WorkflowStatus
   // ── Report-due reminder (migration 162) ───────────────────────────────────
   /** Hours after reminder_base_at before the "report due" reminder fires.
@@ -540,6 +551,10 @@ export interface JobType {
   /** Default "report due" reminder delay in hours for jobs of this type; null =
    *  never remind. Copied onto each new job at creation (migration 162). */
   reminder_hours: number | null
+  /** Jobs of this type are long-running P&I cases (migration 204). Admin-only:
+   *  any active staff member may add a job type, and RLS cannot gate a column, so
+   *  a database trigger forces this back to false for everyone else. */
+  is_case: boolean
 }
 
 export type Currency = 'USD' | 'TTD' | 'EUR' | 'GBP'

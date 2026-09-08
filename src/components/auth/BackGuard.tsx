@@ -5,11 +5,16 @@ import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { dirtyState } from '@/lib/dirty-state'
+import { HOME_ROUTES } from '@/lib/auth/roleHome'
 
 // Role home routes — the "root" of each user's app. A back press here would leave
 // the app, so we intercept it with a confirmation. Back between inner screens
 // navigates normally (no guard is armed off the home routes).
-const HOME_ROUTES = ['/admin', '/surveyor', '/client', '/office']
+//
+// Imported rather than re-listed: when the admin home moved from /admin to
+// /admin/jobs, a local copy would have left a back press on the real home silently
+// leaving the PWA, and armed the logout prompt on P&I Cases — an ordinary inner
+// screen — instead. Neither would have thrown.
 
 /**
  * Confirms before the phone/browser back button leaves the app at the stack root.

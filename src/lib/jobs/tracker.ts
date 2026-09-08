@@ -618,6 +618,10 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
       .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, voyage_number, billed_under_job_id, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, labour_unit, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
+      // P&I cases are excluded from the register (mig 204). A case runs for years,
+      // so left in it would sit at the top of every view forever — and it is not the
+      // kind of thing this page is for. They have their own page at /admin.
+      .eq('is_case', false)
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),

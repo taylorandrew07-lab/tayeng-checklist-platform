@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-
-const ROLE_REDIRECT: Record<string, string> = {
-  admin: '/admin',
-  surveyor: '/surveyor',
-  client: '/client',
-  office: '/office',
-}
+import { ROLE_PREFIX, resolveRoleHome } from '@/lib/auth/roleHome'
 
 // Only these internal paths may be used as a post-auth `next` redirect target.
 const ALLOWED_NEXT = ['/reset-password']
@@ -83,5 +77,10 @@ export async function GET(request: Request) {
     return fail('pending')
   }
 
-  return NextResponse.redirect(`${origin}${ROLE_REDIRECT[profile.role] ?? '/login'}`)
+  // An unrecognised role goes to /login rather than guessing a dashboard — the
+  // account is verified but we have no idea what it should see.
+  const home = ROLE_PREFIX[profile.role]
+    ? await resolveRoleHome(supabase, profile.role)
+    : '/login'
+  return NextResponse.redirect(`${origin}${home}`)
 }

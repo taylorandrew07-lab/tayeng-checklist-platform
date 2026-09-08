@@ -3,13 +3,7 @@
 import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2 } from 'lucide-react'
-
-const ROLE_HOME: Record<string, string> = {
-  admin: '/admin',
-  surveyor: '/surveyor',
-  client: '/client',
-  office: '/office',
-}
+import { resolveRoleHome } from '@/lib/auth/roleHome'
 
 // Resolve the destination from the session, then go straight into the user's app.
 // Only genuinely-unauthenticated visitors ever see /login, so a launch never flashes
@@ -47,7 +41,12 @@ export default function HomePage() {
       // layout re-routes if that turns out to be wrong. Never bounce to /login here:
       // the session is valid, and /login would send an authenticated user straight
       // back — a redirect loop.
-      window.location.replace(ROLE_HOME[profile?.role ?? ''] ?? '/surveyor')
+      //
+      // This is THE entry point: the PWA's start_url is "/", so this line is what
+      // "the app opens on X" actually means.
+      const home = await resolveRoleHome(supabase, profile?.role)
+      if (cancelled) return
+      window.location.replace(home)
     }
 
     route().catch(() => { window.location.replace('/login') })

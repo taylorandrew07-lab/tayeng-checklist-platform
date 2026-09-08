@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import PageHeader from '@/components/ui/PageHeader'
+import InventoryAlertsPanel from '@/components/inventory/InventoryAlertsPanel'
 import Tabs from '@/components/ui/Tabs'
 import { createClient } from '@/lib/supabase/client'
 import { fetchMyOfficePermissions, OFFICE_PERMISSIONS } from '@/lib/office/permissions'
@@ -76,6 +77,11 @@ export default function InventoryPage() {
         title="Inventory"
         subtitle="What we have, where it is, and when the equipment is due back for calibration."
       />
+
+      {/* Moved here from the admin dashboard: the alert now sits next to the thing
+          it is about, instead of on a page you had to remember to visit. Self-gating
+          — nothing for non-admins, nothing when there is nothing due. */}
+      <InventoryAlertsPanel inline />
 
       <Tabs tabs={tabs} active={tab} onChange={k => setTab(k as TabKey)} />
 

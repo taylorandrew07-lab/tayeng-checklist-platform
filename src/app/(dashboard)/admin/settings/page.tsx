@@ -34,7 +34,8 @@ export default function JobNumberingSettingsPage() {
         .single()
 
       if (!profile?.is_super_admin) {
-        router.replace('/admin')
+        // The admin home is Jobs, not /admin (which is now P&I Cases).
+        router.replace('/admin/jobs')
         return
       }
 

@@ -19,6 +19,11 @@
  *  "No report required" per job for the occasional report-only cargo survey. */
 const NO_REPORT_JOB_TYPES = new Set<string>([
   'Ultrasonic Hatch Testing',
+  // A P&I case links to the report that OPENED it; it does not carry one itself,
+  // and it would otherwise burn a number off the single global series (mig 158) for
+  // a job that never produces a report. Mirrored by the mig-204 insert trigger,
+  // which sets report_not_required on any job whose type is a case type.
+  'P&I Case',
 ])
 
 /** Stages of a draught survey that carry no report. A draught survey is a sequence on

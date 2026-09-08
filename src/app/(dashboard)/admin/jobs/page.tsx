@@ -25,6 +25,7 @@ import { useJobsView, availableYears, inYearMonth, rowColor, buildLegend } from 
 import { jobLastDate, jobLastDateKey, jobSpansDays } from '@/lib/jobs/jobDate'
 import { qtyWithUnit } from '@/lib/jobs/labourUnit'
 import JobsViewToolbar from '@/components/job/JobsViewToolbar'
+import ReportsDuePanel from '@/components/job/ReportsDuePanel'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
 import { deliverFile, CSV_MIME } from '@/lib/pdf/deliver'
@@ -1229,6 +1230,14 @@ export default function JobsTrackerPage() {
           <Link href="/admin/jobs/new" className="btn-primary"><Plus className="h-4 w-4" />New Job</Link>
         </div>
       </div>
+
+      {/* Reports whose incubation/lag window has elapsed and can now be written up.
+          This is the admin landing page now (lib/auth/roleHome), so the reminder sits
+          where the work is rather than on a dashboard nobody opened. Self-gating: it
+          renders nothing unless you're the super-admin AND something is actually due,
+          which is why it sits below the title rather than above it — on a quiet day
+          there is no gap, and on a busy one the page still says "Jobs" first. */}
+      <ReportsDuePanel />
 
       {/* Toolbar: search + filters */}
       <div className="flex items-center justify-between gap-3 flex-wrap">

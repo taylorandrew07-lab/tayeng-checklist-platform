@@ -1,6 +1,6 @@
 'use client'
 
-// "Inventory needs attention" — the standing queue on the admin dashboard.
+// "Inventory needs attention" — the standing queue, shown on the Inventory page.
 //
 // Like ReportsDuePanel, this is deliberately INDEPENDENT of the reminder cron.
 // It derives everything live from the tables, so it is correct even if the
@@ -8,7 +8,11 @@
 // The cron owns the one-off nudge; this is the list you work from.
 //
 // Renders nothing at all when there is nothing to say, and nothing for anyone
-// who is not an admin — so it can be dropped into a dashboard unconditionally.
+// who is not an admin — so it can be dropped into a page unconditionally.
+//
+// `inline` is for the Inventory page itself, where every "Open inventory" link
+// would point at the page you are already on. It keeps the same list and drops the
+// navigation: a link to nowhere reads as broken even when nothing is wrong.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -30,7 +34,7 @@ interface Row {
   urgent: boolean
 }
 
-export default function InventoryAlertsPanel() {
+export default function InventoryAlertsPanel({ inline = false }: { inline?: boolean } = {}) {
   const [rows, setRows] = useState<Row[]>([])
   const [ready, setReady] = useState(false)
 
@@ -69,27 +73,42 @@ export default function InventoryAlertsPanel() {
           Inventory needs attention
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{rows.length}</span>
         </h2>
-        <Link href="/inventory" className="text-sm text-brand-700 hover:underline">Open inventory</Link>
+        {!inline && (
+          <Link href="/inventory" className="text-sm text-brand-700 hover:underline">Open inventory</Link>
+        )}
       </div>
 
       <div className="divide-y divide-gray-100">
-        {rows.slice(0, 12).map(r => (
-          <Link
-            key={r.key}
-            href="/inventory"
-            className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-amber-50/60"
-          >
-            <r.icon className={`h-4 w-4 shrink-0 ${r.urgent ? 'text-red-500' : 'text-amber-500'}`} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-gray-900">{r.title}</p>
-              <p className="truncate text-xs text-gray-500">{r.detail}</p>
-            </div>
-          </Link>
-        ))}
+        {rows.slice(0, 12).map(r => {
+          const body = (
+            <>
+              <r.icon className={`h-4 w-4 shrink-0 ${r.urgent ? 'text-red-500' : 'text-amber-500'}`} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-gray-900">{r.title}</p>
+                <p className="truncate text-xs text-gray-500">{r.detail}</p>
+              </div>
+            </>
+          )
+          return inline ? (
+            <div key={r.key} className="flex items-center gap-3 px-6 py-3">{body}</div>
+          ) : (
+            <Link
+              key={r.key}
+              href="/inventory"
+              className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-amber-50/60"
+            >
+              {body}
+            </Link>
+          )
+        })}
         {rows.length > 12 && (
-          <Link href="/inventory" className="block px-6 py-2.5 text-xs text-gray-500 hover:bg-amber-50/60">
-            and {rows.length - 12} more…
-          </Link>
+          inline ? (
+            <p className="px-6 py-2.5 text-xs text-gray-500">and {rows.length - 12} more…</p>
+          ) : (
+            <Link href="/inventory" className="block px-6 py-2.5 text-xs text-gray-500 hover:bg-amber-50/60">
+              and {rows.length - 12} more…
+            </Link>
+          )
         )}
       </div>
     </div>

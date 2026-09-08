@@ -83,7 +83,7 @@ export async function GET(request: Request) {
     const ok = await sendEmail({
       to: [email],
       subject: `Surveyor documents expiring — ${due.length} across the team`,
-      html: `<p>The following surveyor documents are expiring soon:</p><ul>${due.map(line).join('')}</ul><p><a href="${APP_URL}/admin">Open the dashboard →</a></p>`,
+      html: `<p>The following surveyor documents are expiring soon:</p><ul>${due.map(line).join('')}</ul><p><a href="${APP_URL}/personnel">Open the team page →</a></p>`,
     })
     if (ok) staffSent = true
   }

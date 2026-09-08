@@ -10,13 +10,7 @@ import { resetDeviceAppState } from '@/lib/auth/resetDevice'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import logoFull from '../../../../public/logo-full.png'
-
-const ROLE_REDIRECT: Record<string, string> = {
-  admin: '/admin',
-  surveyor: '/surveyor',
-  client: '/client',
-  office: '/office',
-}
+import { resolveRoleHome, FALLBACK_HOME } from '@/lib/auth/roleHome'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -65,7 +59,7 @@ export default function LoginPage() {
         setError('Your sign-in worked but your account profile could not be loaded. Please contact your administrator.')
         return
       }
-      window.location.href = ROLE_REDIRECT[profile.role] ?? '/surveyor'
+      window.location.href = await resolveRoleHome(supabase, profile.role)
     }).catch(() => { /* stay on login */ })
   }, [])
 
@@ -179,9 +173,9 @@ export default function LoginPage() {
       )
       // Route to the role-appropriate dashboard.
       // Inactive users land on their dashboard where the layout shows the pending screen.
-      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/surveyor'
+      window.location.href = await resolveRoleHome(supabase, profile?.role)
     } catch {
-      window.location.href = '/surveyor'
+      window.location.href = FALLBACK_HOME
     }
   }
 

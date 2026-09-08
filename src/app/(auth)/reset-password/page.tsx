@@ -5,15 +5,9 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
+import { ROLE_PREFIX, resolveRoleHome } from '@/lib/auth/roleHome'
 
 type ReadyState = 'loading' | 'ready' | 'expired'
-
-const ROLE_REDIRECT: Record<string, string> = {
-  admin: '/admin',
-  surveyor: '/surveyor',
-  client: '/client',
-  office: '/office',
-}
 
 export default function ResetPasswordPage() {
   const [readyState, setReadyState] = useState<ReadyState>('loading')
@@ -94,7 +88,12 @@ export default function ResetPasswordPage() {
         supabase.from('profiles').select('role').eq('id', user!.id).single(),
         10_000, 'Loading your account'
       )
-      window.location.href = ROLE_REDIRECT[profile?.role ?? ''] ?? '/login'
+      // Unknown role still goes back to /login here, NOT to a dashboard: unlike the
+      // login page, this flow has no signed-in context to fall back on.
+      const role = profile?.role
+      window.location.href = role && ROLE_PREFIX[role]
+        ? await resolveRoleHome(supabase, role)
+        : '/login'
     } catch {
       window.location.href = '/login'
     }

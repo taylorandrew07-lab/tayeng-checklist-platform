@@ -32,6 +32,7 @@ import {
   type VoyageGroup, type VoyageJob,
 } from './voyage'
 import { isJobLocked } from './tracker'
+import { isLiveCase } from './cases'
 
 export type ReconCategory =
   | 'not_completed'           // work looks done but the job was never marked complete
@@ -113,6 +114,8 @@ export interface ReconJob extends VoyageJob {
   billed_under_job_id: string | null
   submitted_at: string | null
   created_at: string | null
+  is_case: boolean | null
+  case_status: string | null
 }
 
 export interface CategorizeContext {
@@ -136,6 +139,13 @@ export interface CategorizeContext {
 export function categorize(job: ReconJob, ctx: CategorizeContext = {}): ReconCategory | null {
   const { inv, hoursChanged = false, staleBefore, group, parent, hasLine, invoiceHasJobLines } = ctx
   const live = inv && inv.status !== 'void' ? inv : undefined
+
+  // A P&I case runs for years BY DESIGN and sits at 'in_progress' the whole time,
+  // so STALE_IN_PROGRESS_DAYS would flag every one from week four and never stop —
+  // drowning the one tool that catches forgotten billing in permanent noise.
+  // A CONCLUDED case falls through and is graded normally: that is exactly when it
+  // does need invoicing and closing like anything else. (mig 204)
+  if (isLiveCase(job)) return null
 
   // ── Absorbed legs ─────────────────────────────────────────────────────────
   // A leg billed under a Final is correctly billed: closed, stamped, no line of its
@@ -209,7 +219,7 @@ const RECON_WINDOW_MONTHS = 18
 export const RECON_JOB_COLUMNS =
   'id, report_number, vessel_name, vessel_type, vessel_id, voyage_number, job_type, job_stage, ' +
   'client_id, workflow_status, invoice_id, billed_under_job_id, submitted_at, ' +
-  'scheduled_date, end_date, created_at, client:clients(name)'
+  'scheduled_date, end_date, created_at, is_case, case_status, client:clients(name)'
 
 export async function listReconciliation(): Promise<{ items: ReconItem[]; counts: Record<ReconCategory, number> }> {
   const supabase = createClient()
