@@ -52,19 +52,25 @@ const LABELS: Record<LabourUnit, LabourUnitLabels> = {
 
 export const labourLabels = (u?: string | null): LabourUnitLabels => LABELS[asLabourUnit(u)]
 
-const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 1 })
+// One decimal is right for a screen, where a quantity is read, not checked. A printed
+// sheet is different: a shift is stored to TWO decimals (shiftHours, mig 157), so on a
+// document whose whole purpose is adding the lines up by hand, one decimal per line makes
+// the lines visibly disagree with their own subtotal — 3 × 9.33 h prints as 9.3 + 9.3 +
+// 9.3 under a subtotal of 28. `maxDp` is how a caller that must ADD UP asks for the
+// stored precision; everything on screen keeps the tidier default.
+const fmtQty = (n: number, maxDp = 1) => n.toLocaleString(undefined, { maximumFractionDigits: maxDp })
 
 /** A single job's quantity with its own unit — "8h" / "2d". Safe because the unit
  *  is per job, so one job's numbers are never mixed. */
-export const qtyWithUnit = (n: number, u?: string | null): string => `${fmtQty(n)}${labourLabels(u).suffix}`
+export const qtyWithUnit = (n: number, u?: string | null, maxDp = 1): string => `${fmtQty(n, maxDp)}${labourLabels(u).suffix}`
 
 /** THE HARD RULE. A total that spans several jobs can span both units, and hours may
  *  never be added to days — so it is written out per unit ("142.5 h · 6 d") and never
  *  collapsed into one unlabelled number. Returns '' when there is nothing to show. */
-export function splitQty(hours: number, days: number): string {
+export function splitQty(hours: number, days: number, maxDp = 1): string {
   const parts: string[] = []
-  if (hours) parts.push(`${fmtQty(hours)} h`)
-  if (days) parts.push(`${fmtQty(days)} d`)
+  if (hours) parts.push(`${fmtQty(hours, maxDp)} h`)
+  if (days) parts.push(`${fmtQty(days, maxDp)} d`)
   return parts.join(' · ')
 }
 
@@ -93,8 +99,17 @@ export interface SurveyorJobLabourSplit {
  *  range (YYYY-MM-DD, inclusive) for the monthly pay run. Day-worked attribution:
  *  OT shifts count on their own date, km on the trip date, regular (and a day-billed
  *  job's typed OT) on the job date — see mig 125/148. */
-export async function metricsLabourSplit(from?: string | null, to?: string | null): Promise<SurveyorLabourSplit[]> {
-  const { data } = await createClient().rpc('metrics_labour', { p_from: from ?? null, p_to: to ?? null })
+export async function metricsLabourSplit(
+  from?: string | null,
+  to?: string | null,
+  /** The panel renders an empty table on failure — a screen that is momentarily blank is
+   *  recoverable by reloading. A DOCUMENT built off this is not: a pay run printed from a
+   *  failed call comes out titled PAY RUN with no pay on it and every surveyor apparently
+   *  owed nothing. Anything that hands the result to a file passes `throwOnError`. */
+  opts?: { throwOnError?: boolean },
+): Promise<SurveyorLabourSplit[]> {
+  const { data, error } = await createClient().rpc('metrics_labour', { p_from: from ?? null, p_to: to ?? null })
+  if (error && opts?.throwOnError) throw new Error(error.message)
   return ((data ?? []) as any[])
     .map(l => ({
       surveyor_id: l.surveyor_id, name: l.name,

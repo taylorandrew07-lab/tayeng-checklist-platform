@@ -5,9 +5,9 @@
 // page is the cross-job view + settings. Per-client billing rates moved to the
 // Clients hub (Clients → Rates). Payment is not tracked (migration 146).
 
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import Link from 'next/link'
-import { Receipt, Plus, X, Trash2, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search, Pencil } from 'lucide-react'
+import { Receipt, Plus, X, Trash2, Loader2, Save, AlertTriangle, ChevronRight, Briefcase, Clock, Search, Pencil, Download, FileText, Share2 } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { cn, formatDate, vesselWithVoyage, withVesselPrefix, type VesselPrefix } from '@/lib/utils'
@@ -24,6 +24,11 @@ import {
   metricsLabourSplit, metricsLabourByJobSplit, splitQty, qtyWithUnit,
   type SurveyorLabourSplit, type SurveyorJobLabourSplit,
 } from '@/lib/jobs/labourUnit'
+import { deliverFile, isMobileDevice, PDF_MIME, CSV_MIME } from '@/lib/pdf/deliver'
+import {
+  getLabourReport, labourReportCsv, labourReportFilename, labourReportPdfProps, periodLabelFor,
+} from '@/lib/jobs/labourReport'
+import { Toggle } from '@/components/ui/Toggle'
 import InvoicesTable from '@/components/invoicing/InvoicesTable'
 import ConsolidatedInvoiceBuilder from '@/components/invoicing/ConsolidatedInvoiceBuilder'
 import InvoiceEditModal from '@/components/invoicing/InvoiceEditModal'
@@ -69,6 +74,9 @@ export default function AdminInvoicingPage() {
   )
 }
 
+/** A labour file that already EXISTS, waiting for the tap that shares it. */
+type BuiltLabourFile = { kind: 'pdf' | 'csv'; blob: Blob; filename: string; mime: string; title: string }
+
 // ── Overview: cross-ledger dashboard ─────────────────────────────────────────
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 
@@ -90,15 +98,64 @@ function OverviewTab() {
   // side query is the safer seam.
   const [vesselTypes, setVesselTypes] = useState<Map<string, VesselPrefix>>(new Map())
   const [openSurveyor, setOpenSurveyor] = useState<string | null>(null)
-  useEffect(() => {
-    let from: string | null = null, to: string | null = null
+  // Downloadable version of this panel: the same window, shift by shift. Two variants —
+  // quantities only (safe to circulate) and the pay run (admin only, see isAdmin below).
+  const [withPay, setWithPay] = useState(false)
+  const [reportBusy, setReportBusy] = useState<'pdf' | 'csv' | null>(null)
+
+  // The one window every reader of this panel shares — the picker, both RPCs, and the
+  // downloaded file. Lifted out of the effect so what you print is exactly what you see.
+  // `new Date(y, m, 0).getDate()` is a LOCAL constructor asking "how many days in this
+  // month", not an ISO parse, so it is not the UTC-midnight trap; leave it alone.
+  const win = useMemo(() => {
     if (labourMode === 'month' && labourMonth) {
       const [y, m] = labourMonth.split('-').map(Number)
-      from = `${labourMonth}-01`
-      to = `${labourMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
-    } else if (labourMode === 'year') {
-      from = `${labourYear}-01-01`; to = `${labourYear}-12-31`
+      return {
+        from: `${labourMonth}-01` as string | null,
+        to: `${labourMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` as string | null,
+        label: periodLabelFor('month', labourMonth, labourYear),
+      }
     }
+    if (labourMode === 'year') {
+      return { from: `${labourYear}-01-01` as string | null, to: `${labourYear}-12-31` as string | null, label: periodLabelFor('year', labourMonth, labourYear) }
+    }
+    return { from: null as string | null, to: null as string | null, label: periodLabelFor('all', labourMonth, labourYear) }
+  }, [labourMode, labourMonth, labourYear])
+
+  // Is this session an admin? The pay variant is offered to nobody else.
+  //
+  // Be precise about what actually holds, because the honest answer is not "the server
+  // gates it": (1) /admin/invoicing is an admin area — ROLE_PREFIX in lib/auth/roleHome.ts
+  // plus the dashboard layout's path guard, which is a client-side redirect; (2) the money
+  // comes from metrics_labour, SECURITY INVOKER over job_surveyors, so RLS separates a
+  // SURVEYOR (own rows only) from everyone else — but it does NOT separate an admin from
+  // an office user holding jobs.monitor.view or jobs.detail.view, who passes the "Read job
+  // surveyors" policy for every row (mig 053) and can therefore already read pay_rate and
+  // regular_pay directly, RLS being unable to hide a column; (3) this check, which removes
+  // the toggle from the DOM and pins the variant to quantities-only, so a hand-flipped
+  // `withPay` in devtools still cannot build a pay sheet. `profiles.role` is read over RLS
+  // — a user cannot write their own role — not from the forgeable localStorage cache.
+  //
+  // labour_shift_lines itself carries NO pay column, so it neither widens nor narrows any
+  // of this. The office/pay hole above PREDATES this feature (the Pay column on the panel
+  // below leaks the same numbers today); the house fix is a staff_private-style sibling
+  // table for the pay columns, which is a money-seam change and its own triage item.
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    let active = true
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user || !active) return
+      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      if (active) setIsAdmin(data?.role === 'admin')
+    })
+    return () => { active = false }
+  }, [])
+  /** What actually reaches the data layer. Never `withPay` on its own. */
+  const payVariant = isAdmin && withPay
+
+  useEffect(() => {
+    const { from, to } = win
     let active = true
     setLabour(null); setOpenSurveyor(null)
     metricsLabourSplit(from, to).then(l => { if (active) setLabour(l) })
@@ -113,8 +170,70 @@ function OverviewTab() {
       })
     })
     return () => { active = false }
-  }, [labourMode, labourMonth, labourYear])
+  }, [win])
   const yearOptions = Array.from({ length: new Date().getFullYear() - 2024 + 1 }, (_, i) => String(2024 + i)).reverse()
+
+  // Nothing on screen means nothing to print — both controls stay disabled through the
+  // loading skeleton and the empty card below.
+  const reportReady = labour !== null && labour.length > 0
+
+  // On a phone this is deliberately TWO taps, and the split is not cosmetic. Building
+  // either file awaits two RPCs, a dynamic import and (for the PDF) a WASM render — far
+  // longer than WebKit's transient-activation window — so a one-tap handler reaches
+  // navigator.share with the user gesture already spent, and on an installed iPhone app
+  // there is no download manager to fall back to: the file could never leave. Tap 1 builds
+  // it, tap 2 shares it with a live gesture. Same shape as JobPdfButton; see lib/pdf/deliver.
+  // Desktop keeps one tap, because saving needs no gesture of its own.
+  const [mobile, setMobile] = useState(false)
+  useEffect(() => { setMobile(isMobileDevice()) }, [])
+  const [built, setBuilt] = useState<BuiltLabourFile | null>(null)
+  // A file built for a different window or the other variant must never be handed over.
+  useEffect(() => { setBuilt(null) }, [win, payVariant])
+
+  // Both builders re-fetch rather than reuse `labour`: the shift lines are not in state,
+  // and one fetch per file keeps it internally consistent (its own totals, and the
+  // reconciliation check against metrics_labour, come from the same instant).
+  async function buildLabourFile(kind: 'pdf' | 'csv'): Promise<BuiltLabourFile> {
+    const report = await getLabourReport(win.from, win.to, { periodLabel: win.label, withPay: payVariant })
+    const title = payVariant ? 'Labour pay run' : 'Labour & overtime'
+    if (kind === 'csv') {
+      // BOM + CRLF so Excel opens the UTF-8 cleanly. The blob keeps the parameterised
+      // type; CSV_MIME is what goes to deliverFile, because showSaveFilePicker's accept
+      // map rejects 'text/csv;charset=utf-8;' and throws.
+      const blob = new Blob(['﻿' + labourReportCsv(report)], { type: 'text/csv;charset=utf-8;' })
+      return { kind, blob, filename: labourReportFilename(report, 'csv'), mime: CSV_MIME, title }
+    }
+    // react-pdf is dynamically imported so it never lands in the Finance page bundle.
+    const [{ pdf }, { LabourReportPDF }] = await Promise.all([
+      import('@react-pdf/renderer'),
+      import('@/lib/pdf/LabourReportPDF'),
+    ])
+    const blob = await pdf(<LabourReportPDF {...labourReportPdfProps(report)} />).toBlob()
+    return { kind, blob, filename: labourReportFilename(report, 'pdf'), mime: PDF_MIME, title }
+  }
+
+  /** Tap 2. Not async on purpose: nothing may be awaited before deliverFile, or iOS has
+   *  already spent the gesture. Through the seam, which THROWS rather than resolving into
+   *  a silent no-op — including the CSV on an installed iPhone, which WebKit will not
+   *  share and which says so instead of pretending. */
+  function sendLabourFile(f: BuiltLabourFile) {
+    deliverFile(f.blob, f.filename, f.mime, { title: f.title })
+      .then(res => { if (res !== 'cancelled') setBuilt(null) })
+      .catch((e: any) => toast.error(e?.message ?? 'Could not save the file'))
+  }
+
+  async function onLabourFile(kind: 'pdf' | 'csv') {
+    if (!reportReady) return
+    if (built?.kind === kind) { sendLabourFile(built); return }
+    setReportBusy(kind)
+    try {
+      const f = await buildLabourFile(kind)
+      if (mobile) setBuilt(f)
+      else await deliverFile(f.blob, f.filename, f.mime, { title: f.title })
+    } catch (e: any) {
+      toast.error(e?.message ?? (kind === 'pdf' ? 'Could not create the labour report' : 'Could not create the CSV'))
+    } finally { setReportBusy(null) }
+  }
 
   if (!data) return <div className="space-y-3">{[0, 1].map(i => <div key={i} className="skeleton h-28 w-full" />)}</div>
 
@@ -186,6 +305,35 @@ function OverviewTab() {
                 {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             )}
+            {/* This panel, off the screen: the same window, shift by shift. The toggle
+                picks the variant — the pay run exists only for an admin. */}
+            <span className="hidden sm:block h-4 w-px bg-gray-200" aria-hidden />
+            {isAdmin && (
+              <Toggle checked={withPay} onChange={setWithPay} label="with pay"
+                className="text-xs [&>span:last-child]:text-xs [&>span:last-child]:text-gray-500" />
+            )}
+            <button onClick={() => onLabourFile('pdf')} disabled={!reportReady || reportBusy !== null}
+              className="btn-secondary text-xs py-1"
+              title={built?.kind === 'pdf'
+                ? 'Save the report to this phone, or send it'
+                : payVariant
+                  ? 'Shift-by-shift pay run for this period, with each surveyor’s pay'
+                  : 'Shift-by-shift labour for this period, quantities only — safe to circulate'}>
+              {reportBusy === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : built?.kind === 'pdf' ? <Share2 className="h-3.5 w-3.5" />
+                : <FileText className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">
+                {built?.kind === 'pdf' ? 'Save or send' : payVariant ? 'Pay run (PDF)' : 'Report (PDF)'}
+              </span>
+            </button>
+            <button onClick={() => onLabourFile('csv')} disabled={!reportReady || reportBusy !== null}
+              className="btn-secondary text-xs py-1"
+              title={built?.kind === 'csv' ? 'Save the CSV to this phone, or send it' : 'The same rows as a CSV, for checking in Excel'}>
+              {reportBusy === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : built?.kind === 'csv' ? <Share2 className="h-3.5 w-3.5" />
+                : <Download className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{built?.kind === 'csv' ? 'Save or send' : 'CSV'}</span>
+            </button>
           </div>
         </div>
         {labour === null ? (
