@@ -78,6 +78,31 @@ describe('renderVoyageAnnex', () => {
     expect(off).not.toMatch(/colour coding/i)
   })
 
+  it('a type with no red band draws no red line, no red cell and no red key', () => {
+    // red: 0 = "amber is the only warning colour". Hold 2 sits at 68.9/71.4,
+    // which was solid red before and must now be amber.
+    const html = renderVoyageAnnex(voyage({
+      readingTypes: [tempType({ colorRules: { amber: 65, red: 0, rateDeltaC: 10, gradient: true } })],
+    }))
+    expect(html).not.toContain('class="crit"')
+    expect(html).toContain('class="warn"')
+    expect(html).not.toContain('At the critical threshold')
+    expect(html).toContain('At the warning threshold')
+    // One threshold line on the chart, not two — and never one at 0, which
+    // would drag the y domain down and flatten every series.
+    expect((html.match(/class="thr thr-c"/g) ?? []).length).toBe(0)
+    expect((html.match(/class="thr thr-w"/g) ?? []).length).toBeGreaterThan(0)
+  })
+
+  it('charts only what was ticked — no derived peak-per-hold summary', () => {
+    const html = renderVoyageAnnex(voyage())
+    // The multi-point temperature type gets one chart per hold and nothing else.
+    expect(html).not.toMatch(/Peak dri temperature by hold/i)
+    expect(html).not.toContain('The highest of the')
+    expect(html).toContain('Hold 1 — dri temperature')
+    expect(html).toContain('Hold 2 — dri temperature')
+  })
+
   it('honours includeInTables and appliesTo', () => {
     const hidden = renderVoyageAnnex(voyage({
       readingTypes: [tempType(), { id: 'rh', name: 'Headspace humidity', unit: '%RH', appliesTo: 'all', includeInTables: false, includeInCharts: false, includeInPdf: false, points: [{ id: 'main', name: 'Headspace humidity' }] }],

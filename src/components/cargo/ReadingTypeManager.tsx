@@ -10,7 +10,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, Trash2, ChevronDown, ChevronUp, Copy, GripVertical } from 'lucide-react'
 import { type ReadingType, type ReadingPoint, SINGLE_POINT_ID } from '@/lib/cargo/types'
-import { defaultColorRules } from '@/lib/cargo/colors'
+import { defaultColorRules, hasRedBand } from '@/lib/cargo/colors'
 import { newId } from '@/lib/cargo/db'
 import { holdNumbers } from '@/lib/cargo/periods'
 import { confirmDialog } from '@/components/ui/confirm'
@@ -246,7 +246,9 @@ function ColorRulesEditor({ rt, onPatch }: { rt: ReadingType; onPatch: (id: stri
                 onChange={e => onPatch(rt.id, { colorRules: { ...r, amber: num(e.target.value, r.amber) } })} />
             </div>
             <div>
-              <label className="text-[11px] text-gray-500 block">Red at ≥ (°)</label>
+              {/* 0 switches the band off entirely — some cargoes have one
+                  "watch it" temperature and no second, worse one. */}
+              <label className="text-[11px] text-gray-500 block">Red at ≥ (° — 0 for none)</label>
               <input type="number" className="input-base py-1 text-sm" value={r.red}
                 onChange={e => onPatch(rt.id, { colorRules: { ...r, red: num(e.target.value, r.red) } })} />
             </div>
@@ -261,7 +263,9 @@ function ColorRulesEditor({ rt, onPatch }: { rt: ReadingType; onPatch: (id: stri
             </label>
           </div>
           <p className="text-[11px] text-gray-400">
-            Solid amber at ≥{r.amber}°, solid red at ≥{r.red}°. A rise of ≥{r.rateDeltaC ?? '—'}° vs the same period the day before turns the cell amber. Gradient blends green→amber for smaller daily rises.
+            Solid amber at ≥{r.amber}°{hasRedBand(r)
+              ? <>, solid red at ≥{r.red}°</>
+              : <>, and no red band &mdash; amber is the only warning colour, on the grid, the charts and the client&rsquo;s page</>}. A rise of ≥{r.rateDeltaC ?? '—'}° vs the same period the day before turns the cell amber. Gradient blends green→amber for smaller daily rises.
           </p>
         </>
       )}

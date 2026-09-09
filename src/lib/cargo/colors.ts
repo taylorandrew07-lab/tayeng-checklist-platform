@@ -2,6 +2,11 @@
 // below the amber band, an optional gradient blends green→amber based on the daily
 // rate of rise (compared to the same period 24 h earlier). Light tints + dark text
 // keep it readable and not alarming.
+//
+// The red band is OPTIONAL: some cargoes have a single "watch it" temperature and
+// no second, worse one. A red of 0 means the band does not exist — no red cell, no
+// red threshold line on the charts, no red entry in the key. hasRedBand() is the
+// one place that decides, so nothing can disagree about it.
 
 import { parseISO, format, subDays, isValid } from 'date-fns'
 import { getReadingValue, type Voyage, type ReadingType, type Period, type ColorRules } from './types'
@@ -22,9 +27,16 @@ function lerpHex(a: string, b: string, t: number): string {
   return `#${c(ar, br)}${c(ag, bg)}${c(ab, bb)}`
 }
 
+/** Whether these rules have a red band at all. 0 (or a missing/NaN value) means
+ *  "amber only" — see the note at the top of this file. Deliberately `!== 0` and
+ *  not `> 0`, so a genuine sub-zero threshold on refrigerated cargo still works. */
+export function hasRedBand(rules: ColorRules): boolean {
+  return Number.isFinite(rules.red) && rules.red !== 0
+}
+
 /** Resolve a value (+ optional 24 h-earlier value) to a cell colour. */
 export function evaluateCellColor(value: number, prevValue: number | null, rules: ColorRules): CellColor {
-  if (value >= rules.red) return RED
+  if (hasRedBand(rules) && value >= rules.red) return RED
   if (value >= rules.amber) return AMBER
   if (rules.rateDeltaC && prevValue != null) {
     const rise = value - prevValue

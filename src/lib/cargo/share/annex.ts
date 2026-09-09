@@ -25,7 +25,7 @@ import {
   readingTypeAppliesToHold, isSinglePoint, getReadingValue,
 } from '../types'
 import { readingRows } from '../readingRows'
-import { readingCellColor } from '../colors'
+import { readingCellColor, hasRedBand } from '../colors'
 import {
   monitoringDates, effectiveEndDate, periodsForDate, holdNumbers, formatVoyageDate,
 } from '../periods'
@@ -355,8 +355,14 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean, in
   const holds = holdNumbers(voyage.holdCount)
 
   for (const rt of types) {
+    // A type with no red band draws one threshold line, not two. Pushing a red
+    // line at 0 would also drag chartDomain() down to include it, flattening
+    // every series into the top of the plot.
     const thresholds: Threshold[] | undefined = colorsOn && rt.colorRules
-      ? [{ v: rt.colorRules.amber, kind: 'w' }, { v: rt.colorRules.red, kind: 'c' }]
+      ? [
+          { v: rt.colorRules.amber, kind: 'w' as const },
+          ...(hasRedBand(rt.colorRules) ? [{ v: rt.colorRules.red, kind: 'c' as const }] : []),
+        ]
       : undefined
 
     if (isSinglePoint(rt)) {
@@ -373,20 +379,10 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean, in
       continue
     }
 
-    // Multi-point: lead with the peak-per-hold summary, which is the question a
-    // reader actually has ("is any hold heating?"), then one chart per hold.
-    const peak = peakByHold(voyage, rt)
-    if (peak.hasData) {
-      const colorFor = (_k: string, i: number) => seriesColor(i)
-      out.push({
-        id: `peak-${rt.id}`, title: `Peak ${rt.name.toLowerCase()} by hold`,
-        caption: `The highest of the ${rt.points.length} points in each hold, at every round.`,
-        svg: svgChart(`peak-${rt.id}`, peak, colorFor, { direct: true, thresholds, interactive }),
-        legend: legendOf(peak.series.map((s, i) => ({ label: s.label, color: seriesColor(i) }))),
-        model: peak, colorFor, domain: chartDomain(peak, thresholds),
-      })
-    }
-
+    // Multi-point: one chart per hold, and nothing else. A derived
+    // "peak of every point, per hold" summary used to lead this section; it was
+    // removed deliberately. The annex shows the reading types the surveyor
+    // ticked "Include in charts" and no chart they did not ask for.
     const gmap = groupColors(rt)
     const byId = new Map(rt.points.map(p => [p.id, p]))
     const colorFor = (key: string, i: number) => {
@@ -415,29 +411,6 @@ function buildCharts(voyage: Voyage, types: ReadingType[], colorsOn: boolean, in
     }
   }
   return out
-}
-
-/** Derived series: the hottest point in each hold at each round. Presentation
- *  only — it reads through getReadingValue like everything else. */
-function peakByHold(voyage: Voyage, rt: ReadingType): ChartModel {
-  const timepoints = voyageTimepoints(voyage)
-  const holds = holdNumbers(voyage.holdCount).filter(h => readingTypeAppliesToHold(rt, h))
-  let hasData = false, yMin = Infinity, yMax = -Infinity
-
-  const series = holds.map((hold, i) => ({
-    key: `peak-${hold}`, label: `Hold ${hold}`, color: seriesColor(i),
-    values: timepoints.map(tp => {
-      let best: number | null = null
-      for (const pt of rt.points) {
-        const n = parseFloat(getReadingValue(voyage, tp.dateISO, tp.period, hold, rt.id, pt.id))
-        if (Number.isFinite(n) && (best == null || n > best)) best = n
-      }
-      if (best != null) { hasData = true; if (best < yMin) yMin = best; if (best > yMax) yMax = best }
-      return best
-    }),
-  }))
-  if (!hasData) { yMin = 0; yMax = 1 } else if (yMin === yMax) { yMin -= 1; yMax += 1 }
-  return { readingType: rt, subtitle: undefined, timepoints, series, yMin, yMax, hasData }
 }
 
 // ── document ────────────────────────────────────────────────────────────────
@@ -690,6 +663,10 @@ export function renderVoyageAnnex(voyage: Voyage, opts: AnnexOptions = {}): stri
   const finalized = phase === 'finalized'
   const vessel = withVesselPrefix(voyage.vesselName, voyage.vesselType)
   const charts = buildCharts(voyage, chartTypes, colorsOn, interactive)
+  // A key must only name colours the page can actually show. When no reading
+  // type on this voyage has a red band, "At the critical threshold" is a swatch
+  // for a state that cannot occur, and a client reading it goes looking for red.
+  const anyRedBand = (voyage.readingTypes ?? []).some(rt => rt.colorRules && hasRedBand(rt.colorRules))
 
   const meta: [string, string][] = [
     ['Vessel', vessel],
@@ -771,8 +748,9 @@ ${interactive ? `<div class="tabs" role="tablist">
     <div class="key">${colorsOn
       ? `<span><i style="background:${GREEN_BG}"></i>Normal</span>
          <span><i style="background:#eef7cd"></i>Rising &mdash; shaded by 24&nbsp;h rate of rise</span>
-         <span><i style="background:${AMBER_BG}"></i>At the warning threshold</span>
-         <span><i style="background:${RED_BG}"></i>At the critical threshold</span>`
+         <span><i style="background:${AMBER_BG}"></i>At the warning threshold</span>${
+           anyRedBand ? `
+         <span><i style="background:${RED_BG}"></i>At the critical threshold</span>` : ''}`
       /* Colours off: say nothing. The reader has no need to know a setting was
          turned off, and naming it only invites the question. */
       : ''}

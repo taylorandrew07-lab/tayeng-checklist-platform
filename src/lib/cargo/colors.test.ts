@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateCellColor, readingCellColor, defaultColorRules } from './colors'
+import { evaluateCellColor, readingCellColor, defaultColorRules, hasRedBand } from './colors'
 import { setReadingValue, type Voyage, type ReadingType, type ColorRules } from './types'
 
 const RULES: ColorRules = { amber: 60, red: 65, rateDeltaC: 10, gradient: true }
@@ -16,6 +16,33 @@ describe('evaluateCellColor — absolute bands (solid)', () => {
   })
   it('below 60 with no prior reading is green', () => {
     expect(evaluateCellColor(59.9, null, RULES).bg).toBe(GREEN)
+  })
+})
+
+describe('evaluateCellColor — an optional red band', () => {
+  // Some cargoes have one "watch it" temperature and no second, worse one.
+  // 0 means the band does not exist; without the guard, `value >= 0` made
+  // EVERY reading red, which is the exact opposite of "no red".
+  const amberOnly: ColorRules = { amber: 65, red: 0, rateDeltaC: 10, gradient: true }
+
+  it('red: 0 means no red band at all', () => {
+    expect(hasRedBand(amberOnly)).toBe(false)
+    expect(evaluateCellColor(65, null, amberOnly).bg).toBe(AMBER)
+    expect(evaluateCellColor(500, null, amberOnly).bg).toBe(AMBER)
+    expect(evaluateCellColor(1, null, amberOnly).bg).toBe(GREEN)
+  })
+
+  it('the rest of the rules keep working without a red band', () => {
+    expect(evaluateCellColor(45, 35, amberOnly).bg).toBe(AMBER)   // +10 daily rise
+    expect(evaluateCellColor(40, 45, amberOnly).bg).toBe(GREEN)   // falling
+  })
+
+  it('a real band — including a sub-zero one for refrigerated cargo — still applies', () => {
+    expect(hasRedBand(RULES)).toBe(true)
+    const reefer: ColorRules = { amber: -18, red: -10 }
+    expect(hasRedBand(reefer)).toBe(true)
+    expect(evaluateCellColor(-5, null, reefer).bg).toBe(RED)
+    expect(evaluateCellColor(-15, null, reefer).bg).toBe(AMBER)
   })
 })
 

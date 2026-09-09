@@ -58,7 +58,8 @@ export interface ReadingPoint {
 export interface ColorRules {
   /** value ≥ amber → at least amber (solid). e.g. 60 */
   amber: number
-  /** value ≥ red → red (solid). e.g. 65 */
+  /** value ≥ red → red (solid). e.g. 65. **0 means there is no red band** — the
+   *  type is amber-only. Ask hasRedBand() in lib/cargo/colors.ts, never `red > 0`. */
   red: number
   /** A rise ≥ this vs the same period 24 h earlier → amber. e.g. 10 */
   rateDeltaC?: number
