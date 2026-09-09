@@ -443,7 +443,7 @@ COMMENT ON FUNCTION public.labour_shift_lines(date, date) IS
   'Shift-grain twin of metrics_labour (mig 165): one row per logged regular shift, per
    logged overtime shift and per km trip, plus a synthetic has_shift_log=false line for
    any typed quantity with no shift behind it, and evidence_only=true lines carrying qty 0
-   for a day-billed job's logged shifts (a record of the hours worked, never the payable
+   for a day-billed job''s logged shifts (a record of the hours worked, never the payable
    quantity). Windowing predicates are copied verbatim
    from metrics_labour so per-surveyor totals reconcile exactly - regular hours, overtime
    hours, regular days, overtime days and km. attribution_date is the day the total counts
