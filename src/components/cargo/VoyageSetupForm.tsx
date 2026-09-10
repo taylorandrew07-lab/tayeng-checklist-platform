@@ -9,6 +9,7 @@ import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
 import { resolveClientLink } from '@/lib/cargo/clientLink'
 import { formatVoyageDate } from '@/lib/cargo/periods'
+import { VOYAGE_PREFIX, isVoyagePrefixOnly } from '@/lib/cargo/voyageNumber'
 import {
   type Voyage, type CargoTemplate,
   defaultReadingTypes, cloneReadingTypes, HOLD_COUNT_OPTIONS, DEFAULT_HOLD_COUNT,
@@ -24,17 +25,26 @@ interface Props {
 }
 
 export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitLabel }: Props) {
+  // CREATE seeds from the template (mig 211); EDIT never does — a saved voyage's
+  // own value always wins, including a deliberately blanked one, and re-seeding
+  // it would quietly undo a correction the surveyor made. NewVoyageView re-keys
+  // this component on the template selection, so these initialisers re-run when
+  // the template changes and the new template's defaults land.
+  const seed = voyage ? null : seedTemplate
+
   const [vesselName, setVesselName] = useState(voyage?.vesselName ?? '')
-  const [voyageNumber, setVoyageNumber] = useState(voyage?.voyageNumber ?? '')
-  const [cargoType, setCargoType] = useState(voyage?.cargoType ?? '')
-  const [loadingPort, setLoadingPort] = useState(voyage?.loadingPort ?? '')
-  const [dischargePort, setDischargePort] = useState(voyage?.dischargePort ?? '')
+  const [voyageNumber, setVoyageNumber] = useState(voyage ? (voyage.voyageNumber ?? '') : VOYAGE_PREFIX)
+  const [cargoType, setCargoType] = useState(voyage?.cargoType ?? seed?.default_cargo_type ?? '')
+  const [loadingPort, setLoadingPort] = useState(voyage?.loadingPort ?? seed?.default_loading_port ?? '')
+  const [dischargePort, setDischargePort] = useState(voyage?.dischargePort ?? seed?.default_discharge_port ?? '')
   const [startDate, setStartDate] = useState(voyage?.startDate ?? '')
   const [endDate, setEndDate] = useState(voyage?.endDate ?? '')
   const [holdCount, setHoldCount] = useState(voyage?.holdCount ?? seedTemplate?.default_hold_count ?? DEFAULT_HOLD_COUNT)
   const [surveyorName, setSurveyorName] = useState(voyage?.surveyorName ?? '')
-  const [clientId, setClientId] = useState(voyage?.clientId ?? '')
-  const [clientName, setClientName] = useState(voyage?.clientName ?? '')
+  const [clientId, setClientId] = useState(voyage?.clientId ?? seed?.default_client_id ?? '')
+  // Seeded from the embed too, so the offline text-mode box (no cached client
+  // list) still opens with the right name rather than empty.
+  const [clientName, setClientName] = useState(voyage?.clientName ?? seed?.default_client_name ?? '')
   const [remarks, setRemarks] = useState(voyage?.remarks ?? '')
 
   // The last day this voyage actually has data for. Every renderer bounds its
@@ -115,7 +125,10 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
 
   async function handleSave() {
     if (!vesselName.trim()) return setError('Vessel name is required')
-    if (!voyageNumber.trim()) return setError('Voyage number is required')
+    // The box opens pre-filled with "V-", so "not empty" is no longer proof a
+    // number was typed. Without this a voyage saves numbered "V-" and reads as a
+    // real one on the register, the annex and every reconciliation after it.
+    if (!voyageNumber.trim() || isVoyagePrefixOnly(voyageNumber)) return setError('Voyage number is required')
     if (!startDate) return setError('Monitoring start date is required')
     // The end date is deliberately optional — a voyage is opened before anyone
     // knows when it will finish. See effectiveEndDate() in lib/cargo/periods.ts.
@@ -182,9 +195,11 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
           </div>
           <div>
             <label className="label-base">Voyage Number *</label>
-            {/* Normalised on blur so the surveyor sees the canonical form
-                immediately: typing 13 shows V-013. Lenient — anything that
-                doesn't read as a plain number is kept exactly as typed. */}
+            {/* Pre-filled with "V-" on a new voyage so only the digits get
+                typed, then normalised on blur so the surveyor sees the canonical
+                form immediately: 13 shows V-013. Lenient — anything that doesn't
+                read as a plain number is kept exactly as typed, and the prefix is
+                ordinary editable text, so "24/07" is still just typed over it. */}
             <input
               className="input-base"
               value={voyageNumber}

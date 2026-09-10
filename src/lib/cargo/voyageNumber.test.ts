@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { displayVoyageNumber } from './voyageNumber'
+import { displayVoyageNumber, isVoyagePrefixOnly, VOYAGE_PREFIX } from './voyageNumber'
 
 describe('displayVoyageNumber', () => {
   it('pads a bare number to the V-### the rest of the fleet uses', () => {
@@ -36,5 +36,39 @@ describe('displayVoyageNumber', () => {
     expect(displayVoyageNumber(null)).toBe('')
     expect(displayVoyageNumber(undefined)).toBe('')
     expect(displayVoyageNumber('   ')).toBe('')
+  })
+})
+
+describe('isVoyagePrefixOnly', () => {
+  // New Voyage opens with the prefix pre-filled so only the digits get typed.
+  // That makes a required field non-empty before anyone has typed anything —
+  // without this guard a voyage saves numbered "V-" and then reads as a real
+  // number on the register, the annex and every reconciliation after it.
+  it('catches the untouched pre-fill, however it is spaced or punctuated', () => {
+    expect(isVoyagePrefixOnly(VOYAGE_PREFIX)).toBe(true)
+    expect(isVoyagePrefixOnly('V-')).toBe(true)
+    expect(isVoyagePrefixOnly('  V-  ')).toBe(true)
+    expect(isVoyagePrefixOnly('V')).toBe(true)
+    expect(isVoyagePrefixOnly('v-')).toBe(true)
+    expect(isVoyagePrefixOnly('V ')).toBe(true)
+  })
+
+  it('lets anything with an actual number through', () => {
+    expect(isVoyagePrefixOnly('V-013')).toBe(false)
+    expect(isVoyagePrefixOnly('13')).toBe(false)
+    expect(isVoyagePrefixOnly('24/07')).toBe(false)
+    expect(isVoyagePrefixOnly('V-0')).toBe(false)
+  })
+
+  it('is false for empty — that is the plain blank check, a separate message', () => {
+    expect(isVoyagePrefixOnly('')).toBe(false)
+    expect(isVoyagePrefixOnly(null)).toBe(false)
+    expect(isVoyagePrefixOnly(undefined)).toBe(false)
+  })
+
+  it('the pre-fill survives the blur normaliser untouched', () => {
+    // normaliseVoyage only rewrites something that reads as a plain number, so
+    // tabbing straight past an untouched box must not invent a voyage number.
+    expect(displayVoyageNumber(VOYAGE_PREFIX)).toBe('V-')
   })
 })

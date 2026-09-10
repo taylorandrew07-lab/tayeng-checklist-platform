@@ -89,14 +89,24 @@ export interface ReadingType {
 
 /**
  * A reusable Cargo Monitoring template (admin-managed, stored in Supabase and
- * cached locally for offline voyage creation). Config only: the reading-type set
- * and a default hold count. Voyages snapshot this config at creation.
+ * cached locally for offline voyage creation). Config only: the reading-type set,
+ * a default hold count, and the voyage fields this kind of job always has the
+ * same answer for. Voyages snapshot this config at creation.
  */
 export interface CargoTemplate {
   id: string
   name: string
   description: string | null
   default_hold_count: number
+  /** Pre-fills New Voyage (mig 211). DEFAULTS, never constraints — every one of
+   *  these is an ordinary editable field on the form once it is seeded. */
+  default_cargo_type: string | null
+  default_loading_port: string | null
+  default_discharge_port: string | null
+  default_client_id: string | null
+  /** Read through an embed on default_client_id, never stored — so a renamed
+   *  client is never stale, and the offline text-mode client box can be seeded. */
+  default_client_name: string | null
   reading_types: ReadingType[]
   status: 'draft' | 'active' | 'archived'
   created_by?: string | null

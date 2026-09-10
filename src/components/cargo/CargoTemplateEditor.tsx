@@ -25,9 +25,27 @@ export default function CargoTemplateEditor({ templateId }: Props) {
   const [defaultHoldCount, setDefaultHoldCount] = useState<number>(DEFAULT_HOLD_COUNT)
   const [readingTypes, setReadingTypes] = useState<ReadingType[]>(defaultReadingTypes())
 
+  // Voyage defaults (mig 211): the answers this kind of job has every time.
+  // They pre-fill New Voyage and are editable there like any other field.
+  const [defaultCargoType, setDefaultCargoType] = useState('')
+  const [defaultLoadingPort, setDefaultLoadingPort] = useState('')
+  const [defaultDischargePort, setDefaultDischargePort] = useState('')
+  const [defaultClientId, setDefaultClientId] = useState('')
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
+
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The client pick list is needed whether or not a template is being edited —
+  // a NEW template can set a default client too. A failure here is not fatal:
+  // the select simply offers "No default client".
+  useEffect(() => {
+    let active = true
+    createClient().from('clients').select('id, name').eq('is_active', true).order('name')
+      .then(({ data }) => { if (active) setClients((data ?? []) as { id: string; name: string }[]) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!templateId) return
@@ -41,6 +59,10 @@ export default function CargoTemplateEditor({ templateId }: Props) {
       setDescription(data.description ?? '')
       setStatus((data.status as Status) ?? 'active')
       setDefaultHoldCount(data.default_hold_count ?? DEFAULT_HOLD_COUNT)
+      setDefaultCargoType(data.default_cargo_type ?? '')
+      setDefaultLoadingPort(data.default_loading_port ?? '')
+      setDefaultDischargePort(data.default_discharge_port ?? '')
+      setDefaultClientId(data.default_client_id ?? '')
       setReadingTypes(Array.isArray(data.reading_types) && data.reading_types.length ? normalizeReadingTypes(data.reading_types) : defaultReadingTypes())
       setLoading(false)
     }
@@ -62,6 +84,11 @@ export default function CargoTemplateEditor({ templateId }: Props) {
         description: description.trim() || null,
         status,
         default_hold_count: defaultHoldCount,
+        // Empty means "no default", never an empty string on every new voyage.
+        default_cargo_type: defaultCargoType.trim() || null,
+        default_loading_port: defaultLoadingPort.trim() || null,
+        default_discharge_port: defaultDischargePort.trim() || null,
+        default_client_id: defaultClientId || null,
         reading_types: readingTypes,
       }
 
@@ -121,6 +148,37 @@ export default function CargoTemplateEditor({ templateId }: Props) {
               <option value="active">Active (available to surveyors)</option>
               <option value="draft">Draft</option>
               <option value="archived">Archived</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-6 space-y-4">
+        <div>
+          <h2 className="section-title">Voyage Defaults</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Pre-filled on New Voyage when this template is chosen. Every one stays editable there &mdash;
+            leave a field blank and it is simply not pre-filled.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <label className="label-base">Cargo Type / Description</label>
+            <input className="input-base" value={defaultCargoType} onChange={e => setDefaultCargoType(e.target.value)} placeholder="e.g. DRI B" />
+          </div>
+          <div>
+            <label className="label-base">Loading Port</label>
+            <input className="input-base" value={defaultLoadingPort} onChange={e => setDefaultLoadingPort(e.target.value)} placeholder="e.g. Point Lisas, Trinidad and Tobago" />
+          </div>
+          <div>
+            <label className="label-base">Discharge Port</label>
+            <input className="input-base" value={defaultDischargePort} onChange={e => setDefaultDischargePort(e.target.value)} placeholder="Usually varies — leave blank" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label-base">Client</label>
+            <select className="input-base" value={defaultClientId} onChange={e => setDefaultClientId(e.target.value)}>
+              <option value="">No default client</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>

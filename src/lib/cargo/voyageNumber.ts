@@ -21,3 +21,16 @@ import { normaliseVoyage } from '@/lib/jobs/voyage'
 export function displayVoyageNumber(raw: string | null | undefined): string {
   return normaliseVoyage(raw) ?? (raw ?? '').trim()
 }
+
+/** What the New Voyage box opens pre-filled with, so a surveyor types only the
+ *  digits. It is an ordinary editable value, not a fixed adornment: a voyage
+ *  that genuinely reads "24/07" or "V-2026-014" is still typed over it, and
+ *  normaliseVoyage() leaves those shapes alone. */
+export const VOYAGE_PREFIX = 'V-'
+
+/** True when the box still holds nothing but the pre-filled prefix. A required
+ *  field seeded with "V-" is no longer empty, so a plain blank check would let
+ *  a voyage save numbered "V-" — which reads as a real number everywhere after. */
+export function isVoyagePrefixOnly(raw: string | null | undefined): boolean {
+  return (raw ?? '').trim().replace(/[-._\s]+$/, '').toUpperCase() === 'V'
+}
