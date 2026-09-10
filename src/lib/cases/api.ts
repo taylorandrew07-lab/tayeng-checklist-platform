@@ -66,7 +66,21 @@ export interface CaseRow {
   opened_on: string
   closed_on: string | null
   notes: string | null
+  /** Standing hourly rate per kind of work on this case, keyed by the kind LOWERCASED —
+   *  {"phone call": {rate: 120, currency: "USD"}}. It is what lets a one-tap entry price
+   *  itself; it never blocks one, and a line can always be edited afterwards. */
+  rate_defaults: Record<string, { rate?: number | string; currency?: string }>
   created_at: string
+}
+
+/** The standing rate for a kind of work on this case, or null if nobody has said. */
+export function rateDefaultFor(
+  kase: Pick<CaseRow, 'rate_defaults'> | null | undefined, kind: string,
+): { rate: number; currency: string } | null {
+  const d = kase?.rate_defaults?.[kind.trim().toLowerCase()]
+  const rate = Number(d?.rate)
+  if (!d || !Number.isFinite(rate) || rate <= 0) return null
+  return { rate, currency: d.currency || 'USD' }
 }
 
 export interface CaseAttendance {
@@ -106,9 +120,16 @@ export interface CaseCharge {
   description: string
   payee: string | null
   incurred_on: string
+  /** Whole minutes when this fee IS time — a call, an email — and null for a purchase.
+   *  The rate is then per HOUR, and the division happens in the database, once. */
+  minutes: number | null
+  /** Trinidad wall-clock, set by the quick buttons, which work backwards from the tap. */
+  start_time: string | null
+  end_time: string | null
   qty: number
   unit_amount: number
   currency: string
+  /** GENERATED in the database (mig 220). Never re-multiplied on a screen. */
   amount: number
   claim_id: string | null
   claim_no: number | null
@@ -152,17 +173,19 @@ const clean = (v: string | null | undefined) => {
 
 const CASE_COLS =
   'id, title, case_type, our_vessel, our_vessel_type, other_party, case_ref, principal, ' +
-  'status, opened_on, closed_on, notes, created_at'
+  'status, opened_on, closed_on, notes, rate_defaults, created_at'
+
+const asCase = (r: any): CaseRow => ({ ...r, rate_defaults: r?.rate_defaults ?? {} })
 
 export async function listCases(): Promise<CaseRow[]> {
   const { data } = await createClient()
     .from('cases').select(CASE_COLS).order('opened_on', { ascending: false })
-  return ((data ?? []) as unknown) as CaseRow[]
+  return ((data ?? []) as any[]).map(asCase)
 }
 
 export async function getCase(id: string): Promise<CaseRow | null> {
   const { data } = await createClient().from('cases').select(CASE_COLS).eq('id', id).maybeSingle()
-  return ((data as unknown) as CaseRow) ?? null
+  return data ? asCase(data) : null
 }
 
 /** Opens a case. No title: the name comes from the parts (caseTitle), so the
@@ -327,7 +350,12 @@ export async function deleteAttendance(id: string): Promise<{ error?: string }> 
 }
 
 /**
- * One tap of a quick button = one 10-minute block, dated today, attributed to you.
+ * One tap of a quick button = one 10-minute block in FEES AND COSTS, attributed to you.
+ *
+ * It lands there and not in attendances because that is how the work reads from this side:
+ * an attendance is somebody going somewhere; a call or an email is the correspondency
+ * service, which is a fee. It prices itself from the case's standing rate for that kind
+ * when there is one, and is logged unpriced when there is not — never blocked.
  *
  * `clientRef` MUST be freshly minted per TAP and reused only on a retry. That is the
  * distinction the whole idempotency scheme rests on: two taps are meant to make two
@@ -338,41 +366,16 @@ export async function addQuickBlock(
   caseId: string, kind: 'call' | 'email', clientRef: string,
 ): Promise<{ id?: string; error?: string }> {
   const { data, error } = await createClient()
-    .rpc('case_add_quick_attendance', { p_case: caseId, p_kind: kind, p_client_ref: clientRef })
+    .rpc('case_add_quick_charge', { p_case: caseId, p_kind: kind, p_client_ref: clientRef })
   if (error) return { error: error.message }
   return { id: data as string }
-}
-
-/**
- * Time logged from the Fees and costs card, in your own name.
- *
- * Typing "Phone call" where a cost goes is not a mistake — it is how the work actually
- * arrives — but a call is TIME, and time belongs in attendances where it can be priced by
- * the hour and carried onto a claim. So the entry is filed there, exactly where the quick
- * buttons put theirs, and the screen says so.
- *
- * No rate: what it cost is set on the attendance itself, per entry, and an unpriced one is
- * never swept onto a claim by mistake.
- */
-export async function addOwnTimeEntry(
-  caseId: string, i: { description: string; minutes: number; on: string },
-): Promise<{ id?: string; error?: string }> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'You are signed out — sign in again to log time.' }
-  return addAttendance(caseId, {
-    attendee_profile_id: user.id, attendee_name: null,
-    attended_on: i.on, minutes: i.minutes,
-    description: i.description, location: null, note: null,
-    rate_type: 'hourly', rate_amount: null, days: null, currency: 'USD',
-  })
 }
 
 // ── Fees and costs ──────────────────────────────────────────────────────────
 
 const CHG_COLS =
-  'id, case_id, kind, description, payee, incurred_on, qty, unit_amount, currency, ' +
-  'claim_id, claim:case_claims(claim_no)'
+  'id, case_id, kind, description, payee, incurred_on, minutes, start_time, end_time, ' +
+  'qty, unit_amount, currency, amount, claim_id, claim:case_claims(claim_no)'
 
 export async function listCharges(caseId: string): Promise<CaseCharge[]> {
   const supabase = createClient()
@@ -386,9 +389,11 @@ export async function listCharges(caseId: string): Promise<CaseCharge[]> {
   }
   return ((data ?? []) as any[]).map(c => ({
     id: c.id, case_id: c.case_id, kind: (c.kind ?? '') as string,
-    description: c.description, payee: c.payee ?? null, incurred_on: c.incurred_on,
+    description: c.description ?? '', payee: c.payee ?? null, incurred_on: c.incurred_on,
+    minutes: c.minutes == null ? null : Number(c.minutes),
+    start_time: c.start_time ?? null, end_time: c.end_time ?? null,
     qty: num(c.qty, 1), unit_amount: num(c.unit_amount), currency: c.currency ?? 'USD',
-    amount: Math.round(num(c.qty, 1) * num(c.unit_amount) * 100) / 100,
+    amount: num(c.amount),
     claim_id: c.claim_id ?? null, claim_no: c.claim?.claim_no ?? null,
     document_count: docCount.get(c.id) ?? 0,
   }))
@@ -399,6 +404,9 @@ export interface ChargeInput {
   description: string
   payee: string | null
   incurred_on: string
+  /** Set it and the fee is TIME: unit_amount is then read as an hourly rate and the
+   *  database works out the money. Leave it null for a purchase. */
+  minutes?: number | null
   qty: number
   unit_amount: number
   currency: string
@@ -409,7 +417,7 @@ export async function addCharge(caseId: string, i: ChargeInput): Promise<{ id?: 
   const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase.from('case_charges').insert({
     case_id: caseId, kind: i.kind.trim() || 'Other', description: i.description.trim(),
-    payee: clean(i.payee), incurred_on: i.incurred_on,
+    payee: clean(i.payee), incurred_on: i.incurred_on, minutes: i.minutes ?? null,
     qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
     created_by: user?.id ?? null,
   }).select('id').single()
@@ -427,7 +435,8 @@ export async function updateCharge(id: string, i: ChargeInput): Promise<{ error?
   }
   const { data, error } = await supabase.from('case_charges').update({
     kind: i.kind.trim() || 'Other', description: i.description.trim(), payee: clean(i.payee),
-    incurred_on: i.incurred_on, qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
+    incurred_on: i.incurred_on, minutes: i.minutes ?? null,
+    qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
   }).eq('id', id).select('id')
   if (error) return { error: error.message }
   if (!data?.length) return { error: 'That charge could not be changed.' }

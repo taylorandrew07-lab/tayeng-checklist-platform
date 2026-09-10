@@ -246,8 +246,8 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
 
           {position.unpriced.length > 0 && (
             <p className="text-sm text-amber-700">
-              {position.unpriced.length} attendance{position.unpriced.length === 1 ? ' has' : 's have'} no rate
-              and will not be included. An hour with no rate is never billed at zero.
+              {position.unpriced.length} entr{position.unpriced.length === 1 ? 'y has' : 'ies have'} no rate
+              and will not be included. Time with no rate is never billed at zero.
             </p>
           )}
 

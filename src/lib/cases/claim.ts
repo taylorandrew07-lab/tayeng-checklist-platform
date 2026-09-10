@@ -21,12 +21,22 @@ export interface CurrencyGroup {
   itemCount: number
 }
 
+/** An outstanding entry nobody has priced — an attendance with no rate, or a timed fee
+ *  logged before a rate was set. Normalised because the two arrive from different tables
+ *  and everything that reads this only ever needs to say how many and how long. */
+export interface UnpricedItem {
+  id: string
+  date: string
+  label: string
+  minutes: number
+}
+
 export interface ClaimPosition {
   /** One group per currency with something outstanding, largest first. */
   groups: CurrencyGroup[]
-  /** Outstanding attendances nobody has priced. Held SEPARATE and never rolled into a
-   *  currency group: an hour with no rate must not be claimed at zero and marked paid. */
-  unpriced: CaseAttendance[]
+  /** Held SEPARATE and never rolled into a currency group: ten minutes with no rate must
+   *  not be claimed at zero and marked paid. */
+  unpriced: UnpricedItem[]
   /** Already claimed, per currency — the "billed to date" figure. */
   claimed: Record<string, number>
   /** Total minutes recorded on the case, claimed or not. */
@@ -59,7 +69,19 @@ export function claimPosition(
   const outA = attendances.filter(a => !a.claim_id && within(a.attended_on))
   const outC = charges.filter(c => !c.claim_id && within(c.incurred_on))
 
-  const unpriced = outA.filter(a => a.charge_amount == null)
+  // A fee is unpriced only when it is TIME with no rate. A purchase of zero is somebody
+  // saying it cost nothing, which is a different statement and gets claimed as one.
+  const noRate = (c: CaseCharge) => c.minutes != null && !(c.unit_amount > 0)
+
+  const unpriced: UnpricedItem[] = [
+    ...outA.filter(a => a.charge_amount == null).map(a => ({
+      id: a.id, date: a.attended_on, label: a.description || a.attendee_label, minutes: a.minutes,
+    })),
+    ...outC.filter(noRate).map(c => ({
+      id: c.id, date: c.incurred_on, label: c.description || chargeKindLabel(c.kind),
+      minutes: c.minutes ?? 0,
+    })),
+  ]
   const priced = outA.filter(a => a.charge_amount != null)
 
   const byCcy = new Map<string, CurrencyGroup>()
@@ -73,6 +95,7 @@ export function claimPosition(
     g.attendances.push(a); g.total = r2(g.total + (a.charge_amount ?? 0)); g.itemCount++
   }
   for (const c of outC) {
+    if (noRate(c)) continue
     const g = group(c.currency)
     g.charges.push(c); g.total = r2(g.total + c.amount); g.itemCount++
   }
@@ -81,7 +104,10 @@ export function claimPosition(
     groups: [...byCcy.values()].sort((a, b) => b.total - a.total),
     unpriced,
     claimed,
-    totalMinutes: attendances.reduce((s, a) => s + a.minutes, 0),
+    // Time is recorded on BOTH sides now: an attendance is somebody going somewhere, a
+    // call or an email is a timed fee. The case's time is the two together.
+    totalMinutes: attendances.reduce((s, a) => s + a.minutes, 0)
+               + charges.reduce((s, c) => s + (c.minutes ?? 0), 0),
   }
 }
 
@@ -119,9 +145,13 @@ export function claimLines(group: CurrencyGroup): ClaimLine[] {
   const chg: ClaimLine[] = [...group.charges].sort(byDate).map(c => ({
     date: c.incurred_on,
     who: c.payee || '',
-    detail: c.description,
-    basis: chargeKindLabel(c.kind),
-    qty: c.qty === 1 ? '' : String(c.qty),
+    // A quick block carries no detail of its own — a tap cannot know what the call was
+    // about — so the kind IS the line. Never print a blank on a claim.
+    detail: c.description || chargeKindLabel(c.kind),
+    basis: c.minutes == null ? chargeKindLabel(c.kind) : `${chargeKindLabel(c.kind)} (hourly)`,
+    qty: c.minutes != null ? String(minutesToHours(c.minutes))
+       : c.qty === 1 ? ''
+       : String(c.qty),
     rate: String(c.unit_amount),
     amount: c.amount,
   }))

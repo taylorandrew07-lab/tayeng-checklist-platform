@@ -45,9 +45,6 @@ export default function CasePage() {
   const [docs, setDocs] = useState<CaseDocument[]>([])
   const [claims, setClaims] = useState<CaseClaim[]>([])
   const [claiming, setClaiming] = useState(false)
-  // Bumped when time is logged from the Fees and costs card — the quick buttons and a
-  // typed "Phone call" both land in attendances, which is a list this page does not own.
-  const [beat, setBeat] = useState(0)
 
   const load = useCallback(async () => {
     if (!caseId) return
@@ -57,8 +54,6 @@ export default function CasePage() {
     ])
     setRow(c); setAttendances(a); setCharges(ch); setDocs(d); setClaims(cl)
   }, [caseId])
-
-  const loadAndBeat = useCallback(() => { load(); setBeat(b => b + 1) }, [load])
 
   useEffect(() => { load() }, [load])
 
@@ -114,7 +109,7 @@ export default function CasePage() {
                 ))}
             {position.unpriced.length > 0 && (
               <p className="text-xs text-amber-700 mt-1">
-                {position.unpriced.length} attendance{position.unpriced.length === 1 ? '' : 's'} with no rate
+                {position.unpriced.length} entr{position.unpriced.length === 1 ? 'y' : 'ies'} with no rate
               </p>
             )}
           </div>
@@ -133,8 +128,10 @@ export default function CasePage() {
         </div>
       </div>
 
-      <CaseAttendances caseId={row.id} onChanged={load} version={beat} />
-      <CaseCharges caseId={row.id} charges={charges} onChanged={loadAndBeat} />
+      {/* Fees and costs FIRST: the calls, the emails and the correspondency fee are the
+          day-to-day of a case, and an attendance is the occasional trip out. */}
+      <CaseCharges kase={row} charges={charges} onChanged={load} />
+      <CaseAttendances caseId={row.id} onChanged={load} />
       <CaseDocuments caseId={row.id} docs={docs} onChanged={load} />
       <ClaimsCard claims={claims} onChanged={load} />
 

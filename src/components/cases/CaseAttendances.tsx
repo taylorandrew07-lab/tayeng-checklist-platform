@@ -39,12 +39,8 @@ const BLANK = {
   rateType: 'hourly' as RateType, rate: '', days: '', currency: 'USD',
 }
 
-/** `version` is bumped by the page when time is logged from ANOTHER card — the quick
- *  buttons and the Fees and costs form both file attendances. Without it the entry is in
- *  the database and in the totals above, but this list still shows the old set until a
- *  reload, which reads exactly like the save failed. */
-export default function CaseAttendances({ caseId, onChanged, version = 0 }: {
-  caseId: string; onChanged?: () => void; version?: number
+export default function CaseAttendances({ caseId, onChanged }: {
+  caseId: string; onChanged?: () => void
 }) {
   const [rows, setRows] = useState<CaseAttendance[] | null>(null)
   const [staff, setStaff] = useState<SurveyorAccount[]>([])
@@ -58,7 +54,7 @@ export default function CaseAttendances({ caseId, onChanged, version = 0 }: {
     onChanged?.()
   }, [caseId, onChanged])
 
-  useEffect(() => { load() }, [load, version])
+  useEffect(() => { load() }, [load])
   useEffect(() => { listSurveyorAccounts().then(setStaff).catch(() => {}) }, [])
 
   function startEdit(a: CaseAttendance) {

@@ -11,8 +11,9 @@
  *      blank string is not a name.
  *   2. Time is whole minutes: six ten-minute blocks are exactly 60, not 1.02 hours.
  *   3. A tap is idempotent on retry but not on a second tap — that is the whole point of
- *      the client_ref: two taps mean two chunks, one tap replayed means one.
- *   4. charge_amount is computed by the database for all three bases.
+ *      the client_ref: two taps mean two chunks, one tap replayed means one. It lands in
+ *      FEES AND COSTS (mig 220) and prices itself from the case's standing rate.
+ *   4. The money is computed by the database — all three attendance bases, and a timed fee.
  *   5. A claim carries ONE currency, never claims an unpriced item, and leaves anything
  *      dated after its cutoff outstanding.
  *   6. Undoing a claim is a plain delete and releases everything it covered.
@@ -107,21 +108,35 @@ try {
   denied(await mk({ minutes: 10 }), 'neither is rejected')
   denied(await mk({ attendee_name: '   ', minutes: 10 }), 'a blank name is not an attendee')
 
-  // ── Minutes, not decimal hours ─────────────────────────────────────────────
+  // ── Minutes, not decimal hours — and the blocks land in FEES (mig 220) ─────
   for (let i = 0; i < 6; i++) {
-    const r = await boss.rpc('case_add_quick_attendance', { p_case: caseId, p_kind: 'call', p_client_ref: crypto.randomUUID() })
+    const r = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'call', p_client_ref: crypto.randomUUID() })
     if (r.error) { bad('quick block: ' + r.error.message); break }
   }
-  const { data: quick } = await admin.from('case_attendances').select('minutes').eq('case_id', caseId).eq('minutes', 10)
+  const { data: quick } = await admin.from('case_charges')
+    .select('minutes, kind').eq('case_id', caseId).eq('minutes', 10)
   eq(quick.reduce((s, r) => s + r.minutes, 0), 60, 'six ten-minute taps are exactly 60 minutes, not 1.02 hours')
+  eq(quick.every(r => r.kind === 'Phone call'), true, 'a tap files a FEE, not an attendance')
+  const { count: strayAtt } = await admin.from('case_attendances')
+    .select('id', { count: 'exact', head: true }).eq('case_id', caseId).not('client_ref', 'is', null)
+  eq(strayAtt, 0, 'and nothing quick is left in attendances')
 
   // The retry rule: same key replays, a new key is a new chunk.
   const ref = crypto.randomUUID()
-  const first = await boss.rpc('case_add_quick_attendance', { p_case: caseId, p_kind: 'email', p_client_ref: ref })
-  const retry = await boss.rpc('case_add_quick_attendance', { p_case: caseId, p_kind: 'email', p_client_ref: ref })
+  const first = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'email', p_client_ref: ref })
+  const retry = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'email', p_client_ref: ref })
   eq(first.data, retry.data, 'a retried tap replays the same row instead of double-logging')
-  const second = await boss.rpc('case_add_quick_attendance', { p_case: caseId, p_kind: 'email', p_client_ref: crypto.randomUUID() })
+  const second = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'email', p_client_ref: crypto.randomUUID() })
   eq(second.data !== first.data, true, 'a genuine second tap makes a second chunk')
+
+  // A tap prices itself from the case's standing rate, so the rate is typed once.
+  await boss.from('cases').update({ rate_defaults: { 'phone call': { rate: 120, currency: 'USD' } } }).eq('id', caseId)
+  const priced = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'call', p_client_ref: crypto.randomUUID() })
+  const { data: pricedRow } = await admin.from('case_charges')
+    .select('unit_amount, amount').eq('id', priced.data).single()
+  eq(Number(pricedRow.unit_amount), 120, 'a tap takes the case rate for that kind of work')
+  eq(Number(pricedRow.amount), 20, 'ten minutes at 120/h is 20.00, computed by the database')
+  await boss.from('cases').update({ rate_defaults: {} }).eq('id', caseId)
 
   // ── The database computes the money ────────────────────────────────────────
   const { data: hourly } = await boss.from('case_attendances')
@@ -149,6 +164,18 @@ try {
     case_id: caseId, kind: 'correspondency', description: 'SMOKE correspondency fee',
     incurred_on: '2026-01-05', qty: 1, unit_amount: 250, currency: 'USD' }).select('id')
   wrote(feeRes, 'an admin can add a fee')
+  const feeId = feeRes.data?.[0]?.id
+
+  // A fee that IS time: the rate is per hour and the database does the division.
+  const { data: timed } = await boss.from('case_charges').insert({
+    case_id: caseId, kind: 'Phone call', description: '', incurred_on: '2026-01-21',
+    minutes: 30, qty: 1, unit_amount: 200, currency: 'USD' }).select('amount').single()
+  eq(Number(timed.amount), 100, 'a timed fee: 30 minutes at 200/h = 100.00')
+
+  // The same thing with no rate yet. It must be LOGGED and left alone by the claim.
+  const { data: noRate } = await boss.from('case_charges').insert({
+    case_id: caseId, kind: 'Email', description: '', incurred_on: '2026-01-22',
+    minutes: 10, qty: 1, unit_amount: 0, currency: 'USD' }).select('id').single()
 
   // ── The claim ──────────────────────────────────────────────────────────────
   const { data: claim, error: cle } = await boss.rpc('case_claim_items', {
@@ -157,14 +184,18 @@ try {
   else {
     eq(claim.currency, 'USD', 'the claim carries the currency it was asked for')
     eq(claim.attendances, 3, 'it claims exactly the three PRICED USD attendances')
-    eq(claim.charges, 1, 'and the fee alongside them')
-    eq(Number(claim.total), 2800, 'the total is 300 + 1800 + 450 + 250')
+    eq(claim.charges, 2, 'and the two priced fees alongside them')
+    eq(Number(claim.total), 2900, 'the total is 300 + 1800 + 450 + 250 + 100')
   }
 
   const { count: unpriced } = await admin.from('case_attendances')
     .select('id', { count: 'exact', head: true })
     .eq('case_id', caseId).is('claim_id', null).is('rate_amount', null)
   eq(unpriced > 0, true, 'unpriced attendances are left behind — never billed at zero')
+
+  const { data: noRateAfter } = await admin.from('case_charges')
+    .select('claim_id').eq('id', noRate.id).single()
+  eq(noRateAfter.claim_id, null, 'a timed fee with no rate stays outstanding — ten minutes is never claimed at nothing')
 
   const { data: ttd } = await admin.from('case_attendances')
     .select('claim_id').eq('case_id', caseId).eq('currency', 'TTD').single()
@@ -182,7 +213,7 @@ try {
   const { count: stillClaimed } = await admin.from('case_attendances')
     .select('id', { count: 'exact', head: true }).eq('case_id', caseId).not('claim_id', 'is', null)
   eq(stillClaimed, 0, 'deleting the claim releases every attendance it covered')
-  const { data: feeAfter } = await admin.from('case_charges').select('claim_id').eq('case_id', caseId).single()
+  const { data: feeAfter } = await admin.from('case_charges').select('claim_id').eq('id', feeId).single()
   eq(feeAfter.claim_id, null, 'and the fee too')
 
   // ── A surveyor sees none of it ─────────────────────────────────────────────
