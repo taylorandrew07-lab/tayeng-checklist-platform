@@ -46,6 +46,7 @@ const s = StyleSheet.create({
   tr: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: LINE, paddingVertical: 4 },
   cDate: { width: 58, paddingHorizontal: 3 },
   cWho: { width: 92, paddingHorizontal: 3 },
+  org: { fontSize: 7, color: MUTE },
   cDetail: { flex: 1, paddingHorizontal: 3 },
   cBasis: { width: 58, paddingHorizontal: 3 },
   cQty: { width: 40, paddingHorizontal: 3, textAlign: 'right' },
@@ -66,6 +67,9 @@ const s = StyleSheet.create({
 export interface ClaimPdfLine {
   date: string
   who: string
+  /** The firm behind the name. Set under it in small type, so the Who column stays
+   *  readable at 92pt while still saying who the club is paying for. */
+  org: string
   detail: string
   basis: string
   qty: string
@@ -140,7 +144,10 @@ export function CaseClaimPDF(p: CaseClaimPdfProps) {
         {p.lines.map((l, i) => (
           <View key={i} style={s.tr} wrap={false}>
             <Text style={s.cDate}>{l.date}</Text>
-            <Text style={s.cWho} {...noHyphen}>{l.who}</Text>
+            <View style={s.cWho}>
+              <Text {...noHyphen}>{l.who}</Text>
+              {l.org ? <Text style={s.org} {...noHyphen}>{l.org}</Text> : null}
+            </View>
             <Text style={s.cDetail} {...noHyphen}>{l.detail}</Text>
             <Text style={s.cBasis}>{l.basis}</Text>
             <Text style={s.cQty}>{l.qty}</Text>

@@ -21,6 +21,7 @@ import { Plus, Pencil, X, Loader2, Paperclip, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { formatDate } from '@/lib/utils'
+import { COMPANY } from '@/lib/company'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import { listSurveyorAccounts, type SurveyorAccount } from '@/lib/jobs/tracker'
 import {
@@ -36,7 +37,9 @@ import DurationField, {
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const BLANK = {
-  useName: false, profileId: '', name: '',
+  // `as string`: COMPANY is `as const`, so without it the field's type narrows to our
+  // own name and nothing else can be typed into it.
+  useName: false, profileId: '', name: '', company: COMPANY.name as string,
   on: todayKey(), dur: BLANK_DURATION,
   description: '', location: '', note: '',
   rateType: 'hourly' as RateType, rate: '', days: '', currency: 'USD',
@@ -67,6 +70,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
       useName: !a.attendee_profile_id,
       profileId: a.attendee_profile_id ?? '',
       name: a.attendee_name ?? '',
+      company: a.company ?? '',
       on: a.attended_on,
       dur: durationFromRow(a.minutes, a.start_time, a.end_time),
       description: a.description ?? '', location: a.location ?? '', note: a.note ?? '',
@@ -90,6 +94,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
     const input: AttendanceInput = {
       attendee_profile_id: f.useName ? null : f.profileId,
       attendee_name: f.useName ? f.name : null,
+      company: f.company,
       attended_on: f.on, minutes, ...durationTimes(f.dur),
       description: f.description, location: f.location, note: f.note,
       rate_type: f.rateType,
@@ -140,11 +145,17 @@ export default function CaseAttendances({ caseId, onChanged }: {
               <span className="label-base">Who attended</span>
               <div className="flex items-center gap-3 h-[38px]">
                 <label className="flex items-center gap-1.5 text-sm">
-                  <input type="radio" checked={!f.useName} onChange={() => setF(p => ({ ...p, useName: false }))} />
+                  <input type="radio" checked={!f.useName} onChange={() => setF(p => ({ ...p, useName: false, company: COMPANY.name }))} />
                   Our team
                 </label>
                 <label className="flex items-center gap-1.5 text-sm">
-                  <input type="radio" checked={f.useName} onChange={() => setF(p => ({ ...p, useName: true }))} />
+                  <input type="radio" checked={f.useName}
+                    onChange={() => setF(p => ({
+                      ...p, useName: true,
+                      // Only clear it if it was OURS, put there by this switch. A firm
+                      // typed by hand is an answer and must survive a mis-click.
+                      company: p.company === COMPANY.name ? '' : p.company,
+                    }))} />
                   Contractor
                 </label>
               </div>
@@ -169,6 +180,12 @@ export default function CaseAttendances({ caseId, onChanged }: {
                 </select>
               </div>
             )}
+            <div className="flex-1 min-w-[180px]">
+              <label className="label-base" htmlFor="ca-co">Company</label>
+              <input id="ca-co" className="input-base" value={f.company}
+                placeholder="Optional — the firm they came from"
+                onChange={e => setF(p => ({ ...p, company: e.target.value }))} />
+            </div>
             <div>
               <label className="label-base" htmlFor="ca-on">Date</label>
               <input id="ca-on" type="date" className="input-base w-40" value={f.on}
@@ -262,7 +279,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
                   {a.description && <span className="text-gray-500"> · {a.description}</span>}
                 </p>
                 <p className="text-xs text-gray-500 tnum">
-                  {formatDate(a.attended_on)}
+                  {a.company ? `${a.company} · ` : ''}{formatDate(a.attended_on)}
                   {/* A quick block knows the clock it covered; a hand-entered one is a
                       plain duration and has no times to show. */}
                   {a.start_time && a.end_time

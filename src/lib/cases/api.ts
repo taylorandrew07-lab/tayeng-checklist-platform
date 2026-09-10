@@ -90,6 +90,9 @@ export interface CaseAttendance {
   attendee_name: string | null
   /** The app user's name when there is one, otherwise the typed name. */
   attendee_label: string
+  /** The firm the attendee came from. Optional — ours is filled in for our own people,
+   *  but a name with no firm beside it is a perfectly good attendance. */
+  company: string | null
   attended_on: string
   /** Trinidad wall-clock, when known. Set by the quick blocks, which work backwards from
    *  the tap; NULL on an attendance entered as a plain duration. minutes is always the
@@ -234,7 +237,7 @@ export async function deleteCase(id: string): Promise<{ error?: string }> {
 // ── Attendances ─────────────────────────────────────────────────────────────
 
 const ATT_COLS =
-  'id, case_id, attendee_profile_id, attendee_name, attended_on, start_time, end_time, minutes, description, ' +
+  'id, case_id, attendee_profile_id, attendee_name, company, attended_on, start_time, end_time, minutes, description, ' +
   'location, note, rate_type, rate_amount, days, currency, charge_amount, claim_id, ' +
   'attendee:profiles!case_attendances_attendee_profile_id_fkey(full_name), ' +
   'claim:case_claims(claim_no)'
@@ -255,6 +258,7 @@ export async function listAttendances(caseId: string): Promise<CaseAttendance[]>
     attendee_profile_id: r.attendee_profile_id ?? null,
     attendee_name: r.attendee_name ?? null,
     attendee_label: r.attendee?.full_name ?? r.attendee_name ?? 'Unknown',
+    company: r.company ?? null,
     attended_on: r.attended_on,
       start_time: r.start_time ?? null, end_time: r.end_time ?? null,
       minutes: num(r.minutes),
@@ -273,6 +277,7 @@ export async function listAttendances(caseId: string): Promise<CaseAttendance[]>
 export interface AttendanceInput {
   attendee_profile_id: string | null
   attendee_name: string | null
+  company: string | null
   attended_on: string
   /** Trinidad wall-clock, when the times are what was known. The MINUTES stay the
    *  authority for every total — the clock is what worked them out, not what replaces
@@ -305,7 +310,7 @@ export async function addAttendance(caseId: string, i: AttendanceInput): Promise
   if (!attendee_profile_id && !attendee_name) return { error: 'Choose who attended, or type a name.' }
 
   const { data, error } = await supabase.from('case_attendances').insert({
-    case_id: caseId, attendee_profile_id, attendee_name,
+    case_id: caseId, attendee_profile_id, attendee_name, company: clean(i.company),
     attended_on: i.attended_on, minutes: i.minutes,
     start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     description: clean(i.description), location: clean(i.location), note: clean(i.note),
@@ -334,7 +339,7 @@ export async function updateAttendance(id: string, i: AttendanceInput): Promise<
   if (!attendee_profile_id && !attendee_name) return { error: 'Choose who attended, or type a name.' }
 
   const { data, error } = await supabase.from('case_attendances').update({
-    attendee_profile_id, attendee_name,
+    attendee_profile_id, attendee_name, company: clean(i.company),
     attended_on: i.attended_on, minutes: i.minutes,
     start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     description: clean(i.description), location: clean(i.location), note: clean(i.note),

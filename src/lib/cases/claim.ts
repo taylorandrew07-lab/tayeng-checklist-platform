@@ -171,6 +171,9 @@ export function defaultCutoff(
 export interface ClaimLine {
   date: string
   who: string
+  /** The firm behind the name, when there is one. Printed under it rather than beside
+   *  it — a club reading this months later needs to know who they are paying for. */
+  org: string
   detail: string
   basis: string
   /** What the quantity column shows: hours, days, or blank for a flat fee. */
@@ -188,6 +191,7 @@ export function claimLines(group: CurrencyGroup): ClaimLine[] {
   const att: ClaimLine[] = [...group.attendances].sort(byDate).map(a => ({
     date: a.attended_on,
     who: a.attendee_label,
+    org: a.company ?? '',
     detail: a.description || 'Attendance',
     basis: RATE_TYPE[a.rate_type],
     qty: a.rate_type === 'hourly' ? String(minutesToHours(a.minutes))
@@ -201,6 +205,7 @@ export function claimLines(group: CurrencyGroup): ClaimLine[] {
     date: c.incurred_on,
     // A cost says who was PAID; time says who spent it. Both belong in the same column.
     who: c.payee || (c.minutes != null ? c.creator_label ?? '' : ''),
+    org: '',
     // A quick block carries no detail of its own — a tap cannot know what the call was
     // about — so the kind IS the line. Never print a blank on a claim.
     detail: c.description || chargeKindLabel(c.kind),
@@ -231,7 +236,7 @@ const esc = (v: unknown) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-const CSV_COLS = ['Date', 'Who', 'Detail', 'Basis', 'Quantity', 'Rate', 'Currency', 'Amount'] as const
+const CSV_COLS = ['Date', 'Who', 'Company', 'Detail', 'Basis', 'Quantity', 'Rate', 'Currency', 'Amount'] as const
 
 /**
  * The same lines the PDF prints, for checking in Excel.
@@ -251,11 +256,11 @@ export function claimCsv(kase: CaseRow, group: CurrencyGroup, cutoff: string): s
   lines.push(CSV_COLS.map(esc).join(','))
 
   for (const l of claimLines(group)) {
-    lines.push([l.date, l.who, l.detail, l.basis, l.qty, l.rate, group.currency, l.amount].map(esc).join(','))
+    lines.push([l.date, l.who, l.org, l.detail, l.basis, l.qty, l.rate, group.currency, l.amount].map(esc).join(','))
   }
 
   lines.push('')
-  lines.push(['', '', 'Total', '', '', '', group.currency, r2(group.total)].map(esc).join(','))
+  lines.push(['', '', '', 'Total', '', '', '', group.currency, r2(group.total)].map(esc).join(','))
   return lines.join('\r\n')
 }
 

@@ -8,7 +8,7 @@ import type { CaseAttendance, CaseCharge } from './api'
 // explanation. A cutoff is for holding work back deliberately, never by accident.
 
 const att = (o: Partial<CaseAttendance> = {}): CaseAttendance => ({
-  id: 'a1', case_id: 'c', attendee_profile_id: 'p', attendee_name: null, attendee_label: 'Andrew',
+  id: 'a1', case_id: 'c', attendee_profile_id: 'p', attendee_name: null, attendee_label: 'Andrew', company: null,
   attended_on: '2026-09-09', start_time: null, end_time: null, minutes: 60,
   description: null, location: null, note: null,
   rate_type: 'hourly', rate_amount: 120, days: null, currency: 'USD',
