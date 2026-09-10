@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Save, Check } from 'lucide-react'
 import { putVoyage, newId } from '@/lib/cargo/db'
-import { currentUserId } from '@/lib/cargo/user'
+import { currentUserId, currentUserName } from '@/lib/cargo/user'
 import { parseVesselName } from '@/lib/utils'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { loadPickLists, type PickLists } from '@/lib/cargo/picklists'
@@ -75,6 +75,24 @@ export default function VoyageSetupForm({ voyage, seedTemplate, onSaved, submitL
   // CREATE mode keeps the explicit Save button + validation below. Refs avoid a
   // save→reprop→save loop, and the first run is skipped so mounting isn't a write.
   const isEdit = !!voyage
+
+  // A new voyage is almost always being opened by the surveyor who will walk it,
+  // so seed the field with whoever is signed in. Resolved from the device where
+  // possible (see currentUserName) because this form opens dockside with no
+  // signal. CREATE only — an existing voyage's surveyor is a recorded fact.
+  //
+  // The functional update is the point: this lands asynchronously, and a surveyor
+  // who has already picked a name from the dropdown must not have it replaced
+  // under them a moment later. It fills a blank, it never overwrites a choice.
+  useEffect(() => {
+    if (isEdit) return
+    let active = true
+    currentUserName().then(n => {
+      if (active && n) setSurveyorName(prev => prev || n)
+    })
+    return () => { active = false }
+  }, [isEdit])
+
   const onSavedRef = useRef(onSaved)
   const voyageRef = useRef(voyage)
   const firstRun = useRef(true)
