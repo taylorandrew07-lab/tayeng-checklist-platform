@@ -111,6 +111,61 @@ export function claimPosition(
   }
 }
 
+/** Is this fee priced? Time with no rate is not; a purchase of zero is somebody saying it
+ *  cost nothing, which is a statement rather than a gap. */
+const chargePriced = (c: CaseCharge) => c.minutes == null || c.unit_amount > 0
+
+/**
+ * What a claim CANNOT see because the cutoff sits before it.
+ *
+ * The case header counts the whole position and the claim counts up to a date, so when
+ * something is dated ahead of the cutoff the two disagree — and nothing on screen says
+ * why. That is not a rounding quibble: an eight-hour attendance sat outstanding at the top
+ * of the page while the claim underneath said there was nothing to bill.
+ */
+export interface HeldBack {
+  count: number
+  /** Money per currency, so the message can be specific rather than "some items". */
+  totals: Record<string, number>
+  /** The day a cutoff would have to reach to sweep all of it in. */
+  latest: string | null
+}
+
+export function heldBack(
+  attendances: CaseAttendance[], charges: CaseCharge[], cutoff: string,
+): HeldBack {
+  const out: HeldBack = { count: 0, totals: {}, latest: null }
+  const add = (date: string, currency: string, amount: number) => {
+    out.count++
+    out.totals[currency] = r2((out.totals[currency] ?? 0) + amount)
+    if (!out.latest || date > out.latest) out.latest = date
+  }
+  for (const a of attendances) {
+    if (a.claim_id || a.charge_amount == null) continue
+    if (a.attended_on > cutoff) add(a.attended_on, a.currency, a.charge_amount)
+  }
+  for (const c of charges) {
+    if (c.claim_id || !chargePriced(c)) continue
+    if (c.incurred_on > cutoff) add(c.incurred_on, c.currency, c.amount)
+  }
+  return out
+}
+
+/**
+ * What "bill everything up to" should say when the dialog opens: far enough to include
+ * every outstanding item, and never earlier than today.
+ *
+ * The old default was plain today, which quietly held back anything dated ahead — an
+ * attendance logged in the evening for tomorrow's boarding, say. A cutoff is for
+ * deliberately keeping work back, so it should start by keeping nothing back.
+ */
+export function defaultCutoff(
+  attendances: CaseAttendance[], charges: CaseCharge[], today: string,
+): string {
+  const { latest } = heldBack(attendances, charges, today)
+  return latest && latest > today ? latest : today
+}
+
 // ── The printed lines ───────────────────────────────────────────────────────
 
 export interface ClaimLine {

@@ -24,7 +24,9 @@ import { todayKey } from '@/lib/cargo/voyageDate'
 import { deliverFile, isMobileDevice, PDF_MIME, CSV_MIME } from '@/lib/pdf/deliver'
 import { createClaim, markClaimInvoiced, type CaseRow, type CaseAttendance, type CaseCharge } from '@/lib/cases/api'
 import { caseTitle } from '@/lib/cases/title'
-import { claimPosition, claimLines, claimTimeLabel, claimCsv, claimFilename } from '@/lib/cases/claim'
+import {
+  claimPosition, claimLines, claimTimeLabel, claimCsv, claimFilename, heldBack, defaultCutoff,
+} from '@/lib/cases/claim'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -49,12 +51,22 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
 
   useEffect(() => {
     if (!open) return
-    setCutoff(todayKey()); setPicked(null); setBuilt(null); setClaimed(null)
+    // Far enough to include everything outstanding, never earlier than today. Opening this
+    // dialog should show the whole bill; moving the date back is how work is held over.
+    setCutoff(defaultCutoff(attendances, charges, todayKey()))
+    setPicked(null); setBuilt(null); setClaimed(null)
     setReference(''); setInvoicedOn(todayKey())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const position = useMemo(
     () => claimPosition(attendances, charges, cutoff),
+    [attendances, charges, cutoff],
+  )
+  // Anything outstanding that this cutoff cannot see. Never left unsaid: the header counts
+  // the whole case, so a silent difference reads as work having gone missing.
+  const held = useMemo(
+    () => heldBack(attendances, charges, cutoff),
     [attendances, charges, cutoff],
   )
   const group = position.groups.find(g => g.currency === picked) ?? position.groups[0] ?? null
@@ -184,6 +196,19 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
               <input id="cl-cutoff" type="date" className="input-base w-44" value={cutoff}
                 onChange={e => setCutoff(e.target.value)} />
             </div>
+            {held.count > 0 && held.latest && (
+              <div className="flex items-end gap-2 pb-0.5">
+                <p className="text-xs text-amber-700 max-w-xs">
+                  {held.count} {held.count === 1 ? 'entry is' : 'entries are'} dated after this —{' '}
+                  {Object.entries(held.totals).map(([ccy, amt]) => `${money(amt)} ${ccy}`).join(' and ')},
+                  not in this claim.
+                </p>
+                <button type="button" onClick={() => setCutoff(held.latest as string)}
+                  className="btn-secondary text-xs whitespace-nowrap">
+                  Include {held.count === 1 ? 'it' : 'them'}
+                </button>
+              </div>
+            )}
             {position.groups.length > 1 && (
               <div className="flex flex-wrap gap-2 pb-1">
                 {position.groups.map(g => (
@@ -203,6 +228,7 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
           {!group || group.itemCount === 0 ? (
             <p className="text-sm text-gray-500">
               Nothing outstanding on or before {formatDate(cutoff)}.
+              {position.unpriced.length > 0 && ' Everything logged is still waiting on a rate.'}
             </p>
           ) : (
             <>
