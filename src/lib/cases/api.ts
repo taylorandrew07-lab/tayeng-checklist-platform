@@ -61,7 +61,9 @@ export const CASE_TYPE_SUGGESTIONS = [
 
 export interface CaseRow {
   id: string
-  title: string
+  /** LEGACY typed name (mig 217). Never ask for this — ask caseTitle(row), which
+   *  builds the name from the parts and reads this only when there are none. */
+  title: string | null
   case_type: string | null
   our_vessel: string | null
   our_vessel_type: string | null
@@ -164,11 +166,13 @@ export async function getCase(id: string): Promise<CaseRow | null> {
   return ((data as unknown) as CaseRow) ?? null
 }
 
-export async function createCase(input: Partial<CaseRow> & { title: string }): Promise<{ id?: string; error?: string }> {
+/** Opens a case. No title: the name comes from the parts (caseTitle), so the
+ *  column is left NULL rather than seeded with a copy that could then drift. */
+export async function createCase(input: Partial<CaseRow>): Promise<{ id?: string; error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase.from('cases').insert({
-    title: input.title.trim(),
+    title: null,
     case_type: clean(input.case_type), our_vessel: clean(input.our_vessel),
     our_vessel_type: clean(input.our_vessel_type), other_party: clean(input.other_party),
     case_ref: clean(input.case_ref), principal: clean(input.principal),

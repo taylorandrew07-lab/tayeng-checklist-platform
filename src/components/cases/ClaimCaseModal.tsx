@@ -23,6 +23,7 @@ import { formatDate } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import { deliverFile, isMobileDevice, PDF_MIME, CSV_MIME } from '@/lib/pdf/deliver'
 import { createClaim, markClaimInvoiced, type CaseRow, type CaseAttendance, type CaseCharge } from '@/lib/cases/api'
+import { caseTitle } from '@/lib/cases/title'
 import { claimPosition, claimLines, claimTimeLabel, claimCsv, claimFilename } from '@/lib/cases/claim'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -78,7 +79,7 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
           import('@/lib/pdf/CaseClaimPDF'),
         ])
         const blob = await pdf(CaseClaimPDF({
-          caseTitle: kase.title, caseType: kase.case_type, ourVessel: kase.our_vessel,
+          caseTitle: caseTitle(kase), caseType: kase.case_type, ourVessel: kase.our_vessel,
           otherParty: kase.other_party, caseRef: kase.case_ref, principal: kase.principal,
           currency: group.currency, cutoff, claimNo: claimed?.no ?? null,
           timeLabel: claimTimeLabel(group),
@@ -132,7 +133,7 @@ export default function ClaimCaseModal({ open, onClose, kase, attendances, charg
     <Modal
       open={open}
       onClose={onClose}
-      title={claimed ? `Claim ${claimed.no} created` : `Close off billing — ${kase?.title ?? 'case'}`}
+      title={claimed ? `Claim ${claimed.no} created` : `Close off billing — ${kase ? caseTitle(kase) : 'case'}`}
       size="xl"
       footer={claimed ? (
         <>

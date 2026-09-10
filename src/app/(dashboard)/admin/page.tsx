@@ -18,13 +18,14 @@ import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/toast'
-import { formatDate } from '@/lib/utils'
+import { formatDate, parseVesselName } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import {
   listCases, createCase, listAttendances, listCharges,
   CASE_STATUS, CASE_STATUS_ORDER, CASE_TYPE_SUGGESTIONS,
   type CaseRow, type CaseStatus,
 } from '@/lib/cases/api'
+import { caseTitle, isCaseNameable } from '@/lib/cases/title'
 import { claimPosition } from '@/lib/cases/claim'
 import { formatMinutes } from '@/lib/cases/minutes'
 
@@ -129,13 +130,11 @@ export default function PandICasesPage() {
                   <Link key={c.id} href={`/admin/cases/${c.id}`}
                     className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {c.title}
-                        {c.case_type && <span className="ml-2 text-xs text-gray-400">{c.case_type}</span>}
-                      </p>
+                      {/* The vessel, the type and the other party ARE the name
+                          (caseTitle), so the line beneath carries what is not. */}
+                      <p className="text-sm font-medium text-gray-900 truncate">{caseTitle(c)}</p>
                       <p className="text-xs text-gray-500 mt-0.5 truncate">
-                        {[c.our_vessel, c.other_party ? `v. ${c.other_party}` : null, c.principal, c.case_ref]
-                          .filter(Boolean).join(' · ') || 'No details yet'}
+                        {[c.principal, c.case_ref].filter(Boolean).join(' · ') || 'No details yet'}
                       </p>
                     </div>
 
@@ -177,20 +176,31 @@ export default function PandICasesPage() {
 function NewCaseModal({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: () => void
 }) {
-  const [f, setF] = useState({
-    title: '', case_type: '', our_vessel: '', other_party: '',
+  const blank = () => ({
+    case_type: '', our_vessel: '', other_party: '',
     case_ref: '', principal: '', opened_on: todayKey(), notes: '',
   })
+  const [f, setF] = useState(blank)
   const [busy, setBusy] = useState(false)
 
+  // A case is NAMED by its parts (caseTitle) — there is no title to type. The
+  // vessel is split here exactly as the case page splits it, and what the case
+  // will be called is shown live rather than asked for.
+  const vessel = parseVesselName(f.our_vessel)
+  const parts = { ...f, our_vessel: vessel.name, our_vessel_type: vessel.prefix }
+  const nameable = isCaseNameable(parts)
+
   async function save() {
-    if (!f.title.trim()) { toast.error('Give the case a title'); return }
+    if (!nameable) {
+      toast.error('A case needs at least a vessel, a type or an other party — that is its name')
+      return
+    }
     setBusy(true)
-    const res = await createCase({ ...f, title: f.title } as any)
+    const res = await createCase(parts as Partial<CaseRow>)
     setBusy(false)
     if (res.error) { toast.error(res.error); return }
     toast.success('Case opened')
-    setF({ title: '', case_type: '', our_vessel: '', other_party: '', case_ref: '', principal: '', opened_on: todayKey(), notes: '' })
+    setF(blank())
     onCreated(); onClose()
   }
 
@@ -205,12 +215,18 @@ function NewCaseModal({ open, onClose, onCreated }: {
         </>
       }>
       <div className="space-y-3">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-gray-400">This case will be called</p>
+          <p className={`text-sm mt-0.5 ${nameable ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
+            {nameable ? caseTitle(parts) : 'Fill in the vessel, the type or the other party'}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[200px]">
-            <label className="label-base" htmlFor="n-title">Title</label>
-            <input id="n-title" className="input-base" value={f.title} autoFocus
-              placeholder="What you call this matter"
-              onChange={e => setF(p => ({ ...p, title: e.target.value }))} />
+          <div className="flex-1 min-w-[160px]">
+            <label className="label-base" htmlFor="n-vessel">Our vessel</label>
+            <input id="n-vessel" className="input-base" value={f.our_vessel} autoFocus
+              placeholder="M.V. Ocean Sun"
+              onChange={e => setF(p => ({ ...p, our_vessel: e.target.value }))} />
           </div>
           <div className="w-44">
             <label className="label-base" htmlFor="n-type">Type</label>
@@ -223,11 +239,6 @@ function NewCaseModal({ open, onClose, onCreated }: {
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[160px]">
-            <label className="label-base" htmlFor="n-vessel">Our vessel</label>
-            <input id="n-vessel" className="input-base" value={f.our_vessel}
-              onChange={e => setF(p => ({ ...p, our_vessel: e.target.value }))} />
-          </div>
           <div className="flex-1 min-w-[160px]">
             <label className="label-base" htmlFor="n-other">Other party</label>
             <input id="n-other" className="input-base" value={f.other_party}

@@ -8,6 +8,7 @@
 
 import { formatMinutes, minutesToHours } from './minutes'
 import { RATE_TYPE, CASE_CHARGE_KIND, type CaseAttendance, type CaseCharge, type CaseRow } from './api'
+import { caseTitle } from './title'
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
@@ -155,7 +156,7 @@ const CSV_COLS = ['Date', 'Who', 'Detail', 'Basis', 'Quantity', 'Rate', 'Currenc
  */
 export function claimCsv(kase: CaseRow, group: CurrencyGroup, cutoff: string): string {
   const lines: string[] = []
-  lines.push(esc(`P&I case — ${kase.title}`))
+  lines.push(esc(`P&I case — ${caseTitle(kase)}`))
   if (kase.case_ref) lines.push(esc(`Reference: ${kase.case_ref}`))
   if (kase.principal) lines.push(esc(`Principal: ${kase.principal}`))
   lines.push(esc(`Up to: ${cutoff}`))
@@ -173,6 +174,6 @@ export function claimCsv(kase: CaseRow, group: CurrencyGroup, cutoff: string): s
 
 /** `Collision-claim-USD-2026-09-30.csv` — sortable, and says what it is at a glance. */
 export function claimFilename(kase: CaseRow, currency: string, cutoff: string, ext: 'pdf' | 'csv'): string {
-  const safe = (kase.title || 'case').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const safe = caseTitle(kase).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '')
   return `${safe}-claim-${currency}-${cutoff}.${ext}`
 }

@@ -18,7 +18,8 @@ import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
-import { formatDate } from '@/lib/utils'
+import { formatDate, parseVesselName, withVesselPrefix, type VesselPrefixInput } from '@/lib/utils'
+import { caseTitle, isCaseNameable } from '@/lib/cases/title'
 import {
   getCase, updateCase, setCaseStatus, listAttendances, listCharges, listDocuments,
   listClaims, deleteClaim,
@@ -79,11 +80,12 @@ export default function CasePage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-rise">
+      {/* The vessel, the type and the other party ARE the title now (caseTitle),
+          so the subtitle carries what is not: whose matter it is and their ref. */}
       <PageHeader
         icon={Scale}
-        title={row.title}
-        subtitle={[row.case_type, row.our_vessel, row.other_party ? `v. ${row.other_party}` : null]
-          .filter(Boolean).join(' · ') || 'P&I case'}
+        title={caseTitle(row)}
+        subtitle={[row.principal, row.case_ref].filter(Boolean).join(' · ') || 'P&I case'}
         back={{ href: '/admin', label: 'P&I Cases' }}
         actions={
           <button type="button" onClick={() => setClaiming(true)} className="btn-primary text-sm">
@@ -146,22 +148,35 @@ export default function CasePage() {
  *  called "opposing vessel". */
 function IdentityCard({ row, onSaved }: { row: CaseRow; onSaved: () => void }) {
   const [f, setF] = useState({
-    title: row.title, case_type: row.case_type ?? '', our_vessel: row.our_vessel ?? '',
+    case_type: row.case_type ?? '',
+    // Shown WITH its prefix, because that is how the case reads everywhere else.
+    // parseVesselName splits it again on save, which is what fills our_vessel_type.
+    our_vessel: row.our_vessel ? withVesselPrefix(row.our_vessel, row.our_vessel_type as VesselPrefixInput) : '',
     other_party: row.other_party ?? '', case_ref: row.case_ref ?? '',
     principal: row.principal ?? '', notes: row.notes ?? '',
   })
   const [busy, setBusy] = useState(false)
-  const dirty = f.title !== row.title || f.case_type !== (row.case_type ?? '')
-    || f.our_vessel !== (row.our_vessel ?? '') || f.other_party !== (row.other_party ?? '')
+  const storedVessel = row.our_vessel ? withVesselPrefix(row.our_vessel, row.our_vessel_type as VesselPrefixInput) : ''
+  const dirty = f.case_type !== (row.case_type ?? '')
+    || f.our_vessel !== storedVessel || f.other_party !== (row.other_party ?? '')
     || f.case_ref !== (row.case_ref ?? '') || f.principal !== (row.principal ?? '')
     || f.notes !== (row.notes ?? '')
 
+  // What this case will be CALLED once saved — the same function the header, the
+  // list and the claim PDF use, so the preview cannot promise a different name.
+  const preview = caseTitle({ ...f, our_vessel: parseVesselName(f.our_vessel).name,
+    our_vessel_type: parseVesselName(f.our_vessel).prefix, title: row.title })
+
   async function save() {
-    if (!f.title.trim()) { toast.error('A case needs a title'); return }
+    if (!isCaseNameable({ ...f, our_vessel: parseVesselName(f.our_vessel).name })) {
+      toast.error('A case needs at least a vessel, a type or an other party — that is its name')
+      return
+    }
     setBusy(true)
+    const vessel = parseVesselName(f.our_vessel)
     const res = await updateCase(row.id, {
-      title: f.title.trim(),
-      case_type: f.case_type.trim() || null, our_vessel: f.our_vessel.trim() || null,
+      case_type: f.case_type.trim() || null,
+      our_vessel: vessel.name || null, our_vessel_type: vessel.prefix,
       other_party: f.other_party.trim() || null, case_ref: f.case_ref.trim() || null,
       principal: f.principal.trim() || null, notes: f.notes.trim() || null,
     } as Partial<CaseRow>)
@@ -192,13 +207,14 @@ function IdentityCard({ row, onSaved }: { row: CaseRow; onSaved: () => void }) {
         </div>
       </div>
       <div className="px-6 py-4 space-y-3">
+        {/* The case is NAMED by the fields below it — there is no title to type.
+            Showing the result as you edit is what replaces the box. */}
+        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-gray-400">This case is called</p>
+          <p className="text-sm font-medium text-gray-900 mt-0.5">{preview}</p>
+        </div>
         <div className="flex flex-wrap gap-3">
           <div className="flex-1 min-w-[200px]">
-            <label className="label-base" htmlFor="c-title">Title</label>
-            <input id="c-title" className="input-base" value={f.title}
-              onChange={e => setF(p => ({ ...p, title: e.target.value }))} />
-          </div>
-          <div className="w-44">
             <label className="label-base" htmlFor="c-type">Type</label>
             <input id="c-type" className="input-base" list="case-types" value={f.case_type}
               placeholder="Collision, medical…"
