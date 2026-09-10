@@ -109,9 +109,11 @@ try {
   denied(await mk({ attendee_name: '   ', minutes: 10 }), 'a blank name is not an attendee')
 
   // ── Minutes, not decimal hours — and the blocks land in FEES (mig 220) ─────
+  let priceProbe = null
   for (let i = 0; i < 6; i++) {
     const r = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'call', p_client_ref: crypto.randomUUID() })
     if (r.error) { bad('quick block: ' + r.error.message); break }
+    priceProbe = r.data
   }
   const { data: quick } = await admin.from('case_charges')
     .select('minutes, kind').eq('case_id', caseId).eq('minutes', 10)
@@ -128,6 +130,21 @@ try {
   eq(first.data, retry.data, 'a retried tap replays the same row instead of double-logging')
   const second = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'email', p_client_ref: crypto.randomUUID() })
   eq(second.data !== first.data, true, 'a genuine second tap makes a second chunk')
+
+  // An emailed block names the fee it is billed under; a call cannot know what it was about.
+  const { data: emailRow } = await admin.from('case_charges')
+    .select('kind, description').eq('id', first.data).single()
+  eq(emailRow.kind, 'Email', 'an email tap is still kind Email — that is what the rate card is keyed on')
+  eq(emailRow.description, "Correspondant's Fee", 'and it says what it is billed under')
+  const { data: callRow } = await admin.from('case_charges')
+    .select('description').eq('id', priceProbe).single()
+  eq(callRow.description, '', 'a call writes no description — a tap cannot know what it was about')
+
+  // With nothing set for the kind, a tap falls back to what the case charges for anything.
+  await boss.from('cases').update({ rate_defaults: { '*': { rate: 90, currency: 'USD' } } }).eq('id', caseId)
+  const fallback = await boss.rpc('case_add_quick_charge', { p_case: caseId, p_kind: 'call', p_client_ref: crypto.randomUUID() })
+  const { data: fallbackRow } = await admin.from('case_charges').select('unit_amount').eq('id', fallback.data).single()
+  eq(Number(fallbackRow.unit_amount), 90, 'a tap falls back to the case default rate')
 
   // A tap prices itself from the case's standing rate, so the rate is typed once.
   await boss.from('cases').update({ rate_defaults: { 'phone call': { rate: 120, currency: 'USD' } } }).eq('id', caseId)
