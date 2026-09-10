@@ -199,7 +199,8 @@ export function claimLines(group: CurrencyGroup): ClaimLine[] {
 
   const chg: ClaimLine[] = [...group.charges].sort(byDate).map(c => ({
     date: c.incurred_on,
-    who: c.payee || '',
+    // A cost says who was PAID; time says who spent it. Both belong in the same column.
+    who: c.payee || (c.minutes != null ? c.creator_label ?? '' : ''),
     // A quick block carries no detail of its own — a tap cannot know what the call was
     // about — so the kind IS the line. Never print a blank on a claim.
     detail: c.description || chargeKindLabel(c.kind),

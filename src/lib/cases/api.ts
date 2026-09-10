@@ -131,6 +131,9 @@ export interface CaseCharge {
   currency: string
   /** GENERATED in the database (mig 220). Never re-multiplied on a screen. */
   amount: number
+  /** Who entered it. On a timed fee that is who made the call or wrote the email, which
+   *  is the one thing a bare "Phone call" line could not tell you. */
+  creator_label: string | null
   claim_id: string | null
   claim_no: number | null
   document_count: number
@@ -271,6 +274,11 @@ export interface AttendanceInput {
   attendee_profile_id: string | null
   attendee_name: string | null
   attended_on: string
+  /** Trinidad wall-clock, when the times are what was known. The MINUTES stay the
+   *  authority for every total — the clock is what worked them out, not what replaces
+   *  them — which is why a span running past midnight is not a contradiction. */
+  start_time?: string | null
+  end_time?: string | null
   minutes: number
   description: string | null
   location: string | null
@@ -299,6 +307,7 @@ export async function addAttendance(caseId: string, i: AttendanceInput): Promise
   const { data, error } = await supabase.from('case_attendances').insert({
     case_id: caseId, attendee_profile_id, attendee_name,
     attended_on: i.attended_on, minutes: i.minutes,
+    start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     description: clean(i.description), location: clean(i.location), note: clean(i.note),
     rate_type: i.rate_type, rate_amount: i.rate_amount,
     days: i.rate_type === 'daily' ? i.days : null,
@@ -327,6 +336,7 @@ export async function updateAttendance(id: string, i: AttendanceInput): Promise<
   const { data, error } = await supabase.from('case_attendances').update({
     attendee_profile_id, attendee_name,
     attended_on: i.attended_on, minutes: i.minutes,
+    start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     description: clean(i.description), location: clean(i.location), note: clean(i.note),
     rate_type: i.rate_type, rate_amount: i.rate_amount,
     days: i.rate_type === 'daily' ? i.days : null,
@@ -375,7 +385,8 @@ export async function addQuickBlock(
 
 const CHG_COLS =
   'id, case_id, kind, description, payee, incurred_on, minutes, start_time, end_time, ' +
-  'qty, unit_amount, currency, amount, claim_id, claim:case_claims(claim_no)'
+  'qty, unit_amount, currency, amount, claim_id, claim:case_claims(claim_no), ' +
+  'creator:profiles!case_charges_created_by_fkey(full_name)'
 
 export async function listCharges(caseId: string): Promise<CaseCharge[]> {
   const supabase = createClient()
@@ -394,6 +405,7 @@ export async function listCharges(caseId: string): Promise<CaseCharge[]> {
     start_time: c.start_time ?? null, end_time: c.end_time ?? null,
     qty: num(c.qty, 1), unit_amount: num(c.unit_amount), currency: c.currency ?? 'USD',
     amount: num(c.amount),
+    creator_label: c.creator?.full_name ?? null,
     claim_id: c.claim_id ?? null, claim_no: c.claim?.claim_no ?? null,
     document_count: docCount.get(c.id) ?? 0,
   }))
@@ -407,6 +419,8 @@ export interface ChargeInput {
   /** Set it and the fee is TIME: unit_amount is then read as an hourly rate and the
    *  database works out the money. Leave it null for a purchase. */
   minutes?: number | null
+  start_time?: string | null
+  end_time?: string | null
   qty: number
   unit_amount: number
   currency: string
@@ -418,6 +432,7 @@ export async function addCharge(caseId: string, i: ChargeInput): Promise<{ id?: 
   const { data, error } = await supabase.from('case_charges').insert({
     case_id: caseId, kind: i.kind.trim() || 'Other', description: i.description.trim(),
     payee: clean(i.payee), incurred_on: i.incurred_on, minutes: i.minutes ?? null,
+    start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
     created_by: user?.id ?? null,
   }).select('id').single()
@@ -436,6 +451,7 @@ export async function updateCharge(id: string, i: ChargeInput): Promise<{ error?
   const { data, error } = await supabase.from('case_charges').update({
     kind: i.kind.trim() || 'Other', description: i.description.trim(), payee: clean(i.payee),
     incurred_on: i.incurred_on, minutes: i.minutes ?? null,
+    start_time: i.start_time ?? null, end_time: i.end_time ?? null,
     qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
   }).eq('id', id).select('id')
   if (error) return { error: error.message }

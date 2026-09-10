@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   QUICK_BLOCK_MINUTES, formatMinutes, minutesToHours, minutesFromHM, hmFromMinutes, sumMinutes,
+  minutesFromSpan,
 } from './minutes'
 
 // The bug this module exists to prevent, pinned first. Everything else is detail.
@@ -74,5 +75,29 @@ describe('minutesToHours', () => {
 describe('sumMinutes', () => {
   it('ignores nulls and missing values', () => {
     expect(sumMinutes([{ minutes: 10 }, { minutes: null }, {}, { minutes: 5 }])).toBe(15)
+  })
+})
+
+describe('minutesFromSpan', () => {
+  it('reads the clock the way you would say it', () => {
+    expect(minutesFromSpan('09:00', '11:30')).toBe(150)
+    expect(minutesFromSpan('09:00', '17:00')).toBe(480)
+    expect(minutesFromSpan('22:03', '22:13')).toBe(10)
+  })
+
+  it('wraps past midnight instead of going negative', () => {
+    // A boarding at 23:00 that finished at 01:30 is two and a half hours, not minus 21.
+    expect(minutesFromSpan('23:00', '01:30')).toBe(150)
+  })
+
+  it('is 0 while it is still being typed', () => {
+    expect(minutesFromSpan('', '11:30')).toBe(0)
+    expect(minutesFromSpan('09:0', '11:30')).toBe(0)
+    expect(minutesFromSpan('nonsense', 'worse')).toBe(0)
+    expect(minutesFromSpan('25:00', '26:00')).toBe(0)
+  })
+
+  it('agrees with the hours-and-minutes boxes, to the minute', () => {
+    expect(minutesFromSpan('09:00', '11:30')).toBe(minutesFromHM(2, 30))
   })
 })

@@ -7,12 +7,12 @@
 // are four different things and only one of them is a "disbursement", so the field is free
 // text with suggestions, like the case type. Migration 219 took the CHECK off.
 //
-// SOME FEES ARE TIME. A phone call or an email is not a purchase and it is not an
-// attendance either — nobody went anywhere — it is the correspondency service, charged by
-// the hour. So a fee can carry minutes (mig 220): type "Phone call" and the form asks how
-// long and when instead of a quantity, and the database works the money out from the rate.
-// Whole minutes, divided by 60 once, at the end: six ten-minute blocks are exactly one
-// hour, never the 1.02 that six copies of 0.17 would give.
+// TIME OR QUANTITY — SAID OUT LOUD. A fee can be time (mig 220 gives it minutes and a
+// clock span) and the money is then rate x minutes / 60, computed by the database. Which
+// of the two you are entering used to be GUESSED from the words: "Phone call" was time,
+// "Review of all documentation" was not, so two hours of reading had to be faked as a
+// quantity of 2 and nothing on the line said what the 2 meant. It is a toggle now. Typing
+// a phone call still flips it for you, but you can see it and you can overrule it.
 //
 // AND THE RATE IS SET ONCE. Typing it on every line is how half of them ended up unpriced.
 // The case remembers what a call and an email are worth (cases.rate_defaults) and a
@@ -29,8 +29,11 @@ import { confirmDialog } from '@/components/ui/confirm'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import QuickBlocks from '@/components/cases/QuickBlocks'
+import DurationField, {
+  BLANK_DURATION, durationMinutes, durationTimes, durationFromRow,
+} from '@/components/cases/DurationField'
 import { chargeKindLabel, isTimeKind, CHARGE_KIND_SUGGESTIONS } from '@/lib/cases/chargeKind'
-import { DURATION_CHOICES, formatMinutes } from '@/lib/cases/minutes'
+import { formatMinutes } from '@/lib/cases/minutes'
 import {
   addCharge, updateCharge, deleteCharge, uploadDocument, updateCase,
   rateDefaultFor, CURRENCIES,
@@ -41,7 +44,8 @@ const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits
 
 const BLANK = {
   kind: '', description: '', payee: '', on: todayKey(),
-  qty: '1', amount: '', currency: 'USD', minutes: '10', timed: false,
+  qty: '1', amount: '', currency: 'USD',
+  timed: false, dur: BLANK_DURATION,
 }
 
 export default function CaseCharges({ kase, charges, onChanged }: {
@@ -59,10 +63,6 @@ export default function CaseCharges({ kase, charges, onChanged }: {
   const [attachTo, setAttachTo] = useState<string | null>(null)
   const pick = useRef<HTMLInputElement>(null)
 
-  // A row that was logged as time stays time while you correct it — that is how the rate
-  // on a call already logged gets fixed. A NEW entry decides from what you type.
-  const timeMode = editId ? f.timed : isTimeKind(f.kind)
-
   function cancel() { setEditId(null); setOpen(false); setF({ ...BLANK }); setRateTouched(false) }
 
   function startEdit(c: CaseCharge) {
@@ -71,14 +71,20 @@ export default function CaseCharges({ kase, charges, onChanged }: {
       ...BLANK,
       kind: chargeKindLabel(c.kind), description: c.description, payee: c.payee ?? '',
       on: c.incurred_on, qty: String(c.qty), amount: String(c.unit_amount), currency: c.currency,
-      minutes: String(c.minutes ?? 10), timed: c.minutes != null,
+      timed: c.minutes != null,
+      dur: durationFromRow(c.minutes, c.start_time, c.end_time),
     })
   }
 
-  /** Typing the kind pulls in what this case pays for it, until you overrule it. */
+  /** Typing the kind pulls in what this case pays for it, and puts the toggle where it
+   *  most likely belongs — until you say otherwise, either way. */
   function onKind(kind: string) {
     const d = rateTouched ? null : rateDefaultFor(kase, kind)
-    setF(p => ({ ...p, kind, ...(d ? { amount: String(d.rate), currency: d.currency } : {}) }))
+    setF(p => ({
+      ...p, kind,
+      timed: editId || rateTouched ? p.timed : isTimeKind(kind),
+      ...(d ? { amount: String(d.rate), currency: d.currency } : {}),
+    }))
   }
 
   async function save() {
@@ -86,19 +92,20 @@ export default function CaseCharges({ kase, charges, onChanged }: {
     const amt = Number(f.amount) || 0
 
     let input: ChargeInput
-    if (timeMode) {
-      const minutes = Number(f.minutes)
-      if (!(minutes > 0)) { toast.error('Choose how long it took'); return }
+    if (f.timed) {
+      const minutes = durationMinutes(f.dur)
+      if (!(minutes > 0)) { toast.error('Enter how long it took'); return }
       input = {
         kind: f.kind, description: f.description, payee: null,
-        incurred_on: f.on, minutes, qty: 1, unit_amount: amt, currency: f.currency,
+        incurred_on: f.on, minutes, ...durationTimes(f.dur),
+        qty: 1, unit_amount: amt, currency: f.currency,
       }
     } else {
       if (!f.description.trim()) { toast.error('Give the charge a description'); return }
       if (!(amt > 0)) { toast.error('Enter an amount'); return }
       input = {
         kind: f.kind, description: f.description, payee: f.payee,
-        incurred_on: f.on, minutes: null,
+        incurred_on: f.on, minutes: null, start_time: null, end_time: null,
         qty: Number(f.qty) || 1, unit_amount: amt, currency: f.currency,
       }
     }
@@ -107,7 +114,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
     const res = editId ? await updateCharge(editId, input) : await addCharge(caseId, input)
     setBusy(false)
     if (res.error) { toast.error(res.error); return }
-    if (timeMode && amt === 0) toast.success('Logged with no rate — set one and it can be claimed')
+    if (f.timed && amt === 0) toast.success('Logged with no rate — set one and it can be claimed')
     cancel(); onChanged()
   }
 
@@ -135,6 +142,8 @@ export default function CaseCharges({ kase, charges, onChanged }: {
     onChanged()
   }
 
+  const liveMinutes = durationMinutes(f.dur)
+
   return (
     <div className="card">
       <input ref={pick} type="file" className="hidden" onChange={e => onReceipt(e.target.files)} />
@@ -159,7 +168,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
 
       {open && (
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 space-y-3">
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <div className="w-56">
               <label className="label-base" htmlFor="cc-kind">What is it</label>
               <input id="cc-kind" className="input-base" list="case-charge-kinds" value={f.kind}
@@ -174,15 +183,25 @@ export default function CaseCharges({ kase, charges, onChanged }: {
               <input id="cc-on" type="date" className="input-base w-40" value={f.on}
                 onChange={e => setF(p => ({ ...p, on: e.target.value }))} />
             </div>
-
-            {timeMode ? (
-              <div className="w-36">
-                <label className="label-base" htmlFor="cc-mins">Time spent</label>
-                <select id="cc-mins" className="input-base" value={f.minutes}
-                  onChange={e => setF(p => ({ ...p, minutes: e.target.value }))}>
-                  {DURATION_CHOICES.map(m => <option key={m} value={m}>{formatMinutes(m)}</option>)}
-                </select>
+            {/* THE ONE THAT WAS MISSING. Two hours of reading is time, not a quantity of 2. */}
+            <div>
+              <span className="label-base">Billed by</span>
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden h-[38px]">
+                {([[true, 'Time'], [false, 'Quantity']] as const).map(([t, text]) => (
+                  <button key={text} type="button" onClick={() => setF(p => ({ ...p, timed: t }))}
+                    aria-pressed={f.timed === t}
+                    className={`px-3 text-xs transition-colors ${
+                      f.timed === t ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    {text}
+                  </button>
+                ))}
               </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            {f.timed ? (
+              <DurationField value={f.dur} onChange={d => setF(p => ({ ...p, dur: d }))} />
             ) : (
               <div className="w-20">
                 <label className="label-base" htmlFor="cc-qty">Qty</label>
@@ -191,12 +210,11 @@ export default function CaseCharges({ kase, charges, onChanged }: {
                   onChange={e => setF(p => ({ ...p, qty: e.target.value }))} />
               </div>
             )}
-
             <div className="w-32">
-              <label className="label-base" htmlFor="cc-amt">{timeMode ? 'Rate / hour' : 'Amount'}</label>
+              <label className="label-base" htmlFor="cc-amt">{f.timed ? 'Rate / hour' : 'Amount'}</label>
               <input id="cc-amt" type="number" min="0" step="0.01" inputMode="decimal"
                 className="input-base text-right tnum" value={f.amount}
-                placeholder={timeMode ? 'Optional' : ''}
+                placeholder={f.timed ? 'Optional' : ''}
                 onChange={e => { setRateTouched(true); setF(p => ({ ...p, amount: e.target.value })) }} />
             </div>
             <div className="w-24">
@@ -206,20 +224,27 @@ export default function CaseCharges({ kase, charges, onChanged }: {
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {f.timed && (
+              <p className="text-sm text-gray-600 tnum pb-2">
+                {liveMinutes > 0 && f.amount
+                  ? `= ${money(Math.round(Number(f.amount) * liveMinutes / 60 * 100) / 100)} ${f.currency}`
+                  : ''}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
             <div className="flex-1 min-w-[200px]">
               <label className="label-base" htmlFor="cc-desc">
-                {timeMode ? 'What it was about' : 'Description'}
+                {f.timed ? 'What it was about' : 'Description'}
               </label>
               <input id="cc-desc" className="input-base" value={f.description}
-                placeholder={timeMode ? 'Optional'
+                placeholder={f.timed ? 'Optional'
                   : f.kind.toLowerCase().includes('correspondency') ? 'Opening of case file'
                   : 'e.g. Launch hire'}
                 onChange={e => setF(p => ({ ...p, description: e.target.value }))} />
             </div>
-            {!timeMode && (
+            {!f.timed && (
               <div className="flex-1 min-w-[160px]">
                 <label className="label-base" htmlFor="cc-payee">Paid to</label>
                 <input id="cc-payee" className="input-base" value={f.payee} placeholder="Optional"
@@ -230,19 +255,18 @@ export default function CaseCharges({ kase, charges, onChanged }: {
               <button type="button" onClick={save} disabled={busy} className="btn-primary text-sm">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" />
                   : editId ? <CheckCircle2 className="h-4 w-4" />
-                  : timeMode ? <Clock className="h-4 w-4" />
+                  : f.timed ? <Clock className="h-4 w-4" />
                   : <Plus className="h-4 w-4" />}
-                {editId ? 'Save' : timeMode ? 'Log time' : 'Add'}
+                {editId ? 'Save' : f.timed ? 'Log time' : 'Add'}
               </button>
               <button type="button" onClick={cancel} className="btn-secondary text-sm">Cancel</button>
             </div>
           </div>
 
-          {timeMode && (
+          {f.timed && !f.amount && (
             <p className="text-xs text-gray-500">
-              Charged by the hour — {formatMinutes(Number(f.minutes) || 0)} at{' '}
-              {f.amount ? `${money(Number(f.amount))} ${f.currency}` : 'no rate yet'}
-              {f.amount ? ` comes to ${money(Math.round(Number(f.amount) * (Number(f.minutes) || 0) / 60 * 100) / 100)} ${f.currency}` : '. Set the rate under Rates and every tap prices itself'}.
+              No rate yet — it is still logged, and stays outstanding until it has one rather
+              than being claimed at nothing. Set it once under Rates and every tap prices itself.
             </p>
           )}
         </div>
@@ -256,14 +280,20 @@ export default function CaseCharges({ kase, charges, onChanged }: {
       ) : (
         <div className="divide-y divide-gray-100">
           {charges.map(c => {
-            const unpriced = c.minutes != null && !(c.unit_amount > 0)
+            const timed = c.minutes != null
+            const unpriced = timed && !(c.unit_amount > 0)
             const meta = [
+              // Who did it. On a bare "Phone call" that is the only thing identifying it,
+              // and an attendance has said it all along.
+              timed ? c.creator_label : null,
               // The kind is already the headline when nothing was typed about it — do not
               // print it twice.
               c.description ? chargeKindLabel(c.kind) : null,
               formatDate(c.incurred_on),
               c.start_time && c.end_time ? `${c.start_time.slice(0, 5)}–${c.end_time.slice(0, 5)}` : null,
-              c.minutes != null ? formatMinutes(c.minutes) : null,
+              timed ? formatMinutes(c.minutes as number) : null,
+              // Say what a quantity meant, so a bare "2" is never left to memory.
+              !timed && c.qty !== 1 ? `${c.qty} × ${money(c.unit_amount)}` : null,
             ].filter(Boolean).join(' · ')
 
             return (
@@ -283,7 +313,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
                   </p>
                 </div>
                 <span className="text-sm tnum w-28 text-right"
-                  title={c.minutes != null && c.unit_amount > 0 ? `${money(c.unit_amount)} ${c.currency} per hour` : undefined}>
+                  title={timed && c.unit_amount > 0 ? `${money(c.unit_amount)} ${c.currency} per hour` : undefined}>
                   {unpriced
                     ? <span className="text-amber-600">no rate</span>
                     : <span className="text-gray-900">{money(c.amount)} {c.currency}</span>}

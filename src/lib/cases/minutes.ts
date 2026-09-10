@@ -12,10 +12,6 @@
 /** One tap of a quick button. Both "Phone call" and "Email" add exactly this. */
 export const QUICK_BLOCK_MINUTES = 10
 
-/** What the "time spent" dropdown offers. Ten minutes first because that is the unit the
- *  quick buttons work in, and a call or an email is usually one or two of them. */
-export const DURATION_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 480]
-
 /** Minutes → "1 h 40 m". Compact on purpose: this sits in a dense list, next to a rate
  *  and an amount, and "1 hour 40 minutes" would push the money off a phone screen. */
 export function formatMinutes(total: number): string {
@@ -32,6 +28,27 @@ export function formatMinutes(total: number): string {
  *  what a client's invoice shows — never fed back into a stored duration. */
 export function minutesToHours(total: number): number {
   return Math.round((Math.max(0, total) / 60) * 100) / 100
+}
+
+/**
+ * "09:00" and "11:30" -> 150. The other way of saying how long something took.
+ *
+ * A finish EARLIER than the start ran past midnight, so it wraps rather than going
+ * negative — the same rule the job overtime log has used since mig 111. Junk in either box
+ * gives 0, because both read straight from an input that can be half-typed.
+ */
+export function minutesFromSpan(from: string, to: string): number {
+  const at = (t: string) => {
+    const m = /^([0-9]{1,2}):([0-9]{2})/.exec((t ?? '').trim())
+    if (!m) return null
+    const mins = Number(m[1]) * 60 + Number(m[2])
+    return mins >= 0 && mins < 24 * 60 ? mins : null
+  }
+  const a = at(from)
+  const b = at(to)
+  if (a == null || b == null) return 0
+  const d = b - a
+  return d >= 0 ? d : d + 24 * 60
 }
 
 /** Two number inputs (hours, minutes) → one integer. Tolerates blanks and junk, because

@@ -28,13 +28,16 @@ import {
   CURRENCIES, RATE_TYPE,
   type CaseAttendance, type RateType, type AttendanceInput,
 } from '@/lib/cases/api'
-import { formatMinutes, minutesFromHM, hmFromMinutes } from '@/lib/cases/minutes'
+import { formatMinutes } from '@/lib/cases/minutes'
+import DurationField, {
+  BLANK_DURATION, durationMinutes, durationTimes, durationFromRow,
+} from '@/components/cases/DurationField'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const BLANK = {
   useName: false, profileId: '', name: '',
-  on: todayKey(), h: '', m: '',
+  on: todayKey(), dur: BLANK_DURATION,
   description: '', location: '', note: '',
   rateType: 'hourly' as RateType, rate: '', days: '', currency: 'USD',
 }
@@ -58,7 +61,6 @@ export default function CaseAttendances({ caseId, onChanged }: {
   useEffect(() => { listSurveyorAccounts().then(setStaff).catch(() => {}) }, [])
 
   function startEdit(a: CaseAttendance) {
-    const { hours, mins } = hmFromMinutes(a.minutes)
     setEditId(a.id)
     setOpen(true)
     setF({
@@ -66,7 +68,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
       profileId: a.attendee_profile_id ?? '',
       name: a.attendee_name ?? '',
       on: a.attended_on,
-      h: hours ? String(hours) : '', m: mins ? String(mins) : '',
+      dur: durationFromRow(a.minutes, a.start_time, a.end_time),
       description: a.description ?? '', location: a.location ?? '', note: a.note ?? '',
       rateType: a.rate_type,
       rate: a.rate_amount == null ? '' : String(a.rate_amount),
@@ -78,7 +80,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
   function cancel() { setEditId(null); setOpen(false); setF({ ...BLANK }) }
 
   async function save() {
-    const minutes = minutesFromHM(f.h, f.m)
+    const minutes = durationMinutes(f.dur)
     if (f.rateType !== 'fixed' && minutes === 0 && f.rateType === 'hourly') {
       toast.error('Enter how long it took'); return
     }
@@ -88,7 +90,7 @@ export default function CaseAttendances({ caseId, onChanged }: {
     const input: AttendanceInput = {
       attendee_profile_id: f.useName ? null : f.profileId,
       attendee_name: f.useName ? f.name : null,
-      attended_on: f.on, minutes,
+      attended_on: f.on, minutes, ...durationTimes(f.dur),
       description: f.description, location: f.location, note: f.note,
       rate_type: f.rateType,
       rate_amount: f.rate.trim() === '' ? null : Number(f.rate),
@@ -174,21 +176,10 @@ export default function CaseAttendances({ caseId, onChanged }: {
             </div>
           </div>
 
-          {/* HOW LONG — two integer boxes, never a decimal. */}
+          {/* HOW LONG — the clock or the duration, whichever you actually know. Never a
+              decimal either way: minutes are whole integers all the way to the claim. */}
           <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <span className="label-base">Time spent</span>
-              <div className="flex items-center gap-1">
-                <input aria-label="Hours" type="number" min="0" inputMode="numeric" placeholder="0"
-                  className="input-base w-16 text-right tnum" value={f.h}
-                  onChange={e => setF(p => ({ ...p, h: e.target.value }))} />
-                <span className="text-sm text-gray-500">h</span>
-                <input aria-label="Minutes" type="number" min="0" step="5" inputMode="numeric" placeholder="0"
-                  className="input-base w-16 text-right tnum" value={f.m}
-                  onChange={e => setF(p => ({ ...p, m: e.target.value }))} />
-                <span className="text-sm text-gray-500">m</span>
-              </div>
-            </div>
+            <DurationField value={f.dur} onChange={d => setF(p => ({ ...p, dur: d }))} />
             <div className="flex-1 min-w-[200px]">
               <label className="label-base" htmlFor="ca-desc">What was done</label>
               <input id="ca-desc" className="input-base" value={f.description}
