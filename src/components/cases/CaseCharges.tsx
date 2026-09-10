@@ -16,6 +16,7 @@ import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
+import QuickBlocks from '@/components/cases/QuickBlocks'
 import {
   addCharge, updateCharge, deleteCharge, uploadDocument,
   CURRENCIES, CASE_CHARGE_KIND,
@@ -96,11 +97,14 @@ export default function CaseCharges({ caseId, charges, onChanged }: {
 
       <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200">
         <h2 className="section-title">Fees and costs</h2>
+        <div className="flex flex-wrap items-center gap-2">
+        <QuickBlocks caseId={caseId} onAdded={onChanged} />
         {!open && (
           <button type="button" onClick={() => setOpen(true)} className="btn-secondary text-xs">
             <Plus className="h-4 w-4" />Add charge
           </button>
         )}
+        </div>
       </div>
 
       {open && (

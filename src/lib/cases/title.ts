@@ -29,14 +29,19 @@ export const UNTITLED_CASE = 'Untitled case'
 /**
  * The name built from the parts, or '' when there are none.
  *
- *   Ocean Sun + Collision + Atlantic Star → M.V. Ocean Sun — Collision v. Atlantic Star
- *   Ocean Sun + Collision                 → M.V. Ocean Sun — Collision
- *   Ocean Sun + Atlantic Star             → M.V. Ocean Sun v. Atlantic Star
- *   Collision + Atlantic Star             → Collision v. Atlantic Star
+ *   Ocean Sun + Collision + Gulf Rambler → Collision — M.T. Ocean Sun v. F.V. Gulf Rambler
+ *   Ocean Sun + Collision                → Collision — M.T. Ocean Sun
+ *   Ocean Sun + Gulf Rambler             → M.T. Ocean Sun v. F.V. Gulf Rambler
+ *   Collision + Gulf Rambler             → Collision — F.V. Gulf Rambler
  *
- * "v." even when the other party is an injured person rather than an opposing
- * vessel: it is what the list, the case page and the claim PDF already print, and
- * splitting the convention here would make the same case read two ways.
+ * THE "v." SITS BETWEEN THE TWO PARTIES, and the type introduces them. Written the
+ * other way round — "M.T. Ocean Sun — Collision v. F.V. Gulf Rambler" — it reads as
+ * the collision being versus the Gulf Rambler, when what you want to see at a glance
+ * is the two vessels against each other.
+ *
+ * "v." even when the other party is an injured person rather than an opposing vessel:
+ * it is what the list, the case page and the claim PDF all print, and splitting the
+ * convention here would make the same case read two ways.
  */
 function derive(c: CaseNameParts): string {
   // withVesselPrefix defaults an absent type to M.V. — the app-wide behaviour — so
@@ -46,13 +51,13 @@ function derive(c: CaseNameParts): string {
     : ''
   const type = (c.case_type ?? '').trim()
   const other = (c.other_party ?? '').trim()
-  const matter = [type, other ? `v. ${other}` : ''].filter(Boolean).join(' ')
 
-  if (!vessel) return matter
-  if (!matter) return vessel
-  // An em dash introduces the matter, but "M.V. Ocean Sun — v. Atlantic Star"
-  // reads as a typo, so with no type it becomes the plain "A v. B" case name.
-  return type ? `${vessel} — ${matter}` : `${vessel} ${matter}`
+  // OURS FIRST, always — the case is read from our side of it.
+  const parties = [vessel, other].filter(Boolean).join(' v. ')
+
+  if (!type) return parties
+  if (!parties) return type
+  return `${type} — ${parties}`
 }
 
 /** THE name of a case. Never empty. */

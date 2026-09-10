@@ -85,6 +85,11 @@ export interface CaseAttendance {
   /** The app user's name when there is one, otherwise the typed name. */
   attendee_label: string
   attended_on: string
+  /** Trinidad wall-clock, when known. Set by the quick blocks, which work backwards from
+   *  the tap; NULL on an attendance entered as a plain duration. minutes is always the
+   *  authority for a total, never the clock arithmetic. */
+  start_time: string | null
+  end_time: string | null
   minutes: number
   description: string | null
   location: string | null
@@ -209,7 +214,7 @@ export async function deleteCase(id: string): Promise<{ error?: string }> {
 // ── Attendances ─────────────────────────────────────────────────────────────
 
 const ATT_COLS =
-  'id, case_id, attendee_profile_id, attendee_name, attended_on, minutes, description, ' +
+  'id, case_id, attendee_profile_id, attendee_name, attended_on, start_time, end_time, minutes, description, ' +
   'location, note, rate_type, rate_amount, days, currency, charge_amount, claim_id, ' +
   'attendee:profiles!case_attendances_attendee_profile_id_fkey(full_name), ' +
   'claim:case_claims(claim_no)'
@@ -230,7 +235,9 @@ export async function listAttendances(caseId: string): Promise<CaseAttendance[]>
     attendee_profile_id: r.attendee_profile_id ?? null,
     attendee_name: r.attendee_name ?? null,
     attendee_label: r.attendee?.full_name ?? r.attendee_name ?? 'Unknown',
-    attended_on: r.attended_on, minutes: num(r.minutes),
+    attended_on: r.attended_on,
+      start_time: r.start_time ?? null, end_time: r.end_time ?? null,
+      minutes: num(r.minutes),
     description: r.description ?? null, location: r.location ?? null, note: r.note ?? null,
     rate_type: (r.rate_type ?? 'hourly') as RateType,
     rate_amount: r.rate_amount == null ? null : Number(r.rate_amount),

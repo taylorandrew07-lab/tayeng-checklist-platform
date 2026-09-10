@@ -17,18 +17,18 @@
 // the lines underneath would make the two disagree silently.
 
 import { useState, useEffect, useCallback } from 'react'
-import { Phone, Mail, Plus, Pencil, X, Loader2, Paperclip, CheckCircle2 } from 'lucide-react'
+import { Plus, Pencil, X, Loader2, Paperclip, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { formatDate } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import { listSurveyorAccounts, type SurveyorAccount } from '@/lib/jobs/tracker'
 import {
-  listAttendances, addAttendance, updateAttendance, deleteAttendance, addQuickBlock,
+  listAttendances, addAttendance, updateAttendance, deleteAttendance,
   CURRENCIES, RATE_TYPE,
   type CaseAttendance, type RateType, type AttendanceInput,
 } from '@/lib/cases/api'
-import { formatMinutes, minutesFromHM, hmFromMinutes, QUICK_BLOCK_MINUTES } from '@/lib/cases/minutes'
+import { formatMinutes, minutesFromHM, hmFromMinutes } from '@/lib/cases/minutes'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -46,7 +46,6 @@ export default function CaseAttendances({ caseId, onChanged }: { caseId: string;
   const [editId, setEditId] = useState<string | null>(null)
   const [f, setF] = useState({ ...BLANK })
   const [busy, setBusy] = useState(false)
-  const [quick, setQuick] = useState<'call' | 'email' | null>(null)
 
   const load = useCallback(async () => {
     setRows(await listAttendances(caseId))
@@ -57,18 +56,6 @@ export default function CaseAttendances({ caseId, onChanged }: { caseId: string;
     load()
     listSurveyorAccounts().then(setStaff).catch(() => {})
   }, [load])
-
-  /** Each TAP mints its own key. A retry replays that key and the database returns the
-   *  original row instead of logging a second block; a genuine second tap gets a new key
-   *  and a second chunk, which is what "click it twice for 20 minutes" means. */
-  async function tapQuick(kind: 'call' | 'email') {
-    setQuick(kind)
-    const res = await addQuickBlock(caseId, kind, crypto.randomUUID())
-    setQuick(null)
-    if (res.error) { toast.error(res.error); return }
-    toast.success(`${kind === 'call' ? 'Phone call' : 'Email'} — ${QUICK_BLOCK_MINUTES} min`)
-    load()
-  }
 
   function startEdit(a: CaseAttendance) {
     const { hours, mins } = hmFromMinutes(a.minutes)
@@ -132,17 +119,8 @@ export default function CaseAttendances({ caseId, onChanged }: { caseId: string;
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-200">
         <h2 className="section-title">Attendances</h2>
         <div className="flex items-center gap-2">
-          {/* The whole point of these: ten seconds of work should take one tap, not a form. */}
-          <button type="button" onClick={() => tapQuick('call')} disabled={quick !== null}
-            className="btn-secondary text-xs" title="Adds a 10-minute block, dated today, for you">
-            {quick === 'call' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
-            Phone call <span className="tnum opacity-70">+10m</span>
-          </button>
-          <button type="button" onClick={() => tapQuick('email')} disabled={quick !== null}
-            className="btn-secondary text-xs" title="Adds a 10-minute block, dated today, for you">
-            {quick === 'email' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-            Email <span className="tnum opacity-70">+10m</span>
-          </button>
+          {/* The quick ten-minute buttons live on Fees and costs — that is where the
+              money on a case is worked. They still land here, because they are time. */}
           {!open && (
             <button type="button" onClick={() => setOpen(true)} className="btn-secondary text-xs">
               <Plus className="h-4 w-4" />Log attendance
@@ -280,7 +258,7 @@ export default function CaseAttendances({ caseId, onChanged }: { caseId: string;
         <div className="p-6 space-y-2">{[0, 1].map(i => <div key={i} className="skeleton h-10 w-full rounded-lg" />)}</div>
       ) : rows.length === 0 ? (
         <p className="px-6 py-8 text-center text-sm text-gray-400">
-          Nothing logged yet — tap Phone call or Email for a ten-minute block, or log an attendance.
+          Nothing logged yet — log an attendance, or use the quick buttons on Fees and costs.
         </p>
       ) : (
         <div className="divide-y divide-gray-100">
@@ -293,7 +271,12 @@ export default function CaseAttendances({ caseId, onChanged }: { caseId: string;
                   {a.description && <span className="text-gray-500"> · {a.description}</span>}
                 </p>
                 <p className="text-xs text-gray-500 tnum">
-                  {formatDate(a.attended_on)} · {formatMinutes(a.minutes)}
+                  {formatDate(a.attended_on)}
+                  {/* A quick block knows the clock it covered; a hand-entered one is a
+                      plain duration and has no times to show. */}
+                  {a.start_time && a.end_time
+                    ? ` · ${a.start_time.slice(0, 5)}–${a.end_time.slice(0, 5)}`
+                    : ''} · {formatMinutes(a.minutes)}
                   {a.location ? ` · ${a.location}` : ''}
                   {a.document_count > 0 && (
                     <span className="ml-1.5 inline-flex items-center gap-0.5 text-gray-400">
