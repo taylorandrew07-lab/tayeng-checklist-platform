@@ -32,7 +32,6 @@ import {
   type VoyageGroup, type VoyageJob,
 } from './voyage'
 import { isJobLocked } from './tracker'
-import { isLiveCase } from './cases'
 
 export type ReconCategory =
   | 'not_completed'           // work looks done but the job was never marked complete
@@ -114,8 +113,6 @@ export interface ReconJob extends VoyageJob {
   billed_under_job_id: string | null
   submitted_at: string | null
   created_at: string | null
-  is_case: boolean | null
-  case_status: string | null
 }
 
 export interface CategorizeContext {
@@ -194,22 +191,10 @@ export function categorize(job: ReconJob, ctx: CategorizeContext = {}): ReconCat
   // the reconcile page, the one tool built to catch forgotten billing, stayed
   // silent on the single most common way billing is forgotten.
   if (job.workflow_status === 'in_progress') {
-    // A LIVE P&I case sits at 'in_progress' for years by design, so the stale rule
-    // would flag every one from week four and never stop — drowning the one tool that
-    // catches forgotten billing in permanent noise.
-    //
-    // NARROW on purpose. This suppresses ONLY 'not_completed'. A blanket
-    // `if (isLiveCase(job)) return null` at the top of categorize() — which is what
-    // shipped in 0f7fd4d — also hid 'missing_client' and every other fault from the
-    // class of job MOST likely to have its billing forgotten, for years. A case with
-    // no client is trivially creatable, and that must still be flagged.
-    // A CONCLUDED case falls through here too and is graded exactly like any other job.
-    if (!isLiveCase(job)) {
-      // Submitted checklist + still in_progress = the status write never landed.
-      if (job.submitted_at) return 'not_completed'
-      const worked = job.end_date || job.scheduled_date || (job.created_at ?? '').slice(0, 10)
-      if (staleBefore && worked && worked < staleBefore) return 'not_completed'
-    }
+    // Submitted checklist + still in_progress = the status write never landed.
+    if (job.submitted_at) return 'not_completed'
+    const worked = job.end_date || job.scheduled_date || (job.created_at ?? '').slice(0, 10)
+    if (staleBefore && worked && worked < staleBefore) return 'not_completed'
   }
   return null
 }
@@ -224,7 +209,7 @@ const RECON_WINDOW_MONTHS = 18
 export const RECON_JOB_COLUMNS =
   'id, report_number, vessel_name, vessel_type, vessel_id, voyage_number, job_type, job_stage, ' +
   'client_id, workflow_status, invoice_id, billed_under_job_id, submitted_at, ' +
-  'scheduled_date, end_date, created_at, is_case, case_status, client:clients(name)'
+  'scheduled_date, end_date, created_at, client:clients(name)'
 
 export async function listReconciliation(): Promise<{ items: ReconItem[]; counts: Record<ReconCategory, number> }> {
   const supabase = createClient()

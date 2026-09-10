@@ -660,8 +660,6 @@ export default function JobOpsPanel({ job, isAdmin, onChanged, section }: { job:
   // Once a job is BILLED, surveyors can no longer edit it (RLS enforces this; this just
   // makes the UI read-only so they see the lock instead of hitting errors). Since mig
   // 188 that starts at 'invoiced' — the invoice is what freezes the job, not the close.
-  // By ROW, not status: a live P&I case is exempt in the database (mig 204), and asking
-  // by status alone would show a read-only panel on a job Postgres would let them write.
   const surveyorLocked = !isAdmin && !isJobEditable(job)
   const idx = WORKFLOW_ORDER.indexOf(current)
   // nextStatusFor, NOT WORKFLOW_ORDER[idx + 1]: stepping through the raw order would

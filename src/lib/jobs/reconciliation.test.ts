@@ -23,8 +23,6 @@ const job = (p: Partial<ReconJob> = {}): ReconJob => ({
   billed_under_job_id: p.billed_under_job_id ?? null,
   submitted_at: p.submitted_at ?? null,
   created_at: p.created_at ?? '2026-08-01T00:00:00Z',
-  is_case: p.is_case ?? false,
-  case_status: p.case_status ?? null,
 } as ReconJob)
 
 const leg = (stage: string, extra: Partial<ReconJob> = {}) =>
@@ -40,7 +38,6 @@ describe('the select string is the one thing tsc cannot check', () => {
     'id', 'report_number', 'vessel_name', 'vessel_type', 'vessel_id', 'voyage_number',
     'job_type', 'job_stage', 'client_id', 'workflow_status', 'invoice_id',
     'billed_under_job_id', 'submitted_at', 'scheduled_date', 'end_date', 'created_at',
-    'is_case', 'case_status',
   ]
   for (const col of required) {
     it(`selects ${col}`, () => {
@@ -191,50 +188,6 @@ describe('non-draught jobs are completely unaffected', () => {
   })
 })
 
-// Migration 204. A case that runs for four years must not appear here every day for
-// four years — but a case that has actually ENDED still needs billing and closing
-// like anything else, so the exemption has to switch off with it.
-describe('P&I cases are exempt while they are live, and only while they are live', () => {
-  const ancient = { workflow_status: 'in_progress' as const, scheduled_date: '2020-01-01', created_at: '2020-01-01T00:00:00Z' }
-
-  it('a live case is never flagged stale, however old', () => {
-    const j = job({ ...ancient, is_case: true, case_status: 'open' })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBeNull()
-  })
-
-  it('a case on hold is exempt too', () => {
-    const j = job({ ...ancient, is_case: true, case_status: 'on_hold' })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBeNull()
-  })
-
-  it('a case with no status set reads as open, and is exempt', () => {
-    const j = job({ ...ancient, is_case: true, case_status: null })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBeNull()
-  })
-
-  it('a CONCLUDED case is graded like any other job again', () => {
-    const j = job({ ...ancient, is_case: true, case_status: 'concluded' })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('not_completed')
-  })
-
-  it('an ordinary job is untouched by the exemption', () => {
-    const j = job({ ...ancient, is_case: false })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('not_completed')
-  })
-
-  // The exemption suppresses the STALE rule and nothing else. A blanket bail-out at the
-  // top of categorize() would hide every other fault on the class of job most likely to
-  // have its billing forgotten — which is the opposite of what this page is for.
-  it('a live case with no client is STILL flagged — the exemption is stale-only', () => {
-    const j = job({ is_case: true, case_status: 'open', workflow_status: 'invoice_ready', client_id: null })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('missing_client')
-  })
-
-  it('a live case marked invoice-ready with a client is still told to bill', () => {
-    const j = job({ is_case: true, case_status: 'open', workflow_status: 'invoice_ready' })
-    expect(categorize(j, { staleBefore: '2026-07-01' })).toBe('ready_to_invoice')
-  })
-})
 
 describe('a draught survey with no recognisable stage falls back to normal rules', () => {
   it('is treated as an ordinary job, not a voyage leg', () => {

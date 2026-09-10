@@ -28,13 +28,10 @@ const NO_REPORT_JOB_TYPES = new Set<string>([
  *  the set above says "never, whatever anyone ticks"; putting it here says "usually
  *  not, but it's your call".
  *
- *  A P&I case belongs here. Most carry no number of their own, but a case often DOES
- *  have a report at the point it opens — and the database has always allowed it
- *  (type_skips_report_number, mig 189, never listed cases). Migration 205 removed the
- *  hard override that made this unreachable. */
-const REPORT_OPTIONAL_JOB_TYPES = new Set<string>([
-  'P&I Case',
-])
+ *  Empty today. It held 'P&I Case' until cases stopped being jobs entirely; the set and
+ *  this note stay because the never-versus-usually-not distinction is the thing worth
+ *  keeping, and NO_REPORT_JOB_TYPES above must stay byte-equal to the mig-189 SQL. */
+const REPORT_OPTIONAL_JOB_TYPES = new Set<string>([])
 
 /** Stages of a draught survey that carry no report. A draught survey is a sequence on
  *  one voyage — Initial, then any number of Interims, then exactly one Final — and only

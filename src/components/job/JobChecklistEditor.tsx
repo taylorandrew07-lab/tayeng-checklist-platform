@@ -1628,7 +1628,6 @@ const JobChecklistEditor = forwardRef<JobChecklistEditorHandle, Props>(
     // as well as 'closed', because the freeze starts when the invoice is raised, not
     // when someone gets round to closing it. Behaves like a submitted job: read-only
     // for everyone except a privileged re-open.
-    // By ROW: a live P&I case is never frozen by billing (mig 204).
     const isClosed = !isJobEditable(job)
     const isLocked = isSubmitted || isClosed
 

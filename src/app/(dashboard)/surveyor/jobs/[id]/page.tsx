@@ -77,7 +77,7 @@ export default function SurveyorJobPage() {
         // submitted_at drives MarkJobCompleteButton's repair path: with the checklist
         // already submitted it completes directly instead of reopening the (locked)
         // checklist dialog.
-        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, vessel_type, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, voyage_number, is_overtime, billing_mode, labour_unit, is_case, case_status, client:clients(name)')
+        .select('id, title, report_number, job_type, job_stage, cargo_type, vessel_name, vessel_type, workflow_status, template_id, submitted_at, assigned_to, surveyor_name, client_id, created_by, created_at, updated_at, scheduled_date, end_date, notes, port_location, voyage_number, is_overtime, billing_mode, labour_unit, client:clients(name)')
         .eq('id', jobId).single()
       data = res.data
     } catch { /* no signal — fall through to the local draft */ }
@@ -199,7 +199,6 @@ export default function SurveyorJobPage() {
       />
     </div>
   )
-  // A live P&I case is never frozen, however it has been billed (mig 204).
   const locked = !isJobEditable(job)
   const stageConfig = STAGE_OPTIONS[job.job_type ?? ''] ?? null
   const showCargoType = CARGO_JOB_TYPES.has(job.job_type ?? '')

@@ -33,46 +33,31 @@ export const WORKFLOW: Record<WorkflowStatus, { label: string; pill: string; dot
 
 /** Statuses that FREEZE surveyor writes. A bare `=== 'closed'` is a bug.
  *
- *  This is only HALF the question since migration 204 — see isJobEditable below,
- *  which is the real mirror of job_is_open(). Reach for that one when you have the
- *  job row; reach for this only when all you have is a status string. */
+ *  Prefer isJobEditable() below when you have the job row — it is the seam every write
+ *  surface calls, so an exemption only ever has to be added in one place. */
 export const LOCKED_STATUSES: WorkflowStatus[] = ['invoiced', 'closed']
 
 export const isJobLocked = (s: WorkflowStatus | string | null | undefined): boolean =>
   LOCKED_STATUSES.includes(normalizeWorkflowStatus(s))
 
-/** The shape isJobEditable needs. Deliberately loose so any job-ish row satisfies it —
- *  but the two case fields MUST be in whatever select produced it, or the row reads as
- *  a non-case and a live case is wrongly treated as frozen. */
+/** The shape isJobEditable needs. Deliberately loose so any job-ish row satisfies it. */
 export interface JobLockShape {
   workflow_status?: WorkflowStatus | string | null
-  is_case?: boolean | null
-  case_status?: string | null
-}
-
-/** A P&I case that is still running. NULL case_status reads as 'open', matching the
- *  SQL in job_is_open() — keep the two in step. */
-export function isLiveCase(j: JobLockShape | null | undefined): boolean {
-  return !!j?.is_case && (j.case_status ?? 'open') !== 'concluded'
 }
 
 /**
- * THE app-side mirror of job_is_open() (mig 188 §3 as amended by mig 204 §5).
- * If this and the SQL ever disagree, one side silently refuses work the other allows.
+ * THE app-side mirror of job_is_open() (mig 188 §3). If this and the SQL ever disagree,
+ * one side silently refuses work the other allows.
  *
- * They disagreed once already, and it cost data. Migration 204 exempted a live case
- * from the freeze in the DATABASE, but isJobLocked() takes a bare status string and
- * structurally cannot see is_case — so on an invoiced live case Postgres accepted a
- * surveyor's write while every UI refused it. Worst of all, offline sync (sync.ts)
- * read that as "billed and locked", DISCARDED the queued attendance and returned
- * ok:true. The surveyor's work vanished and the app said it had saved.
- *
- * So: prefer this everywhere you have the row. A live case is never frozen, however
- * it is billed; the moment it is concluded it locks like any other job.
+ * They disagreed once, and it cost data: a database exemption the app could not see meant
+ * Postgres accepted a surveyor's write while every UI refused it — and offline sync read
+ * that as "billed and locked", DISCARDED the queued attendance and returned ok:true. The
+ * work vanished and the app said it had saved. That is why this takes the ROW and why
+ * every write surface calls it rather than testing a status string: the next exemption
+ * has somewhere to land.
  */
 export function isJobEditable(job: JobLockShape | null | undefined): boolean {
   if (!job) return true                 // unknown job — never wrongly block a write
-  if (isLiveCase(job)) return true      // a live case never freezes, at any status
   return !isJobLocked(job.workflow_status)
 }
 
@@ -721,10 +706,6 @@ export async function listJobTrackerRows(): Promise<TrackerRow[]> {
   const [{ data: jobs }, { data: js }, { data: invs }] = await Promise.all([
     supabase.from('jobs')
       .select('id, report_number, report_not_required, job_type, job_stage, cargo_type, notes, vessel_name, voyage_number, billed_under_job_id, title, surveyor_name, client_id, workflow_status, is_overtime, billing_mode, labour_unit, scheduled_date, end_date, created_at, invoice_id, client:clients(name, color), template:checklist_templates(name, color)')
-      // P&I cases are excluded from the register (mig 204). A case runs for years,
-      // so left in it would sit at the top of every view forever — and it is not the
-      // kind of thing this page is for. They have their own page at /admin.
-      .eq('is_case', false)
       .order('created_at', { ascending: false }),
     supabase.from('job_surveyors')
       .select('id, job_id, regular_hours, overtime_hours, surveyor:profiles!job_surveyors_surveyor_id_fkey(full_name, display_title)'),

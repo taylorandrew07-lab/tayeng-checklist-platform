@@ -88,8 +88,6 @@ export default function OfficeJobsMonitor() {
             template:checklist_templates(name, color),
             client:clients(name, color)
           `)
-          // P&I cases have their own page and are not part of the register (mig 204).
-          .eq('is_case', false)
           .order('created_at', { ascending: false })
         // Re-sorted by the job's LAST day (PostgREST can't ORDER BY a COALESCE), so
         // the Date column reads top-to-bottom instead of jumping about.

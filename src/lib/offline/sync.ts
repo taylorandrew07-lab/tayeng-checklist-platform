@@ -94,7 +94,7 @@ export async function syncDraft(supabase: SupabaseClient, jobId: string): Promis
     // attempt, push only what the surveyor can have corrected since (the job page's
     // offline edit writes those back onto the draft) instead of re-upserting.
     const { data: alreadyCreated, error: preErr } = await supabase.from('jobs')
-      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, voyage_number, job_stage, cargo_type, notes, workflow_status, billed_under_job_id, is_case, case_status').eq('id', jobId).maybeSingle()
+      .select('id, title, vessel_name, vessel_type, scheduled_date, port_location, voyage_number, job_stage, cargo_type, notes, workflow_status, billed_under_job_id').eq('id', jobId).maybeSingle()
     // A FAILED pre-check must NOT be read as "row doesn't exist" — that would drop us
     // into the else branch and re-run createDraftJob, whose BEFORE-INSERT trigger burns
     // a fresh report number off the counter even though the row already exists (the
