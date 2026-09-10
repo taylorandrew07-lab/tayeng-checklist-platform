@@ -1,9 +1,19 @@
 'use client'
 
-// Fees and costs on a case: the correspondency fee when the file opens, and third-party
-// or contractor costs. Same shape — a dated one-time amount in a currency — so one card.
+// Fees and costs on a case — the card where the money is worked.
 //
-// A receipt attaches straight to the row. That was the missing half of "I have an invoice
+// WHAT IT IS IS TYPED, NOT PICKED. This was four fixed options (correspondency, third
+// party, disbursement, other). A launch hire, a courier, a police report fee and a diver
+// are four different things and only one of them is a "disbursement", so the field is free
+// text with suggestions now, like the case type. Migration 219 took the CHECK off.
+//
+// AND SOME OF IT IS TIME. Type "Phone call" or "Email" and the form stops asking for an
+// amount and asks how long it took and when — because a call is not a cost, it is time,
+// and time belongs in Attendances where it can be priced by the hour and carried onto a
+// claim. It is filed there in your name, exactly where the quick buttons above put theirs,
+// and the toast says so, so nothing appears to vanish.
+//
+// A receipt attaches straight to a charge. That was the missing half of "I have an invoice
 // for Ocean Sun and nowhere to put it": the column existed and the API wrote it, but no
 // screen ever offered an uploader.
 //
@@ -11,23 +21,25 @@
 // carries a total that went out on an invoice raised outside this app.
 
 import { useState, useRef } from 'react'
-import { Plus, Pencil, Trash2, Loader2, Paperclip, CheckCircle2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Paperclip, CheckCircle2, Clock } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import { confirmDialog } from '@/components/ui/confirm'
 import { formatDate, withTimeout } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import QuickBlocks from '@/components/cases/QuickBlocks'
+import { chargeKindLabel, isTimeKind, CHARGE_KIND_SUGGESTIONS } from '@/lib/cases/chargeKind'
+import { DURATION_CHOICES, formatMinutes } from '@/lib/cases/minutes'
 import {
-  addCharge, updateCharge, deleteCharge, uploadDocument,
-  CURRENCIES, CASE_CHARGE_KIND,
-  type CaseCharge, type CaseChargeKind, type ChargeInput,
+  addCharge, updateCharge, deleteCharge, uploadDocument, addOwnTimeEntry,
+  CURRENCIES,
+  type CaseCharge, type ChargeInput,
 } from '@/lib/cases/api'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const BLANK = {
-  kind: 'correspondency' as CaseChargeKind,
-  description: '', payee: '', on: todayKey(), qty: '1', amount: '', currency: 'USD',
+  kind: '', description: '', payee: '', on: todayKey(),
+  qty: '1', amount: '', currency: 'USD', minutes: '10',
 }
 
 export default function CaseCharges({ caseId, charges, onChanged }: {
@@ -42,17 +54,41 @@ export default function CaseCharges({ caseId, charges, onChanged }: {
   const [attachTo, setAttachTo] = useState<string | null>(null)
   const pick = useRef<HTMLInputElement>(null)
 
+  // Only a NEW entry can turn into time. An existing charge stays a charge whatever it is
+  // renamed to — silently converting a row someone already priced would lose the amount.
+  const timeMode = !editId && isTimeKind(f.kind)
+
   function cancel() { setEditId(null); setOpen(false); setF({ ...BLANK }) }
 
   function startEdit(c: CaseCharge) {
     setEditId(c.id); setOpen(true)
     setF({
-      kind: c.kind, description: c.description, payee: c.payee ?? '',
+      ...BLANK,
+      kind: chargeKindLabel(c.kind), description: c.description, payee: c.payee ?? '',
       on: c.incurred_on, qty: String(c.qty), amount: String(c.unit_amount), currency: c.currency,
     })
   }
 
+  async function saveTime() {
+    const minutes = Number(f.minutes)
+    if (!(minutes > 0)) { toast.error('Choose how long it took'); return }
+    const what = f.kind.trim() || 'Attendance'
+    setBusy(true)
+    const res = await addOwnTimeEntry(caseId, {
+      // The description carries the detail when there is one, and the type itself when
+      // there is not — so a line never reads as a bare blank on a claim.
+      description: f.description.trim() || what,
+      minutes, on: f.on,
+    })
+    setBusy(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success(`${what} — ${formatMinutes(minutes)} added to attendances`)
+    cancel(); onChanged()
+  }
+
   async function save() {
+    if (timeMode) return saveTime()
+    if (!f.kind.trim()) { toast.error('Say what this is'); return }
     if (!f.description.trim()) { toast.error('Give the charge a description'); return }
     const amt = Number(f.amount)
     if (!(amt > 0)) { toast.error('Enter an amount'); return }
@@ -98,72 +134,103 @@ export default function CaseCharges({ caseId, charges, onChanged }: {
       <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200">
         <h2 className="section-title">Fees and costs</h2>
         <div className="flex flex-wrap items-center gap-2">
-        <QuickBlocks caseId={caseId} onAdded={onChanged} />
-        {!open && (
-          <button type="button" onClick={() => setOpen(true)} className="btn-secondary text-xs">
-            <Plus className="h-4 w-4" />Add charge
-          </button>
-        )}
+          <QuickBlocks caseId={caseId} onAdded={onChanged} />
+          {!open && (
+            <button type="button" onClick={() => setOpen(true)} className="btn-secondary text-xs">
+              <Plus className="h-4 w-4" />Add
+            </button>
+          )}
         </div>
       </div>
 
       {open && (
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 space-y-3">
           <div className="flex flex-wrap gap-3">
-            <div>
-              <label className="label-base" htmlFor="cc-kind">Type</label>
-              <select id="cc-kind" className="input-base w-48" value={f.kind}
-                onChange={e => setF(p => ({ ...p, kind: e.target.value as CaseChargeKind }))}>
-                {(Object.keys(CASE_CHARGE_KIND) as CaseChargeKind[]).map(k => (
-                  <option key={k} value={k}>{CASE_CHARGE_KIND[k]}</option>
-                ))}
-              </select>
+            <div className="w-56">
+              <label className="label-base" htmlFor="cc-kind">What is it</label>
+              <input id="cc-kind" className="input-base" list="case-charge-kinds" value={f.kind}
+                placeholder="Correspondency fee, phone call…"
+                onChange={e => setF(p => ({ ...p, kind: e.target.value }))} />
+              <datalist id="case-charge-kinds">
+                {CHARGE_KIND_SUGGESTIONS.map(k => <option key={k} value={k} />)}
+              </datalist>
             </div>
             <div>
               <label className="label-base" htmlFor="cc-on">Date</label>
               <input id="cc-on" type="date" className="input-base w-40" value={f.on}
                 onChange={e => setF(p => ({ ...p, on: e.target.value }))} />
             </div>
-            <div className="w-20">
-              <label className="label-base" htmlFor="cc-qty">Qty</label>
-              <input id="cc-qty" type="number" min="0" step="1" inputMode="numeric"
-                className="input-base text-right tnum" value={f.qty}
-                onChange={e => setF(p => ({ ...p, qty: e.target.value }))} />
-            </div>
-            <div className="w-32">
-              <label className="label-base" htmlFor="cc-amt">Amount</label>
-              <input id="cc-amt" type="number" min="0" step="0.01" inputMode="decimal"
-                className="input-base text-right tnum" value={f.amount}
-                onChange={e => setF(p => ({ ...p, amount: e.target.value }))} />
-            </div>
-            <div className="w-24">
-              <label className="label-base" htmlFor="cc-ccy">Currency</label>
-              <select id="cc-ccy" className="input-base" value={f.currency}
-                onChange={e => setF(p => ({ ...p, currency: e.target.value }))}>
-                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+
+            {timeMode ? (
+              <div className="w-40">
+                <label className="label-base" htmlFor="cc-mins">Time spent</label>
+                <select id="cc-mins" className="input-base" value={f.minutes}
+                  onChange={e => setF(p => ({ ...p, minutes: e.target.value }))}>
+                  {DURATION_CHOICES.map(m => (
+                    <option key={m} value={m}>{formatMinutes(m)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div className="w-20">
+                  <label className="label-base" htmlFor="cc-qty">Qty</label>
+                  <input id="cc-qty" type="number" min="0" step="1" inputMode="numeric"
+                    className="input-base text-right tnum" value={f.qty}
+                    onChange={e => setF(p => ({ ...p, qty: e.target.value }))} />
+                </div>
+                <div className="w-32">
+                  <label className="label-base" htmlFor="cc-amt">Amount</label>
+                  <input id="cc-amt" type="number" min="0" step="0.01" inputMode="decimal"
+                    className="input-base text-right tnum" value={f.amount}
+                    onChange={e => setF(p => ({ ...p, amount: e.target.value }))} />
+                </div>
+                <div className="w-24">
+                  <label className="label-base" htmlFor="cc-ccy">Currency</label>
+                  <select id="cc-ccy" className="input-base" value={f.currency}
+                    onChange={e => setF(p => ({ ...p, currency: e.target.value }))}>
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
+
           <div className="flex flex-wrap gap-3">
             <div className="flex-1 min-w-[200px]">
-              <label className="label-base" htmlFor="cc-desc">Description</label>
+              <label className="label-base" htmlFor="cc-desc">
+                {timeMode ? 'What it was about' : 'Description'}
+              </label>
               <input id="cc-desc" className="input-base" value={f.description}
-                placeholder={f.kind === 'correspondency' ? 'Opening of case file' : 'e.g. Launch hire'}
+                placeholder={timeMode ? 'Optional'
+                  : f.kind.toLowerCase().includes('correspondency') ? 'Opening of case file'
+                  : 'e.g. Launch hire'}
                 onChange={e => setF(p => ({ ...p, description: e.target.value }))} />
             </div>
-            <div className="flex-1 min-w-[160px]">
-              <label className="label-base" htmlFor="cc-payee">Paid to</label>
-              <input id="cc-payee" className="input-base" value={f.payee} placeholder="Optional"
-                onChange={e => setF(p => ({ ...p, payee: e.target.value }))} />
-            </div>
+            {!timeMode && (
+              <div className="flex-1 min-w-[160px]">
+                <label className="label-base" htmlFor="cc-payee">Paid to</label>
+                <input id="cc-payee" className="input-base" value={f.payee} placeholder="Optional"
+                  onChange={e => setF(p => ({ ...p, payee: e.target.value }))} />
+              </div>
+            )}
             <div className="flex gap-2 items-end">
               <button type="button" onClick={save} disabled={busy} className="btn-primary text-sm">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : editId ? <CheckCircle2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                {editId ? 'Save' : 'Add'}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : editId ? <CheckCircle2 className="h-4 w-4" />
+                  : timeMode ? <Clock className="h-4 w-4" />
+                  : <Plus className="h-4 w-4" />}
+                {editId ? 'Save' : timeMode ? 'Log time' : 'Add'}
               </button>
               <button type="button" onClick={cancel} className="btn-secondary text-sm">Cancel</button>
             </div>
           </div>
+
+          {timeMode && (
+            <p className="text-xs text-gray-500">
+              Time, not a cost — this goes to Attendances in your name. Set what it is worth there.
+            </p>
+          )}
         </div>
       )}
 
@@ -180,7 +247,7 @@ export default function CaseCharges({ caseId, charges, onChanged }: {
                   {c.description}{c.payee ? <span className="text-gray-500"> — {c.payee}</span> : null}
                 </p>
                 <p className="text-xs text-gray-500">
-                  {CASE_CHARGE_KIND[c.kind]} · {formatDate(c.incurred_on)}
+                  {chargeKindLabel(c.kind)} · {formatDate(c.incurred_on)}
                   {c.document_count > 0 && (
                     <span className="ml-1.5 inline-flex items-center gap-0.5 text-gray-400">
                       <Paperclip className="h-3 w-3" />{c.document_count}

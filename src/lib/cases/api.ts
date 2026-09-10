@@ -29,7 +29,6 @@ export const CASE_BUCKET = 'case-documents'
 
 export type CaseStatus = 'open' | 'on_hold' | 'concluded'
 export type RateType = 'hourly' | 'daily' | 'fixed'
-export type CaseChargeKind = 'correspondency' | 'third_party' | 'disbursement' | 'other'
 
 /** One badge per domain — never inline a new colour map (DESIGN.md). */
 export const CASE_STATUS: Record<CaseStatus, { label: string; pill: string; dot: string }> = {
@@ -43,13 +42,6 @@ export const RATE_TYPE: Record<RateType, string> = {
   hourly: 'Hourly',
   daily: 'Daily',
   fixed: 'Fixed fee',
-}
-
-export const CASE_CHARGE_KIND: Record<CaseChargeKind, string> = {
-  correspondency: 'Correspondency fee',
-  third_party: 'Third party / contractor',
-  disbursement: 'Disbursement',
-  other: 'Other',
 }
 
 /** Suggestions only — the field stays free text. A club's matters vary too much to
@@ -108,7 +100,9 @@ export interface CaseAttendance {
 export interface CaseCharge {
   id: string
   case_id: string
-  kind: CaseChargeKind
+  /** Free text since mig 219 — what it IS, as typed. Show it with chargeKindLabel(),
+   *  which also covers the four keys rows written before then still hold. */
+  kind: string
   description: string
   payee: string | null
   incurred_on: string
@@ -349,6 +343,31 @@ export async function addQuickBlock(
   return { id: data as string }
 }
 
+/**
+ * Time logged from the Fees and costs card, in your own name.
+ *
+ * Typing "Phone call" where a cost goes is not a mistake — it is how the work actually
+ * arrives — but a call is TIME, and time belongs in attendances where it can be priced by
+ * the hour and carried onto a claim. So the entry is filed there, exactly where the quick
+ * buttons put theirs, and the screen says so.
+ *
+ * No rate: what it cost is set on the attendance itself, per entry, and an unpriced one is
+ * never swept onto a claim by mistake.
+ */
+export async function addOwnTimeEntry(
+  caseId: string, i: { description: string; minutes: number; on: string },
+): Promise<{ id?: string; error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'You are signed out — sign in again to log time.' }
+  return addAttendance(caseId, {
+    attendee_profile_id: user.id, attendee_name: null,
+    attended_on: i.on, minutes: i.minutes,
+    description: i.description, location: null, note: null,
+    rate_type: 'hourly', rate_amount: null, days: null, currency: 'USD',
+  })
+}
+
 // ── Fees and costs ──────────────────────────────────────────────────────────
 
 const CHG_COLS =
@@ -366,7 +385,7 @@ export async function listCharges(caseId: string): Promise<CaseCharge[]> {
     docCount.set(d.charge_id, (docCount.get(d.charge_id) ?? 0) + 1)
   }
   return ((data ?? []) as any[]).map(c => ({
-    id: c.id, case_id: c.case_id, kind: c.kind as CaseChargeKind,
+    id: c.id, case_id: c.case_id, kind: (c.kind ?? '') as string,
     description: c.description, payee: c.payee ?? null, incurred_on: c.incurred_on,
     qty: num(c.qty, 1), unit_amount: num(c.unit_amount), currency: c.currency ?? 'USD',
     amount: Math.round(num(c.qty, 1) * num(c.unit_amount) * 100) / 100,
@@ -376,7 +395,7 @@ export async function listCharges(caseId: string): Promise<CaseCharge[]> {
 }
 
 export interface ChargeInput {
-  kind: CaseChargeKind
+  kind: string
   description: string
   payee: string | null
   incurred_on: string
@@ -389,7 +408,7 @@ export async function addCharge(caseId: string, i: ChargeInput): Promise<{ id?: 
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data, error } = await supabase.from('case_charges').insert({
-    case_id: caseId, kind: i.kind, description: i.description.trim(),
+    case_id: caseId, kind: i.kind.trim() || 'Other', description: i.description.trim(),
     payee: clean(i.payee), incurred_on: i.incurred_on,
     qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
     created_by: user?.id ?? null,
@@ -407,7 +426,7 @@ export async function updateCharge(id: string, i: ChargeInput): Promise<{ error?
     return { error: `This is on claim ${no ? `#${no}` : 'a claim'}. Undo that claim before changing it.` }
   }
   const { data, error } = await supabase.from('case_charges').update({
-    kind: i.kind, description: i.description.trim(), payee: clean(i.payee),
+    kind: i.kind.trim() || 'Other', description: i.description.trim(), payee: clean(i.payee),
     incurred_on: i.incurred_on, qty: i.qty, unit_amount: i.unit_amount, currency: i.currency,
   }).eq('id', id).select('id')
   if (error) return { error: error.message }

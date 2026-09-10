@@ -45,6 +45,9 @@ export default function CasePage() {
   const [docs, setDocs] = useState<CaseDocument[]>([])
   const [claims, setClaims] = useState<CaseClaim[]>([])
   const [claiming, setClaiming] = useState(false)
+  // Bumped when time is logged from the Fees and costs card — the quick buttons and a
+  // typed "Phone call" both land in attendances, which is a list this page does not own.
+  const [beat, setBeat] = useState(0)
 
   const load = useCallback(async () => {
     if (!caseId) return
@@ -54,6 +57,8 @@ export default function CasePage() {
     ])
     setRow(c); setAttendances(a); setCharges(ch); setDocs(d); setClaims(cl)
   }, [caseId])
+
+  const loadAndBeat = useCallback(() => { load(); setBeat(b => b + 1) }, [load])
 
   useEffect(() => { load() }, [load])
 
@@ -128,8 +133,8 @@ export default function CasePage() {
         </div>
       </div>
 
-      <CaseAttendances caseId={row.id} onChanged={load} />
-      <CaseCharges caseId={row.id} charges={charges} onChanged={load} />
+      <CaseAttendances caseId={row.id} onChanged={load} version={beat} />
+      <CaseCharges caseId={row.id} charges={charges} onChanged={loadAndBeat} />
       <CaseDocuments caseId={row.id} docs={docs} onChanged={load} />
       <ClaimsCard claims={claims} onChanged={load} />
 

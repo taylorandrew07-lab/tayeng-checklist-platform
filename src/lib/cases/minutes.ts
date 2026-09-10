@@ -12,6 +12,10 @@
 /** One tap of a quick button. Both "Phone call" and "Email" add exactly this. */
 export const QUICK_BLOCK_MINUTES = 10
 
+/** What the "time spent" dropdown offers. Ten minutes first because that is the unit the
+ *  quick buttons work in, and a call or an email is usually one or two of them. */
+export const DURATION_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 480]
+
 /** Minutes → "1 h 40 m". Compact on purpose: this sits in a dense list, next to a rate
  *  and an amount, and "1 hour 40 minutes" would push the money off a phone screen. */
 export function formatMinutes(total: number): string {

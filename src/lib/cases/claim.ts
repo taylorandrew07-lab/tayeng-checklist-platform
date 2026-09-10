@@ -7,7 +7,8 @@
 // eventually will.
 
 import { formatMinutes, minutesToHours } from './minutes'
-import { RATE_TYPE, CASE_CHARGE_KIND, type CaseAttendance, type CaseCharge, type CaseRow } from './api'
+import { RATE_TYPE, type CaseAttendance, type CaseCharge, type CaseRow } from './api'
+import { chargeKindLabel } from './chargeKind'
 import { caseTitle } from './title'
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -119,7 +120,7 @@ export function claimLines(group: CurrencyGroup): ClaimLine[] {
     date: c.incurred_on,
     who: c.payee || '',
     detail: c.description,
-    basis: CASE_CHARGE_KIND[c.kind],
+    basis: chargeKindLabel(c.kind),
     qty: c.qty === 1 ? '' : String(c.qty),
     rate: String(c.unit_amount),
     amount: c.amount,
