@@ -42,11 +42,16 @@ import {
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-// What a new entry starts as: billed by TIME, entered as a clock span, priced at what
-// this case charges. That is the shape of nearly every line on a case, and all three stay
-// editable — the point is to stop retyping the same three answers, not to decide them.
+/** Typed into the box, not greyed out behind it: correspondence is what most entries on
+ *  a case are, so the answer is already there and a different one is typed over it. */
+export const DEFAULT_CHARGE_KIND = "Correspondant's Fee"
+
+// What a new entry starts as: the correspondant's fee, billed by TIME, entered as a clock
+// span, priced at what this case charges. That is the shape of nearly every line on a
+// case, and every part of it stays editable — the point is to stop retyping the same four
+// answers, not to decide them.
 const BLANK = {
-  kind: '', description: '', payee: '', on: todayKey(),
+  kind: DEFAULT_CHARGE_KIND, description: '', payee: '', on: todayKey(),
   qty: '1', amount: '', currency: 'USD',
   // Typed, or the literal 'span' narrows the field and a row entered in Hours cannot be
   // edited back into it.
@@ -71,7 +76,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
   /** todayKey() is read HERE, not at module load: a tab left open overnight would
    *  otherwise keep offering yesterday. */
   function fresh() {
-    const r = standingRate(kase, '')
+    const r = standingRate(kase, DEFAULT_CHARGE_KIND)
     return { ...BLANK, on: todayKey(), amount: String(r.rate), currency: r.currency }
   }
 
@@ -187,7 +192,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
             <div className="w-56">
               <label className="label-base" htmlFor="cc-kind">What is it</label>
               <input id="cc-kind" className="input-base" list="case-charge-kinds" value={f.kind}
-                placeholder="Correspondant&apos;s Fee, phone call…"
+                placeholder="Phone call, launch hire…"
                 onChange={e => onKind(e.target.value)} />
               <datalist id="case-charge-kinds">
                 {CHARGE_KIND_SUGGESTIONS.map(k => <option key={k} value={k} />)}
