@@ -30,22 +30,27 @@ import { formatDate, withTimeout } from '@/lib/utils'
 import { todayKey } from '@/lib/cargo/voyageDate'
 import QuickBlocks from '@/components/cases/QuickBlocks'
 import DurationField, {
-  BLANK_DURATION, durationMinutes, durationTimes, durationFromRow,
+  BLANK_DURATION, durationMinutes, durationTimes, durationFromRow, type DurationValue,
 } from '@/components/cases/DurationField'
 import { chargeKindLabel, isTimeKind, CHARGE_KIND_SUGGESTIONS } from '@/lib/cases/chargeKind'
 import { formatMinutes } from '@/lib/cases/minutes'
 import {
   addCharge, updateCharge, deleteCharge, uploadDocument, updateCase,
-  rateDefaultFor, CURRENCIES,
+  rateDefaultFor, standingRate, RATE_DEFAULT_KEY, STARTING_HOURLY_RATE, CURRENCIES,
   type CaseRow, type CaseCharge, type ChargeInput,
 } from '@/lib/cases/api'
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+// What a new entry starts as: billed by TIME, entered as a clock span, priced at what
+// this case charges. That is the shape of nearly every line on a case, and all three stay
+// editable — the point is to stop retyping the same three answers, not to decide them.
 const BLANK = {
   kind: '', description: '', payee: '', on: todayKey(),
   qty: '1', amount: '', currency: 'USD',
-  timed: false, dur: BLANK_DURATION,
+  // Typed, or the literal 'span' narrows the field and a row entered in Hours cannot be
+  // edited back into it.
+  timed: true, dur: { ...BLANK_DURATION, mode: 'span' } as DurationValue,
 }
 
 export default function CaseCharges({ kase, charges, onChanged }: {
@@ -57,18 +62,25 @@ export default function CaseCharges({ kase, charges, onChanged }: {
   const [open, setOpen] = useState(false)
   const [rates, setRates] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
-  const [f, setF] = useState({ ...BLANK })
+  const [f, setF] = useState(fresh)
   const [rateTouched, setRateTouched] = useState(false)
   const [busy, setBusy] = useState(false)
   const [attachTo, setAttachTo] = useState<string | null>(null)
   const pick = useRef<HTMLInputElement>(null)
 
-  function cancel() { setEditId(null); setOpen(false); setF({ ...BLANK }); setRateTouched(false) }
+  /** todayKey() is read HERE, not at module load: a tab left open overnight would
+   *  otherwise keep offering yesterday. */
+  function fresh() {
+    const r = standingRate(kase, '')
+    return { ...BLANK, on: todayKey(), amount: String(r.rate), currency: r.currency }
+  }
+
+  function cancel() { setEditId(null); setOpen(false); setF(fresh()); setRateTouched(false) }
 
   function startEdit(c: CaseCharge) {
     setEditId(c.id); setOpen(true); setRateTouched(true)
     setF({
-      ...BLANK,
+      ...fresh(),
       kind: chargeKindLabel(c.kind), description: c.description, payee: c.payee ?? '',
       on: c.incurred_on, qty: String(c.qty), amount: String(c.unit_amount), currency: c.currency,
       timed: c.minutes != null,
@@ -82,7 +94,10 @@ export default function CaseCharges({ kase, charges, onChanged }: {
     const d = rateTouched ? null : rateDefaultFor(kase, kind)
     setF(p => ({
       ...p, kind,
-      timed: editId || rateTouched ? p.timed : isTimeKind(kind),
+      // Only ever ON. A new entry is already billed by time, and quietly flipping it back
+      // to Quantity because the words did not look like a call is how the guessing went
+      // wrong in the first place. The toggle is right there.
+      timed: p.timed || (!editId && isTimeKind(kind)),
       ...(d ? { amount: String(d.rate), currency: d.currency } : {}),
     }))
   }
@@ -172,7 +187,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
             <div className="w-56">
               <label className="label-base" htmlFor="cc-kind">What is it</label>
               <input id="cc-kind" className="input-base" list="case-charge-kinds" value={f.kind}
-                placeholder="Correspondency fee, phone call…"
+                placeholder="Correspondant&apos;s Fee, phone call…"
                 onChange={e => onKind(e.target.value)} />
               <datalist id="case-charge-kinds">
                 {CHARGE_KIND_SUGGESTIONS.map(k => <option key={k} value={k} />)}
@@ -240,7 +255,7 @@ export default function CaseCharges({ kase, charges, onChanged }: {
               </label>
               <input id="cc-desc" className="input-base" value={f.description}
                 placeholder={f.timed ? 'Optional'
-                  : f.kind.toLowerCase().includes('correspondency') ? 'Opening of case file'
+                  : f.kind.toLowerCase().includes('correspond') ? 'Opening of case file'
                   : 'e.g. Launch hire'}
                 onChange={e => setF(p => ({ ...p, description: e.target.value }))} />
             </div>
@@ -274,8 +289,8 @@ export default function CaseCharges({ kase, charges, onChanged }: {
 
       {charges.length === 0 ? (
         <p className="px-6 py-8 text-center text-sm text-gray-400">
-          Nothing yet — the correspondency fee usually goes on when the file opens, and a call
-          or an email is two taps.
+          Nothing yet — the correspondant&apos;s fee usually goes on when the file opens, and a
+          call or an email is two taps.
         </p>
       ) : (
         <div className="divide-y divide-gray-100">
@@ -359,10 +374,14 @@ function RatesPanel({ kase, onSaved, onClose }: {
 }) {
   const call = rateDefaultFor(kase, 'Phone call')
   const email = rateDefaultFor(kase, 'Email')
+  const base = rateDefaultFor(kase, RATE_DEFAULT_KEY)
   const [f, setF] = useState({
     call: call ? String(call.rate) : '',
     email: email ? String(email.rate) : '',
-    currency: call?.currency ?? email?.currency ?? 'USD',
+    // Seeded rather than blank: a case with nothing set still bills at the house rate, so
+    // showing an empty box here would misrepresent what the next entry will cost.
+    base: String((base ?? { rate: STARTING_HOURLY_RATE }).rate),
+    currency: call?.currency ?? email?.currency ?? base?.currency ?? 'USD',
   })
   const [busy, setBusy] = useState(false)
 
@@ -378,6 +397,7 @@ function RatesPanel({ kase, onSaved, onClose }: {
     }
     put('phone call', f.call)
     put('email', f.email)
+    put(RATE_DEFAULT_KEY, f.base)
 
     setBusy(true)
     const res = await updateCase(kase.id, { rate_defaults: next } as Partial<CaseRow>)
@@ -391,9 +411,16 @@ function RatesPanel({ kase, onSaved, onClose }: {
     <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 space-y-3">
       <p className="text-xs text-gray-500">
         What this case pays by the hour. A tap of Phone call or Email prices itself from here,
-        so the rate is typed once instead of on every line.
+        and everything else starts at the default — so the rate is typed once instead of on
+        every line.
       </p>
       <div className="flex flex-wrap gap-3">
+        <div className="w-36">
+          <label className="label-base" htmlFor="cr-base">Default / hour</label>
+          <input id="cr-base" type="number" min="0" step="0.01" inputMode="decimal"
+            className="input-base text-right tnum" value={f.base}
+            onChange={e => setF(p => ({ ...p, base: e.target.value }))} />
+        </div>
         <div className="w-36">
           <label className="label-base" htmlFor="cr-call">Phone call / hour</label>
           <input id="cr-call" type="number" min="0" step="0.01" inputMode="decimal"

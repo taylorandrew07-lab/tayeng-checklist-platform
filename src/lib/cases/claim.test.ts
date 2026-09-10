@@ -16,7 +16,7 @@ const att = (o: Partial<CaseAttendance> = {}): CaseAttendance => ({
 })
 
 const chg = (o: Partial<CaseCharge> = {}): CaseCharge => ({
-  id: 'f1', case_id: 'c', kind: 'Correspondency fee', description: 'Opening of case file',
+  id: 'f1', case_id: 'c', kind: "Correspondant's Fee", description: 'Opening of case file',
   payee: null, incurred_on: '2026-09-07', minutes: null, start_time: null, end_time: null,
   qty: 1, unit_amount: 120, currency: 'USD', amount: 120, creator_label: null,
   claim_id: null, claim_no: null, document_count: 0, ...o,

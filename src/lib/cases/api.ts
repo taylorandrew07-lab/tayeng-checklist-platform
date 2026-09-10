@@ -73,6 +73,28 @@ export interface CaseRow {
   created_at: string
 }
 
+/** The reserved key for "everything else" in rate_defaults. Not a kind — no charge is
+ *  ever called this — so it cannot collide with one somebody types. */
+export const RATE_DEFAULT_KEY = '*'
+
+/** What a case charges by the hour before anybody has said otherwise. A starting point
+ *  that is right most of the time, never a rule: it fills the box in, the box stays
+ *  editable, and the case's own Default rate replaces it for good. */
+export const STARTING_HOURLY_RATE = 120
+
+/**
+ * The rate to put in the box, in order of who has the better claim to know: what this
+ * case pays for THIS kind of work, then what it pays for anything, then the house
+ * starting point. Never null — an empty rate box is how entries end up unpriced.
+ */
+export function standingRate(
+  kase: Pick<CaseRow, 'rate_defaults'> | null | undefined, kind: string,
+): { rate: number; currency: string } {
+  return rateDefaultFor(kase, kind)
+    ?? rateDefaultFor(kase, RATE_DEFAULT_KEY)
+    ?? { rate: STARTING_HOURLY_RATE, currency: 'USD' }
+}
+
 /** The standing rate for a kind of work on this case, or null if nobody has said. */
 export function rateDefaultFor(
   kase: Pick<CaseRow, 'rate_defaults'> | null | undefined, kind: string,
@@ -368,7 +390,7 @@ export async function deleteAttendance(id: string): Promise<{ error?: string }> 
  * One tap of a quick button = one 10-minute block in FEES AND COSTS, attributed to you.
  *
  * It lands there and not in attendances because that is how the work reads from this side:
- * an attendance is somebody going somewhere; a call or an email is the correspondency
+ * an attendance is somebody going somewhere; a call or an email is the correspondent's
  * service, which is a fee. It prices itself from the case's standing rate for that kind
  * when there is one, and is logged unpriced when there is not — never blocked.
  *

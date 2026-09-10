@@ -161,7 +161,7 @@ try {
 
   // A fee rides on the same claim.
   const feeRes = await boss.from('case_charges').insert({
-    case_id: caseId, kind: 'correspondency', description: 'SMOKE correspondency fee',
+    case_id: caseId, kind: 'correspondency', description: 'SMOKE correspondant fee',
     incurred_on: '2026-01-05', qty: 1, unit_amount: 250, currency: 'USD' }).select('id')
   wrote(feeRes, 'an admin can add a fee')
   const feeId = feeRes.data?.[0]?.id

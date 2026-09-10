@@ -128,7 +128,7 @@ export default function CasePage() {
         </div>
       </div>
 
-      {/* Fees and costs FIRST: the calls, the emails and the correspondency fee are the
+      {/* Fees and costs FIRST: the calls, the emails and the correspondant's fee are the
           day-to-day of a case, and an attendance is the occasional trip out. */}
       <CaseCharges kase={row} charges={charges} onChanged={load} />
       <CaseAttendances caseId={row.id} onChanged={load} />

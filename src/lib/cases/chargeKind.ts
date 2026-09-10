@@ -15,7 +15,7 @@
 
 /** Offered in the datalist. Costs first, then the things that are really time. */
 export const CHARGE_KIND_SUGGESTIONS = [
-  'Correspondency fee',
+  "Correspondant's Fee",
   'Third party / contractor',
   'Disbursement',
   'Launch hire',
@@ -29,7 +29,9 @@ export const CHARGE_KIND_SUGGESTIONS = [
 
 /** Written before the field was free text (migrations 208–218). */
 const LEGACY: Record<string, string> = {
-  correspondency: 'Correspondency fee',
+  // The rows written before mig 219 still hold the key 'correspondency'; the LABEL is the
+  // owner's wording, and changing it here changes it on every one of them at once.
+  correspondency: "Correspondant's Fee",
   third_party: 'Third party / contractor',
   disbursement: 'Disbursement',
   other: 'Other',

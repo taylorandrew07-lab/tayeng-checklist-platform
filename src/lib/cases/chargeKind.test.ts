@@ -3,7 +3,7 @@ import { chargeKindLabel, isTimeKind, CHARGE_KIND_SUGGESTIONS } from './chargeKi
 
 describe('chargeKindLabel', () => {
   it('gives the old four keys their old labels', () => {
-    expect(chargeKindLabel('correspondency')).toBe('Correspondency fee')
+    expect(chargeKindLabel('correspondency')).toBe("Correspondant's Fee")
     expect(chargeKindLabel('third_party')).toBe('Third party / contractor')
     expect(chargeKindLabel('disbursement')).toBe('Disbursement')
     expect(chargeKindLabel('other')).toBe('Other')
@@ -30,8 +30,9 @@ describe('isTimeKind', () => {
   })
 
   it('leaves money alone', () => {
-    // "Correspondency" contains no time word, and must not: it is a one-off fee.
-    for (const k of ['Correspondency fee', 'correspondency', 'Third party / contractor',
+    // The correspondant's fee contains no time word, and must not: on its own it is the
+    // one-off fee for opening the file, whatever is billed by the hour beside it.
+    for (const k of ["Correspondant's Fee", 'correspondency', 'Third party / contractor',
                      'Disbursement', 'Launch hire', 'Courier', 'Police report fee', '']) {
       expect(isTimeKind(k), k).toBe(false)
     }
