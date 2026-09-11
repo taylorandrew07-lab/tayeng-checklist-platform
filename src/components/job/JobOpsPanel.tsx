@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronRight, Plus, X, Upload, Download, Trash2, Loader2, Clock, CheckCircle2, MapPin, Bell, Pencil } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -52,6 +52,29 @@ function fmtSpan(e: { entry_date: string | null; start_time: string | null; end_
   const start = `${fmtDay(e.entry_date)} ${e.start_time ?? '--:--'}`
   const stopDay = e.end_date && e.end_date !== e.entry_date ? `${fmtDay(e.end_date)} ` : ''
   return `${start} → ${stopDay}${e.end_time ?? '--:--'}`
+}
+
+// A shift's Location, shared by the OT and regular logs. The two taps write exactly
+// "Vessel" / "Shore" so the labour report reads consistently; the box still takes any
+// other place and loads older free-text values ("Jetty", a vessel name) untouched.
+// Tapping the lit one clears it. The value saved is still the box's text, trimmed.
+// Not SegmentedControl: that is pick-exactly-one radios, and this can be cleared or hold a typed place.
+const LOCATION_PRESETS = ['Vessel', 'Shore'] as const
+function LocationPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const id = useId()
+  const cur = value.trim().toLowerCase()
+  return (
+    <div className="w-full sm:w-auto"><label htmlFor={id} className="block text-[10px] text-gray-400">Location</label>
+      <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 sm:gap-1.5">
+        <div role="group" aria-label="Quick location" className="flex flex-1 sm:flex-none rounded-lg border border-gray-300 divide-x divide-gray-300 overflow-hidden">
+          {LOCATION_PRESETS.map(p => { const on = cur === p.toLowerCase(); return (
+            <button key={p} type="button" onClick={() => onChange(on ? '' : p)} aria-pressed={on} className={`flex-1 sm:flex-none py-2.5 px-3 text-base sm:py-0.5 sm:px-1.5 sm:text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${on ? 'bg-brand-600 text-white focus-visible:ring-white' : 'bg-white text-gray-600 hover:bg-gray-50 focus-visible:ring-brand-600'}`}>{p}</button>
+          ) })}
+        </div>
+        <input id={id} type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="or type a place" className="input-base w-full py-2.5 px-3 text-base sm:w-28 sm:py-0.5 sm:px-1.5 sm:text-xs" />
+      </div>
+    </div>
+  )
 }
 
 function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableHours, defaultDate, onRemove, onSaved, onEntries, onKm, registerFlush, onDirty }: {
@@ -391,7 +414,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
                 <span className="w-full sm:w-auto text-sm sm:text-xs text-gray-500 sm:pb-1.5">= <span className="font-medium tnum">{preview}h</span></span>
               </div>
               <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
-                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`oloc-${row.id}`} value={nLocation} onChange={e => setNLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base w-full py-2.5 px-3 text-base sm:w-36 sm:py-0.5 sm:px-1.5 sm:text-xs" /><datalist id={`oloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
+                <LocationPicker value={nLocation} onChange={setNLocation} />
                 <input type="text" value={nNote} onChange={e => setNNote(e.target.value)} placeholder="note (optional)" className="input-base w-full py-2.5 px-3 text-base sm:flex-1 sm:min-w-[80px] sm:py-0.5 sm:px-1.5 sm:text-xs" />
                 <button onClick={addEntry} disabled={logBusy} className={`w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs ${nEditId ? 'btn-primary' : 'btn-secondary'}`}>{logBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : nEditId ? <CheckCircle2 className="h-3 w-3" /> : <Plus className="h-3 w-3" />}{nEditId ? 'Save' : 'Add'}</button>
                 {nEditId && <button onClick={cancelEntryEdit} disabled={logBusy} className="btn-ghost w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs">Cancel</button>}
@@ -439,7 +462,7 @@ function SurveyorRow({ row, jobId, isAdmin, billingMode, unit, locked, billableH
                 <span className="w-full sm:w-auto text-sm sm:text-xs text-gray-500 sm:pb-1.5">= <span className="font-medium tnum">{rPreview}h</span></span>
               </div>
               <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-x-2 sm:gap-y-1.5">
-                <div className="w-full sm:w-auto"><label className="block text-[10px] text-gray-400">Location</label><input type="text" list={`rloc-${row.id}`} value={rLocation} onChange={e => setRLocation(e.target.value)} placeholder="Vessel / Shore / Jetty" className="input-base w-full py-2.5 px-3 text-base sm:w-36 sm:py-0.5 sm:px-1.5 sm:text-xs" /><datalist id={`rloc-${row.id}`}><option value="Vessel" /><option value="Shore" /><option value="Jetty" /></datalist></div>
+                <LocationPicker value={rLocation} onChange={setRLocation} />
                 <input type="text" value={rNote} onChange={e => setRNote(e.target.value)} placeholder="note (optional)" className="input-base w-full py-2.5 px-3 text-base sm:flex-1 sm:min-w-[80px] sm:py-0.5 sm:px-1.5 sm:text-xs" />
                 <button onClick={addRegEntry} disabled={regLogBusy} className={`w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs ${rEditId ? 'btn-primary' : 'btn-secondary'}`}>{regLogBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : rEditId ? <CheckCircle2 className="h-3 w-3" /> : <Plus className="h-3 w-3" />}{rEditId ? 'Save' : 'Add'}</button>
                 {rEditId && <button onClick={cancelRegEdit} disabled={regLogBusy} className="btn-ghost w-full justify-center py-2.5 text-base sm:w-auto sm:py-1 sm:px-2 sm:text-xs">Cancel</button>}
