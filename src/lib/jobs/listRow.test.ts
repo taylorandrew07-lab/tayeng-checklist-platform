@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { byListRowDesc, listRowIsOngoing, listRowLastDateKey, splitVoyagesByJob, type JobsListRow } from './listRow'
 import type { VoyageListRow } from '@/lib/cargo/remote'
+import { todayKey } from '@/lib/cargo/voyageDate'
 
 type Job = { workflow_status?: string | null; scheduled_date?: string | null; end_date?: string | null; created_at?: string | null }
 
@@ -57,13 +58,11 @@ describe('byListRowDesc', () => {
   it('sorts an open-ended voyage by today, not by the day it started', () => {
     // Otherwise a voyage that began months ago sinks out of sight while still running.
     //
-    // "Today" is the LOCAL calendar day, matching dayKey() and the date the grid
-    // actually displays. Comparing against toISOString() (UTC) made this fail
-    // every evening between local midnight and UTC midnight — in Trinidad,
-    // every day after 8pm.
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    expect(listRowLastDateKey(voyage('v', { start_date: '2020-01-01', end_date: null }))).toBe(today)
+    // "Today" is TRINIDAD's calendar day — todayKey(), the one clock the
+    // implementation reads on every host. Deriving it from the host's local
+    // getters instead made this fail on CI (UTC) every evening between 8pm and
+    // midnight Trinidad, once UTC had rolled to the next day.
+    expect(listRowLastDateKey(voyage('v', { start_date: '2020-01-01', end_date: null }))).toBe(todayKey())
   })
 
   it('is a stable order for equal rows, so paging cannot reshuffle', () => {
