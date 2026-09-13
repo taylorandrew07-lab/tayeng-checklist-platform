@@ -195,8 +195,11 @@ export default function Sidebar({ profile, open = true, onClose, pendingCount = 
         )}
       >
         {/* Header / logo */}
-        <div className="relative px-3 pt-4 pb-3 border-b border-brand-800">
-          <img src="/logo-full.png" alt="Taylor Engineering Agencies Limited" className="w-full h-auto" />
+        {/* The 2026 lockup is a 4.3:1 strip with no built-in margin, so it is sized by
+            WIDTH (w-full, height auto) — never by height. Extra right padding on mobile
+            keeps the wordmark clear of the close button. */}
+        <div className="relative pl-4 pr-10 lg:pr-4 pt-5 pb-4 border-b border-brand-800">
+          <img src="/brand/lockup-white.png" alt="Taylor Engineering Agencies Limited" className="w-full h-auto" />
           {onClose && (
             <button onClick={onClose} className="lg:hidden absolute top-2 right-2 text-brand-400 hover:text-white">
               <X className="h-5 w-5" />

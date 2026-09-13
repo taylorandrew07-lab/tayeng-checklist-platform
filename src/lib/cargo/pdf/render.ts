@@ -15,12 +15,12 @@ import type { PreparedPhoto, ReportInclude } from './CargoReportDocument'
 
 async function loadLogoDataUrl(): Promise<string | null> {
   try {
-    // logo-invoice.png — the PRINT version, with dark wordmark text. Every document
-    // letterhead uses it (invoice, JobPDF, Borescoping, DRI). logo-full.png is the
+    // lockup-dark.png — the PRINT version, with dark wordmark text. Every document
+    // letterhead uses it (invoice, JobPDF, Borescoping, DRI). lockup-white.png is the
     // screen version whose wordmark is WHITE, for the dark sidebar and the auth
     // pages; on white paper it prints as an invisible wordmark beside the mark.
     // Precached by the service worker so this still resolves offline.
-    const res = await fetch('/logo-invoice.png')
+    const res = await fetch('/brand/lockup-dark.png')
     if (!res.ok) return null
     const blob = await res.blob()
     return await new Promise<string>((resolve, reject) => {

@@ -41,7 +41,7 @@ async function letterheadDataUrl(): Promise<string | null> {
     // wifi answers, the uplink is dead, and a bare fetch can hang indefinitely.
     // Without this the button sits on "Preparing…" forever and the surveyor has
     // no report and no error.
-    const res = await fetch('/logo-invoice.png', { signal: AbortSignal.timeout(5000) })
+    const res = await fetch('/brand/lockup-dark.png', { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
     const blob = await res.blob()
     return await new Promise<string>((resolve, reject) => {

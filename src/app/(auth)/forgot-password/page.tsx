@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="w-full max-w-md">
       <div className="text-center mb-8 animate-rise">
-        <img src="/logo-full.png" alt="Taylor Engineering" className="w-full mx-auto mb-4" />
+        <img src="/brand/lockup-white.png" alt="Taylor Engineering" className="w-full h-auto mx-auto mb-4" />
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl p-8 animate-rise" style={{ animationDelay: '80ms' }}>

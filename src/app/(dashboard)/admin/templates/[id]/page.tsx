@@ -93,7 +93,7 @@ export default function TemplatePreviewPage() {
         {/* Header */}
         <div className="bg-brand-900 px-8 py-6 text-white">
           <div className="flex items-center gap-3 mb-4">
-            <img src="/logo-full.png" alt="Taylor Engineering" className="h-12 w-auto" />
+            <img src="/brand/lockup-white.png" alt="Taylor Engineering" className="h-12 w-auto" />
           </div>
           <h2 className="text-2xl font-bold">{template.name}</h2>
           {template.description && <p className="text-brand-300 mt-1">{template.description}</p>}

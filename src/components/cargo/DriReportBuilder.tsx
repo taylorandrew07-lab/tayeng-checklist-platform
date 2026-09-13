@@ -17,7 +17,7 @@ import { deliverFile, PDF_MIME, DOCX_MIME } from '@/lib/pdf/deliver'
 // @react-pdf (~600 KB) and docx are imported on demand inside the handlers so
 // they don't ship in the voyage workspace's initial load.
 
-const LOGO_URL = '/logo-invoice.png'
+const LOGO_URL = '/brand/lockup-dark.png'
 
 interface PreparedPhotoRow {
   dataUrl: string; width: number; height: number
@@ -131,7 +131,8 @@ export default function DriReportBuilder({ voyage, onChange, photoCount, loadPho
       const { buildDriDocxBlob } = await import('@/lib/cargo/dri-docx')
       const prepared = await preparePhotos()
       const photos = prepared.map(p => ({ dataUrl: p.dataUrl, width: p.width, height: p.height, caption: p.caption }))
-      const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 60 } : undefined, photos)
+      // 240 × 56 keeps the 4.3:1 lockup at its true aspect (the old 4:1 box would squash it).
+      const blob = await buildDriDocxBlob(blocks, title, logo ? { data: logo.bytes, width: 240, height: 56 } : undefined, photos)
       await deliverFile(blob, `${fileBase}.docx`, DOCX_MIME, { title })
     } catch (e: any) {
       toast.error(e?.message ?? '.docx generation failed')

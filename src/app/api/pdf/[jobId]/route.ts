@@ -194,7 +194,7 @@ export async function GET(
   let logoSrc: string | undefined
   if (job.template?.pdf_hide_logo !== true) {
     try {
-      const res = await fetch(new URL('/logo-invoice.png', new URL(request.url).origin))
+      const res = await fetch(new URL('/brand/lockup-dark.png', new URL(request.url).origin))
       if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
     } catch { /* logo is optional — the report falls back to the company name */ }
   }

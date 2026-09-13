@@ -99,7 +99,7 @@ export default function SignUpPage() {
   return (
     <div className="w-full max-w-md">
       <div className="text-center mb-8 animate-rise">
-        <img src="/logo-full.png" alt="Taylor Engineering" className="w-full mx-auto mb-4" />
+        <img src="/brand/lockup-white.png" alt="Taylor Engineering" className="w-full h-auto mx-auto mb-4" />
         <p className="text-brand-200 text-sm">Survey &amp; Job Management</p>
       </div>
 

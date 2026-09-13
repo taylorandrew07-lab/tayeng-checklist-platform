@@ -9,7 +9,7 @@ import { probeConnectivity, explainConnectivity, type ConnectivityVerdict } from
 import { resetDeviceAppState } from '@/lib/auth/resetDevice'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
-import logoFull from '../../../../public/logo-full.png'
+import logoFull from '../../../../public/brand/lockup-white.png'
 import { resolveRoleHome, FALLBACK_HOME } from '@/lib/auth/roleHome'
 
 export default function LoginPage() {

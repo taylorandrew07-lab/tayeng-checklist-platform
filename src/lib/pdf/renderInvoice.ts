@@ -50,10 +50,10 @@ export async function renderInvoicePdf(invoiceId: string, origin: string): Promi
   } : null
   const recipientEmail = (billing as any)?.ap_email ?? (billing as any)?.contact_email ?? null
 
-  // Letterhead logo (black-text version) as a data URI — reliable in serverless.
+  // Letterhead logo (dark-type lockup) as a data URI — reliable in serverless.
   let logoSrc: string | undefined
   try {
-    const res = await fetch(new URL('/logo-invoice.png', origin))
+    const res = await fetch(new URL('/brand/lockup-dark.png', origin))
     if (res.ok) logoSrc = `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
   } catch { /* fall back to the text wordmark */ }
 

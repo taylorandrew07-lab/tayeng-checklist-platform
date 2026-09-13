@@ -5,11 +5,13 @@
 // serverless function bundle, so fs.readFile('public/…') fails there. This is
 // the same approach lib/pdf/renderInvoice.ts takes, for the same reason.
 //
-// logo-invoice.png is the PRINT logo (dark wordmark) every document uses — see
-// the note in lib/cargo/pdf/render.ts about logo-full.png being the white-text
-// screen version. At 760x191 it is ~109 KB, which would be ~145 KB once base64
-// encoded and then re-sent inside every share page, so it is downscaled once to
-// letterhead width (~9 KB) and cached for the life of the lambda.
+// lockup-dark.png is the PRINT logo (dark wordmark) every document uses — see
+// the note in lib/cargo/pdf/render.ts about lockup-white.png being the white-text
+// screen version. It is transparent on purpose: the annex draws it on a grey page,
+// where a flattened-on-white file would show as a white box. At 1200x278 it is
+// ~90 KB, which would be ~120 KB once base64 encoded and then re-sent inside every
+// share page, so it is downscaled once to letterhead width and cached for the life
+// of the lambda.
 
 const cache = new Map<string, string | null>()
 
@@ -21,7 +23,7 @@ export async function getLetterheadDataUrl(origin: string): Promise<string | nul
 
   let result: string | null = null
   try {
-    const res = await fetch(new URL('/logo-invoice.png', origin))
+    const res = await fetch(new URL('/brand/lockup-dark.png', origin))
     if (res.ok) {
       const original = Buffer.from(await res.arrayBuffer())
       // sharp is already a dependency and is listed in serverExternalPackages.
