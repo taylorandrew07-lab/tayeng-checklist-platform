@@ -21,7 +21,7 @@ node brand-assets/generate.mjs     # → public/brand/*  +  public/favicon.ico
 |---|---|---|
 | `public/brand/lockup-white.png` | `lockup-white-transparent.png` | sidebar, sign-in / sign-up / password pages, template preview band (all navy) |
 | `public/brand/lockup-dark.png` | `lockup-dark-transparent.png` | every printed letterhead — checklist / invoice / borescoping / cargo / DRI PDFs, the DRI .docx, the cargo data annex — and the DRI on-screen preview |
-| `public/brand/favicon-16.png`, `favicon-32.png`, `public/favicon.ico` | `app-icon-1024-navy.png` | browser tab |
+| `public/brand/favicon-16.png`, `favicon-32.png`, `public/favicon.ico` | `mark-transparent.png` | browser tab — the mark alone, no navy box (a filled square reads as a dark outlined block at 16px) |
 | `public/brand/apple-touch-icon.png` (180) | `app-icon-1024-navy.png` | iOS home screen |
 | `public/brand/icon-192.png`, `icon-512.png` | `app-icon-1024-navy.png` | web manifest (`purpose: any`) |
 | `public/brand/icon-maskable-192.png`, `icon-maskable-512.png` | `app-icon-1024-navy-maskable.png` | web manifest (`purpose: maskable`, Android adaptive) |

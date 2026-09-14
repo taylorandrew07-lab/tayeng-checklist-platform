@@ -62,18 +62,23 @@ const maskable = src('app-icon-1024-navy-maskable.png')
 const square = async (from, size, file) =>
   png(sharp(from).resize(size, size, { kernel: sharp.kernel.lanczos3 })).toFile(out(file))
 
-await square(navy, 16, 'favicon-16.png')
-await square(navy, 32, 'favicon-32.png')
+// Browser-tab favicons are the MARK ALONE on transparency ("tiny slot -> mark"): the
+// navy app-icon square at 16-32px reads as a dark box with an outline against a light
+// tab strip. Home-screen icons below stay on navy because iOS and Android paint
+// transparent icon pixels black.
+const mark = src('mark-transparent.png')
+await square(mark, 16, 'favicon-16.png')
+await square(mark, 32, 'favicon-32.png')
 await square(navy, 180, 'apple-touch-icon.png')
 await square(navy, 192, 'icon-192.png')
 await square(navy, 512, 'icon-512.png')
 await square(maskable, 192, 'icon-maskable-192.png')
 await square(maskable, 512, 'icon-maskable-512.png')
 
-// favicon.ico — 16/32/48 in one file, at the site root where browsers look unprompted.
+// favicon.ico — the mark at 16/32/48 in one file, at the site root where browsers look unprompted.
 const icoEntries = []
 for (const size of [16, 32, 48]) {
-  icoEntries.push({ size, data: await png(sharp(navy).resize(size, size, { kernel: sharp.kernel.lanczos3 })).toBuffer() })
+  icoEntries.push({ size, data: await png(sharp(mark).resize(size, size, { kernel: sharp.kernel.lanczos3 })).toBuffer() })
 }
 await writeFile('public/favicon.ico', ico(icoEntries))
 
