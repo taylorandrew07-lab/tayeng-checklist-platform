@@ -83,6 +83,14 @@ Vercel · Vitest. Offline-first PWA. Roles: `admin` / `surveyor` / `office` / `c
   checks `job_field_values` and `job_photos` only and does not catch this; mig 201 adds
   `job_signatures`. **Guard the delete, run it, and if the guard fires, query the live
   DB to find out whose data it is before you write a clause that deletes it anyway.**
+- **Replacing a file in `public/` under its own name reaches nobody.** `sw.js` caches every
+  image, font and the manifest by URL, so a regenerated asset — a new logo, a corrected
+  favicon — sits behind the copy already on each staff device: deployed, old names 404ing,
+  right bytes on the server, and still wrong on screen. The static handler now revalidates
+  in the background, which heals a device on its *next* load; **bumping `VERSION` in
+  `public/sw.js` is what makes it the first.** Do both whenever those bytes change. The
+  navy favicon outlived its own replacement exactly this way, and nothing about the
+  deployment looked wrong while it did.
 
 ## Security model
 
