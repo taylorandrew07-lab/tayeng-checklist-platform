@@ -1,7 +1,7 @@
 /* Minimal service worker for offline app-shell + previously-visited pages.
    Never caches Supabase (cross-origin) or same-origin /api responses, so
    private API/auth/storage data is never stored. */
-const VERSION = 'v11'
+const VERSION = 'v12'
 const STATIC_CACHE = `tayeng-static-${VERSION}`
 const PAGE_CACHE = `tayeng-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
@@ -151,23 +151,38 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Static public assets ONLY (manifest, icons, fonts, images): cache-first.
+  // Static public assets ONLY (manifest, icons, fonts, images): the cached copy is
+  // answered instantly and then refreshed in the background (stale-while-revalidate).
   // Everything else — RSC payloads, prefetches, dynamic data GETs — is passed
   // straight to the network and never stored, so no private data is cached.
+  //
+  // ⚠️ It REVALIDATES rather than stopping at the cache hit because every URL here is
+  // a STABLE NAME over artwork that gets REPLACED: regenerating the favicon from new
+  // artwork leaves /favicon.ico and /brand/*.png pointing at different bytes. Under the
+  // plain cache-first rule this replaced, a device that had cached the old file kept
+  // serving it until VERSION changed — so a corrected logo looked live on the server,
+  // 404-free and deployed, while every staff device still drew the old one. That is
+  // exactly how the navy favicon survived its own replacement. Offline is unchanged:
+  // the cached copy is still what gets returned, and a failed refresh is discarded.
   const isStaticAsset =
     url.pathname === '/manifest.json' ||
     /\.(?:png|jpe?g|svg|webp|gif|ico|woff2?|ttf|otf)$/i.test(url.pathname)
   if (isStaticAsset) {
     event.respondWith(
-      caches.match(request).then((cached) =>
-        cached || fetch(request).then((res) => {
+      caches.match(request).then((cached) => {
+        const fresh = fetch(request).then((res) => {
           if (res.ok) {
             const copy = res.clone()
-            caches.open(STATIC_CACHE).then((c) => c.put(request, copy))
+            caches.open(STATIC_CACHE).then((c) => c.put(request, copy)).catch(() => {})
           }
           return res
         })
-      )
+        if (!cached) return fresh
+        // Hold the worker open for the background refresh, but never let it fail the
+        // request — the cached copy has already been handed back.
+        event.waitUntil(fresh.catch(() => {}))
+        return cached
+      })
     )
   }
 })

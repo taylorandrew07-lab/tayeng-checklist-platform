@@ -32,8 +32,14 @@ the cargo annex letterhead sits on a grey page, where a flattened file would sho
 a white box. On white paper the two are identical.
 
 Never hand-edit `public/brand/`; replace the master and re-run the script.
-Renaming a served file means also bumping `VERSION` in `public/sw.js`, which
-precaches both lockups.
+
+**Then bump `VERSION` in `public/sw.js`.** The service worker caches every file
+here by name, and these names never change, so regenerating one leaves each staff
+device holding the old bytes. It now refreshes them in the background, which heals
+a device on its *next* load by itself — but the version bump is what drops the old
+artwork immediately instead of one load later. Skipping it once already left the
+navy favicon on screen after it had been replaced, with the correct file live on
+the server the whole time.
 
 These files are **not** wired into the app automatically. To put a logo on a
 client, use **Clients → Edit → Upload logo**, which uploads to the
