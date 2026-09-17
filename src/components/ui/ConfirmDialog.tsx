@@ -56,7 +56,8 @@ export function ConfirmDialog({
               <AlertTriangle className="h-5 w-5 text-red-600" />
             </div>
           )}
-          <p className="text-sm text-gray-600 leading-relaxed">{message}</p>
+          {/* pre-line: a message may be a list, one item per line (see newJobChecks). */}
+          <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{message}</p>
         </div>
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">

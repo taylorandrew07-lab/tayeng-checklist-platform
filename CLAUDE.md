@@ -120,6 +120,7 @@ Each exists because the logic had already drifted across surfaces once.
 | Finishing a job (every role) | `lib/jobs/complete.ts` — `COMPLETE_LABEL` is *the* word |
 | Job lifecycle + transitions | `lib/jobs/tracker.ts` — `WORKFLOW`, `advanceWorkflowTo` |
 | Creating any job (incl. future AI/WhatsApp intake) | `lib/jobs/drafts.ts` — `createDraftJob(payload, source)` |
+| What a New Job form asks "are you sure?" about | `lib/jobs/newJobChecks.ts` — `NEW_JOB_CONFIRM_CHECKS`; soft, never validation |
 | Whether a job gets a report number | `lib/jobs/reportPolicy.ts` (mirrors the mig 136 trigger) |
 | Hours vs days wording + metrics | `lib/jobs/labourUnit.ts` |
 | Downloading/sharing any generated file | `lib/pdf/deliver.ts` — shares on mobile, saves on desktop, throws on failure |

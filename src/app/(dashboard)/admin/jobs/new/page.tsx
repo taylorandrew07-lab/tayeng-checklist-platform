@@ -10,6 +10,8 @@ import { listJobTypes, addJobType, listSurveyorAccounts, type SurveyorAccount } 
 import { findOrCreateVessel } from '@/lib/vessels/api'
 import { formatDate, parseVesselName, splitVoyageFromVesselName, type VesselPrefix } from '@/lib/utils'
 import { createDraftJob } from '@/lib/jobs/drafts'
+import { missingNewJobFields, describeMissingNewJobFields } from '@/lib/jobs/newJobChecks'
+import { confirmDialog } from '@/components/ui/confirm'
 import { normaliseVoyage } from '@/lib/jobs/voyage'
 import { fetchRecentVoyages, suggestVoyageFor, suggestedValue, describeSuggestion, type RecentVoyage } from '@/lib/jobs/recentVoyages'
 import VoyageNumberInput from '@/components/job/VoyageNumberInput'
@@ -160,6 +162,22 @@ export default function NewJobPage() {
     if (endDate && endDate < scheduledDate) { setError('The end date can’t be before the start date'); return }
     // On a single-day job, the end time must be after the start time.
     if (startTime && endTime && !endDate && endTime <= startTime) { setError('The end time must be after the start time'); return }
+
+    // Soft check: name anything optional that's been left blank and let the admin
+    // say yes once. Everything it asks about is in lib/jobs/newJobChecks.ts.
+    const missing = missingNewJobFields({
+      clientId, newClientName: showNewClient ? newClientName : '', jobType, jobStage,
+      vesselName, portLocation, voyageNumber, surveyorIds: Array.from(picked), notes,
+    })
+    if (missing.length > 0) {
+      const ok = await confirmDialog({
+        title: 'Create this job anyway?',
+        message: describeMissingNewJobFields(missing),
+        confirmLabel: 'Yes, create job',
+      })
+      if (!ok) return
+    }
+
     setSaving(true); setError(null)
 
     const supabase = createClient()

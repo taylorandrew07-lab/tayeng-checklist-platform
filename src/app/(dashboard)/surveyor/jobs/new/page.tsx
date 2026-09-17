@@ -9,6 +9,8 @@ import { loadNewJobData } from '@/lib/offline/newJobData'
 import { putDraft, offlineAvailable } from '@/lib/offline/db'
 import { syncDraft } from '@/lib/offline/sync'
 import { autoReportNotRequired } from '@/lib/jobs/reportPolicy'
+import { missingNewJobFields, describeMissingNewJobFields } from '@/lib/jobs/newJobChecks'
+import { confirmDialog } from '@/components/ui/confirm'
 import { addJobType, type SurveyorAccount } from '@/lib/jobs/tracker'
 import { checkConflictsForSurveyors, type JobConflict } from '@/lib/jobs/conflicts'
 import { toast } from '@/components/ui/toast'
@@ -204,6 +206,25 @@ export default function SurveyorNewChecklistPage() {
     if (startTime && endTime && !endDate && endTime <= startTime) return setError('The end time must be after the start time')
     const finalSurveyor = myName.trim()
     if (!finalSurveyor) return setError('Could not read your name — reconnect once so your profile loads.')
+
+    // Soft check: name anything optional that's been left blank and let the surveyor
+    // say yes once. Everything it asks about is in lib/jobs/newJobChecks.ts. Pure
+    // client state, so it works dockside with no signal like the rest of this form.
+    const missing = missingNewJobFields({
+      clientId, newClientName: showNewClient ? newClientName : '', jobType, jobStage,
+      vesselName, portLocation, voyageNumber,
+      // You are always on your own job; the picker only adds co-surveyors.
+      surveyorIds: [myId, ...Array.from(coSurveyors)].filter(Boolean),
+      notes,
+    })
+    if (missing.length > 0) {
+      const ok = await confirmDialog({
+        title: 'Create this job anyway?',
+        message: describeMissingNewJobFields(missing),
+        confirmLabel: 'Yes, create job',
+      })
+      if (!ok) return
+    }
 
     setSaving(true)
     setError(null)
